@@ -57,4 +57,4 @@ jobs:
 
           ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            'cd /opt/freedriver-web && docker compose --env-file /opt/freedriver-secrets/.env up -d --pull always --build'
+            'mkdir -p /opt/freedriver-storage/grafana /opt/freedriver-storage/loki /opt/freedriver-storage/prometheus && chown 472:472 /opt/freedriver-storage/grafana && chown 10001:10001 /opt/freedriver-storage/loki && chown 65534:65534 /opt/freedriver-storage/prometheus && cd /opt/freedriver-web && docker compose --env-file /opt/freedriver-secrets/.env up -d --pull always --build && docker compose --env-file /opt/freedriver-secrets/.env up -d --force-recreate --no-deps caddy'
