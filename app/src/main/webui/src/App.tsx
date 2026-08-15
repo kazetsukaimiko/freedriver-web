@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type MouseEvent } from 'react'
 import './App.css'
 
 type HelloResponse = {
@@ -11,62 +11,99 @@ type LoadState =
   | { status: 'ok'; data: HelloResponse }
   | { status: 'error'; error: string; statusCode?: number }
 
+type Splash = 'playing' | 'docking' | 'revealing' | 'done'
+
 const knownPaths = new Set(['/', '/dashboard'])
 const SPLASH_KEY = 'freedriver.splash.seen'
 
 function shouldPlaySplash() {
   const params = new URLSearchParams(window.location.search)
+  if (params.get('splash') === '0') {
+    return false
+  }
   if (params.get('splash') === '1') {
     return true
   }
   return sessionStorage.getItem(SPLASH_KEY) !== '1'
 }
 
+function markSplashSeen() {
+  sessionStorage.setItem(SPLASH_KEY, '1')
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('splash') !== '1') {
+    return
+  }
+  params.delete('splash')
+  const query = params.toString()
+  const next = window.location.pathname + (query ? `?${query}` : '')
+  window.history.replaceState({}, '', next)
+}
+
 function App() {
-  const [splash, setSplash] = useState<'playing' | 'leaving' | 'done'>(() =>
-    shouldPlaySplash() ? 'playing' : 'done',
-  )
+  const [splash, setSplash] = useState<Splash>(() => (shouldPlaySplash() ? 'playing' : 'done'))
+  const [path, setPath] = useState(() => window.location.pathname)
 
   useEffect(() => {
     if (splash !== 'playing') {
       return
     }
-    const leave = window.setTimeout(() => setSplash('leaving'), 900)
-    const done = window.setTimeout(() => {
-      sessionStorage.setItem(SPLASH_KEY, '1')
-      setSplash('done')
-    }, 1700)
+    markSplashSeen()
+    const dock = window.setTimeout(() => setSplash('docking'), 700)
+    const reveal = window.setTimeout(() => setSplash('revealing'), 1500)
+    const done = window.setTimeout(() => setSplash('done'), 2200)
     return () => {
-      window.clearTimeout(leave)
+      window.clearTimeout(dock)
+      window.clearTimeout(reveal)
       window.clearTimeout(done)
     }
   }, [splash])
 
-  const path = window.location.pathname
+  useEffect(() => {
+    const onPop = () => setPath(window.location.pathname)
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
   const page = knownPaths.has(path) ? 'dashboard' : 'not-found'
+
+  function go(event: MouseEvent<HTMLAnchorElement>, to: string) {
+    event.preventDefault()
+    if (window.location.pathname === to) {
+      return
+    }
+    window.history.pushState({}, '', to)
+    setPath(to)
+  }
 
   return (
     <div className={`app${splash !== 'done' ? ' is-splashing' : ''}`}>
       {splash !== 'done' && (
-        <div className={`splash${splash === 'leaving' ? ' is-leaving' : ''}`} aria-hidden="true">
-          <img className="splash-lockup" src="/assets/lonewatt/lonewatt-lockup.png" alt="" />
+        <div className="splash" aria-hidden="true">
+          <div className={`splash-bg${splash === 'revealing' ? ' is-leaving' : ''}`} />
+          <img
+            className={`splash-lockup${splash === 'playing' ? '' : ' is-docked'}`}
+            src="/assets/lonewatt/lonewatt-lockup.png"
+            alt=""
+          />
         </div>
       )}
 
       <aside className="nav">
-        <a className="nav-brand" href="/">
+        <a className="nav-brand" href="/" onClick={(event) => go(event, '/')}>
           <img src="/assets/lonewatt/lonewatt-lockup.png" alt="Lonewatt" />
         </a>
         <nav aria-label="Primary">
-          <a className={page === 'dashboard' ? 'nav-item is-current' : 'nav-item'} href="/">
+          <a
+            className={page === 'dashboard' ? 'nav-item is-current' : 'nav-item'}
+            href="/"
+            onClick={(event) => go(event, '/')}
+          >
             Dashboard
           </a>
         </nav>
       </aside>
 
-      <div className="workspace">
-        {page === 'not-found' ? <NotFound /> : <Dashboard />}
-      </div>
+      <div className="workspace">{page === 'not-found' ? <NotFound /> : <Dashboard />}</div>
     </div>
   )
 }
