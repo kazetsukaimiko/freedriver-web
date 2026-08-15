@@ -7,10 +7,10 @@ Public site for [freedriver.io](https://freedriver.io). Caddy terminates TLS and
 ```
 /opt/freedriver-web/       this repo (rsync on deploy)
 /opt/freedriver-secrets/   .env and other secrets (not in git)
-/opt/freedriver-storage/   Docker bind mounts (Caddy certs, Postgres)
+/opt/freedriver-storage/   Docker bind mounts (Caddy certs, Postgres, Grafana, Loki, Prometheus)
 ```
 
-The host stays thin (SSH + Docker).
+The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{grafana,loki,prometheus}` if they are missing.
 
 ## Stack
 
@@ -18,7 +18,17 @@ The host stays thin (SSH + Docker).
   - `freedriver.io` / `www` — static `site/`
   - `auth.freedriver.io` — Keycloak 26
   - `app.freedriver.io` — Quinoa app behind Caddy
+  - `grafana.freedriver.io` — Grafana (internal only; Loki/Prometheus/Alloy are not published)
 - Keycloak 26 + local Postgres 16
+- Grafana + Loki + Prometheus + Alloy (see Observability)
+
+## Observability
+
+https://grafana.freedriver.io — local admin user `admin`. The password is `GF_SECURITY_ADMIN_PASSWORD` in `/opt/freedriver-secrets/.env` (not in git). Keycloak SSO can wait.
+
+Alloy tails Docker container logs into Loki (14 days). Prometheus keeps ~15 days and scrapes itself, Alloy, and `app:8080/q/metrics` (that target is down until the Quarkus app exports Micrometer metrics). Grafana, Loki, Prometheus, and Alloy listen on the compose network only; Caddy is the HTTPS front door.
+
+`grafana.freedriver.io` A record is Sysadmin, same as `auth.freedriver.io`.
 
 ## App
 
@@ -44,4 +54,4 @@ Required repository secrets:
 | `DEPLOY_SSH_KEY` | private key whose public half is in `root` `authorized_keys` |
 | `DEPLOY_SSH_KNOWN_HOSTS` | output of `ssh-keyscan 138.197.90.42` |
 
-Do not commit keys. Mail DNS (Proton) is owned by Sysadmin; leave it alone. `auth.freedriver.io` A record is also Sysadmin.
+Do not commit keys. Mail DNS (Proton) is owned by Sysadmin; leave it alone. `auth.freedriver.io` and `grafana.freedriver.io` A records are also Sysadmin.
