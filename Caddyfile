@@ -12,3 +12,8 @@ auth.freedriver.io {
 	encode gzip
 	reverse_proxy keycloak:8080
 }
+
+app.freedriver.io {
+	encode gzip
+	reverse_proxy app:8080
+}
