@@ -5,14 +5,12 @@
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /workspace
 
-COPY mvnw pom.xml ./
-COPY .mvn .mvn
-RUN chmod +x mvnw
-
+COPY pom.xml ./
 COPY src src
 
+# Use the image Maven. mvnw failed in-container with a distributionSha256Sum mismatch.
 # Quinoa downloads Node 22.14.0 during package (package-manager-install=true).
-RUN ./mvnw -B -DskipTests package
+RUN mvn -B -DskipTests package
 
 FROM registry.access.redhat.com/ubi9/openjdk-21-runtime:1.24
 ENV LANGUAGE='en_US:en'
