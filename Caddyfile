@@ -7,3 +7,8 @@ freedriver.io, www.freedriver.io {
 		Referrer-Policy strict-origin-when-cross-origin
 	}
 }
+
+auth.freedriver.io {
+	encode gzip
+	reverse_proxy keycloak:8080
+}
