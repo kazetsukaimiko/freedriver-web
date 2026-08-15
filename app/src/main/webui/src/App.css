@@ -1,37 +1,56 @@
-.shell {
+.app {
   min-height: 100vh;
+  display: grid;
+  grid-template-columns: 15.5rem 1fr;
+}
+
+.nav {
   display: flex;
   flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.25rem 1rem;
+  background: #121212;
+  border-right: 1px solid #2a2a2a;
 }
 
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.9rem 1.5rem;
-  border-bottom: 1px solid #243028;
-  background: #121a16;
+.nav-brand {
+  display: block;
+  padding: 0.15rem 0.35rem 0.5rem;
 }
 
-.brand {
+.nav-brand img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.nav nav {
   display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: inherit;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.nav-item {
+  display: block;
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.45rem;
+  color: #c8c8c8;
   text-decoration: none;
 }
 
-.brand img {
-  width: 1.75rem;
-  height: 1.75rem;
-  object-fit: contain;
+.nav-item:hover {
+  background: #1c1c1c;
+  color: #f4f4f4;
 }
 
-.nav-current {
-  color: #9aaa9a;
-  font-size: 0.95rem;
+.nav-item.is-current {
+  background: #1d2830;
+  color: #f4f4f4;
+}
+
+.workspace {
+  min-width: 0;
+  background: #141414;
 }
 
 .content {
@@ -51,14 +70,14 @@ h1 {
 
 .lede {
   margin: 0 0 1.5rem;
-  color: #9aaa9a;
+  color: #9a9a9a;
 }
 
 .card {
   padding: 1.25rem 1.35rem;
-  border: 1px solid #243028;
+  border: 1px solid #2a2a2a;
   border-radius: 0.6rem;
-  background: #121a16;
+  background: #181818;
 }
 
 .card h2 {
@@ -69,7 +88,7 @@ h1 {
 
 .endpoint {
   margin: 0 0 1rem;
-  color: #9aaa9a;
+  color: #9a9a9a;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.9rem;
 }
@@ -81,7 +100,7 @@ dl {
 }
 
 dt {
-  color: #9aaa9a;
+  color: #9a9a9a;
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -122,4 +141,71 @@ dd {
 @keyframes solo-bob {
   from { transform: translateY(0); }
   to { transform: translateY(-4px); }
+}
+
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: #141414;
+  transition: opacity 0.7s ease;
+}
+
+.splash-lockup {
+  width: min(28rem, 90vw);
+  height: auto;
+  transform-origin: center center;
+  transition: transform 0.75s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.75s ease;
+}
+
+.splash.is-leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.splash.is-leaving .splash-lockup {
+  transform: translate(-38vw, -38vh) scale(0.28);
+}
+
+.app.is-splashing .nav-brand img {
+  opacity: 0;
+}
+
+.app:not(.is-splashing) .nav-brand img {
+  animation: brand-in 0.35s ease 0.05s both;
+}
+
+@keyframes brand-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (max-width: 720px) {
+  .app {
+    grid-template-columns: 1fr;
+  }
+
+  .nav {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border-right: 0;
+    border-bottom: 1px solid #2a2a2a;
+  }
+
+  .nav-brand {
+    width: 9.5rem;
+    padding: 0;
+  }
+
+  .nav nav {
+    flex-direction: row;
+  }
+
+  .splash.is-leaving .splash-lockup {
+    transform: translate(-32vw, -42vh) scale(0.22);
+  }
 }
