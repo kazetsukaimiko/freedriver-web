@@ -52,7 +52,6 @@ jobs:
           rsync -az --delete \
             --exclude '.git/' \
             --exclude '.github/' \
-            --exclude '.env' \
             -e "ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes" \
             ./ "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/freedriver-web/"
 
