@@ -9,8 +9,8 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./site:/srv:ro
-      - caddy_data:/data
-      - caddy_config:/config
+      - /opt/freedriver-storage/caddy/data:/data
+      - /opt/freedriver-storage/caddy/config:/config
     depends_on:
       - keycloak
 
@@ -18,7 +18,7 @@ services:
     image: quay.io/keycloak/keycloak:26.3
     restart: unless-stopped
     command: start
-    env_file: .env
+    env_file: /opt/freedriver-secrets/.env
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
@@ -37,20 +37,15 @@ services:
   keycloak-db:
     image: postgres:16
     restart: unless-stopped
-    env_file: .env
+    env_file: /opt/freedriver-secrets/.env
     environment:
       POSTGRES_DB: keycloak
       POSTGRES_USER: keycloak
       POSTGRES_PASSWORD: ${KC_DB_PASSWORD}
     volumes:
-      - keycloak_pg:/var/lib/postgresql/data
+      - /opt/freedriver-storage/keycloak-pg:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
       interval: 5s
       timeout: 5s
       retries: 10
-
-volumes:
-  caddy_data:
-  caddy_config:
-  keycloak_pg:

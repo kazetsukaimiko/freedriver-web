@@ -2,19 +2,26 @@
 
 Public site for [freedriver.io](https://freedriver.io). Caddy terminates TLS and reverse-proxies apps. This repo is the proving-ground deploy; Lonewatt will copy the same pattern.
 
+## VPS layout
+
+```
+/opt/freedriver-web/       this repo (rsync on deploy)
+/opt/freedriver-secrets/   .env and other secrets (not in git)
+/opt/freedriver-storage/   Docker bind mounts (Caddy certs, Postgres)
+```
+
+The host stays thin (SSH + Docker).
+
 ## Stack
 
 - Caddy 2 on 80/443
   - `freedriver.io` / `www` — static `site/`
   - `auth.freedriver.io` — Keycloak 26
 - Keycloak 26 + local Postgres 16
-- Host stays thin (SSH + Docker). Compose lives in `/opt/freedriver-web`.
-
-Secrets live in `/opt/freedriver-web/.env` (not in git). Copy `.env.example` and fill it. Deploys do not overwrite `.env`.
 
 ## Deploy
 
-Push or merge to `main`, or run the **Deploy** workflow. GitHub Actions rsyncs this repo to the VPS and runs `docker compose up -d`.
+Push or merge to `main`, or run the **Deploy** workflow. GitHub Actions rsyncs this repo to `/opt/freedriver-web` and runs `docker compose up -d`.
 
 Required repository secrets:
 
