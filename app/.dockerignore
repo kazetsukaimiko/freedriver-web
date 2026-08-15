@@ -1,5 +1,10 @@
-*
-!target/*-runner
-!target/*-runner.jar
-!target/lib/*
-!target/quarkus-app/*
+# Allow a source build for Dockerfile.compose.
+# Stock Quarkus ignore (only target/) emptied the compose context.
+target/
+**/node_modules
+node_modules/
+.quinoa/
+.idea/
+*.iml
+.DS_Store
+.git
