@@ -15,7 +15,7 @@ The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{gra
 ## Stack
 
 - Caddy 2 on 80/443
-  - `freedriver.io` / `www` — static `site/`
+  - `freedriver.io` / `www` — 308 to `app.freedriver.io`
   - `auth.freedriver.io` — Keycloak 26
   - `app.freedriver.io` — Quinoa app behind Caddy
   - `grafana.freedriver.io` — Grafana (internal only; Loki/Prometheus/Alloy are not published)
