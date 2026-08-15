@@ -57,4 +57,4 @@ jobs:
 
           ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            'cd /opt/freedriver-web && docker compose up -d --pull always'
+            'cd /opt/freedriver-web && docker compose --env-file /opt/freedriver-secrets/.env up -d --pull always'
