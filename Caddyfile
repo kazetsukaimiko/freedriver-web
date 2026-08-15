@@ -1,0 +1,9 @@
+freedriver.io, www.freedriver.io {
+	root * /srv
+	encode gzip
+	file_server
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}
