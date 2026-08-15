@@ -19,6 +19,17 @@ The host stays thin (SSH + Docker).
   - `auth.freedriver.io` — Keycloak 26
 - Keycloak 26 + local Postgres 16
 
+## App
+
+The product app lives in `app/`: Quarkus 3.38 (Java 21) with Quinoa serving a React TypeScript SPA. It talks normal REST under `/api`. Keycloak at `https://auth.freedriver.io` will handle auth later; OIDC is present as a dependency with commented config so the app starts without secrets.
+
+```shell
+cd app
+./mvnw quarkus:dev
+```
+
+Requires Java 21. Quinoa can install Node for the UI build. Open http://localhost:8080 for the dashboard (`GET /api/hello` is public). Compose, Caddy, and Keycloak stay with Techops — this app is not wired into `docker-compose.yml` yet.
+
 ## Deploy
 
 Push or merge to `main`, or run the **Deploy** workflow. GitHub Actions rsyncs this repo to `/opt/freedriver-web` and runs `docker compose --env-file /opt/freedriver-secrets/.env up -d` so `${VAR}` interpolation reads the secrets file, not a `.env` in the git tree.
