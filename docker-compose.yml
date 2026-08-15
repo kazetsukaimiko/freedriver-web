@@ -13,6 +13,15 @@ services:
       - /opt/freedriver-storage/caddy/config:/config
     depends_on:
       - keycloak
+      - app
+
+  app:
+    build:
+      context: ./app
+      dockerfile: src/main/docker/Dockerfile.compose
+    restart: unless-stopped
+    expose:
+      - "8080"
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.3
