@@ -9,9 +9,43 @@ type HelloResponse = {
 type LoadState =
   | { status: 'loading' }
   | { status: 'ok'; data: HelloResponse }
-  | { status: 'error'; error: string }
+  | { status: 'error'; error: string; statusCode?: number }
+
+const knownPaths = new Set(['/', '/dashboard'])
 
 function App() {
+  const path = window.location.pathname
+  if (!knownPaths.has(path)) {
+    return (
+      <div className="shell">
+        <BrandBar />
+        <main className="content status-page">
+          <img className="solo" src="/assets/lonewatt/solo-404.png" alt="" />
+          <h1>404</h1>
+          <p className="lede">Solo cannot find that page.</p>
+        </main>
+      </div>
+    )
+  }
+
+  return <Dashboard />
+}
+
+function BrandBar() {
+  return (
+    <header className="topbar">
+      <a className="brand" href="/">
+        <img src="/assets/lonewatt/lonewatt-icon.png" alt="" />
+        <span>Freedriver</span>
+      </a>
+      <nav aria-label="Primary">
+        <span className="nav-current">Dashboard</span>
+      </nav>
+    </header>
+  )
+}
+
+function Dashboard() {
   const [hello, setHello] = useState<LoadState>({ status: 'loading' })
 
   useEffect(() => {
@@ -20,7 +54,11 @@ function App() {
     fetch('/api/hello', { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) {
-          throw new Error(`GET /api/hello failed (${response.status})`)
+          const error = new Error(`GET /api/hello failed (${response.status})`) as Error & {
+            statusCode?: number
+          }
+          error.statusCode = response.status
+          throw error
         }
         return (await response.json()) as HelloResponse
       })
@@ -30,7 +68,11 @@ function App() {
           return
         }
         const message = error instanceof Error ? error.message : 'Unknown error'
-        setHello({ status: 'error', error: message })
+        const statusCode =
+          error instanceof Error && 'statusCode' in error
+            ? (error as { statusCode?: number }).statusCode
+            : undefined
+        setHello({ status: 'error', error: message, statusCode })
       })
 
     return () => controller.abort()
@@ -38,12 +80,7 @@ function App() {
 
   return (
     <div className="shell">
-      <header className="topbar">
-        <div className="brand">Freedriver</div>
-        <nav aria-label="Primary">
-          <span className="nav-current">Dashboard</span>
-        </nav>
-      </header>
+      <BrandBar />
 
       <main className="content">
         <h1>Dashboard</h1>
@@ -52,11 +89,25 @@ function App() {
         <section className="card" aria-labelledby="hello-heading">
           <h2 id="hello-heading">API</h2>
           <p className="endpoint">GET /api/hello</p>
-          {hello.status === 'loading' && <p>Loading…</p>}
-          {hello.status === 'error' && (
-            <p className="error" role="alert">
-              {hello.error}
+          {hello.status === 'loading' && (
+            <p className="loader">
+              <img className="solo solo-run" src="/assets/lonewatt/solo-run.png" alt="" />
+              Loading…
             </p>
+          )}
+          {hello.status === 'error' && (
+            <div className="error" role="alert">
+              <img
+                className="solo"
+                src={
+                  hello.statusCode && hello.statusCode >= 500
+                    ? '/assets/lonewatt/solo-500.png'
+                    : '/assets/lonewatt/solo-404.png'
+                }
+                alt=""
+              />
+              <p>{hello.error}</p>
+            </div>
           )}
           {hello.status === 'ok' && (
             <dl>
