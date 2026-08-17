@@ -8,7 +8,9 @@ auth.freedriver.io {
 	handle @admin {
 		respond 404
 	}
-	reverse_proxy keycloak:8080
+	handle {
+		reverse_proxy keycloak:8080
+	}
 }
 
 app.freedriver.io {
