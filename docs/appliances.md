@@ -79,14 +79,14 @@ After a Quarkus restart the map starts stale until the next **live** Topic A. Do
 
 ## BFF / session
 
-Quarkus owns the OIDC code flow. The browser gets an HTTP-only, Secure, SameSite=Strict session cookie. It is not readable from JS. The confidential client secret never goes in `webui`.
+Quarkus owns the OIDC code flow. The browser gets an HTTP-only, Secure, SameSite=Lax session cookie (Lax so the Keycloak return from auth.freedriver.io to app.freedriver.io still has a session). It is not readable from JS. The confidential client secret never goes in `webui`.
 
 `commandId` is minted in Quarkus. The browser only sends `{ "on": bool }`.
 
 Live OIDC stays off until #24/#25. When it is on:
 
-- Session cookie: HTTP-only, Secure, SameSite=Strict
-- POST `/api/appliances/{id}` requires `X-CSRF-Token` matching the `csrfToken` from GET `/api/appliances`
+- Session cookie: HTTP-only, Secure, SameSite=Lax (Strict would drop the session on the Keycloak callback)
+- POST `/api/appliances/{id}` requires `X-CSRF-Token` matching the `csrfToken` from GET `/api/appliances`. Do not rely on SameSite alone.
 - API still checks session + (`dashboard` or `portal-admin`)
 
 
