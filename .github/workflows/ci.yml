@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    if: github.repository == 'kazetsukaimiko/freedriver-web'
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Tests
+        run: ./mvnw -B test
+
+      - name: Browser must not speak MQTT
+        working-directory: app
+        run: |
+          if grep -RInE 'mqtt|8883|mosquitto' src/main/webui; then
+            echo "webui must not mention MQTT"
+            exit 1
+          fi
+
+      - name: Fake and OIDC stay off in the default profile
+        working-directory: app
+        run: |
+          if grep -E '^freedriver\.appliances\.enabled=true' src/main/resources/application.properties; then
+            echo "default profile must not enable the appliances API"
+            exit 1
+          fi
+          if grep -E '^freedriver\.appliances\.backend=fake' src/main/resources/application.properties; then
+            echo "fake backend must not ship in the default profile"
+            exit 1
+          fi
+          if grep -E '^freedriver\.appliances\.live-commands=true' src/main/resources/application.properties; then
+            echo "live commands must not ship in the default profile"
+            exit 1
+          fi
+          if grep -E '^quarkus\.oidc\.enabled=true' src/main/resources/application.properties; then
+            echo "do not flip OIDC on in the default profile"
+            exit 1
+          fi
