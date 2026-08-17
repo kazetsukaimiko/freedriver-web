@@ -21,6 +21,11 @@ services:
       context: ./app
       dockerfile: src/main/docker/Dockerfile.compose
     restart: unless-stopped
+    env_file: /opt/freedriver-secrets/.env
+    environment:
+      QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver
+      QUARKUS_OIDC_CLIENT_ID: freedriver-api
+      QUARKUS_OIDC_CREDENTIALS_SECRET: ${QUARKUS_OIDC_CREDENTIALS_SECRET}
     expose:
       - "8080"
 

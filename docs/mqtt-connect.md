@@ -45,6 +45,15 @@ Self-signed cert for `mqtt.freedriver.io` (365 days) until Let's Encrypt replace
 
 On the compose network, connect to hostname `mosquitto` port 8883. Never use `mqtt.freedriver.io` from Quarkus — that name is for public/home clients.
 
+Compose injects OIDC on the `app` service only (not the image, not the SPA):
+
+- `QUARKUS_OIDC_AUTH_SERVER_URL=https://auth.freedriver.io/realms/freedriver`
+- `QUARKUS_OIDC_CLIENT_ID=freedriver-api`
+- `QUARKUS_OIDC_CREDENTIALS_SECRET` from `/opt/freedriver-secrets/.env` (copied from `keycloak-freedriver-api.secret`)
+
+`quarkus.oidc.enabled` stays off until #25 and #27.
+
+
 ## Keycloak (auth, not MQTT)
 
 - Issuer: `https://auth.freedriver.io/realms/freedriver`
