@@ -47,6 +47,7 @@ On the compose network, connect to hostname `mosquitto` port 8883. Never use `mq
 
 ## Keycloak (auth, not MQTT)
 
+- Issuer: `https://auth.freedriver.io/realms/freedriver`
 - Realm: `freedriver` (display name Freedriver)
 - Confidential client: `freedriver-api` — **Quarkus BFF only. The client secret must never go in the React SPA.**
 - Redirect URIs: `https://app.freedriver.io/*`, `http://localhost:8080/*` (Yuni local BFF)

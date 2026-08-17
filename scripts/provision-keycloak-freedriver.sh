@@ -78,6 +78,7 @@ else
     -s directAccessGrantsEnabled=false \
     -s serviceAccountsEnabled=true \
     -s protocol=openid-connect \
+    -s 'description=Quarkus BFF only. Client secret must never go in the React SPA.' \
     -s 'redirectUris=["https://app.freedriver.io/*","http://localhost:8080/*"]' \
     -s 'webOrigins=["https://app.freedriver.io","http://localhost:8080"]' >/dev/null
   CLIENT_UUID="$(kcadm get clients -r "$REALM" -q clientId=freedriver-api --fields id --format csv --noquotes | csv_id)"
@@ -90,6 +91,7 @@ kcadm update "clients/${CLIENT_UUID}" -r "$REALM" \
   -s publicClient=false \
   -s standardFlowEnabled=true \
   -s serviceAccountsEnabled=true \
+  -s 'description=Quarkus BFF only. Client secret must never go in the React SPA.' \
   -s 'redirectUris=["https://app.freedriver.io/*","http://localhost:8080/*"]' \
   -s 'webOrigins=["https://app.freedriver.io","http://localhost:8080"]' >/dev/null
 

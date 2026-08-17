@@ -40,21 +40,19 @@ write_pass() {
   echo "Wrote $(basename "$path") (contents not printed)."
 }
 
-if [[ ! -e "${SECRETS}/passwd" ]]; then
-  write_pass "${SECRETS}/autonomy.pass"
-  write_pass "${SECRETS}/api.pass"
+write_pass "${SECRETS}/autonomy.pass"
+write_pass "${SECRETS}/api.pass"
 
+if [[ ! -e "${SECRETS}/passwd" ]]; then
   # Official image runs as uid 1883; write the passwd file as root.
-  # Passwords travel via env into the short-lived container; they are not echoed.
+  # Read pass files inside the container so passwords are not passed via -e.
   docker run --rm --user root \
     -v "${SECRETS}:/mosquitto/config/secrets" \
-    -e AUTONOMY_PASS="$(tr -d '\n' < "${SECRETS}/autonomy.pass")" \
-    -e API_PASS="$(tr -d '\n' < "${SECRETS}/api.pass")" \
     "$IMAGE" \
-    sh -c 'mosquitto_passwd -c -b /mosquitto/config/secrets/passwd autonomy "$AUTONOMY_PASS" && mosquitto_passwd -b /mosquitto/config/secrets/passwd api "$API_PASS"'
+    sh -c 'mosquitto_passwd -c -b /mosquitto/config/secrets/passwd autonomy "$(tr -d "\n" < /mosquitto/config/secrets/autonomy.pass)" && mosquitto_passwd -b /mosquitto/config/secrets/passwd api "$(tr -d "\n" < /mosquitto/config/secrets/api.pass)"'
   echo "Built Mosquitto passwd file."
 else
-  echo "passwd already exists; not generating passwords or rebuilding it."
+  echo "passwd already exists; not rebuilding it."
 fi
 
 if [[ -e "${SECRETS}/server.crt" && -e "${SECRETS}/server.key" ]]; then
