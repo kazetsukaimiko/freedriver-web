@@ -44,17 +44,18 @@ function App() {
   const [path, setPath] = useState(() => window.location.pathname)
 
   useEffect(() => {
-    if (splash !== 'playing') {
-      return
+    if (splash === 'playing') {
+      markSplashSeen()
+      const id = window.setTimeout(() => setSplash('docking'), 700)
+      return () => window.clearTimeout(id)
     }
-    markSplashSeen()
-    const dock = window.setTimeout(() => setSplash('docking'), 700)
-    const reveal = window.setTimeout(() => setSplash('revealing'), 1500)
-    const done = window.setTimeout(() => setSplash('done'), 2200)
-    return () => {
-      window.clearTimeout(dock)
-      window.clearTimeout(reveal)
-      window.clearTimeout(done)
+    if (splash === 'docking') {
+      const id = window.setTimeout(() => setSplash('revealing'), 800)
+      return () => window.clearTimeout(id)
+    }
+    if (splash === 'revealing') {
+      const id = window.setTimeout(() => setSplash('done'), 700)
+      return () => window.clearTimeout(id)
     }
   }, [splash])
 
