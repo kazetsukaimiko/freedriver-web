@@ -74,8 +74,8 @@ chmod 750 "$SECRETS"
 find "$SECRETS" -type f -exec chown "root:${GROUP}" {} +
 find "$SECRETS" -type f -exec chmod 640 {} +
 
-# Broker process is uid 1883 and must read passwd + TLS. Host ownership stays
-# root:lonewatt-techops; grant the container user via POSIX ACL when available.
+# Broker process is uid 1883 and must read passwd + TLS.
+# Never chmod 644 a private key. Prefer POSIX ACL; otherwise chown 1883 + 0600.
 if command -v setfacl >/dev/null; then
   setfacl -m u:1883:rx "$SECRETS"
   for f in passwd server.crt server.key; do
@@ -84,17 +84,19 @@ if command -v setfacl >/dev/null; then
     fi
   done
 else
-  chmod 755 "$SECRETS"
+  echo "setfacl not found; chown 1883:1883 and 0600 on the key (no world-readable fallback)."
   for f in passwd server.crt server.key; do
     if [[ -e "${SECRETS}/${f}" ]]; then
-      chmod 644 "${SECRETS}/${f}"
+      chown 1883:1883 "${SECRETS}/${f}"
     fi
   done
-  echo "setfacl not found; passwd/certs are other-readable so uid 1883 can start."
+  [[ -e "${SECRETS}/server.key" ]] && chmod 0600 "${SECRETS}/server.key"
+  [[ -e "${SECRETS}/server.crt" ]] && chmod 0640 "${SECRETS}/server.crt"
+  [[ -e "${SECRETS}/passwd" ]] && chmod 0640 "${SECRETS}/passwd"
 fi
 
 chown 1883:1883 "$STORAGE"
 chmod 750 "$STORAGE"
 
 echo "Mosquitto secrets in ${SECRETS}; persistence in ${STORAGE}."
-echo "Sysadmin still needs ${CN} A → 138.197.90.42. 8883 stays world-reachable unless Scott's home IP is stable."
+echo "Sysadmin still needs ${CN} A → 138.197.90.42. Compose binds 127.0.0.1:8883 until #29 is verified from the internet."

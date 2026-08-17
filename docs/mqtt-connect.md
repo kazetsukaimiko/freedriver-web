@@ -4,13 +4,13 @@ Not live until the #25 lockdown is merged (PR #29). Broker and Keycloak role wir
 
 ## Broker
 
-- Host: `mqtt.freedriver.io:8883` (MQTTS / TLS)
+- Host: `mqtt.freedriver.io:8883` (MQTTS / TLS) after lockdown is verified. Until then compose binds `127.0.0.1:8883` only.
 - Protocol: MQTT only — no WebSockets, no plaintext 1883 listener
 - Auth: broker users `autonomy` and `api` (not Keycloak passwords). No anonymous.
 - Image: `eclipse-mosquitto:2.1.2-alpine`
 - QoS 1 is the client convention. The broker does not enforce QoS.
 
-Sysadmin still needs `mqtt.freedriver.io` A → `138.197.90.42`. Let's Encrypt can replace the self-signed cert later. 8883 stays world-reachable unless Scott's home IP is stable enough to lock down.
+Sysadmin still needs `mqtt.freedriver.io` A → `138.197.90.42`. Let's Encrypt can replace the self-signed cert later. Do not publish 8883 on 0.0.0.0 until #29 is verified from the internet.
 
 ## Secrets (not in git)
 
