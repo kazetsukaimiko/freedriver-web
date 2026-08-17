@@ -11,7 +11,7 @@ body {
 }
 main { text-align: center; padding: 2rem 1.25rem; max-width: 36rem; }
 .mark { width: min(28rem, 90vw); height: auto; display: block; margin: 0 auto 1.25rem; }
-.solo { width: min(16rem, 70vw); height: auto; image-rendering: pixelated; display: block; margin: 0 auto 1rem; }
+.page-art { width: min(16rem, 70vw); height: auto; display: block; margin: 0 auto 1rem; }
 h1 { font-weight: 600; letter-spacing: 0.06em; margin: 0 0 0.4rem; }
 p { margin: 0; color: #9a9a9a; }
 a { color: #3aa0ff; }

@@ -82,7 +82,7 @@ function App() {
           <div className={`splash-bg${splash === 'revealing' ? ' is-leaving' : ''}`} />
           <img
             className={`splash-lockup${splash === 'playing' ? '' : ' is-docked'}`}
-            src="/assets/lonewatt/lonewatt-lockup.png"
+            src="/assets/freedriver/logos/freedriver-lockup.png"
             alt=""
           />
         </div>
@@ -90,7 +90,7 @@ function App() {
 
       <aside className="nav">
         <a className="nav-brand" href="/" onClick={(event) => go(event, '/')}>
-          <img src="/assets/lonewatt/lonewatt-lockup.png" alt="Lonewatt" />
+          <img src="/assets/freedriver/logos/freedriver-lockup.png" alt="Freedriver" />
         </a>
         <nav aria-label="Primary">
           <a
@@ -111,9 +111,9 @@ function App() {
 function NotFound() {
   return (
     <main className="content status-page">
-      <img className="solo" src="/assets/lonewatt/solo-404.png" alt="" />
+      <img className="mark-art" src="/assets/freedriver/pages/freedriver-404.png" alt="" />
       <h1>404</h1>
-      <p className="lede">Solo cannot find that page.</p>
+      <p className="lede">That page drifted.</p>
     </main>
   )
 }
@@ -161,18 +161,18 @@ function Dashboard() {
         <p className="endpoint">GET /api/hello</p>
         {hello.status === 'loading' && (
           <p className="loader">
-            <img className="solo solo-run" src="/assets/lonewatt/solo-run.png" alt="" />
+            <img className="mark-art snow-spin" src="/assets/freedriver/pages/freedriver-loader.png" alt="" />
             Loading…
           </p>
         )}
         {hello.status === 'error' && (
           <div className="error" role="alert">
             <img
-              className="solo"
+              className="mark-art"
               src={
                 hello.statusCode && hello.statusCode >= 500
-                  ? '/assets/lonewatt/solo-500.png'
-                  : '/assets/lonewatt/solo-404.png'
+                  ? '/assets/freedriver/pages/freedriver-500.png'
+                  : '/assets/freedriver/pages/freedriver-404.png'
               }
               alt=""
             />
