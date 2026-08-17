@@ -7,10 +7,10 @@ Public site for [freedriver.io](https://freedriver.io). Caddy terminates TLS and
 ```
 /opt/freedriver-web/       this repo (rsync on deploy)
 /opt/freedriver-secrets/   .env and other secrets (not in git)
-/opt/freedriver-storage/   Docker bind mounts (Caddy certs, Postgres, Grafana, Loki, Prometheus)
+/opt/freedriver-storage/   Docker bind mounts (Caddy certs, Postgres, Grafana, Loki, Prometheus, Mosquitto)
 ```
 
-The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{grafana,loki,prometheus}` if they are missing.
+The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{grafana,loki,prometheus,mosquitto}` if they are missing.
 
 ## Stack
 
@@ -21,6 +21,7 @@ The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{gra
   - `grafana.freedriver.io` — Grafana (internal only; Loki/Prometheus/Alloy are not published)
 - Keycloak 26 + local Postgres 16
 - Grafana + Loki + Prometheus + Alloy (see Observability)
+- Mosquitto 2.1.2 MQTTS at `mqtt.freedriver.io:8883` (host 8883 only; no 1883). Connect notes: [docs/mqtt-connect.md](docs/mqtt-connect.md).
 
 ## Observability
 
@@ -54,4 +55,4 @@ Required repository secrets:
 | `DEPLOY_SSH_KEY` | private key whose public half is in `root` `authorized_keys` |
 | `DEPLOY_SSH_KNOWN_HOSTS` | output of `ssh-keyscan 138.197.90.42` |
 
-Do not commit keys. Mail DNS (Proton) is owned by Sysadmin; leave it alone. `auth.freedriver.io` and `grafana.freedriver.io` A records are also Sysadmin.
+Do not commit keys. Mail DNS (Proton) is owned by Sysadmin; leave it alone. `auth.freedriver.io`, `grafana.freedriver.io`, and `mqtt.freedriver.io` A records are also Sysadmin.

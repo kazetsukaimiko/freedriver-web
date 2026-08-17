@@ -1,0 +1,12 @@
+# Exact-topic ACLs. No wildcards, no $SYS, no #.
+# QoS 1 is a client convention; the broker does not enforce it.
+# retain=false is required on both topics for v1. The broker cannot forbid
+# retain; publishers MUST set retain=false. Do not retain appliances.
+
+user autonomy
+topic write freedriver/v1/home/appliances
+topic read freedriver/v1/home/commands
+
+user api
+topic read freedriver/v1/home/appliances
+topic write freedriver/v1/home/commands
