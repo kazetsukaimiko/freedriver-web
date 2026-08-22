@@ -64,7 +64,7 @@ If you want to learn more about building native executables, please consult <htt
 
 ### Quinoa + React
 
-The UI is a React TypeScript SPA in `src/main/webui` (Vite, served by Quinoa at `/`). SPA routing is enabled. The dashboard fetches public `GET /api/hello`.
+The UI is a React TypeScript SPA in `src/main/webui` (Vite, served by Quinoa at `/`). SPA routing is enabled. The dashboard fetches public `GET /api/hello`. `quarkus:dev` also serves a fake `GET/POST /api/appliances` (no broker, no Keycloak). See `docs/appliances.md`.
 
 Requires **Java 21**. Compose, Caddy, and Keycloak are Techops-owned and are not started from this directory.
 
