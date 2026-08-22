@@ -74,26 +74,25 @@ chmod 750 "$SECRETS"
 find "$SECRETS" -type f -exec chown "root:${GROUP}" {} +
 find "$SECRETS" -type f -exec chmod 640 {} +
 
-# Broker process is uid 1883 and must read passwd + TLS.
-# Never chmod 644 a private key. Prefer POSIX ACL; otherwise chown 1883 + 0600.
-if command -v setfacl >/dev/null; then
-  setfacl -m u:1883:rx "$SECRETS"
-  for f in passwd server.crt server.key; do
-    if [[ -e "${SECRETS}/${f}" ]]; then
-      setfacl -m u:1883:r "${SECRETS}/${f}"
-    fi
-  done
-else
-  echo "setfacl not found; chown 1883:1883 and 0600 on the key (no world-readable fallback)."
-  for f in passwd server.crt server.key; do
-    if [[ -e "${SECRETS}/${f}" ]]; then
-      chown 1883:1883 "${SECRETS}/${f}"
-    fi
-  done
-  [[ -e "${SECRETS}/server.key" ]] && chmod 0600 "${SECRETS}/server.key"
-  [[ -e "${SECRETS}/server.crt" ]] && chmod 0640 "${SECRETS}/server.crt"
-  [[ -e "${SECRETS}/passwd" ]] && chmod 0640 "${SECRETS}/passwd"
-fi
+# Broker uid 1883 must traverse the secrets dir and read passwd/TLS.
+# Never chmod 644 a private key. Directory is root:1883 750 so 1883 can enter
+# without world-readable files. Plaintext *.pass stay root:lonewatt-techops.
+chown "root:1883" "$SECRETS"
+chmod 750 "$SECRETS"
+for f in passwd server.crt server.key; do
+  if [[ -e "${SECRETS}/${f}" ]]; then
+    chown 1883:1883 "${SECRETS}/${f}"
+  fi
+done
+[[ -e "${SECRETS}/server.key" ]] && chmod 0600 "${SECRETS}/server.key"
+[[ -e "${SECRETS}/server.crt" ]] && chmod 0640 "${SECRETS}/server.crt"
+[[ -e "${SECRETS}/passwd" ]] && chmod 0640 "${SECRETS}/passwd"
+for f in autonomy.pass api.pass; do
+  if [[ -e "${SECRETS}/${f}" ]]; then
+    chown "root:${GROUP}" "${SECRETS}/${f}"
+    chmod 640 "${SECRETS}/${f}"
+  fi
+done
 
 chown 1883:1883 "$STORAGE"
 chmod 750 "$STORAGE"
