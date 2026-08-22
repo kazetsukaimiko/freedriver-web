@@ -27,6 +27,20 @@ class AppliancesDisabledTest {
     }
 
     @Test
+    void get_anonymous_is_404_when_disabled() {
+        // Live prod: @RolesAllowed on the resource 403'd anonymous GET before this filter ran.
+        given().when().get("/api/appliances").then().statusCode(404);
+    }
+
+    @Test
+    void post_anonymous_is_404_when_disabled() {
+        given().contentType(ContentType.JSON)
+                .body("{\"on\":true}")
+                .when().post("/api/appliances/living-room-lamp")
+                .then().statusCode(404);
+    }
+
+    @Test
     @TestSecurity(user = "scott", roles = {"dashboard"})
     void get_is_404_when_disabled() {
         given().when().get("/api/appliances").then().statusCode(404);
