@@ -60,7 +60,6 @@ Publish QoS 1, retain=false.
   "appliedCommandId": "550e8400-e29b-41d4-a716-446655440000",
   "appliances": [
     {
-      "id": "living-room-lamp",
       "name": "Living room lamp",
       "on": true
     }
@@ -68,15 +67,18 @@ Publish QoS 1, retain=false.
 }
 ```
 
+There is **no** separate `id`. Each appliance is `{name, on}` only.
+
+`name` is the existing autonomy alias key (`AliasView.applianceStates`). It is not a new slug. Portal `/api/appliances/{id}` can use that same string later; do not invent a second identifier.
+
 When no command produced this map, send `"appliedCommandId": null`.
 
 Field rules (Quarkus rejects otherwise):
 
 - `schemaVersion`: `1` only
-- `id`: `[a-z0-9-]{1,64}`
-- `name`: 1–64 characters (not blank)
+- `name`: autonomy alias key, 1–64 characters (not blank)
 - `on`: boolean
-- extra JSON fields: rejected
+- extra JSON fields: rejected (including `id`)
 
 ## Topic B — command (Quarkus → autonomy)
 
@@ -86,17 +88,19 @@ Subscribe QoS 1. Messages are retain=false. Until live-commands is on, you may s
 {
   "schemaVersion": 1,
   "commandId": "550e8400-e29b-41d4-a716-446655440000",
-  "applianceId": "living-room-lamp",
+  "name": "Living room lamp",
   "on": false
 }
 ```
+
+`name` is the same alias key as Topic A. There is no `applianceId`.
 
 Quarkus **mints** `commandId`. Autonomy never invents it.
 
 ## commandId / appliedCommandId handshake
 
 1. Quarkus publishes Topic B with a new `commandId`.
-2. Autonomy applies the flip (or the latest-per-appliance rule below).
+2. Autonomy applies the flip (or the latest-per-alias rule below).
 3. Autonomy publishes the next Topic A with `appliedCommandId` set to that same id.
 
 Quarkus waits (API side, default 5s) for a valid Topic A whose `appliedCommandId` matches. If it never arrives, the API reports timeout and does **not** pretend the flip worked.
@@ -118,7 +122,7 @@ QoS 1 can deliver a backlog after a disconnect. **Do not apply a pile of old com
 
 Either:
 
-- apply **latest-per-appliance** only, or
+- apply **latest-per-alias** (`name`) only, or
 - drop commands older than the **20s** stale window.
 
 ## What you implement vs what you do not
