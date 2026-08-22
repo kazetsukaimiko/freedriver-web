@@ -5,7 +5,7 @@ This is blocked on [#25](https://github.com/kazetsukaimiko/freedriver-web/issues
 
 The browser never speaks MQTT. Quarkus is the only MQTT client, and only on the docker-network Mosquitto broker when live commands are later turned on. Never `mqtt.freedriver.io`.
 
-Autonomy is Scott's. This doc is the integration surface.
+Autonomy MQTT how-to for kaze: [autonomy-mqtt.md](autonomy-mqtt.md). This page is the portal REST/product surface.
 
 ## Topics
 
@@ -100,7 +100,7 @@ Live OIDC stays off until #24/#25. When it is on:
 
 ## Reconnect (autonomy)
 
-On reconnect, autonomy must **not** apply a pile of old QoS 1 commands. Use latest-per-appliance, or drop commands older than the 20s stale window. Scott owns that behavior.
+On reconnect, autonomy must **not** apply a pile of old QoS 1 commands. Use latest-per-appliance, or drop commands older than the 20s stale window. kaze owns that behavior.
 
 ## Production safety
 
