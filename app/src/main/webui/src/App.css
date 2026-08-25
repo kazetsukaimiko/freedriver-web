@@ -198,6 +198,19 @@ dd {
   visibility: hidden;
 }
 
+.build-stamp {
+  position: fixed;
+  right: 0.9rem;
+  bottom: 0.7rem;
+  z-index: 21;
+  margin: 0;
+  color: #8b8b8b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
 @media (max-width: 720px) {
   :root {
     --nav-width: 100%;
