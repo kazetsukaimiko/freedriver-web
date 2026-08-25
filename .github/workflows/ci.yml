@@ -5,10 +5,17 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     if: github.repository == 'kazetsukaimiko/freedriver-web'
+    permissions:
+      contents: read
+      packages: read
     defaults:
       run:
         working-directory: app
@@ -22,8 +29,13 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
+          server-id: github
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
 
       - name: Tests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./mvnw -B test
 
       - name: Browser must not speak MQTT
