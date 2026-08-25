@@ -120,7 +120,7 @@ function BuildStamp() {
     }
     const controller = new AbortController()
 
-    fetch('/api/health', { signal: controller.signal })
+    fetch('/api/build', { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) {
           return null
