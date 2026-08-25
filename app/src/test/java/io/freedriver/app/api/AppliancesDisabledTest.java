@@ -45,4 +45,9 @@ class AppliancesDisabledTest {
     void hello_still_public() {
         given().when().get("/api/hello").then().statusCode(200);
     }
+
+    @Test
+    void build_still_public() {
+        given().when().get("/api/build").then().statusCode(200);
+    }
 }
