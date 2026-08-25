@@ -51,7 +51,7 @@ Requires Java 21. Quinoa can install Node for the UI build. Open http://localhos
 
 ## Appliances API
 
-`GET/POST /api/appliances` is implemented against a **fake** autonomy for `quarkus:dev` and CI. The browser is REST only. Production keeps the route disabled (404), OIDC off, and MQTT disconnected. Integration contract: [`docs/appliances.md`](docs/appliances.md).
+`GET/POST /api/appliances` is implemented against a **fake** autonomy for `quarkus:dev` and CI. The browser is REST only. Production keeps the route disabled (404), OIDC off, and MQTT disconnected. Integration contract: [`docs/appliances.md`](docs/appliances.md). Autonomy MQTT how-to: [`docs/autonomy-mqtt.md`](docs/autonomy-mqtt.md).
 
 The live command route is **not** Done. It is blocked on [#25](https://github.com/kazetsukaimiko/freedriver-web/issues/25) and Security sign-off on [#27](https://github.com/kazetsukaimiko/freedriver-web/issues/27).
 

@@ -5,7 +5,7 @@ This is blocked on [#25](https://github.com/kazetsukaimiko/freedriver-web/issues
 
 The browser never speaks MQTT. Quarkus is the only MQTT client, and only on the docker-network Mosquitto broker when live commands are later turned on. Never `mqtt.freedriver.io`.
 
-Autonomy is Scott's. This doc is the integration surface.
+Autonomy MQTT how-to for kaze: [autonomy-mqtt.md](autonomy-mqtt.md). This page is the portal REST/product surface.
 
 ## Topics
 
@@ -24,7 +24,6 @@ Autonomy is Scott's. This doc is the integration surface.
   "appliedCommandId": "uuid-or-null",
   "appliances": [
     {
-      "id": "living-room-lamp",
       "name": "Living room lamp",
       "on": true
     }
@@ -32,10 +31,11 @@ Autonomy is Scott's. This doc is the integration surface.
 }
 ```
 
-- `id`: `[a-z0-9-]{1,64}`
-- `name`: 1–64 characters
+- appliances are `{name, on}` only — no separate `id`
+- `name`: existing autonomy alias key (`AliasView.applianceStates`), not a new slug
 - `on`: boolean
 - `appliedCommandId`: UUID of the command that produced this map, or `null`
+- Portal `/api/appliances/{id}` can use that same `name` string later; do not invent a second identifier
 
 ### Topic B — command (Quarkus → autonomy)
 
@@ -43,10 +43,12 @@ Autonomy is Scott's. This doc is the integration surface.
 {
   "schemaVersion": 1,
   "commandId": "550e8400-e29b-41d4-a716-446655440000",
-  "applianceId": "living-room-lamp",
+  "name": "Living room lamp",
   "on": false
 }
 ```
+
+No `applianceId`. `name` is the same alias key as Topic A.
 
 ## REST
 
@@ -57,7 +59,7 @@ CORS allowlist: `https://app.freedriver.io` only (dev may also allow localhost).
 | Method | Path | Body | Success |
 | --- | --- | --- | --- |
 | GET | `/api/appliances` | — | 200 `{ lastUpdated, stale, timeout:false, appliances }` |
-| POST | `/api/appliances/{id}` | `{ "on": false }` | 200 same shape |
+| POST | `/api/appliances/{id}` | `{ "on": false }` | 200 same shape (`{id}` is the Topic A `name` / alias key) |
 
 ### Status codes
 
@@ -66,7 +68,7 @@ CORS allowlist: `https://app.freedriver.io` only (dev may also allow localhost).
 | No session | 401 | 401 |
 | Wrong role | 403 | 403 |
 | Extra JSON fields | — | 400 |
-| Unknown appliance id | — | 404, no command |
+| Unknown appliance `name` (path `{id}` is that alias) | — | 404, no command |
 | Stale or never received | 200, `stale: true` | 409, no command |
 | Confirmed (`appliedCommandId` matches) | — | 200, `timeout: false`, map updated |
 | Wait expired | — | 200, `timeout: true`, **last map unchanged** |
@@ -100,7 +102,7 @@ Live OIDC stays off until #24/#25. When it is on:
 
 ## Reconnect (autonomy)
 
-On reconnect, autonomy must **not** apply a pile of old QoS 1 commands. Use latest-per-appliance, or drop commands older than the 20s stale window. Scott owns that behavior.
+On reconnect, autonomy must **not** apply a pile of old QoS 1 commands. Use latest-per-alias (`name`), or drop commands older than the 20s stale window. kaze owns that behavior.
 
 ## Production safety
 
