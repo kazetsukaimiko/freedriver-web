@@ -140,8 +140,7 @@ h1 {
 }
 
 .appliance-list.is-frozen {
-  opacity: 0.42;
-  filter: grayscale(0.85);
+  opacity: 0.78;
   pointer-events: none;
 }
 
@@ -165,6 +164,15 @@ h1 {
 
 .appliance-name {
   min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.last-known {
+  color: #9a9a9a;
+  font-size: 0.8rem;
 }
 
 .switch-error {
@@ -209,11 +217,16 @@ h1 {
 
 .switch.is-pending {
   background: #243038;
+  animation: pending-pulse 1s ease-in-out infinite;
 }
 
 .switch.is-pending .switch-thumb {
   transform: translateX(10px);
   background: #9a9a9a;
+}
+
+@keyframes pending-pulse {
+  50% { opacity: 0.65; }
 }
 
 .switch:disabled {
@@ -225,12 +238,20 @@ h1 {
   outline-offset: 2px;
 }
 
+.card.is-unreachable .switch {
+  background: #222;
+}
+
+.card.is-unreachable .switch .switch-thumb {
+  background: #6a6a6a;
+}
+
 .card.is-unreachable .switch.is-on {
-  background: #2a2a2a;
+  background: #3a4448;
 }
 
 .card.is-unreachable .switch.is-on .switch-thumb {
-  background: #8a8a8a;
+  background: #c8c8c8;
 }
 
 .endpoint {

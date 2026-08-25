@@ -370,7 +370,10 @@ function AppliancePanel({
       <ul className={`appliance-list${unreachable ? ' is-frozen' : ''}`}>
         {rows.map((row) => (
           <li key={row.id} className="appliance-row">
-            <span className="appliance-name">{row.name}</span>
+            <span className="appliance-name">
+              {row.name}
+              {unreachable && <span className="last-known">{row.on ? 'On' : 'Off'}</span>}
+            </span>
             <button
               type="button"
               className={`switch${row.on ? ' is-on' : ''}${row.pending ? ' is-pending' : ''}`}
