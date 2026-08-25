@@ -1,5 +1,7 @@
 package io.freedriver.app.appliances;
 
+import io.freedriver.autonomy.mqtt.contract.Appliance;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -18,8 +20,8 @@ public record ApplianceSnapshot(Instant receivedAt, String appliedCommandId, Lis
         return Duration.between(receivedAt, now).compareTo(window) >= 0;
     }
 
-    public Optional<Appliance> find(String id) {
-        return appliances.stream().filter(a -> a.id().equals(id)).findFirst();
+    public Optional<Appliance> find(String name) {
+        return appliances.stream().filter(a -> a.name().equals(name)).findFirst();
     }
 
     public ApplianceMapResponse toResponse(boolean stale, boolean timeout) {

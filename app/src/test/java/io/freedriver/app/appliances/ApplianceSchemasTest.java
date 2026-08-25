@@ -1,5 +1,8 @@
 package io.freedriver.app.appliances;
 
+import io.freedriver.autonomy.mqtt.contract.ApplianceCommandMessage;
+import io.freedriver.autonomy.mqtt.contract.ApplianceSchemas;
+import io.freedriver.autonomy.mqtt.contract.ApplianceStateMessage;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -12,7 +15,15 @@ class ApplianceSchemasTest {
     @Test
     void state_rejects_extra_fields() {
         String json = """
-                {"schemaVersion":1,"appliedCommandId":null,"appliances":[{"id":"living-room-lamp","name":"Living room lamp","on":true}],"nope":true}
+                {"schemaVersion":1,"appliedCommandId":null,"appliances":[{"name":"living-room-lamp","on":true}],"nope":true}
+                """;
+        assertThrows(IllegalArgumentException.class, () -> ApplianceStateMessage.parse(json));
+    }
+
+    @Test
+    void state_rejects_id_field() {
+        String json = """
+                {"schemaVersion":1,"appliedCommandId":null,"appliances":[{"id":"living-room-lamp","name":"living-room-lamp","on":true}]}
                 """;
         assertThrows(IllegalArgumentException.class, () -> ApplianceStateMessage.parse(json));
     }
@@ -26,26 +37,28 @@ class ApplianceSchemasTest {
     }
 
     @Test
-    void state_rejects_bad_id() {
-        String json = """
-                {"schemaVersion":1,"appliedCommandId":null,"appliances":[{"id":"Living_Room","name":"Lamp","on":true}]}
-                """;
-        assertThrows(IllegalArgumentException.class, () -> ApplianceStateMessage.parse(json));
-    }
-
-    @Test
     void command_round_trip() {
         ApplianceCommandMessage command = new ApplianceCommandMessage(1, "cmd-1", "living-room-lamp", false);
         ApplianceCommandMessage parsed = ApplianceCommandMessage.parse(command.toJson());
         assertEquals(command, parsed);
+        assertEquals("living-room-lamp", parsed.name());
         assertEquals(ApplianceSchemas.COMMAND_TOPIC, "freedriver/v1/home/commands");
         assertEquals(1, ApplianceSchemas.QOS);
+        assertFalse(ApplianceSchemas.RETAIN);
     }
 
     @Test
     void command_rejects_extra_fields() {
         String json = """
-                {"schemaVersion":1,"commandId":"cmd-1","applianceId":"living-room-lamp","on":false,"retain":true}
+                {"schemaVersion":1,"commandId":"cmd-1","name":"living-room-lamp","on":false,"retain":true}
+                """;
+        assertThrows(IllegalArgumentException.class, () -> ApplianceCommandMessage.parse(json));
+    }
+
+    @Test
+    void command_rejects_applianceId_field() {
+        String json = """
+                {"schemaVersion":1,"commandId":"cmd-1","applianceId":"living-room-lamp","name":"living-room-lamp","on":false}
                 """;
         assertThrows(IllegalArgumentException.class, () -> ApplianceCommandMessage.parse(json));
     }
@@ -57,6 +70,9 @@ class ApplianceSchemasTest {
                 () -> MqttLiveRoute.assertPrivateBroker("mqtt.freedriver.io"));
         assertTrue(ex.getMessage().contains("mqtt.freedriver.io"));
         MqttLiveRoute.assertPrivateBroker("mosquitto");
+        ApplianceCommandMessage command = MqttLiveRoute.command("cmd-1", "living-room-lamp", true);
+        assertEquals("living-room-lamp", command.name());
+        assertTrue(command.on());
     }
 
     @Test

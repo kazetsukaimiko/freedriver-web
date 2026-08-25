@@ -1,5 +1,9 @@
 package io.freedriver.app.appliances;
 
+import io.freedriver.autonomy.mqtt.contract.Appliance;
+import io.freedriver.autonomy.mqtt.contract.ApplianceCommandMessage;
+import io.freedriver.autonomy.mqtt.contract.ApplianceSchemas;
+import io.freedriver.autonomy.mqtt.contract.ApplianceStateMessage;
 import jakarta.enterprise.inject.Typed;
 import io.quarkus.logging.Log;
 import jakarta.annotation.PostConstruct;
@@ -47,7 +51,7 @@ public class FakeApplianceBackend implements ApplianceBackend {
             publishState(new ApplianceStateMessage(
                     ApplianceSchemas.SCHEMA_VERSION,
                     null,
-                    List.of(new Appliance("living-room-lamp", "Living room lamp", true))));
+                    List.of(new Appliance("living-room-lamp", true))));
             refresh = Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "fake-appliance-refresh");
                 t.setDaemon(true);
@@ -152,8 +156,8 @@ public class FakeApplianceBackend implements ApplianceBackend {
             }
             List<Appliance> next = new ArrayList<>();
             for (Appliance appliance : state.appliances()) {
-                if (appliance.id().equals(command.applianceId())) {
-                    next.add(new Appliance(appliance.id(), appliance.name(), command.on()));
+                if (appliance.name().equals(command.name())) {
+                    next.add(new Appliance(appliance.name(), command.on()));
                 } else {
                     next.add(appliance);
                 }

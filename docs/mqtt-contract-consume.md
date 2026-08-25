@@ -1,14 +1,16 @@
 # Consume autonomy-mqtt-contract
 
-Coordinates: `io.freedriver.autonomy:autonomy-mqtt-contract:1.0.0-SNAPSHOT`
+Coordinates: `io.freedriver.autonomy:autonomy-mqtt-contract:2026-08_r45`
 
 Repository: `https://maven.pkg.github.com/kazetsukaimiko/autonomy` (Maven repo id `github`).
+
+`app/pom.xml` depends on that exact version. Do not use `1.0.0-SNAPSHOT`. Do not vendor the jar.
 
 ## CI
 
 `GITHUB_TOKEN` via `actions/setup-java` (`server-id: github`). Job needs `packages: read`.
 
-After the first publish from kazetsukaimiko/autonomy, @kazetsukaimiko must grant this repo read access on the GitHub package (user-owned packages start private to the publishing repo).
+If resolve returns 401/403, @kazetsukaimiko still needs to grant this repo read on the package.
 
 ## quarkus:dev
 
@@ -25,5 +27,3 @@ Do not put a token in git. Use `~/.m2/settings.xml`:
   </servers>
 </settings>
 ```
-
-Yuni #39 adds the dependency. This repo only names the consume path.

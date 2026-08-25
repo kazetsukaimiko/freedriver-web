@@ -5,7 +5,7 @@ This is blocked on [#25](https://github.com/kazetsukaimiko/freedriver-web/issues
 
 The browser never speaks MQTT. Quarkus is the only MQTT client, and only on the docker-network Mosquitto broker when live commands are later turned on. Never `mqtt.freedriver.io`.
 
-Autonomy MQTT how-to for kaze: [autonomy-mqtt.md](autonomy-mqtt.md). This page is the portal REST/product surface.
+Autonomy MQTT how-to for kaze: [autonomy-mqtt.md](autonomy-mqtt.md). This page is the portal REST/product surface. MQTT Java types are `io.freedriver.autonomy:autonomy-mqtt-contract:2026-08_r45`, not `io.freedriver.app.appliances`.
 
 ## Topics
 

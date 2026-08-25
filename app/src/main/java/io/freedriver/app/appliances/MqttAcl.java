@@ -1,5 +1,7 @@
 package io.freedriver.app.appliances;
 
+import io.freedriver.autonomy.mqtt.contract.ApplianceSchemas;
+
 /**
  * Opposite-ACL contract the broker must enforce (Techops / CI).
  * Not a live Mosquitto config.

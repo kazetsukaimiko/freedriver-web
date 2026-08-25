@@ -10,9 +10,10 @@ This is **not** the portal REST/BFF/OIDC essay. Portal product surface: [applian
 
 ## Contract home (do not use the closed suite PR)
 
-The locked **v1 JSON** (and the Java records already in this repo under `io.freedriver.app.appliances`, documented in [appliances.md](appliances.md)) is the contract **today**. Extra JSON fields are rejected. `schemaVersion` is `1` only.
+MQTT v1 types live in `io.freedriver.autonomy:autonomy-mqtt-contract:2026-08_r45`
+(`io.freedriver.autonomy.mqtt.contract`). Jakarta validate-after-parse is `ApplianceSchemas` in that artifact. Consume path: [mqtt-contract-consume.md](mqtt-contract-consume.md). Topic JSON is also in [appliances.md](appliances.md).
 
-The shared Java / JSON-Schema module is moving to **[kazetsukaimiko/autonomy](https://github.com/kazetsukaimiko/autonomy)** (multi-module + BOM). Maven coordinates are TBD on that repo — **do not invent a published Maven Central version**.
+Do **not** copy `Appliance` / `ApplianceStateMessage` / `ApplianceCommandMessage` / `ApplianceSchemas` into this repo. Extra JSON fields are rejected. `schemaVersion` is `1` only. `name` is the alias key.
 
 Do **not** depend on `io.freedriver:mqtt-contract` from the Freedriver library suite, [freedriver#18](https://github.com/kazetsukaimiko/freedriver/issues/18), or the closed [freedriver#19](https://github.com/kazetsukaimiko/freedriver/pull/19). kaze rejected putting mqtt-contract in that suite.
 

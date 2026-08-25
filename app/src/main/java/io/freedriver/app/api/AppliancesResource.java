@@ -37,6 +37,7 @@ public class AppliancesResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({"dashboard", "portal-admin"})
     public ApplianceMapResponse command(@PathParam("id") String id, ApplianceCommandRequest body) {
+        // Path {id} is the MQTT v1 alias name. No boards or UUIDs.
         appliances.assertCanAccess(identity);
         if (body == null) {
             throw new BadRequestException("JSON body required");

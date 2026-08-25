@@ -72,6 +72,25 @@ public class AppliancesConfig {
         return commandTimeoutMax;
     }
 
+    /** REST confirm wait. Not part of the MQTT contract. */
+    public Duration boundedCommandTimeout() {
+        Duration use = commandTimeout;
+        if (use == null || use.isZero() || use.isNegative()) {
+            use = Duration.ofSeconds(5);
+        }
+        Duration cap = commandTimeoutMax == null || commandTimeoutMax.isZero() || commandTimeoutMax.isNegative()
+                ? Duration.ofSeconds(30)
+                : commandTimeoutMax;
+        if (use.compareTo(cap) > 0) {
+            return cap;
+        }
+        Duration floor = Duration.ofMillis(50);
+        if (use.compareTo(floor) < 0) {
+            return floor;
+        }
+        return use;
+    }
+
     public boolean fakeRefresh() {
         return fakeRefresh;
     }
