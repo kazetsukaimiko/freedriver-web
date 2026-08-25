@@ -32,8 +32,10 @@ Exact topics only. No wildcards, no `$SYS`, no `#`.
 
 | Topic | Writer | Reader |
 | --- | --- | --- |
-| `freedriver/v1/home/appliances` | autonomy | api |
-| `freedriver/v1/home/commands` | api | autonomy |
+| `freedriver/v1/{instanceId}/appliances` | autonomy | api |
+| `freedriver/v1/{instanceId}/commands` | api | autonomy |
+
+`instanceId` is a UUID (hex + hyphens) on the topic. `instanceName` is UX-only and is never a topic segment or ACL.
 
 **retain=false on both topics for v1.** The broker cannot forbid retain; publishers must set it. `autonomy` must publish appliances with retain=false. `api` must publish commands with retain=false. Do not retain appliances.
 

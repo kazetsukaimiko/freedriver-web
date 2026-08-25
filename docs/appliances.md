@@ -5,50 +5,56 @@ This is blocked on [#25](https://github.com/kazetsukaimiko/freedriver-web/issues
 
 The browser never speaks MQTT. Quarkus is the only MQTT client, and only on the docker-network Mosquitto broker when live commands are later turned on. Never `mqtt.freedriver.io`.
 
-Autonomy MQTT how-to for kaze: [autonomy-mqtt.md](autonomy-mqtt.md). This page is the portal REST/product surface. MQTT Java types are `io.freedriver.autonomy:autonomy-mqtt-contract:2026-08_r45`, not `io.freedriver.app.appliances`.
+Autonomy MQTT how-to for kaze: [autonomy-mqtt.md](autonomy-mqtt.md). This page is the portal REST/product surface. MQTT Java types are `io.freedriver.autonomy:autonomy-mqtt-contract:2026-08_r51`, not `io.freedriver.app.appliances`.
 
 ## Topics
 
+One broker can carry more than one autonomy instance. Isolation is `instanceId` (a UUID), not a board and not the MQTT client-id.
+
 | | Topic | Retain | QoS |
 | --- | --- | --- | --- |
-| A (state) | `freedriver/v1/home/appliances` | `false` (do not retain) | 1 |
-| B (commands) | `freedriver/v1/home/commands` | `false` always | 1 |
+| A (state) | `freedriver/v1/{instanceId}/appliances` | `false` (do not retain) | 1 |
+| B (commands) | `freedriver/v1/{instanceId}/commands` | `false` always | 1 |
 
-`schemaVersion` is `1` only. Extra JSON fields are rejected.
+`instanceName` is the dashboard label only. It is in JSON, not in the topic, and not in an ACL. Extra JSON fields are rejected. There is no `schemaVersion`.
 
 ### Topic A — state (autonomy → Quarkus)
 
 ```json
 {
-  "schemaVersion": 1,
+  "instanceId": "550e8400-e29b-41d4-a716-446655440000",
+  "instanceName": "Cabin",
   "appliedCommandId": "uuid-or-null",
   "appliances": [
     {
-      "name": "Living room lamp",
+      "applianceName": "living-room-lamp",
       "on": true
     }
   ]
 }
 ```
 
-- appliances are `{name, on}` only — no separate `id`
-- `name`: existing autonomy alias key (`AliasView.applianceStates`), not a new slug
+- appliances are `{applianceName, on}` only — no separate `id`, no `name`
+- `instanceId`: UUID (hex + hyphens) on the topic and in JSON. Not the MQTT client-id. Version nibble is not checked.
+- `instanceName`: UX/dashboard label only
+- `applianceName`: existing autonomy alias key, not a new slug
 - `on`: boolean
 - `appliedCommandId`: UUID of the command that produced this map, or `null`
-- Portal `/api/appliances/{id}` can use that same `name` string later; do not invent a second identifier
+- Boards stay inside the instance; they are not MQTT topics
+- Portal `POST /api/appliances/{id}` uses that same `applianceName` string; do not invent a second identifier
 
 ### Topic B — command (Quarkus → autonomy)
 
 ```json
 {
-  "schemaVersion": 1,
+  "instanceId": "550e8400-e29b-41d4-a716-446655440000",
   "commandId": "550e8400-e29b-41d4-a716-446655440000",
-  "name": "Living room lamp",
+  "applianceName": "living-room-lamp",
   "on": false
 }
 ```
 
-No `applianceId`. `name` is the same alias key as Topic A.
+No `name`. No `applianceId`. `applianceName` is the same alias key as Topic A. `instanceId` must match the instance that owns the appliance.
 
 ## REST
 
@@ -59,7 +65,9 @@ CORS allowlist: `https://app.freedriver.io` only (dev may also allow localhost).
 | Method | Path | Body | Success |
 | --- | --- | --- | --- |
 | GET | `/api/appliances` | — | 200 `{ lastUpdated, stale, timeout:false, appliances }` |
-| POST | `/api/appliances/{id}` | `{ "on": false }` | 200 same shape (`{id}` is the Topic A `name` / alias key) |
+| POST | `/api/appliances/{id}` | `{ "on": false }` | 200 same shape (`{id}` is the Topic A `applianceName` / alias key) |
+
+`lastUpdated` / `stale` / `timeout` are REST-only. They are not on the MQTT wire.
 
 ### Status codes
 
@@ -68,7 +76,7 @@ CORS allowlist: `https://app.freedriver.io` only (dev may also allow localhost).
 | No session | 401 | 401 |
 | Wrong role | 403 | 403 |
 | Extra JSON fields | — | 400 |
-| Unknown appliance `name` (path `{id}` is that alias) | — | 404, no command |
+| Unknown appliance `applianceName` (path `{id}` is that alias) | — | 404, no command |
 | Stale or never received | 200, `stale: true` | 409, no command |
 | Confirmed (`appliedCommandId` matches) | — | 200, `timeout: false`, map updated |
 | Wait expired | — | 200, `timeout: true`, **last map unchanged** |
@@ -102,7 +110,7 @@ Live OIDC stays off until #24/#25. When it is on:
 
 ## Reconnect (autonomy)
 
-On reconnect, autonomy must **not** apply a pile of old QoS 1 commands. Use latest-per-alias (`name`), or drop commands older than the 20s stale window. kaze owns that behavior.
+On reconnect, autonomy must **not** apply a pile of old QoS 1 commands. Use latest-per-alias (`applianceName`), or drop commands older than the 20s stale window. kaze owns that behavior.
 
 ## Production safety
 

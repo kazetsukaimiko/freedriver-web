@@ -10,10 +10,10 @@ This is **not** the portal REST/BFF/OIDC essay. Portal product surface: [applian
 
 ## Contract home (do not use the closed suite PR)
 
-MQTT v1 types live in `io.freedriver.autonomy:autonomy-mqtt-contract:2026-08_r45`
-(`io.freedriver.autonomy.mqtt.contract`). Jakarta validate-after-parse is `ApplianceSchemas` in that artifact. Consume path: [mqtt-contract-consume.md](mqtt-contract-consume.md). Topic JSON is also in [appliances.md](appliances.md).
+MQTT v1 types live in `io.freedriver.autonomy:autonomy-mqtt-contract:2026-08_r51`
+(`io.freedriver.autonomy.mqtt.contract`). Jakarta validate-after-parse is on the records in that artifact. Consume path: [mqtt-contract-consume.md](mqtt-contract-consume.md). Topic JSON is also in [appliances.md](appliances.md).
 
-Do **not** copy `Appliance` / `ApplianceStateMessage` / `ApplianceCommandMessage` / `ApplianceSchemas` into this repo. Extra JSON fields are rejected. `schemaVersion` is `1` only. `name` is the alias key.
+Do **not** copy `Appliance` / `ApplianceStateMessage` / `ApplianceCommandMessage` / `ApplianceSchemas` into this repo. Extra JSON fields are rejected. There is no `schemaVersion`. The wire field is `applianceName`, not `name`. `instanceId` is a UUID on the topic and in JSON. `instanceName` is UX-only.
 
 Do **not** depend on `io.freedriver:mqtt-contract` from the Freedriver library suite, [freedriver#18](https://github.com/kazetsukaimiko/freedriver/issues/18), or the closed [freedriver#19](https://github.com/kazetsukaimiko/freedriver/pull/19). kaze rejected putting mqtt-contract in that suite.
 
@@ -42,12 +42,12 @@ Broker passwords live on the VPS at `/opt/freedriver-secrets/mosquitto/*.pass` (
 
 ## Topics
 
-Exact topic strings only. No wildcards, no `$SYS`, no `#`.
+One broker can carry more than one autonomy instance. Interpolate `instanceId` (UUID hex + hyphens). No wildcards, no `$SYS`, no `#`. `instanceName` is never a topic segment.
 
 | | Topic | Publisher | Subscriber | QoS | Retain |
 | --- | --- | --- | --- | --- | --- |
-| A (state) | `freedriver/v1/home/appliances` | `autonomy` | `api` | 1 | **false** |
-| B (commands) | `freedriver/v1/home/commands` | `api` | `autonomy` | 1 | **false** always |
+| A (state) | `freedriver/v1/{instanceId}/appliances` | `autonomy` | `api` | 1 | **false** |
+| B (commands) | `freedriver/v1/{instanceId}/commands` | `api` | `autonomy` | 1 | **false** always |
 
 The broker cannot forbid retain. Publishers must set retain=false. Do not retain the appliance map (Quarkus liveness is receive-time; a retained map would lie after a restart).
 
@@ -57,29 +57,33 @@ Publish QoS 1, retain=false.
 
 ```json
 {
-  "schemaVersion": 1,
+  "instanceId": "550e8400-e29b-41d4-a716-446655440000",
+  "instanceName": "Cabin",
   "appliedCommandId": "550e8400-e29b-41d4-a716-446655440000",
   "appliances": [
     {
-      "name": "Living room lamp",
+      "applianceName": "living-room-lamp",
       "on": true
     }
   ]
 }
 ```
 
-There is **no** separate `id`. Each appliance is `{name, on}` only.
+There is **no** separate `id` and no `name`. Each appliance is `{applianceName, on}` only. Boards are not on this wire.
 
-`name` is the existing autonomy alias key (`AliasView.applianceStates`). It is not a new slug. Portal `/api/appliances/{id}` can use that same string later; do not invent a second identifier.
+`applianceName` is the existing autonomy alias key (`AliasView.applianceStates`). It is not a new slug. Portal `/api/appliances/{id}` uses that same string; do not invent a second identifier.
+
+`instanceId` is a UUID, not the MQTT protocol client-id. Version nibbles are not checked. `instanceName` is the dashboard label only.
 
 When no command produced this map, send `"appliedCommandId": null`.
 
 Field rules (Quarkus rejects otherwise):
 
-- `schemaVersion`: `1` only
-- `name`: autonomy alias key, 1–64 characters (not blank)
+- `instanceId`: UUID (hex + hyphens)
+- `instanceName`: non-blank UX label
+- `applianceName`: autonomy alias key, 1–64 characters (not blank)
 - `on`: boolean
-- extra JSON fields: rejected (including `id`)
+- extra JSON fields: rejected (including `name`, `id`, `schemaVersion`, board fields)
 
 ## Topic B — command (Quarkus → autonomy)
 
@@ -87,14 +91,14 @@ Subscribe QoS 1. Messages are retain=false. Until live-commands is on, you may s
 
 ```json
 {
-  "schemaVersion": 1,
+  "instanceId": "550e8400-e29b-41d4-a716-446655440000",
   "commandId": "550e8400-e29b-41d4-a716-446655440000",
-  "name": "Living room lamp",
+  "applianceName": "living-room-lamp",
   "on": false
 }
 ```
 
-`name` is the same alias key as Topic A. There is no `applianceId`.
+`applianceName` is the same alias key as Topic A. There is no `name` and no `applianceId`.
 
 Quarkus **mints** `commandId`. Autonomy never invents it.
 
@@ -123,7 +127,7 @@ QoS 1 can deliver a backlog after a disconnect. **Do not apply a pile of old com
 
 Either:
 
-- apply **latest-per-alias** (`name`) only, or
+- apply **latest-per-alias** (`applianceName`) only, or
 - drop commands older than the **20s** stale window.
 
 ## What you implement vs what you do not
@@ -131,7 +135,7 @@ Either:
 | Do | Do not |
 | --- | --- |
 | Connect as `autonomy` to `mqtt.freedriver.io:8883` with TLS verify | Skip TLS verify |
-| Publish Topic A, subscribe Topic B | Publish Topic B or subscribe Topic A |
+| Publish Topic A, subscribe Topic B for your `instanceId` | Publish Topic B or subscribe Topic A |
 | Echo `appliedCommandId` on the next map | Depend on `io.freedriver:mqtt-contract` / closed suite PR |
 | Ask Techops for password + current cert | Put secrets in the doc or invent a Maven Central version |
 | Speak to the broker now | Wait for or flip `live-commands` / OIDC |

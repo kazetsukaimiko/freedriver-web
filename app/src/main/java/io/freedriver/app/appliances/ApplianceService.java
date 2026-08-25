@@ -49,7 +49,7 @@ public class ApplianceService {
         return snapshot.toResponse(snapshot.stale(config.staleAfter(), now), false);
     }
 
-    public ApplianceMapResponse issueCommand(SecurityIdentity identity, String name, boolean on) {
+    public ApplianceMapResponse issueCommand(SecurityIdentity identity, String applianceName, boolean on) {
         if (config.liveCommands()) {
             throw new IllegalStateException("Live MQTT commands are off until #25 and #27");
         }
@@ -64,24 +64,28 @@ public class ApplianceService {
             throw new ClientErrorException(
                     Response.status(409).entity(snapshot.toResponse(true, false)).build());
         }
-        if (!ApplianceSchemas.validName(name) || snapshot.find(name).isEmpty()) {
+        if (applianceName == null
+                || applianceName.isBlank()
+                || applianceName.length() > ApplianceSchemas.NAME_MAX
+                || snapshot.instanceId() == null
+                || snapshot.find(applianceName).isEmpty()) {
             throw new NotFoundException();
         }
 
         String commandId = UUID.randomUUID().toString();
         ApplianceCommandMessage command = new ApplianceCommandMessage(
-                ApplianceSchemas.SCHEMA_VERSION, commandId, name, on);
+                snapshot.instanceId(), commandId, applianceName, on);
         backend.publishCommand(command);
 
         Duration wait = config.boundedCommandTimeout();
         Optional<ApplianceSnapshot> confirmed = backend.awaitApplied(commandId, wait);
         Instant auditedAt = Instant.now();
         if (confirmed.isPresent()) {
-            audit.record(user, auditedAt, name, on, commandId, "confirmed");
+            audit.record(user, auditedAt, applianceName, on, commandId, "confirmed");
             ApplianceSnapshot applied = confirmed.get();
             return applied.toResponse(applied.stale(config.staleAfter(), Instant.now()), false);
         }
-        audit.record(user, auditedAt, name, on, commandId, "timeout");
+        audit.record(user, auditedAt, applianceName, on, commandId, "timeout");
         ApplianceSnapshot last = backend.snapshot();
         return last.toResponse(last.stale(config.staleAfter(), Instant.now()), true);
     }

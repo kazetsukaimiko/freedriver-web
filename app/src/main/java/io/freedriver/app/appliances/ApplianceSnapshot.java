@@ -6,11 +6,17 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
-public record ApplianceSnapshot(Instant receivedAt, String appliedCommandId, List<Appliance> appliances) {
+public record ApplianceSnapshot(
+        Instant receivedAt,
+        UUID instanceId,
+        String instanceName,
+        String appliedCommandId,
+        List<Appliance> appliances) {
 
     public static ApplianceSnapshot never() {
-        return new ApplianceSnapshot(null, null, List.of());
+        return new ApplianceSnapshot(null, null, null, null, List.of());
     }
 
     public boolean stale(Duration window, Instant now) {
@@ -20,8 +26,8 @@ public record ApplianceSnapshot(Instant receivedAt, String appliedCommandId, Lis
         return Duration.between(receivedAt, now).compareTo(window) >= 0;
     }
 
-    public Optional<Appliance> find(String name) {
-        return appliances.stream().filter(a -> a.name().equals(name)).findFirst();
+    public Optional<Appliance> find(String applianceName) {
+        return appliances.stream().filter(a -> a.applianceName().equals(applianceName)).findFirst();
     }
 
     public ApplianceMapResponse toResponse(boolean stale, boolean timeout) {

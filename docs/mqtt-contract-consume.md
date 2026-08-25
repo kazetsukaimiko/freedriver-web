@@ -1,10 +1,10 @@
 # Consume autonomy-mqtt-contract
 
-Coordinates: `io.freedriver.autonomy:autonomy-mqtt-contract:2026-08_r45`
+Coordinates: `io.freedriver.autonomy:autonomy-mqtt-contract:2026-08_r51`
 
 Repository: `https://maven.pkg.github.com/kazetsukaimiko/autonomy` (Maven repo id `github`).
 
-`app/pom.xml` depends on that exact version. Do not use `1.0.0-SNAPSHOT`. Do not vendor the jar.
+`app/pom.xml` depends on that exact version. Do not use `1.0.0-SNAPSHOT`. Do not use `2026-08_r45`. Do not vendor the jar.
 
 ## CI
 

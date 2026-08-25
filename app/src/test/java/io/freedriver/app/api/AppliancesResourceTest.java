@@ -79,7 +79,7 @@ class AppliancesResourceTest {
                 .body("stale", is(false))
                 .body("timeout", is(false))
                 .body("lastUpdated", notNullValue())
-                .body("appliances[0].name", is("living-room-lamp"))
+                .body("appliances[0].applianceName", is("living-room-lamp"))
                 .body("appliances[0].on", is(true));
     }
 
@@ -170,7 +170,8 @@ class AppliancesResourceTest {
 
         assertEquals(1, fake.publishedCommands().size());
         ApplianceCommandMessage command = fake.publishedCommands().getFirst();
-        assertEquals("living-room-lamp", command.name());
+        assertEquals("living-room-lamp", command.applianceName());
+        assertEquals(FakeApplianceBackend.INSTANCE_ID, command.instanceId());
         assertTrue(command.on());
         assertEquals(command.commandId(), fake.snapshot().appliedCommandId());
     }
@@ -218,7 +219,8 @@ class AppliancesResourceTest {
 
     private void seedFreshLamp(boolean on) {
         fake.publishState(new ApplianceStateMessage(
-                1,
+                FakeApplianceBackend.INSTANCE_ID,
+                FakeApplianceBackend.INSTANCE_NAME,
                 null,
                 List.of(new Appliance("living-room-lamp", on))));
     }

@@ -2,7 +2,6 @@ package io.freedriver.app.appliances;
 
 import io.freedriver.autonomy.mqtt.contract.Appliance;
 import io.freedriver.autonomy.mqtt.contract.ApplianceCommandMessage;
-import io.freedriver.autonomy.mqtt.contract.ApplianceSchemas;
 import io.freedriver.autonomy.mqtt.contract.ApplianceStateMessage;
 import jakarta.enterprise.inject.Typed;
 import io.quarkus.logging.Log;
@@ -16,6 +15,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -29,6 +29,9 @@ import java.util.concurrent.TimeoutException;
 @ApplicationScoped
 @Typed(FakeApplianceBackend.class)
 public class FakeApplianceBackend implements ApplianceBackend {
+
+    public static final UUID INSTANCE_ID = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
+    public static final String INSTANCE_NAME = "Cabin";
 
     @Inject
     AppliancesConfig config;
@@ -49,7 +52,8 @@ public class FakeApplianceBackend implements ApplianceBackend {
         }
         if (config.fakeRefresh()) {
             publishState(new ApplianceStateMessage(
-                    ApplianceSchemas.SCHEMA_VERSION,
+                    INSTANCE_ID,
+                    INSTANCE_NAME,
                     null,
                     List.of(new Appliance("living-room-lamp", true))));
             refresh = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -74,7 +78,12 @@ public class FakeApplianceBackend implements ApplianceBackend {
             if (state == null) {
                 return ApplianceSnapshot.never();
             }
-            return new ApplianceSnapshot(receivedAt, state.appliedCommandId(), state.appliances());
+            return new ApplianceSnapshot(
+                    receivedAt,
+                    state.instanceId(),
+                    state.instanceName(),
+                    state.appliedCommandId(),
+                    state.appliances());
         }
     }
 
@@ -156,14 +165,14 @@ public class FakeApplianceBackend implements ApplianceBackend {
             }
             List<Appliance> next = new ArrayList<>();
             for (Appliance appliance : state.appliances()) {
-                if (appliance.name().equals(command.name())) {
-                    next.add(new Appliance(appliance.name(), command.on()));
+                if (appliance.applianceName().equals(command.applianceName())) {
+                    next.add(new Appliance(appliance.applianceName(), command.on()));
                 } else {
                     next.add(appliance);
                 }
             }
             acceptLocked(new ApplianceStateMessage(
-                    ApplianceSchemas.SCHEMA_VERSION, command.commandId(), next), Instant.now());
+                    state.instanceId(), state.instanceName(), command.commandId(), next), Instant.now());
         }
     }
 
@@ -192,7 +201,12 @@ public class FakeApplianceBackend implements ApplianceBackend {
         if (applied != null) {
             CompletableFuture<ApplianceSnapshot> waiter = waiters.get(applied);
             if (waiter != null) {
-                waiter.complete(new ApplianceSnapshot(when, applied, message.appliances()));
+                waiter.complete(new ApplianceSnapshot(
+                        when,
+                        message.instanceId(),
+                        message.instanceName(),
+                        applied,
+                        message.appliances()));
             }
         }
     }
