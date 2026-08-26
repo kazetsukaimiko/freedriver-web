@@ -13,9 +13,20 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     if: github.repository == 'kazetsukaimiko/freedriver-web'
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Same scheme as autonomy mqtt-contract: YEAR-MONTH_rBUILD_NUM (UTC + github.run_number).
+      # Example: 2026-08_r45. Not semver. Git poms stay 1.0.0-SNAPSHOT for local builds.
+      - name: Stamp YEAR-MONTH_rBUILD_NUM
+        run: |
+          NEW_VERSION="$(date -u +%Y-%m)_r${{ github.run_number }}"
+          echo "NEW_VERSION=${NEW_VERSION}" >> "$GITHUB_ENV"
+          printf '%s\n' "$NEW_VERSION" > BUILD_NUMBER
+          echo "Deploy stamp: ${NEW_VERSION}"
 
       - name: Require deploy secrets
         env:
@@ -57,4 +68,17 @@ jobs:
 
           ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            'sudo mkdir -p /opt/freedriver-storage/grafana /opt/freedriver-storage/loki /opt/freedriver-storage/prometheus /opt/freedriver-storage/mosquitto && sudo chown 472:472 /opt/freedriver-storage/grafana && sudo chown 10001:10001 /opt/freedriver-storage/loki && sudo chown 65534:65534 /opt/freedriver-storage/prometheus && sudo chown 1883:1883 /opt/freedriver-storage/mosquitto && cd /opt/freedriver-web && docker compose --env-file /opt/freedriver-secrets/.env up -d --pull always --build && docker compose --env-file /opt/freedriver-secrets/.env up -d --force-recreate --no-deps caddy'
+            'sudo mkdir -p /opt/freedriver-storage/grafana /opt/freedriver-storage/loki /opt/freedriver-storage/prometheus /opt/freedriver-storage/mosquitto && sudo chown 472:472 /opt/freedriver-storage/grafana && sudo chown 10001:10001 /opt/freedriver-storage/loki && sudo chown 65534:65534 /opt/freedriver-storage/prometheus && sudo chown 1883:1883 /opt/freedriver-storage/mosquitto && cd /opt/freedriver-web && export BUILD_NUMBER="$(cat BUILD_NUMBER)" && docker compose --env-file /opt/freedriver-secrets/.env up -d --pull always --build && docker compose --env-file /opt/freedriver-secrets/.env up -d --force-recreate --no-deps caddy'
+
+      # Tag only after SSH deploy succeeds, and only on main (not PRs / other refs).
+      - name: Tag successful deploy
+        if: github.ref == 'refs/heads/main'
+        run: |
+          if [ -z "${NEW_VERSION}" ]; then
+            echo "NEW_VERSION is empty; refusing to tag"
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${NEW_VERSION}" "${GITHUB_SHA}" -m "${NEW_VERSION}"
+          git push origin "refs/tags/${NEW_VERSION}"

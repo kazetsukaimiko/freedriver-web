@@ -8,9 +8,20 @@ WORKDIR /workspace
 COPY pom.xml ./
 COPY src src
 
-# Use the image Maven. mvnw failed in-container with a distributionSha256Sum mismatch.
-# Quinoa downloads Node 22.14.0 during package (package-manager-install=true).
-RUN mvn -B -DskipTests package
+# ARG after COPY so a new stamp does not bust the source layer.
+# Default keeps local/compose builds at the git POM version.
+ARG BUILD_NUMBER=1.0.0-SNAPSHOT
+# versions:set is image-workspace only (git POM stays 1.0.0-SNAPSHOT).
+# quarkus.application.version is what GET /api/build and the running app report.
+# Implementation-Version is set if the jar plugin writes a manifest.
+RUN mvn -B \
+    org.codehaus.mojo:versions-maven-plugin:2.21.0:set \
+    -DnewVersion="${BUILD_NUMBER}" \
+    -DgenerateBackupPoms=false \
+ && mvn -B -DskipTests \
+    -Dquarkus.application.version="${BUILD_NUMBER}" \
+    -Dquarkus.package.jar.manifest.attributes.Implementation-Version="${BUILD_NUMBER}" \
+    package
 
 FROM registry.access.redhat.com/ubi9/openjdk-21-runtime:1.24
 ENV LANGUAGE='en_US:en'

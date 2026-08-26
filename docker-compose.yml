@@ -20,6 +20,8 @@ services:
     build:
       context: ./app
       dockerfile: src/main/docker/Dockerfile.compose
+      args:
+        BUILD_NUMBER: ${BUILD_NUMBER:-1.0.0-SNAPSHOT}
     restart: unless-stopped
     env_file: /opt/freedriver-secrets/.env
     environment:
