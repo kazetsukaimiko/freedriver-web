@@ -8,6 +8,8 @@ permissions:
   contents: read
   pull-requests: write
 
+# Advisory only. Do not add this job to required status checks.
+# Do not treat github-actions reviews as the required human review.
 jobs:
   review:
     name: Review
@@ -17,23 +19,26 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - name: Checkout
+      # PR head + history so the reviewer can list the changeset and read the tree.
+      # tarmojussila/xai-code-review is hunk-only and must not be used (#64).
+      - name: Checkout PR head
         uses: actions/checkout@v4
-
-      - name: Load review prompt
-        id: prompt
-        run: |
-          {
-            echo 'text<<GROK_PROMPT_EOF'
-            cat .github/grok-review-prompt.md
-            echo GROK_PROMPT_EOF
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Grok code review
-        uses: tarmojussila/xai-code-review@v0.1.0
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Fetch base so the changeset can be listed
+        run: git fetch --no-tags origin "${{ github.event.pull_request.base.sha }}"
+
+      - name: Review with full files and neighbors
+        env:
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           XAI_MODEL: ${{ vars.XAI_MODEL || 'grok-4' }}
-          XAI_SYSTEM_PROMPT: ${{ steps.prompt.outputs.text }}
-          XAI_REVIEWER_NAME: Grok review
-          EXCLUDE_PATTERNS: "*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml,target/**"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 .github/scripts/grok_review.py
