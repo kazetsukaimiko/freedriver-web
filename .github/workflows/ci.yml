@@ -65,3 +65,19 @@ jobs:
             echo "do not flip OIDC on in the default profile"
             exit 1
           fi
+
+      - name: VPS image must not bake a Packages token
+        working-directory: app
+        run: |
+          if grep -E 'GITHUB_TOKEN|GH_TOKEN|PACKAGES_TOKEN' src/main/docker/Dockerfile.compose; then
+            echo "do not pass a GitHub Packages token as Docker ARG/ENV"
+            exit 1
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("src/main/docker/Dockerfile.compose").read_text()
+          runtime = "FROM " + text.rsplit("FROM ", 1)[1]
+          if "settings" in runtime.lower():
+              raise SystemExit("runtime stage must not mention settings.xml")
+          print("runtime stage does not copy Maven settings")
+          PY
