@@ -135,7 +135,7 @@ class AppliancesResourceTest {
         seedFreshLamp(false);
         given().contentType(ContentType.JSON)
                 .body("{\"on\":true}")
-                .when().post("/api/appliances/%20")
+                .when().post("/api/appliances/{id}", " ")
                 .then().statusCode(400);
         assertTrue(fake.publishedCommands().isEmpty());
     }
