@@ -21,9 +21,6 @@ public class AppliancesConfig {
     @ConfigProperty(name = "freedriver.appliances.auth-required", defaultValue = "true")
     boolean authRequired;
 
-    @ConfigProperty(name = "freedriver.appliances.csrf", defaultValue = "true")
-    boolean csrf;
-
     @ConfigProperty(name = "freedriver.appliances.stale-after", defaultValue = "20s")
     Duration staleAfter;
 
@@ -56,10 +53,6 @@ public class AppliancesConfig {
 
     public boolean authRequired() {
         return authRequired;
-    }
-
-    public boolean csrf() {
-        return csrf;
     }
 
     public Duration staleAfter() {
