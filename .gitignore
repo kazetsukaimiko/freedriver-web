@@ -1,3 +1,6 @@
 .env
 BUILD_NUMBER
 settings.xml
+mqtt-contract/target/
+mqtt-contract/.flattened-pom.xml
+app/target/

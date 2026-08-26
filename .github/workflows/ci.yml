@@ -7,7 +7,7 @@ on:
 
 permissions:
   contents: read
-  packages: read
+  packages: write
 
 jobs:
   test:
@@ -15,10 +15,7 @@ jobs:
     if: github.repository == 'kazetsukaimiko/freedriver-web'
     permissions:
       contents: read
-      packages: read
-    defaults:
-      run:
-        working-directory: app
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,45 +36,58 @@ jobs:
         run: ./mvnw -B test
 
       - name: Browser must not speak MQTT
-        working-directory: app
         run: |
-          if grep -RInE 'mqtt|8883|mosquitto' src/main/webui; then
+          if grep -RInE 'mqtt|8883|mosquitto' app/src/main/webui; then
             echo "webui must not mention MQTT"
             exit 1
           fi
 
-      - name: Fake and OIDC stay off in the default profile
-        working-directory: app
+      - name: Mock and OIDC stay off in the default profile
         run: |
-          if grep -E '^freedriver\.appliances\.enabled=true' src/main/resources/application.properties; then
+          if grep -E '^freedriver\.appliances\.enabled=true' app/src/main/resources/application.properties; then
             echo "default profile must not enable the appliances API"
             exit 1
           fi
-          if grep -E '^freedriver\.appliances\.backend=fake' src/main/resources/application.properties; then
-            echo "fake backend must not ship in the default profile"
+          if grep -E '^freedriver\.appliances\.mock=true' app/src/main/resources/application.properties; then
+            echo "mock event source must not ship in the default profile"
             exit 1
           fi
-          if grep -E '^freedriver\.appliances\.live-commands=true' src/main/resources/application.properties; then
+          if grep -E '^freedriver\.appliances\.live-commands=true' app/src/main/resources/application.properties; then
             echo "live commands must not ship in the default profile"
             exit 1
           fi
-          if grep -E '^quarkus\.oidc\.enabled=true' src/main/resources/application.properties; then
+          if grep -E '^quarkus\.oidc\.enabled=true' app/src/main/resources/application.properties; then
             echo "do not flip OIDC on in the default profile"
             exit 1
           fi
 
       - name: VPS image must not bake a Packages token
-        working-directory: app
         run: |
-          if grep -E 'GITHUB_TOKEN|GH_TOKEN|PACKAGES_TOKEN' src/main/docker/Dockerfile.compose; then
+          if grep -E 'GITHUB_TOKEN|GH_TOKEN|PACKAGES_TOKEN' app/src/main/docker/Dockerfile.compose; then
             echo "do not pass a GitHub Packages token as Docker ARG/ENV"
             exit 1
           fi
           python3 - <<'PY'
           from pathlib import Path
-          text = Path("src/main/docker/Dockerfile.compose").read_text()
+          text = Path("app/src/main/docker/Dockerfile.compose").read_text()
           runtime = "FROM " + text.rsplit("FROM ", 1)[1]
           if "settings" in runtime.lower():
               raise SystemExit("runtime stage must not mention settings.xml")
           print("runtime stage does not copy Maven settings")
           PY
+
+      - name: Publish mqtt-contract
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          YEAR="$(date -u +%Y)"
+          MONTH="$(date -u +%m)"
+          NEW_VERSION="${YEAR}-${MONTH}_r${{ github.run_number }}"
+          echo "Publishing freedriver-mqtt-contract as ${NEW_VERSION}"
+          ./mvnw -B --no-transfer-progress \
+            org.codehaus.mojo:versions-maven-plugin:2.21.0:set \
+            -DnewVersion="${NEW_VERSION}" \
+            -DgenerateBackupPoms=false \
+            -DprocessAllModules=true
+          ./mvnw -B --no-transfer-progress -pl mqtt-contract -am deploy -DskipTests

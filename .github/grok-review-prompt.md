@@ -45,8 +45,8 @@ Exceptions
 
 Scope
 - Consume/pin/mock/rename PRs do not grow auth, rate-limit, or exception strategy. File a ticket; do not “just add a check.”
-- live-commands is an MQTT-adapter / producer guard, not auth, not a service if (flag) throw.
-- Browser never speaks MQTT. Default/prod: appliances.enabled false, live-commands false, fake backend not shipped, OIDC off until locked.
+- live-commands is an MQTT-adapter guard, not auth, not a service if (flag) throw.
+- Browser never speaks MQTT. Default/prod: appliances.enabled false, live-commands false, mock event source off, OIDC off until locked. There is one ApplianceControl; mock is not a second backend.
 - Do not recommend ceremony that does not pay (extra modules, interceptors on interceptors, defense-in-depth @RolesAllowed on the service).
 
 ============================================================

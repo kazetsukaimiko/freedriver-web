@@ -5,7 +5,9 @@ This is blocked on [#25](https://github.com/kazetsukaimiko/freedriver-web/issues
 
 The browser never speaks MQTT. Quarkus is the only MQTT client, and only on the docker-network Mosquitto broker when live commands are later turned on. Never `mqtt.freedriver.io`.
 
-This page is the portal REST contract. Broker connect, TLS, passwords, and ACL: [autonomy-mqtt.md](autonomy-mqtt.md). Maven pin `io.freedriver.autonomy:autonomy-mqtt-contract:2026-08_r51`: [mqtt-contract-consume.md](mqtt-contract-consume.md).
+This page is the portal REST contract. Broker connect, TLS, passwords, and ACL: [autonomy-mqtt.md](autonomy-mqtt.md). Wire types: [mqtt-contract-consume.md](mqtt-contract-consume.md) (`io.freedriver:freedriver-mqtt-contract`).
+
+`ApplianceControl` is the one router, keyed by `instanceId`. Mock event sources and a later MQTT client fire/observe the same CDI bus. There is no fake/disabled/live `ApplianceBackend`.
 
 ## REST
 
@@ -15,41 +17,37 @@ CORS allowlist: `https://app.freedriver.io` only (dev may also allow localhost).
 
 | Method | Path | Body | Success |
 | --- | --- | --- | --- |
-| GET | `/api/appliances` | — | 200 map below |
-| POST | `/api/appliances/{id}` | `{ "on": false }` | 200 same shape |
+| GET | `/api/appliances` | — | 200 `{ "instances": [ ... ] }` |
+| POST | `/api/appliances/{instanceId}/{applianceName}` | `{ "on": false }` | 200 that instance |
 
-Path `{id}` is the alias `applianceName`. It is not `instanceId`. Do not invent a second identifier.
+`instanceId` is a UUID. `applianceName` is the alias. Extra JSON fields on POST are rejected. The browser sends `{ "on": bool }` only. `commandId` is minted in Quarkus. HTTP keeps `on`; MQTT uses `state`.
 
-GET and POST success JSON (REST only — not on the MQTT wire):
+GET:
 
 ```json
 {
-  "lastUpdated": "2026-08-26T00:00:00Z",
-  "stale": false,
-  "timeout": false,
-  "appliances": [
+  "instances": [
     {
-      "applianceName": "living-room-lamp",
-      "on": true
+      "instanceId": "550e8400-e29b-41d4-a716-446655440000",
+      "instanceName": "Cabin",
+      "lastUpdated": "2026-08-26T00:00:00Z",
+      "stale": false,
+      "timeout": false,
+      "appliances": [
+        { "applianceName": "hallway", "on": false }
+      ]
     }
   ]
 }
 ```
 
-Each appliance is `{applianceName, on}` only. The map does not include `instanceId` or `instanceName`. Extra JSON fields on POST are rejected. The browser sends `{ "on": bool }` only. `commandId` is minted in Quarkus.
-
-`lastUpdated` is `null` if we have never received a state:
+No instances yet:
 
 ```json
-{
-  "lastUpdated": null,
-  "stale": true,
-  "timeout": false,
-  "appliances": []
-}
+{ "instances": [] }
 ```
 
-GET does not return a CSRF token.
+Each `instanceName` is a dashboard tab. GET does not return a CSRF token.
 
 ### Status codes
 
@@ -58,63 +56,62 @@ GET does not return a CSRF token.
 | No session | 401 | 401 |
 | Wrong role | 403 | 403 |
 | Extra JSON fields | — | 400 |
-| Unknown appliance `applianceName` (path `{id}` is that alias) | — | 404, no command |
-| Stale or never received | 200, `stale: true` | 409, no command |
-| Confirmed (`appliedCommandId` matches) | — | 200, `timeout: false`, map updated |
-| Wait expired | — | 200, `timeout: true`, **last map unchanged** |
+| Unknown `instanceId` | — | 404, no command |
+| Unknown `applianceName` | — | 404, no command |
+| Known instance, stale | 200, that instance `stale: true` | 409, no command |
+| Confirmed | — | 200, `timeout: false` |
+| Wait expired | — | 200, `timeout: true`, last map unchanged |
 | Rate limited | — | 429 |
 | Feature disabled (prod default) | 404 | 404 |
 
 GET is never 409.
 
-After a Quarkus restart the map starts stale until the next **live** Topic A. Do not combine a retained Topic A with receive-time liveness.
+After a Quarkus restart the map is empty until the next state event. Do not combine a retained Topic A with receive-time liveness.
 
-## MQTT JSON (`2026-08_r51`)
+## MQTT JSON
 
-One broker can carry more than one autonomy instance. Isolation is `instanceId` (UUID hex + hyphens), not a board and not the MQTT client-id. Version nibbles are not checked. `instanceName` is JSON/UX only — not in the topic, not in an ACL.
+One broker can carry more than one autonomy instance. Isolation is `instanceId` on the **topic** (UUID hex + hyphens), not a JSON field, not a board, not the MQTT client-id. Version nibbles are not checked. `instanceName` is JSON/UX only — not in the topic, not in an ACL.
 
 | | Topic | Retain | QoS |
 | --- | --- | --- | --- |
 | A (state) | `freedriver/v1/{instanceId}/appliances` | `false` (do not retain) | 1 |
 | B (commands) | `freedriver/v1/{instanceId}/commands` | `false` always | 1 |
 
-Exact topic strings only. Extra JSON fields are rejected. Allowed appliance fields are `applianceName` and `on`.
+Exact topic strings only. Extra JSON fields are rejected. Allowed appliance fields are `applianceName` and `state`.
 
 ### Topic A — state (autonomy → Quarkus)
 
 ```json
 {
-  "instanceId": "550e8400-e29b-41d4-a716-446655440000",
   "instanceName": "Cabin",
   "appliedCommandId": "uuid-or-null",
   "appliances": [
     {
-      "applianceName": "living-room-lamp",
-      "on": true
+      "applianceName": "hallway",
+      "state": true
     }
   ]
 }
 ```
 
-- `instanceId`: UUID (hex + hyphens) on the topic and in JSON. Not the MQTT client-id
-- `instanceName`: UX/dashboard label only
-- `applianceName`: existing autonomy alias key (`AliasView.applianceStates`), 1–64 characters, not blank
-- `on`: boolean
-- `appliedCommandId`: UUID of the command that produced this map, or `null`
+- `instanceId`: topic segment only
+- `instanceName`: UX/dashboard tab label only
+- `applianceName`: existing autonomy alias key, 1–64 characters, not blank
+- `state`: boolean (primitive; not `on`)
+- `appliedCommandId`: waiter handshake, or `null`. Not stored on the portal snapshot.
 - Boards stay inside the instance; they are not MQTT topics
 
 ### Topic B — command (Quarkus → autonomy)
 
 ```json
 {
-  "instanceId": "550e8400-e29b-41d4-a716-446655440000",
   "commandId": "550e8400-e29b-41d4-a716-446655440000",
-  "applianceName": "living-room-lamp",
-  "on": false
+  "applianceName": "hallway",
+  "state": false
 }
 ```
 
-`applianceName` is the same alias key as Topic A. `instanceId` must match the instance that owns the appliance. Quarkus mints `commandId`. Until live-commands is on, Topic B has no production traffic.
+`applianceName` is the same alias key as Topic A. `instanceId` is the topic. Quarkus mints `commandId`. Until live-commands is on, Topic B has no production traffic.
 
 Reconnect / latest-per-alias: [autonomy-mqtt.md](autonomy-mqtt.md). kaze owns that behavior.
 
@@ -126,7 +123,7 @@ Quarkus owns the OIDC code flow. The browser gets an HTTP-only, Secure, SameSite
 
 OIDC is off. GET `/api/appliances` does not return `csrfToken`. POST does not require `X-CSRF-Token`.
 
-**Future-BFF** ([#26](https://github.com/kazetsukaimiko/freedriver-web/issues/26) / [#58](https://github.com/kazetsukaimiko/freedriver-web/issues/58)): when OIDC is on, POST `/api/appliances/{id}` will require `X-CSRF-Token` matching a `csrfToken`. That is not current behavior. Do not treat today's GET map as if it already includes `csrfToken`. SameSite=Lax is not a CSRF substitute.
+**Future-BFF** ([#26](https://github.com/kazetsukaimiko/freedriver-web/issues/26) / [#58](https://github.com/kazetsukaimiko/freedriver-web/issues/58)): when OIDC is on, POST `/api/appliances/{instanceId}/{applianceName}` will require `X-CSRF-Token` matching a `csrfToken`. That is not current behavior. Do not treat today's GET map as if it already includes `csrfToken`. SameSite=Lax is not a CSRF substitute.
 
 When OIDC is on, the API still checks session + (`dashboard` or `portal-admin`).
 
@@ -134,7 +131,7 @@ When OIDC is on, the API still checks session + (`dashboard` or `portal-admin`).
 
 - `lastUpdated` is when **Quarkus received** a valid Topic A payload (ISO-8601 UTC). It is not autonomy's clock.
 - **Stale** = no state in 20 seconds, or never received.
-- POST waits up to 5 seconds (`FREEDRIVER_COMMAND_TIMEOUT`, default `5s`, hard-capped at 30s) for a Topic A whose `appliedCommandId` matches the command we just issued. It does **not** wait for a 10s pulse.
+- POST waits up to 5 seconds (`FREEDRIVER_COMMAND_TIMEOUT`, default `5s`, hard-capped at 30s) for a state event whose `appliedCommandId` matches the command we just issued. Waiters live in `ApplianceControl`, not on the snapshot. It does **not** wait for a 10s pulse.
 - On timeout: HTTP 200 + last map + `timeout: true`. Never pretend the flip worked.
 - Audit log (no secrets): who / when / appliance / command / `confirmed` or `timeout`.
 
@@ -145,11 +142,11 @@ Default / prod properties:
 ```
 freedriver.appliances.enabled=false
 freedriver.appliances.live-commands=false
-freedriver.appliances.backend=none
+freedriver.appliances.mock=false
 quarkus.oidc.enabled=false
 ```
 
-`./mvnw quarkus:dev` uses the **fake** backend (`%dev`): no broker, no Keycloak, `/api/hello` and `/api/health` stay 200, `/api/appliances` is served from an in-process fixture.
+`./mvnw -pl app -am quarkus:dev` uses **mock-autonomy** on the same `ApplianceControl` bus (`%dev`): no broker, no Keycloak, `/api/hello` and `/api/health` stay 200, `/api/appliances` is served from the mock event source (one Cabin instance, six named appliances).
 
 ### One `%dev` auth path
 
@@ -165,6 +162,6 @@ Do **not** add a second escape:
 
 `%test` uses `@TestSecurity`. Unauthenticated calls are 401; wrong role is 403. The augmentor is not in the test build.
 
-The fake backend is not what ships in prod. The live MQTT path is compiled as contract helpers only; it is not a CDI bean, does not connect, and refuses `mqtt.freedriver.io`. When live is later enabled, Quarkus must use the compose-network hostname (`mosquitto`), never the public broker.
+The mock event source is not what ships in prod. The live MQTT path is compiled as contract helpers only; it is not a CDI bean, does not connect, and refuses `mqtt.freedriver.io`. When live is later enabled, it must observe/fire the same bus `ApplianceControl` already uses. Quarkus must use the compose-network hostname (`mosquitto`), never the public broker.
 
 Live command route is **not** Done. Blocked on #25 and #27. `live-commands` stays `false`.

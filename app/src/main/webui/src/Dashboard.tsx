@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   COMMAND_WAIT_MS,
-  DEMO_APPLIANCES,
   POLL_MS,
   STALE_AFTER_MS,
   type Appliance,
-  type ApplianceMap,
   type CommandResult,
   type DemoMode,
   type DeniedReason,
+  type Instance,
   demoCommand,
-  demoLastUpdated,
+  demoInstance,
   demoModeFromSearch,
   fetchApplianceMap,
   formatLastHeard,
@@ -23,7 +22,14 @@ type View =
   | { kind: 'waiting' }
   | { kind: 'denied'; reason: DeniedReason }
   | { kind: 'empty' }
-  | { kind: 'ready'; rows: Row[]; unreachable: boolean; lastUpdated: string | null }
+  | {
+      kind: 'ready'
+      instances: Instance[]
+      selectedId: string
+      rows: Row[]
+      unreachable: boolean
+      lastUpdated: string | null
+    }
 
 function rowsFrom(appliances: Appliance[], keep: Row[] = []): Row[] {
   const prior = new Map(keep.map((row) => [row.id, row]))
@@ -36,15 +42,11 @@ function rowsFrom(appliances: Appliance[], keep: Row[] = []): Row[] {
   })
 }
 
-function asAppliances(rows: Row[]): Appliance[] {
-  return rows.map(({ id, name, on }) => ({ id, name, on }))
-}
-
-function applyConfirmed(rows: Row[], map: ApplianceMap, id: string): Row[] {
-  return rowsFrom(
-    map.appliances.length > 0 ? map.appliances : asAppliances(rows),
-    rows.map((row) => (row.id === id ? { ...row, pending: false, error: null } : row)),
-  )
+function pickSelected(instances: Instance[], current: string | null): string {
+  if (current && instances.some((item) => item.instanceId === current)) {
+    return current
+  }
+  return instances[0]?.instanceId ?? ''
 }
 
 export function Dashboard({ search }: { search: string }) {
@@ -52,20 +54,20 @@ export function Dashboard({ search }: { search: string }) {
   const [view, setView] = useState<View>(() => initialView(demo))
   const [now, setNow] = useState(() => Date.now())
   const rowsRef = useRef<Row[]>([])
+  const selectedRef = useRef<string | null>(null)
   const lastFreshAt = useRef<number | null>(demo === 'live' || demo === 'timeout' || demo === 'empty' ? Date.now() : null)
-  const lastUpdatedRef = useRef<string | null>(
-    demo === 'unreachable' ? demoLastUpdated() : demo === 'live' || demo === 'timeout' ? demoLastUpdated(2) : null,
-  )
+  const lastUpdatedRef = useRef<string | null>(null)
   const inFlight = useRef(new Map<string, AbortController>())
 
   useEffect(() => {
     rowsRef.current = view.kind === 'ready' ? view.rows : []
+    selectedRef.current = view.kind === 'ready' ? view.selectedId : null
   }, [view])
 
   useEffect(() => {
     setView(initialView(demo))
     lastFreshAt.current = demo === 'live' || demo === 'timeout' || demo === 'empty' ? Date.now() : null
-    lastUpdatedRef.current = demo === 'unreachable' ? demoLastUpdated() : null
+    lastUpdatedRef.current = demo === 'unreachable' ? demoInstance(true).lastUpdated : null
     inFlight.current.forEach((controller) => controller.abort())
     inFlight.current.clear()
   }, [demo])
@@ -92,16 +94,15 @@ export function Dashboard({ search }: { search: string }) {
           return
         }
         if (result.status === 'ok') {
-          applyMap(result.map)
+          applyMap(result.map.instances)
           return
         }
         if (lastFreshAt.current != null && Date.now() - lastFreshAt.current >= STALE_AFTER_MS) {
-          setView({
-            kind: 'ready',
-            rows: rowsRef.current,
-            unreachable: true,
-            lastUpdated: lastUpdatedRef.current,
-          })
+          setView((current) =>
+            current.kind === 'ready'
+              ? { ...current, unreachable: true }
+              : current,
+          )
         }
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
@@ -135,35 +136,29 @@ export function Dashboard({ search }: { search: string }) {
     }
   }, [])
 
-  function applyMap(map: ApplianceMap) {
-    if (map.stale) {
-      const lastKnown = map.appliances.length > 0 ? rowsFrom(map.appliances) : rowsRef.current.map((row) => ({
-        ...row,
-        pending: false,
-      }))
-      if (map.lastUpdated) {
-        lastUpdatedRef.current = map.lastUpdated
-      }
-      rowsRef.current = lastKnown
-      setView({
-        kind: 'ready',
-        rows: lastKnown,
-        unreachable: true,
-        lastUpdated: lastUpdatedRef.current,
-      })
-      return
-    }
-
-    lastFreshAt.current = Date.now()
-    lastUpdatedRef.current = map.lastUpdated
-    if (map.appliances.length === 0) {
+  function applyMap(instances: Instance[]) {
+    if (instances.length === 0) {
       rowsRef.current = []
       setView({ kind: 'empty' })
       return
     }
-    const next = rowsFrom(map.appliances, rowsRef.current)
+    const selectedId = pickSelected(instances, selectedRef.current)
+    const selected = instances.find((item) => item.instanceId === selectedId) ?? instances[0]
+    const unreachable = selected.stale
+    if (!unreachable) {
+      lastFreshAt.current = Date.now()
+    }
+    lastUpdatedRef.current = selected.lastUpdated
+    const next = rowsFrom(selected.appliances, rowsRef.current)
     rowsRef.current = next
-    setView({ kind: 'ready', rows: next, unreachable: false, lastUpdated: map.lastUpdated })
+    setView({
+      kind: 'ready',
+      instances,
+      selectedId: selected.instanceId,
+      rows: next,
+      unreachable,
+      lastUpdated: selected.lastUpdated,
+    })
   }
 
   function deny(reason: DeniedReason) {
@@ -182,8 +177,22 @@ export function Dashboard({ search }: { search: string }) {
       return
     }
     if (result.status === 'stale') {
-      if (result.map) {
-        applyMap({ ...result.map, stale: true })
+      if (result.instance) {
+        setView((current) => {
+          if (current.kind !== 'ready') {
+            return current
+          }
+          const instances = current.instances.map((item) =>
+            item.instanceId === result.instance?.instanceId ? result.instance : item,
+          )
+          return {
+            ...current,
+            instances,
+            unreachable: true,
+            rows: current.rows.map((row) => ({ ...row, pending: false })),
+            lastUpdated: result.instance.lastUpdated,
+          }
+        })
       } else {
         setView((current) =>
           current.kind === 'ready'
@@ -194,15 +203,28 @@ export function Dashboard({ search }: { search: string }) {
       return
     }
     if (result.status === 'confirmed') {
-      if (result.map.stale) {
-        applyMap(result.map)
-        return
-      }
+      const instance = result.instance
       lastFreshAt.current = Date.now()
-      lastUpdatedRef.current = result.map.lastUpdated
-      const next = applyConfirmed(rowsRef.current, result.map, id)
-      rowsRef.current = next
-      setView({ kind: 'ready', rows: next, unreachable: false, lastUpdated: result.map.lastUpdated })
+      lastUpdatedRef.current = instance.lastUpdated
+      setView((current) => {
+        if (current.kind !== 'ready') {
+          return current
+        }
+        const instances = current.instances.map((item) =>
+          item.instanceId === instance.instanceId ? instance : item,
+        )
+        const next = rowsFrom(instance.appliances, current.rows.map((row) =>
+          row.id === id ? { ...row, pending: false, error: null } : row,
+        ))
+        rowsRef.current = next
+        return {
+          ...current,
+          instances,
+          rows: next,
+          unreachable: instance.stale,
+          lastUpdated: instance.lastUpdated,
+        }
+      })
       return
     }
 
@@ -212,9 +234,7 @@ export function Dashboard({ search }: { search: string }) {
     )
     rowsRef.current = next
     setView((current) =>
-      current.kind === 'ready' && !current.unreachable
-        ? { ...current, rows: next }
-        : current,
+      current.kind === 'ready' && !current.unreachable ? { ...current, rows: next } : current,
     )
   }
 
@@ -223,6 +243,10 @@ export function Dashboard({ search }: { search: string }) {
       return
     }
     if (inFlight.current.has(row.id)) {
+      return
+    }
+    const selected = view.instances.find((item) => item.instanceId === view.selectedId)
+    if (!selected) {
       return
     }
 
@@ -236,11 +260,10 @@ export function Dashboard({ search }: { search: string }) {
     inFlight.current.set(row.id, controller)
     const timeoutId = window.setTimeout(() => controller.abort(), COMMAND_WAIT_MS)
     const wanted = !row.on
-    const current = asAppliances(next)
 
     const request = demo
-      ? demoCommand(demo, current, row.id, wanted, controller.signal)
-      : postApplianceCommand(row.id, wanted, controller.signal)
+      ? demoCommand(demo, selected, row.id, wanted, controller.signal)
+      : postApplianceCommand(selected.instanceId, row.id, wanted, controller.signal)
 
     void request
       .then((result) => {
@@ -252,10 +275,31 @@ export function Dashboard({ search }: { search: string }) {
         if (error instanceof DOMException && error.name === 'AbortError') {
           finishCommand(row.id, {
             status: 'timeout',
-            map: { lastUpdated: lastUpdatedRef.current, stale: false, timeout: true, appliances: current },
+            instance: { ...selected, timeout: true, appliances: selected.appliances },
           })
         }
       })
+  }
+
+  function selectInstance(instanceId: string) {
+    if (view.kind !== 'ready' || view.selectedId === instanceId) {
+      return
+    }
+    const selected = view.instances.find((item) => item.instanceId === instanceId)
+    if (!selected) {
+      return
+    }
+    const next = rowsFrom(selected.appliances)
+    rowsRef.current = next
+    selectedRef.current = instanceId
+    lastUpdatedRef.current = selected.lastUpdated
+    setView({
+      ...view,
+      selectedId: instanceId,
+      rows: next,
+      unreachable: selected.stale,
+      lastUpdated: selected.lastUpdated,
+    })
   }
 
   if (view.kind === 'denied') {
@@ -281,15 +325,18 @@ export function Dashboard({ search }: { search: string }) {
           <h2 id="home-status" className="visually-hidden">
             Home status
           </h2>
-          <p className="empty-copy">No appliances yet</p>
+          <p className="empty-copy">No homes yet</p>
         </section>
       )}
       {view.kind === 'ready' && (
         <AppliancePanel
+          instances={view.instances}
+          selectedId={view.selectedId}
           rows={view.rows}
           unreachable={view.unreachable}
           lastUpdated={view.lastUpdated}
           now={now}
+          onSelect={selectInstance}
           onToggle={toggle}
         />
       )}
@@ -308,19 +355,25 @@ function initialView(demo: DemoMode | null): View {
     return { kind: 'empty' }
   }
   if (demo === 'unreachable') {
+    const instance = demoInstance(true)
     return {
       kind: 'ready',
-      rows: rowsFrom(DEMO_APPLIANCES),
+      instances: [instance],
+      selectedId: instance.instanceId,
+      rows: rowsFrom(instance.appliances),
       unreachable: true,
-      lastUpdated: demoLastUpdated(),
+      lastUpdated: instance.lastUpdated,
     }
   }
   if (demo === 'live' || demo === 'timeout') {
+    const instance = demoInstance(false)
     return {
       kind: 'ready',
-      rows: rowsFrom(DEMO_APPLIANCES),
+      instances: [instance],
+      selectedId: instance.instanceId,
+      rows: rowsFrom(instance.appliances),
       unreachable: false,
-      lastUpdated: demoLastUpdated(2),
+      lastUpdated: instance.lastUpdated,
     }
   }
   return { kind: 'waiting' }
@@ -341,29 +394,52 @@ function Denied({ reason }: { reason: DeniedReason }) {
 }
 
 function AppliancePanel({
+  instances,
+  selectedId,
   rows,
   unreachable,
   lastUpdated,
   now,
+  onSelect,
   onToggle,
 }: {
+  instances: Instance[]
+  selectedId: string
   rows: Row[]
   unreachable: boolean
   lastUpdated: string | null
   now: number
+  onSelect: (instanceId: string) => void
   onToggle: (row: Row) => void
 }) {
   const heard = unreachable ? formatLastHeard(lastUpdated, now) : null
+  const selected = instances.find((item) => item.instanceId === selectedId)
   return (
     <section
       className={`card${unreachable ? ' is-unreachable' : ''}`}
       aria-labelledby="appliances-heading"
       aria-busy={unreachable ? undefined : rows.some((row) => row.pending) || undefined}
     >
-      <h2 id="appliances-heading">Appliances</h2>
+      <h2 id="appliances-heading" className="visually-hidden">
+        Appliances
+      </h2>
+      <div className="instance-tabs" role="tablist" aria-label="Homes">
+        {instances.map((instance) => (
+          <button
+            key={instance.instanceId}
+            type="button"
+            role="tab"
+            aria-selected={instance.instanceId === selectedId}
+            className={`instance-tab${instance.instanceId === selectedId ? ' is-current' : ''}`}
+            onClick={() => onSelect(instance.instanceId)}
+          >
+            {instance.instanceName}
+          </button>
+        ))}
+      </div>
       {unreachable && (
         <div className="unreachable-banner" role="alert">
-          <p>Home is unreachable</p>
+          <p>{selected?.instanceName ?? 'Home'} is unreachable</p>
           {heard && <p className="last-heard">{heard}</p>}
         </div>
       )}

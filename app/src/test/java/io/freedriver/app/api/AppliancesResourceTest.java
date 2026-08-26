@@ -1,11 +1,10 @@
 package io.freedriver.app.api;
 
+import io.freedriver.app.appliances.ApplianceControl;
+import io.freedriver.app.appliances.ApplianceCommandRouted;
 import io.freedriver.app.appliances.CommandRateLimiter;
-import io.freedriver.app.appliances.FakeApplianceBackend;
-import io.freedriver.autonomy.mqtt.contract.Appliance;
-import io.freedriver.autonomy.mqtt.contract.ApplianceCommandMessage;
-import io.freedriver.autonomy.mqtt.contract.ApplianceSchemas;
-import io.freedriver.autonomy.mqtt.contract.ApplianceStateMessage;
+import io.freedriver.app.appliances.MockAutonomy;
+import io.freedriver.mqtt.contract.ApplianceSchemas;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import io.restassured.http.ContentType;
@@ -13,30 +12,39 @@ import jakarta.inject.Inject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
+import java.time.Duration;
+import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.CoreMatchers.hasItems;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
-import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
 class AppliancesResourceTest {
 
     @Inject
-    FakeApplianceBackend fake;
+    MockAutonomy mock;
+
+    @Inject
+    ApplianceControl control;
 
     @Inject
     CommandRateLimiter rateLimiter;
 
     @BeforeEach
     void reset() {
-        fake.reset();
+        mock.reset();
         rateLimiter.reset();
+    }
+
+    private static String commandPath(String applianceName) {
+        return "/api/appliances/" + MockAutonomy.INSTANCE_ID + "/" + applianceName;
     }
 
     @Test
@@ -48,9 +56,9 @@ class AppliancesResourceTest {
     void post_unauthenticated_401() {
         given().contentType(ContentType.JSON)
                 .body("{\"on\":true}")
-                .when().post("/api/appliances/living-room-lamp")
+                .when().post(commandPath("hallway"))
                 .then().statusCode(401);
-        assertTrue(fake.publishedCommands().isEmpty());
+        assertTrue(mock.publishedCommands().isEmpty());
     }
 
     @Test
@@ -62,200 +70,174 @@ class AppliancesResourceTest {
     @Test
     @TestSecurity(user = "bob", roles = {"user"})
     void post_user_role_403() {
-        seedFreshLamp(false);
         given().contentType(ContentType.JSON)
                 .body("{\"on\":true}")
-                .when().post("/api/appliances/living-room-lamp")
+                .when().post(commandPath("hallway"))
                 .then().statusCode(403);
-        assertTrue(fake.publishedCommands().isEmpty());
+        assertTrue(mock.publishedCommands().isEmpty());
     }
 
     @Test
     @TestSecurity(user = "scott", roles = {"dashboard"})
-    void get_dashboard_allowed() {
-        seedFreshLamp(true);
+    void get_returns_cabin_tab_and_six_appliances() {
         given().when().get("/api/appliances")
                 .then()
                 .statusCode(200)
-                .body("stale", is(false))
-                .body("timeout", is(false))
-                .body("lastUpdated", notNullValue())
-                .body("appliances[0].applianceName", is("living-room-lamp"))
-                .body("appliances[0].on", is(true));
+                .body("instances.size()", is(1))
+                .body("instances[0].instanceId", is(MockAutonomy.INSTANCE_ID.toString()))
+                .body("instances[0].instanceName", is(MockAutonomy.INSTANCE_NAME))
+                .body("instances[0].stale", is(false))
+                .body("instances[0].timeout", is(false))
+                .body("instances[0].lastUpdated", notNullValue())
+                .body("instances[0].appliances.size()", is(6))
+                .body("instances[0].appliances.applianceName", hasItems(
+                        "hallway", "kitchen", "living-room", "bedroom", "garage", "porch"));
     }
 
     @Test
     @TestSecurity(user = "yuni", roles = {"portal-admin"})
     void get_portal_admin_allowed() {
-        seedFreshLamp(true);
         given().when().get("/api/appliances")
                 .then()
                 .statusCode(200)
-                .body("timeout", is(false))
-                .body("appliances.size()", greaterThanOrEqualTo(1));
+                .body("instances.size()", greaterThanOrEqualTo(1));
     }
 
     @Test
     @TestSecurity(user = "scott", roles = {"dashboard"})
-    void get_never_received_is_stale_not_409() {
+    void get_unknown_instances_is_empty_not_409() {
+        control.forget(MockAutonomy.INSTANCE_ID);
         given().when().get("/api/appliances")
                 .then()
                 .statusCode(200)
-                .body("stale", is(true))
-                .body("timeout", is(false))
-                .body("lastUpdated", nullValue())
-                .body("appliances", empty());
+                .body("instances", empty());
     }
 
     @Test
     @TestSecurity(user = "scott", roles = {"dashboard"})
     void extra_json_fields_400() {
-        seedFreshLamp(false);
         given().contentType(ContentType.JSON)
                 .body("{\"on\":true,\"extra\":1}")
-                .when().post("/api/appliances/living-room-lamp")
+                .when().post(commandPath("hallway"))
                 .then().statusCode(400);
-        assertTrue(fake.publishedCommands().isEmpty());
+        assertTrue(mock.publishedCommands().isEmpty());
     }
 
     @Test
     @TestSecurity(user = "scott", roles = {"dashboard"})
     void missing_on_400_from_constraint() {
-        seedFreshLamp(false);
         given().contentType(ContentType.JSON)
                 .body("{}")
-                .when().post("/api/appliances/living-room-lamp")
+                .when().post(commandPath("hallway"))
                 .then().statusCode(400);
-        assertTrue(fake.publishedCommands().isEmpty());
+        assertTrue(mock.publishedCommands().isEmpty());
     }
 
     @Test
     @TestSecurity(user = "scott", roles = {"dashboard"})
-    void blank_path_400_from_constraint() {
-        seedFreshLamp(false);
-        given().contentType(ContentType.JSON)
-                .body("{\"on\":true}")
-                .when().post("/api/appliances/{id}", " ")
-                .then().statusCode(400);
-        assertTrue(fake.publishedCommands().isEmpty());
-    }
-
-    @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
-    void oversized_path_400_from_constraint() {
-        seedFreshLamp(false);
+    void oversized_name_400_from_constraint() {
         String tooLong = "a".repeat(ApplianceSchemas.NAME_MAX + 1);
         given().contentType(ContentType.JSON)
                 .body("{\"on\":true}")
-                .when().post("/api/appliances/" + tooLong)
+                .when().post(commandPath(tooLong))
                 .then().statusCode(400);
-        assertTrue(fake.publishedCommands().isEmpty());
+        assertTrue(mock.publishedCommands().isEmpty());
     }
 
     @Test
     @TestSecurity(user = "scott", roles = {"dashboard"})
-    void post_never_received_409_no_command() {
+    void unknown_instance_404_no_command() {
+        UUID missing = UUID.fromString("00000000-0000-4000-8000-000000000000");
         given().contentType(ContentType.JSON)
                 .body("{\"on\":true}")
-                .when().post("/api/appliances/living-room-lamp")
-                .then()
-                .statusCode(409)
-                .body("stale", is(true))
-                .body("timeout", is(false))
-                .body("lastUpdated", nullValue())
-                .body("appliances", empty());
-        assertTrue(fake.publishedCommands().isEmpty());
+                .when().post("/api/appliances/" + missing + "/hallway")
+                .then().statusCode(404);
+        assertTrue(mock.publishedCommands().isEmpty());
     }
 
     @Test
     @TestSecurity(user = "scott", roles = {"dashboard"})
     void unknown_name_404_no_command() {
-        seedFreshLamp(false);
         given().contentType(ContentType.JSON)
                 .body("{\"on\":true}")
-                .when().post("/api/appliances/kitchen-toaster")
+                .when().post(commandPath("attic"))
                 .then().statusCode(404);
-        assertTrue(fake.publishedCommands().isEmpty());
+        assertTrue(mock.publishedCommands().isEmpty());
     }
 
     @Test
     @TestSecurity(user = "scott", roles = {"dashboard"})
-    void stale_map_post_409_get_still_200() {
-        seedFreshLamp(true);
-        fake.markStale();
+    void stale_instance_post_409_get_still_200() {
+        control.markStale(MockAutonomy.INSTANCE_ID, Duration.ofSeconds(20));
 
         given().when().get("/api/appliances")
                 .then()
                 .statusCode(200)
-                .body("stale", is(true))
-                .body("timeout", is(false))
-                .body("lastUpdated", notNullValue())
-                .body("appliances[0].on", is(true));
+                .body("instances[0].stale", is(true))
+                .body("instances[0].timeout", is(false))
+                .body("instances[0].lastUpdated", notNullValue());
 
         given().contentType(ContentType.JSON)
                 .body("{\"on\":false}")
-                .when().post("/api/appliances/living-room-lamp")
+                .when().post(commandPath("hallway"))
                 .then()
                 .statusCode(409)
                 .body("stale", is(true))
-                .body("timeout", is(false));
-        assertTrue(fake.publishedCommands().isEmpty());
+                .body("timeout", is(false))
+                .body("instanceId", is(MockAutonomy.INSTANCE_ID.toString()));
+        assertTrue(mock.publishedCommands().isEmpty());
     }
 
     @Test
     @TestSecurity(user = "scott", roles = {"dashboard"})
     void confirm_path_updates_map() {
-        seedFreshLamp(false);
-        fake.setConfirmCommands(true);
+        mock.setConfirmCommands(true);
 
         given().contentType(ContentType.JSON)
                 .body("{\"on\":true}")
-                .when().post("/api/appliances/living-room-lamp")
+                .when().post(commandPath("hallway"))
                 .then()
                 .statusCode(200)
                 .body("timeout", is(false))
                 .body("stale", is(false))
-                .body("appliances[0].on", is(true))
+                .body("instanceName", is("Cabin"))
+                .body("appliances.find { it.applianceName == 'hallway' }.on", is(true))
                 .body("lastUpdated", notNullValue());
 
-        assertEquals(1, fake.publishedCommands().size());
-        ApplianceCommandMessage command = fake.publishedCommands().getFirst();
-        assertEquals("living-room-lamp", command.applianceName());
-        assertEquals(FakeApplianceBackend.INSTANCE_ID, command.instanceId());
-        assertTrue(command.on());
-        assertEquals(command.commandId(), fake.snapshot().orElseThrow().appliedCommandId());
+        assertEquals(1, mock.publishedCommands().size());
+        ApplianceCommandRouted routed = mock.publishedCommands().getFirst();
+        assertEquals(MockAutonomy.INSTANCE_ID, routed.instanceId());
+        assertEquals("hallway", routed.command().applianceName());
+        assertTrue(routed.command().state());
+        assertFalse(routed.command().commandId().isBlank());
     }
 
     @Test
     @TestSecurity(user = "scott", roles = {"dashboard"})
     void timeout_path_does_not_look_confirmed() {
-        seedFreshLamp(false);
-        fake.setConfirmCommands(false);
+        mock.setConfirmCommands(false);
 
         given().contentType(ContentType.JSON)
                 .body("{\"on\":true}")
-                .when().post("/api/appliances/living-room-lamp")
+                .when().post(commandPath("hallway"))
                 .then()
                 .statusCode(200)
                 .body("timeout", is(true))
                 .body("stale", is(false))
-                .body("appliances[0].on", is(false));
+                .body("appliances.find { it.applianceName == 'hallway' }.on", is(false));
 
-        assertEquals(1, fake.publishedCommands().size());
-        assertEquals(null, fake.snapshot().orElseThrow().appliedCommandId());
-        assertEquals(false, fake.snapshot().orElseThrow().find("living-room-lamp").orElseThrow().on());
+        assertEquals(1, mock.publishedCommands().size());
     }
 
     @Test
     @TestSecurity(user = "scott", roles = {"dashboard"})
     void rate_limit_returns_429() {
-        seedFreshLamp(false);
-        fake.setConfirmCommands(true);
+        mock.setConfirmCommands(true);
         int limited = 0;
         for (int i = 0; i < 12; i++) {
             int status = given().contentType(ContentType.JSON)
                     .body("{\"on\":true}")
-                    .when().post("/api/appliances/living-room-lamp")
+                    .when().post(commandPath("hallway"))
                     .then()
                     .extract().statusCode();
             if (status == 429) {
@@ -270,23 +252,14 @@ class AppliancesResourceTest {
     @Test
     @TestSecurity(user = "scott", roles = {"dashboard"})
     void get_is_never_rate_limited() {
-        seedFreshLamp(true);
         for (int i = 0; i < 12; i++) {
             given().when().get("/api/appliances").then().statusCode(200);
         }
         for (int i = 0; i < 12; i++) {
             given().contentType(ContentType.JSON)
                     .body("{\"on\":false}")
-                    .when().post("/api/appliances/living-room-lamp");
+                    .when().post(commandPath("hallway"));
         }
         given().when().get("/api/appliances").then().statusCode(200);
-    }
-
-    private void seedFreshLamp(boolean on) {
-        fake.publishState(new ApplianceStateMessage(
-                FakeApplianceBackend.INSTANCE_ID,
-                FakeApplianceBackend.INSTANCE_NAME,
-                null,
-                List.of(new Appliance("living-room-lamp", on))));
     }
 }

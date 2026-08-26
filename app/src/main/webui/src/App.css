@@ -97,6 +97,38 @@ h1 {
   font-weight: 600;
 }
 
+.instance-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0 0 1rem;
+}
+
+.instance-tab {
+  padding: 0.45rem 0.75rem;
+  border: 0;
+  border-radius: 0.45rem;
+  background: transparent;
+  color: #c8c8c8;
+  cursor: pointer;
+  font: inherit;
+}
+
+.instance-tab:hover {
+  background: #1c1c1c;
+  color: #f4f4f4;
+}
+
+.instance-tab.is-current {
+  background: #1d2830;
+  color: #f4f4f4;
+}
+
+.instance-tab:focus-visible {
+  outline: 2px solid #e8efe8;
+  outline-offset: 2px;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

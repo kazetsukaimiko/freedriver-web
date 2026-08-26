@@ -1,5 +1,6 @@
 package io.freedriver.app.api;
 
+import io.freedriver.app.appliances.MockAutonomy;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
@@ -21,7 +22,7 @@ class AppliancesDisabledTest {
             return Map.of(
                     "freedriver.appliances.enabled", "false",
                     "freedriver.appliances.live-commands", "false",
-                    "freedriver.appliances.backend", "none",
+                    "freedriver.appliances.mock", "false",
                     "quarkus.http.test-port", "0");
         }
     }
@@ -37,7 +38,7 @@ class AppliancesDisabledTest {
     void post_is_404_when_disabled() {
         given().contentType(ContentType.JSON)
                 .body("{\"on\":true}")
-                .when().post("/api/appliances/living-room-lamp")
+                .when().post("/api/appliances/" + MockAutonomy.INSTANCE_ID + "/hallway")
                 .then().statusCode(404);
     }
 

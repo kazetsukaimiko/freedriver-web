@@ -13,8 +13,8 @@ public class AppliancesConfig {
     @ConfigProperty(name = "freedriver.appliances.live-commands", defaultValue = "false")
     boolean liveCommands;
 
-    @ConfigProperty(name = "freedriver.appliances.backend", defaultValue = "none")
-    String backend;
+    @ConfigProperty(name = "freedriver.appliances.mock", defaultValue = "false")
+    boolean mock;
 
     @ConfigProperty(name = "freedriver.appliances.stale-after", defaultValue = "20s")
     Duration staleAfter;
@@ -25,8 +25,8 @@ public class AppliancesConfig {
     @ConfigProperty(name = "freedriver.appliances.command-timeout-max", defaultValue = "30s")
     Duration commandTimeoutMax;
 
-    @ConfigProperty(name = "freedriver.appliances.fake-refresh", defaultValue = "false")
-    boolean fakeRefresh;
+    @ConfigProperty(name = "freedriver.appliances.mock-refresh", defaultValue = "false")
+    boolean mockRefresh;
 
     @ConfigProperty(name = "freedriver.appliances.rate-limit.permits", defaultValue = "30")
     int rateLimitPermits;
@@ -42,8 +42,9 @@ public class AppliancesConfig {
         return liveCommands;
     }
 
-    public String backend() {
-        return backend;
+    /** Mock event source on the same bus. Not a backend picker. */
+    public boolean mock() {
+        return mock;
     }
 
     public Duration staleAfter() {
@@ -84,8 +85,8 @@ public class AppliancesConfig {
         return Duration.ofMillis(50);
     }
 
-    public boolean fakeRefresh() {
-        return fakeRefresh;
+    public boolean mockRefresh() {
+        return mockRefresh;
     }
 
     public RateLimit rateLimit() {

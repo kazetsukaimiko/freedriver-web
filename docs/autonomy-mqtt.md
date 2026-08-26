@@ -10,12 +10,11 @@ This is **not** the portal REST/BFF/OIDC essay. Portal product surface: [applian
 
 ## Contract home (do not use the closed suite PR)
 
-MQTT v1 types live in `io.freedriver.autonomy:autonomy-mqtt-contract:2026-08_r51`
-(`io.freedriver.autonomy.mqtt.contract`). Jakarta validate-after-parse is on the records in that artifact. Consume path: [mqtt-contract-consume.md](mqtt-contract-consume.md). Topic JSON is also in [appliances.md](appliances.md).
+MQTT v1 types live in `io.freedriver:freedriver-mqtt-contract` (`io.freedriver.mqtt.contract`), owned and published by this portal. Consume path: [mqtt-contract-consume.md](mqtt-contract-consume.md). Topic JSON is also in [appliances.md](appliances.md).
 
-Do **not** copy `Appliance` / `ApplianceStateMessage` / `ApplianceCommandMessage` / `ApplianceSchemas` into this repo. Extra JSON fields are rejected. There is no `schemaVersion`. The wire field is `applianceName`, not `name`. `instanceId` is a UUID on the topic and in JSON. `instanceName` is UX-only.
+Do **not** copy `Appliance` / `ApplianceStateMessage` / `ApplianceCommandMessage` / `ApplianceSchemas` / `ApplianceJson` into autonomy. Extra JSON fields are rejected. There is no `schemaVersion`. The wire field is `applianceName`, not `name`. The switch field is `state`, not `on`. `instanceId` is a UUID **topic segment only**. `instanceName` is UX-only.
 
-Do **not** depend on `io.freedriver:mqtt-contract` from the Freedriver library suite, [freedriver#18](https://github.com/kazetsukaimiko/freedriver/issues/18), or the closed [freedriver#19](https://github.com/kazetsukaimiko/freedriver/pull/19). kaze rejected putting mqtt-contract in that suite.
+Do **not** depend on `io.freedriver.autonomy:autonomy-mqtt-contract`. Do **not** depend on `io.freedriver:mqtt-contract` from the Freedriver library suite, [freedriver#18](https://github.com/kazetsukaimiko/freedriver/issues/18), or the closed [freedriver#19](https://github.com/kazetsukaimiko/freedriver/pull/19). kaze rejected putting mqtt-contract in that suite.
 
 ## Connect
 
@@ -57,33 +56,31 @@ Publish QoS 1, retain=false.
 
 ```json
 {
-  "instanceId": "550e8400-e29b-41d4-a716-446655440000",
   "instanceName": "Cabin",
   "appliedCommandId": "550e8400-e29b-41d4-a716-446655440000",
   "appliances": [
     {
-      "applianceName": "living-room-lamp",
-      "on": true
+      "applianceName": "hallway",
+      "state": true
     }
   ]
 }
 ```
 
-There is **no** separate `id` and no `name`. Each appliance is `{applianceName, on}` only. Boards are not on this wire.
+There is **no** `instanceId` in the body (it is the topic). There is **no** separate `id` and no `name`. Each appliance is `{applianceName, state}` only. Boards are not on this wire.
 
-`applianceName` is the existing autonomy alias key (`AliasView.applianceStates`). It is not a new slug. Portal `/api/appliances/{id}` uses that same string; do not invent a second identifier.
+`applianceName` is the existing autonomy alias key (`AliasView.applianceStates`). It is not a new slug. Portal `POST /api/appliances/{instanceId}/{applianceName}` uses that same string.
 
-`instanceId` is a UUID, not the MQTT protocol client-id. Version nibbles are not checked. `instanceName` is the dashboard label only.
+`instanceId` is a UUID topic segment, not the MQTT protocol client-id. Version nibbles are not checked. `instanceName` is the dashboard tab label only.
 
 When no command produced this map, send `"appliedCommandId": null`.
 
 Field rules (Quarkus rejects otherwise):
 
-- `instanceId`: UUID (hex + hyphens)
 - `instanceName`: non-blank UX label
 - `applianceName`: autonomy alias key, 1–64 characters (not blank)
-- `on`: boolean
-- extra JSON fields: rejected (including `name`, `id`, `schemaVersion`, board fields)
+- `state`: boolean
+- extra JSON fields: rejected (including `instanceId`, `on`, `name`, `id`, `schemaVersion`, board fields)
 
 ## Topic B — command (Quarkus → autonomy)
 
@@ -91,10 +88,9 @@ Subscribe QoS 1. Messages are retain=false. Until live-commands is on, you may s
 
 ```json
 {
-  "instanceId": "550e8400-e29b-41d4-a716-446655440000",
   "commandId": "550e8400-e29b-41d4-a716-446655440000",
-  "applianceName": "living-room-lamp",
-  "on": false
+  "applianceName": "hallway",
+  "state": false
 }
 ```
 
@@ -136,6 +132,6 @@ Either:
 | --- | --- |
 | Connect as `autonomy` to `mqtt.freedriver.io:8883` with TLS verify | Skip TLS verify |
 | Publish Topic A, subscribe Topic B for your `instanceId` | Publish Topic B or subscribe Topic A |
-| Echo `appliedCommandId` on the next map | Depend on `io.freedriver:mqtt-contract` / closed suite PR |
+| Echo `appliedCommandId` on the next map | Depend on a closed Freedriver library suite PR |
 | Ask Techops for password + current cert | Put secrets in the doc or invent a Maven Central version |
 | Speak to the broker now | Wait for or flip `live-commands` / OIDC |

@@ -19,4 +19,12 @@ class ApplianceServiceSurfaceTest {
         assertFalse(source.contains("assertCanAccess"), source);
         assertFalse(source.contains("CommandTimeoutException"), source);
     }
+
+    @Test
+    void control_has_no_jaxrs_or_identity() throws IOException {
+        String source = Files.readString(Path.of("src/main/java/io/freedriver/app/appliances/ApplianceControl.java"));
+        assertFalse(source.contains("jakarta.ws.rs"), source);
+        assertFalse(source.contains("SecurityIdentity"), source);
+        assertFalse(source.contains("CommandRateLimiter"), source);
+    }
 }

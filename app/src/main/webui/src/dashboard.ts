@@ -2,6 +2,7 @@ export const COMMAND_WAIT_MS = 5000
 export const STALE_AFTER_MS = 20_000
 export const POLL_MS = 4000
 const DEMO_CONFIRM_MS = 900
+const DEMO_INSTANCE_ID = '550e8400-e29b-41d4-a716-446655440000'
 
 export type DemoMode = 'live' | 'waiting' | 'empty' | 'unreachable' | 'denied' | 'timeout'
 
@@ -20,19 +21,25 @@ export type Appliance = {
   on: boolean
 }
 
-export type ApplianceMap = {
+export type Instance = {
+  instanceId: string
+  instanceName: string
   lastUpdated: string | null
   stale: boolean
   timeout: boolean
   appliances: Appliance[]
 }
 
+export type ApplianceMap = {
+  instances: Instance[]
+}
+
 export type DeniedReason = 'session' | 'role'
 
 export type CommandResult =
-  | { status: 'confirmed'; map: ApplianceMap }
-  | { status: 'timeout'; map: ApplianceMap }
-  | { status: 'stale'; map: ApplianceMap | null }
+  | { status: 'confirmed'; instance: Instance }
+  | { status: 'timeout'; instance: Instance }
+  | { status: 'stale'; instance: Instance | null }
   | { status: 'denied'; reason: DeniedReason }
   | { status: 'error'; message: string }
 
@@ -50,10 +57,24 @@ export function demoModeFromSearch(search: string): DemoMode | null {
 }
 
 export const DEMO_APPLIANCES: Appliance[] = [
-  { id: 'living-room-lamp', name: 'Living room lamp', on: true },
-  { id: 'workshop-heater', name: 'Workshop heater', on: false },
-  { id: 'porch-light', name: 'Porch light', on: true },
+  { id: 'hallway', name: 'Hallway', on: true },
+  { id: 'kitchen', name: 'Kitchen', on: false },
+  { id: 'living-room', name: 'Living room', on: true },
+  { id: 'bedroom', name: 'Bedroom', on: false },
+  { id: 'garage', name: 'Garage', on: false },
+  { id: 'porch', name: 'Porch', on: true },
 ]
+
+export function demoInstance(stale: boolean, appliances = DEMO_APPLIANCES): Instance {
+  return {
+    instanceId: DEMO_INSTANCE_ID,
+    instanceName: 'Cabin',
+    lastUpdated: demoLastUpdated(stale ? 25 : 2),
+    stale,
+    timeout: false,
+    appliances,
+  }
+}
 
 export function demoLastUpdated(staleSeconds = 25): string {
   return new Date(Date.now() - staleSeconds * 1000).toISOString()
@@ -63,16 +84,41 @@ export function parseApplianceMap(raw: unknown): ApplianceMap {
   if (!raw || typeof raw !== 'object') {
     throw new Error('Invalid appliance map')
   }
+  const body = raw as { instances?: unknown }
+  if (!Array.isArray(body.instances)) {
+    throw new Error('Invalid appliance map')
+  }
+  return { instances: body.instances.map(readInstance) }
+}
+
+export function parseInstanceView(raw: unknown): Instance {
+  return readInstance(raw)
+}
+
+function readInstance(raw: unknown): Instance {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('Invalid instance')
+  }
   const body = raw as {
+    instanceId?: unknown
+    instanceName?: unknown
     lastUpdated?: string | null
     stale?: boolean
     timeout?: boolean
     appliances?: unknown
   }
+  if (typeof body.instanceId !== 'string' || body.instanceId.length === 0) {
+    throw new Error('Invalid instance')
+  }
+  if (typeof body.instanceName !== 'string' || body.instanceName.length === 0) {
+    throw new Error('Invalid instance')
+  }
   if (!Array.isArray(body.appliances)) {
-    throw new Error('Invalid appliance map')
+    throw new Error('Invalid instance')
   }
   return {
+    instanceId: body.instanceId,
+    instanceName: body.instanceName,
     lastUpdated: typeof body.lastUpdated === 'string' ? body.lastUpdated : null,
     stale: Boolean(body.stale),
     timeout: Boolean(body.timeout),
@@ -84,15 +130,14 @@ function readAppliance(raw: unknown): Appliance {
   if (!raw || typeof raw !== 'object') {
     throw new Error('Invalid appliance')
   }
-  const body = raw as { id?: unknown; name?: unknown; on?: unknown }
-  if (typeof body.name !== 'string' || body.name.length === 0) {
+  const body = raw as { applianceName?: unknown; on?: unknown }
+  if (typeof body.applianceName !== 'string' || body.applianceName.length === 0) {
     throw new Error('Invalid appliance')
   }
   if (typeof body.on !== 'boolean') {
     throw new Error('Invalid appliance')
   }
-  const id = typeof body.id === 'string' && body.id.length > 0 ? body.id : body.name
-  return { id, name: body.name, on: body.on }
+  return { id: body.applianceName, name: body.applianceName, on: body.on }
 }
 
 export async function fetchApplianceMap(signal?: AbortSignal): Promise<MapResult> {
@@ -117,17 +162,21 @@ export async function fetchApplianceMap(signal?: AbortSignal): Promise<MapResult
 }
 
 export async function postApplianceCommand(
-  id: string,
+  instanceId: string,
+  applianceName: string,
   on: boolean,
   signal?: AbortSignal,
 ): Promise<CommandResult> {
   try {
-    const response = await fetch(`/api/appliances/${encodeURIComponent(id)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ on }),
-      signal,
-    })
+    const response = await fetch(
+      `/api/appliances/${encodeURIComponent(instanceId)}/${encodeURIComponent(applianceName)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ on }),
+        signal,
+      },
+    )
     if (response.status === 401) {
       return { status: 'denied', reason: 'session' }
     }
@@ -135,22 +184,32 @@ export async function postApplianceCommand(
       return { status: 'denied', reason: 'role' }
     }
     if (response.status === 409) {
-      let map: ApplianceMap | null = null
+      let instance: Instance | null = null
       try {
-        map = parseApplianceMap(await response.json())
+        instance = parseInstanceView(await response.json())
       } catch {
-        map = null
+        instance = null
       }
-      return { status: 'stale', map }
+      return { status: 'stale', instance }
     }
     if (!response.ok) {
       return { status: 'error', message: `Command failed (${response.status})` }
     }
-    const map = parseApplianceMap(await response.json())
-    return { status: map.timeout ? 'timeout' : 'confirmed', map }
+    const instance = parseInstanceView(await response.json())
+    return { status: instance.timeout ? 'timeout' : 'confirmed', instance }
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
-      return { status: 'timeout', map: { lastUpdated: null, stale: false, timeout: true, appliances: [] } }
+      return {
+        status: 'timeout',
+        instance: {
+          instanceId,
+          instanceName: '',
+          lastUpdated: null,
+          stale: false,
+          timeout: true,
+          appliances: [],
+        },
+      }
     }
     return { status: 'error', message: error instanceof Error ? error.message : 'Unknown error' }
   }
@@ -179,8 +238,8 @@ export function wait(ms: number, signal?: AbortSignal): Promise<void> {
 
 export async function demoCommand(
   mode: DemoMode,
-  current: Appliance[],
-  id: string,
+  current: Instance,
+  applianceName: string,
   on: boolean,
   signal?: AbortSignal,
 ): Promise<CommandResult> {
@@ -188,14 +247,20 @@ export async function demoCommand(
     await wait(COMMAND_WAIT_MS, signal)
     return {
       status: 'timeout',
-      map: { lastUpdated: new Date().toISOString(), stale: false, timeout: true, appliances: current },
+      instance: { ...current, timeout: true, lastUpdated: new Date().toISOString() },
     }
   }
   await wait(DEMO_CONFIRM_MS, signal)
-  const appliances = current.map((item) => (item.id === id ? { ...item, on } : item))
+  const appliances = current.appliances.map((item) => (item.id === applianceName ? { ...item, on } : item))
   return {
     status: 'confirmed',
-    map: { lastUpdated: new Date().toISOString(), stale: false, timeout: false, appliances },
+    instance: {
+      ...current,
+      lastUpdated: new Date().toISOString(),
+      stale: false,
+      timeout: false,
+      appliances,
+    },
   }
 }
 
