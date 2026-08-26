@@ -83,4 +83,6 @@ Required repository secrets:
 | `DEPLOY_SSH_KEY` | private key whose public half is in `root` `authorized_keys` |
 | `DEPLOY_SSH_KNOWN_HOSTS` | output of `ssh-keyscan 138.197.90.42` |
 
+Pull requests also get an advisory Grok (xAI) review (`.github/workflows/grok-review.yml`). **kaze must add repository secret `XAI_API_KEY` from [console.x.ai](https://console.x.ai)** — do not invent a key. Optional Actions variable `XAI_MODEL` (default `grok-4`). The system prompt is kaze’s lock from [#64](https://github.com/kazetsukaimiko/freedriver-web/issues/64), copied verbatim into `.github/grok-review-prompt.md`. The job checks out the PR head and sends full touched files plus one-level-out neighbors; it is not a hunk-only marketplace action. Comments only: the job does not fail on findings, is not a merge gate, and does not count as the required human review.
+
 Do not commit keys. Mail DNS (Proton) is owned by Sysadmin; leave it alone. `auth.freedriver.io`, `grafana.freedriver.io`, and `mqtt.freedriver.io` A records are also Sysadmin.

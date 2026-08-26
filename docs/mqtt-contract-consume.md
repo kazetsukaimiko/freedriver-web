@@ -4,13 +4,19 @@ Coordinates: `io.freedriver.autonomy:autonomy-mqtt-contract:2026-08_r51`
 
 Repository: `https://maven.pkg.github.com/kazetsukaimiko/autonomy` (Maven repo id `github`).
 
+Published package: https://github.com/kazetsukaimiko/autonomy/packages/3213073 (`io.freedriver.autonomy.autonomy-mqtt-contract`).
+
 `app/pom.xml` depends on that exact version. Do not use `1.0.0-SNAPSHOT`. Do not use `2026-08_r45`. Do not vendor the jar.
+
+GitHub Maven packages are repository-scoped. They inherit permissions from the publishing repo (`kazetsukaimiko/autonomy`). Autonomy is public, so this package is public. There is no extra package grant.
+
+Maven packages have no Manage Actions access UI.
 
 ## CI
 
-`GITHUB_TOKEN` via `actions/setup-java` (`server-id: github`). Job needs `packages: read`.
+CI already authenticates with `GITHUB_TOKEN` + `packages: read` via `actions/setup-java` (`server-id: github`). That is enough. Leave the workflow unchanged.
 
-If resolve returns 401/403, @kazetsukaimiko still needs to grant this repo read on the package.
+If resolve returns 401/403, use a classic PAT with `read:packages` (repo secret or `~/.m2/settings.xml`). Do not add that unless a job actually fails.
 
 ## VPS deploy
 
