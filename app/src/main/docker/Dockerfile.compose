@@ -5,7 +5,9 @@
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /workspace
 
-COPY pom.xml ./
+# *.xml always matches pom.xml. Deploy writes gitignored settings.xml for GitHub Packages.
+# Local compose without that file still copies. Not a Docker ARG/ENV (those leak in history).
+COPY *.xml ./
 COPY src src
 
 # ARG after COPY so a new stamp does not bust the source layer.
@@ -14,14 +16,24 @@ ARG BUILD_NUMBER=1.0.0-SNAPSHOT
 # versions:set is image-workspace only (git POM stays 1.0.0-SNAPSHOT).
 # quarkus.application.version is what GET /api/build and the running app report.
 # Implementation-Version is set if the jar plugin writes a manifest.
-RUN mvn -B \
-    org.codehaus.mojo:versions-maven-plugin:2.21.0:set \
-    -DnewVersion="${BUILD_NUMBER}" \
-    -DgenerateBackupPoms=false \
- && mvn -B -DskipTests \
-    -Dquarkus.application.version="${BUILD_NUMBER}" \
-    -Dquarkus.package.jar.manifest.attributes.Implementation-Version="${BUILD_NUMBER}" \
-    package
+# Both mvn calls use deploy settings when present. Runtime stage does not COPY them.
+RUN set -eu; \
+    if [ -f /workspace/settings.xml ]; then \
+      mkdir -p /root/.m2; \
+      mv /workspace/settings.xml /root/.m2/settings.xml; \
+      MVN_SETTINGS="-s /root/.m2/settings.xml"; \
+    else \
+      MVN_SETTINGS=""; \
+    fi; \
+    mvn -B ${MVN_SETTINGS} \
+      org.codehaus.mojo:versions-maven-plugin:2.21.0:set \
+      -DnewVersion="${BUILD_NUMBER}" \
+      -DgenerateBackupPoms=false \
+ && mvn -B ${MVN_SETTINGS} -DskipTests \
+      -Dquarkus.application.version="${BUILD_NUMBER}" \
+      -Dquarkus.package.jar.manifest.attributes.Implementation-Version="${BUILD_NUMBER}" \
+      package \
+ && rm -f /root/.m2/settings.xml
 
 FROM registry.access.redhat.com/ubi9/openjdk-21-runtime:1.24
 ENV LANGUAGE='en_US:en'

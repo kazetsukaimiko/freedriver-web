@@ -59,6 +59,8 @@ The live command route is **not** Done. It is blocked on [#25](https://github.co
 
 Push or merge to `main`, or run the **Deploy** workflow. GitHub Actions rsyncs this repo to `/opt/freedriver-web` and runs `docker compose --env-file /opt/freedriver-secrets/.env up -d` so `${VAR}` interpolation reads the secrets file, not a `.env` in the git tree.
 
+The compose image build resolves `autonomy-mqtt-contract` from GitHub Packages with a job-scoped `GITHUB_TOKEN` Maven settings file (`server` id `github`). That file is gitignored, used in the Dockerfile build stage only, and deleted on the VPS after `--build`. Do not commit a PAT or pass the token as a Docker ARG/ENV.
+
 ### Build number
 
 A successful `main` deploy stamps `YEAR-MONTH_rBUILD_NUM` (UTC year-month + `github.run_number`), same scheme as autonomy mqtt-contract. Example: `2026-08_r45`. Not semver. Not `1.0.<run>`.
