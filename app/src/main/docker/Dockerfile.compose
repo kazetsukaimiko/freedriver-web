@@ -35,9 +35,9 @@ RUN set -eu; \
       package \
  && rm -f /root/.m2/settings.xml
 
-# UBI OpenJDK runtime images are 17/21/25 only (no openjdk-23-runtime).
-# Temurin 23 JRE matches CI temurin 23 and maven.compiler.release 23.
-FROM eclipse-temurin:23-jre
+# UBI has no openjdk-23-runtime (17/21/25 only). 25 is newer than --release 23.
+# Do not drop the runtime below 23; do not compile the app down to 21.
+FROM registry.access.redhat.com/ubi9/openjdk-25-runtime:1.24
 ENV LANGUAGE='en_US:en'
 
 COPY --from=build --chown=185 /workspace/target/quarkus-app/lib/ /deployments/lib/
@@ -47,6 +47,7 @@ COPY --from=build --chown=185 /workspace/target/quarkus-app/quarkus/ /deployment
 
 EXPOSE 8080
 USER 185
+ENV JAVA_OPTS_APPEND="-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager"
+ENV JAVA_APP_JAR="/deployments/quarkus-run.jar"
 
-# Temurin JRE has no UBI run-java.sh; bake the same host/log-manager flags here.
-ENTRYPOINT ["java", "-Dquarkus.http.host=0.0.0.0", "-Djava.util.logging.manager=org.jboss.logmanager.LogManager", "-jar", "/deployments/quarkus-run.jar"]
+ENTRYPOINT [ "/opt/jboss/container/java/run/run-java.sh" ]
