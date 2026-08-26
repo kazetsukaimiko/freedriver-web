@@ -1,7 +1,6 @@
 package io.freedriver.app.appliances;
 
 import io.freedriver.autonomy.mqtt.contract.ApplianceCommandMessage;
-import io.freedriver.autonomy.mqtt.contract.ApplianceSchemas;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -64,11 +63,7 @@ public class ApplianceService {
             throw new ClientErrorException(
                     Response.status(409).entity(snapshot.toResponse(true, false)).build());
         }
-        if (applianceName == null
-                || applianceName.isBlank()
-                || applianceName.length() > ApplianceSchemas.NAME_MAX
-                || snapshot.instanceId() == null
-                || snapshot.find(applianceName).isEmpty()) {
+        if (snapshot.instanceId() == null || snapshot.find(applianceName).isEmpty()) {
             throw new NotFoundException();
         }
 

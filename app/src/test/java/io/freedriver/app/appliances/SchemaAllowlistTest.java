@@ -3,11 +3,16 @@ package io.freedriver.app.appliances;
 import io.freedriver.autonomy.mqtt.contract.ApplianceCommandMessage;
 import io.freedriver.autonomy.mqtt.contract.ApplianceSchemas;
 import io.freedriver.autonomy.mqtt.contract.ApplianceStateMessage;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
 import org.junit.jupiter.api.Test;
 
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -62,6 +67,8 @@ class SchemaAllowlistTest {
         ApplianceCommandRequest request = new ApplianceCommandRequest();
         request.setOn(true);
         request.extra("commandId", "nope");
-        assertThrows(Exception.class, request::assertValid);
+        Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+        Set<ConstraintViolation<ApplianceCommandRequest>> violations = validator.validate(request);
+        assertFalse(violations.isEmpty());
     }
 }

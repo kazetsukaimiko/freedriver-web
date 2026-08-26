@@ -3,10 +3,14 @@ package io.freedriver.app.api;
 import io.freedriver.app.appliances.ApplianceCommandRequest;
 import io.freedriver.app.appliances.ApplianceMapResponse;
 import io.freedriver.app.appliances.ApplianceService;
+import io.freedriver.autonomy.mqtt.contract.ApplianceSchemas;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.BadRequestException;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
@@ -36,13 +40,11 @@ public class AppliancesResource {
     @Path("/{id}")
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({"dashboard", "portal-admin"})
-    public ApplianceMapResponse command(@PathParam("id") String id, ApplianceCommandRequest body) {
+    public ApplianceMapResponse command(
+            @PathParam("id") @NotBlank @Size(max = ApplianceSchemas.NAME_MAX) String id,
+            @Valid @NotNull ApplianceCommandRequest body) {
         // Path {id} is the MQTT applianceName alias. No boards. instanceId is not this path.
         appliances.assertCanAccess(identity);
-        if (body == null) {
-            throw new BadRequestException("JSON body required");
-        }
-        body.assertValid();
         return appliances.issueCommand(identity, id, body.getOn());
     }
 }

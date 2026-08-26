@@ -1,7 +1,9 @@
 package io.freedriver.app.appliances;
 
 import com.fasterxml.jackson.annotation.JsonAnySetter;
-import jakarta.ws.rs.BadRequestException;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.NotNull;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -9,9 +11,12 @@ import java.util.Map;
 /**
  * POST body {@code { "on": bool }}. Extra JSON fields are rejected (400).
  * Uses {@code @JsonAnySetter} so we do not flip FAIL_ON_UNKNOWN_PROPERTIES globally.
+ * Unknown fields become a Bean Validation constraint — Hibernate Validator does not
+ * reject unknown JSON properties on its own.
  */
 public class ApplianceCommandRequest {
 
+    @NotNull
     private Boolean on;
     private final Map<String, Object> extras = new LinkedHashMap<>();
 
@@ -28,12 +33,9 @@ public class ApplianceCommandRequest {
         extras.put(name, value);
     }
 
-    public void assertValid() {
-        if (!extras.isEmpty()) {
-            throw new BadRequestException("Unknown fields: " + extras.keySet());
-        }
-        if (on == null) {
-            throw new BadRequestException("Missing required field: on");
-        }
+    @AssertTrue(message = "Unknown fields")
+    @JsonIgnore
+    public boolean isKnownFieldsOnly() {
+        return extras.isEmpty();
     }
 }
