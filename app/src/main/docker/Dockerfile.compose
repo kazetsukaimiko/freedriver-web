@@ -2,7 +2,7 @@
 #   docker build -f src/main/docker/Dockerfile.compose -t freedriver-app .
 # Stock Quarkus Dockerfiles are unchanged; this one packages in the builder.
 
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM maven:3.9-eclipse-temurin-23 AS build
 WORKDIR /workspace
 
 # *.xml always matches pom.xml. Deploy writes gitignored settings.xml for GitHub Packages.
@@ -35,7 +35,9 @@ RUN set -eu; \
       package \
  && rm -f /root/.m2/settings.xml
 
-FROM registry.access.redhat.com/ubi9/openjdk-21-runtime:1.24
+# UBI has no openjdk-23-runtime (17/21/25 only). 25 is newer than --release 23.
+# Do not drop the runtime below 23; do not compile the app down to 21.
+FROM registry.access.redhat.com/ubi9/openjdk-25-runtime:1.24
 ENV LANGUAGE='en_US:en'
 
 COPY --from=build --chown=185 /workspace/target/quarkus-app/lib/ /deployments/lib/
