@@ -81,4 +81,6 @@ Required repository secrets:
 | `DEPLOY_SSH_KEY` | private key whose public half is in `root` `authorized_keys` |
 | `DEPLOY_SSH_KNOWN_HOSTS` | output of `ssh-keyscan 138.197.90.42` |
 
+Pull requests also get an advisory Grok (xAI) comment (`.github/workflows/grok-review.yml`). Add repository secret `XAI_API_KEY` from [console.x.ai](https://console.x.ai). The rubric is `.github/grok-review-prompt.md`. This does not count as the required human review and must not be a required check.
+
 Do not commit keys. Mail DNS (Proton) is owned by Sysadmin; leave it alone. `auth.freedriver.io`, `grafana.freedriver.io`, and `mqtt.freedriver.io` A records are also Sysadmin.
