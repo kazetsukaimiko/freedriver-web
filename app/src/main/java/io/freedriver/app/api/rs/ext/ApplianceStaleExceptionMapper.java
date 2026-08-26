@@ -1,4 +1,4 @@
-package io.freedriver.app.api;
+package io.freedriver.app.api.rs.ext;
 
 import io.freedriver.app.appliances.ApplianceMapResponse;
 import io.freedriver.app.appliances.ApplianceStaleException;

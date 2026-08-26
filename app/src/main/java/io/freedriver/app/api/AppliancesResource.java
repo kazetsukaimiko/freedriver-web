@@ -4,7 +4,6 @@ import io.freedriver.app.appliances.ApplianceCommandRequest;
 import io.freedriver.app.appliances.ApplianceMapResponse;
 import io.freedriver.app.appliances.ApplianceService;
 import io.freedriver.autonomy.mqtt.contract.ApplianceSchemas;
-import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -26,9 +25,6 @@ public class AppliancesResource {
     @Inject
     ApplianceService appliances;
 
-    @Inject
-    SecurityIdentity identity;
-
     @GET
     @RolesAllowed({"dashboard", "portal-admin"})
     public ApplianceMapResponse list() {
@@ -42,15 +38,6 @@ public class AppliancesResource {
     public ApplianceMapResponse command(
             @PathParam("id") @NotBlank @Size(max = ApplianceSchemas.NAME_MAX) String id,
             @Valid @NotNull ApplianceCommandRequest body) {
-        // Path {id} is the MQTT applianceName alias. No boards. instanceId is not this path.
-        return appliances.issueCommand(actor(identity), id, body.getOn());
-    }
-
-    private static String actor(SecurityIdentity identity) {
-        if (identity == null || identity.isAnonymous() || identity.getPrincipal() == null) {
-            return "anonymous";
-        }
-        String name = identity.getPrincipal().getName();
-        return name == null || name.isBlank() ? "anonymous" : name;
+        return appliances.issueCommand(id, body.getOn());
     }
 }

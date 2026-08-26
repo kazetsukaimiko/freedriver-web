@@ -36,7 +36,7 @@ class ApplianceServiceTest {
         MemoryBackend backend = new MemoryBackend();
         ApplianceStaleException thrown = assertThrows(
                 ApplianceStaleException.class,
-                () -> service(backend).issueCommand("scott", "living-room-lamp", true));
+                () -> service(backend).issueCommand("living-room-lamp", true));
         assertTrue(thrown.snapshot().isEmpty());
         assertTrue(backend.publishedCommands().isEmpty());
     }
@@ -54,7 +54,7 @@ class ApplianceServiceTest {
 
         ApplianceStaleException thrown = assertThrows(
                 ApplianceStaleException.class,
-                () -> service(backend).issueCommand("scott", "living-room-lamp", false));
+                () -> service(backend).issueCommand("living-room-lamp", false));
         assertEquals(stale, thrown.snapshot().orElseThrow());
         assertTrue(backend.publishedCommands().isEmpty());
     }
@@ -64,7 +64,7 @@ class ApplianceServiceTest {
         MemoryBackend backend = freshLamp(false);
         ApplianceNotFoundException thrown = assertThrows(
                 ApplianceNotFoundException.class,
-                () -> service(backend).issueCommand("scott", "kitchen-toaster", true));
+                () -> service(backend).issueCommand("kitchen-toaster", true));
         assertEquals("kitchen-toaster", thrown.getMessage());
         assertTrue(backend.publishedCommands().isEmpty());
     }
@@ -80,7 +80,7 @@ class ApplianceServiceTest {
                 List.of(new Appliance("living-room-lamp", false))));
         assertThrows(
                 IllegalStateException.class,
-                () -> service(backend).issueCommand("scott", "living-room-lamp", true));
+                () -> service(backend).issueCommand("living-room-lamp", true));
         assertTrue(backend.publishedCommands().isEmpty());
     }
 
@@ -88,7 +88,7 @@ class ApplianceServiceTest {
     void issueCommand_confirm_updates_map() {
         MemoryBackend backend = freshLamp(false);
         backend.confirm = true;
-        ApplianceMapResponse map = service(backend).issueCommand("scott", "living-room-lamp", true);
+        ApplianceMapResponse map = service(backend).issueCommand("living-room-lamp", true);
         assertFalse(map.timeout());
         assertFalse(map.stale());
         assertEquals(1, backend.publishedCommands().size());
@@ -99,7 +99,7 @@ class ApplianceServiceTest {
     void issueCommand_timeout_is_200_shape_not_an_exception() {
         MemoryBackend backend = freshLamp(false);
         backend.confirm = false;
-        ApplianceMapResponse map = service(backend).issueCommand("yuni", "living-room-lamp", true);
+        ApplianceMapResponse map = service(backend).issueCommand("living-room-lamp", true);
         assertTrue(map.timeout());
         assertFalse(map.stale());
         assertFalse(map.appliances().getFirst().on());

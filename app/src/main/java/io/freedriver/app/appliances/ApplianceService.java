@@ -32,8 +32,7 @@ public class ApplianceService {
                 .orElseGet(() -> new ApplianceMapResponse(null, true, false, List.of()));
     }
 
-    public ApplianceMapResponse issueCommand(@NonNull String actor, @NonNull String applianceName, boolean on) {
-        String user = actor.isBlank() ? "anonymous" : actor;
+    public ApplianceMapResponse issueCommand(@NonNull String applianceName, boolean on) {
         Instant now = Instant.now();
         Optional<ApplianceSnapshot> maybe = backend.snapshot();
         if (maybe.isEmpty() || maybe.get().stale(config.staleAfter(), now)) {
@@ -56,11 +55,11 @@ public class ApplianceService {
         Optional<ApplianceSnapshot> confirmed = backend.awaitApplied(commandId, wait);
         Instant auditedAt = Instant.now();
         if (confirmed.isPresent()) {
-            audit.record(new ApplianceAudit.Event(user, auditedAt, applianceName, on, commandId, "confirmed"));
+            audit.record(new ApplianceAudit.Event(auditedAt, applianceName, on, commandId, "confirmed"));
             ApplianceSnapshot applied = confirmed.get();
             return applied.toResponse(applied.stale(config.staleAfter(), Instant.now()), false);
         }
-        audit.record(new ApplianceAudit.Event(user, auditedAt, applianceName, on, commandId, "timeout"));
+        audit.record(new ApplianceAudit.Event(auditedAt, applianceName, on, commandId, "timeout"));
         return backend.snapshot()
                 .map(last -> last.toResponse(last.stale(config.staleAfter(), Instant.now()), true))
                 .orElseGet(() -> new ApplianceMapResponse(null, true, true, List.of()));
