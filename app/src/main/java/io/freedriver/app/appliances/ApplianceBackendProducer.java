@@ -11,12 +11,12 @@ public class ApplianceBackendProducer {
     AppliancesConfig config;
 
     @Inject
-    FakeApplianceBackend fake;
+    MockAutonomy mock;
 
     @Produces
     ApplianceBackend backend() {
-        if ("fake".equals(config.backend())) {
-            return fake;
+        if (config.mockAutonomy()) {
+            return mock;
         }
         if (!config.liveCommands()) {
             return new DisabledApplianceBackend();

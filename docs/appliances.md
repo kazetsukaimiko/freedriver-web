@@ -149,7 +149,7 @@ freedriver.appliances.backend=none
 quarkus.oidc.enabled=false
 ```
 
-`./mvnw quarkus:dev` uses the **fake** backend (`%dev`): no broker, no Keycloak, `/api/hello` and `/api/health` stay 200, `/api/appliances` is served from an in-process fixture.
+`./mvnw quarkus:dev` uses **mock-autonomy** (`%dev`, `backend=mock`): no broker, no Keycloak, `/api/hello` and `/api/health` stay 200, `/api/appliances` is served from the CDI mock backend. The mock house is one instance (`instanceId` + UX `instanceName`) and exactly six named appliances (`hallway`, `kitchen`, `living-room`, `bedroom`, `garage`, `porch`) — no boards, no board UUID. Turn mock off with properties only (`freedriver.appliances.backend=none` or `freedriver.appliances.enabled=false`).
 
 ### One `%dev` auth path
 
@@ -165,6 +165,6 @@ Do **not** add a second escape:
 
 `%test` uses `@TestSecurity`. Unauthenticated calls are 401; wrong role is 403. The augmentor is not in the test build.
 
-The fake backend is not what ships in prod. The live MQTT path is compiled as contract helpers only; it is not a CDI bean, does not connect, and refuses `mqtt.freedriver.io`. When live is later enabled, Quarkus must use the compose-network hostname (`mosquitto`), never the public broker.
+mock-autonomy is not what ships in prod (`backend=none`). Incoming state is a CDI event the mock backend observes (`lastUpdated` = receive time). Command publish fires the same bus; mock observes the command and fires a new state with `appliedCommandId`. The later MQTT client (#40) hooks this same bus — do not invent a second observe/publish path. The live MQTT path is compiled as contract helpers only; it is not a CDI bean, does not connect, and refuses `mqtt.freedriver.io`. When live is later enabled, Quarkus must use the compose-network hostname (`mosquitto`), never the public broker.
 
 Live command route is **not** Done. Blocked on #25 and #27. `live-commands` stays `false`.

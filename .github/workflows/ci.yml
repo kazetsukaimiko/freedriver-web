@@ -46,15 +46,15 @@ jobs:
             exit 1
           fi
 
-      - name: Fake and OIDC stay off in the default profile
+      - name: Mock, live-commands, and OIDC stay off in the default profile
         working-directory: app
         run: |
           if grep -E '^freedriver\.appliances\.enabled=true' src/main/resources/application.properties; then
             echo "default profile must not enable the appliances API"
             exit 1
           fi
-          if grep -E '^freedriver\.appliances\.backend=fake' src/main/resources/application.properties; then
-            echo "fake backend must not ship in the default profile"
+          if grep -E '^freedriver\.appliances\.backend=(fake|mock|mock-autonomy)' src/main/resources/application.properties; then
+            echo "mock/fake backend must not ship in the default profile"
             exit 1
           fi
           if grep -E '^freedriver\.appliances\.live-commands=true' src/main/resources/application.properties; then

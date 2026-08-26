@@ -25,8 +25,8 @@ public class AppliancesConfig {
     @ConfigProperty(name = "freedriver.appliances.command-timeout-max", defaultValue = "30s")
     Duration commandTimeoutMax;
 
-    @ConfigProperty(name = "freedriver.appliances.fake-refresh", defaultValue = "false")
-    boolean fakeRefresh;
+    @ConfigProperty(name = "freedriver.appliances.mock-refresh", defaultValue = "false")
+    boolean mockRefresh;
 
     @ConfigProperty(name = "freedriver.appliances.rate-limit.permits", defaultValue = "30")
     int rateLimitPermits;
@@ -84,12 +84,27 @@ public class AppliancesConfig {
         return Duration.ofMillis(50);
     }
 
-    public boolean fakeRefresh() {
-        return fakeRefresh;
+    public boolean mockRefresh() {
+        return mockRefresh;
     }
 
     public RateLimit rateLimit() {
         return new RateLimit(rateLimitPermits, rateLimitWindow);
+    }
+
+    /** {@code mock} or {@code mock-autonomy}. Off in default/prod ({@code none}). */
+    public boolean mockAutonomy() {
+        String value = backend == null ? "" : backend.strip().toLowerCase();
+        return "mock".equals(value) || "mock-autonomy".equals(value);
+    }
+
+    /** Any non-{@code none} adapter (mock now; mqtt later) may publish on the bus. */
+    public boolean adapterEnabled() {
+        if (backend == null) {
+            return false;
+        }
+        String value = backend.strip().toLowerCase();
+        return !value.isEmpty() && !"none".equals(value);
     }
 
     public record RateLimit(int permits, Duration window) {
