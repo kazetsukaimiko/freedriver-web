@@ -81,11 +81,11 @@ public class ApplianceService {
         Optional<ApplianceSnapshot> confirmed = backend.awaitApplied(commandId, wait);
         Instant auditedAt = Instant.now();
         if (confirmed.isPresent()) {
-            audit.record(user, auditedAt, applianceName, on, commandId, "confirmed");
+            audit.record(new ApplianceAudit.Event(user, auditedAt, applianceName, on, commandId, "confirmed"));
             ApplianceSnapshot applied = confirmed.get();
             return applied.toResponse(applied.stale(config.staleAfter(), Instant.now()), false);
         }
-        audit.record(user, auditedAt, applianceName, on, commandId, "timeout");
+        audit.record(new ApplianceAudit.Event(user, auditedAt, applianceName, on, commandId, "timeout"));
         ApplianceSnapshot last = backend.snapshot();
         return last.toResponse(last.stale(config.staleAfter(), Instant.now()), true);
     }

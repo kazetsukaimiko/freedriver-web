@@ -3,6 +3,8 @@ package io.freedriver.app.appliances;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.time.Duration;
+import java.util.Optional;
+import java.util.function.Predicate;
 
 @ApplicationScoped
 public class AppliancesConfig {
@@ -74,21 +76,30 @@ public class AppliancesConfig {
 
     /** REST confirm wait. Not part of the MQTT contract. */
     public Duration boundedCommandTimeout() {
-        Duration use = commandTimeout;
-        if (use == null || use.isZero() || use.isNegative()) {
-            use = Duration.ofSeconds(5);
+        Duration use = Optional.ofNullable(commandTimeout)
+                .filter(Predicate.not(Duration::isZero))
+                .filter(Predicate.not(Duration::isNegative))
+                .orElseGet(() -> Duration.ofSeconds(5));
+        Duration ceiling = boundedCommandCeiling();
+        Duration floor = boundedCommandFloor();
+        if (use.compareTo(ceiling) > 0) {
+            return ceiling;
         }
-        Duration cap = commandTimeoutMax == null || commandTimeoutMax.isZero() || commandTimeoutMax.isNegative()
-                ? Duration.ofSeconds(30)
-                : commandTimeoutMax;
-        if (use.compareTo(cap) > 0) {
-            return cap;
-        }
-        Duration floor = Duration.ofMillis(50);
         if (use.compareTo(floor) < 0) {
             return floor;
         }
         return use;
+    }
+
+    Duration boundedCommandCeiling() {
+        return Optional.ofNullable(commandTimeoutMax)
+                .filter(Predicate.not(Duration::isZero))
+                .filter(Predicate.not(Duration::isNegative))
+                .orElseGet(() -> Duration.ofSeconds(30));
+    }
+
+    Duration boundedCommandFloor() {
+        return Duration.ofMillis(50);
     }
 
     public boolean fakeRefresh() {
