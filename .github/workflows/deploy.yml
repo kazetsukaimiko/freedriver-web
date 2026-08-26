@@ -15,7 +15,6 @@ jobs:
     if: github.repository == 'kazetsukaimiko/freedriver-web'
     permissions:
       contents: write
-      packages: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,42 +27,6 @@ jobs:
           echo "NEW_VERSION=${NEW_VERSION}" >> "$GITHUB_ENV"
           printf '%s\n' "$NEW_VERSION" > BUILD_NUMBER
           echo "Deploy stamp: ${NEW_VERSION}"
-
-      # Job-scoped GITHUB_TOKEN, same server id as CI setup-java. Gitignored; not a PAT.
-      # Dockerfile.compose uses this in the build stage only. Deleted on the VPS after compose.
-      - name: Maven settings for GitHub Packages
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_ACTOR: ${{ github.actor }}
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          from xml.sax.saxutils import escape
-          import os
-          import sys
-
-          actor = os.environ.get("GITHUB_ACTOR", "")
-          token = os.environ.get("GITHUB_TOKEN", "")
-          if not actor or not token:
-              sys.exit("GITHUB_ACTOR and GITHUB_TOKEN are required for GitHub Packages")
-
-          path = Path("app/settings.xml")
-          path.write_text(
-              '<?xml version="1.0" encoding="UTF-8"?>\n'
-              '<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0">\n'
-              "  <servers>\n"
-              "    <server>\n"
-              "      <id>github</id>\n"
-              f"      <username>{escape(actor)}</username>\n"
-              f"      <password>{escape(token)}</password>\n"
-              "    </server>\n"
-              "  </servers>\n"
-              "</settings>\n",
-              encoding="utf-8",
-          )
-          path.chmod(0o600)
-          print("Wrote app/settings.xml for server id github")
-          PY
 
       - name: Require deploy secrets
         env:
@@ -114,8 +77,6 @@ jobs:
           sudo chown 1883:1883 /opt/freedriver-storage/mosquitto
           cd /opt/freedriver-web
           export BUILD_NUMBER="$(cat BUILD_NUMBER)"
-          cleanup() { rm -f /opt/freedriver-web/app/settings.xml; }
-          trap cleanup EXIT
           docker compose --env-file /opt/freedriver-secrets/.env up -d --pull always --build
           docker compose --env-file /opt/freedriver-secrets/.env up -d --force-recreate --no-deps caddy
           REMOTE

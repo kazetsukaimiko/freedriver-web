@@ -43,15 +43,16 @@ Alloy tails Docker container logs into Loki (14 days). Prometheus keeps ~15 days
 The product app lives in `app/`: Quarkus 3.38 (Java 21) with Quinoa serving a React TypeScript SPA. It talks normal REST under `/api`. Keycloak at `https://auth.freedriver.io` will handle auth later; OIDC is present as a dependency with commented config so the app starts without secrets.
 
 ```shell
-cd app
-./mvnw quarkus:dev
+./mvnw -pl app -am quarkus:dev
 ```
 
-Requires Java 21. Quinoa can install Node for the UI build. Open http://localhost:8080 for the dashboard (`GET /api/hello` and `GET /api/build` are public). Production is `https://app.freedriver.io` via Caddy → the Compose `app` service.
+Requires Java 23. Quinoa can install Node for the UI build. Open http://localhost:8080 for the dashboard (`GET /api/hello` and `GET /api/build` are public). Production is `https://app.freedriver.io` via Caddy → the Compose `app` service.
+
+`mqtt-contract/` is a reactor sibling (`io.freedriver:freedriver-mqtt-contract`). The app does not pin autonomy's GitHub Packages jar.
 
 ## Appliances API
 
-`GET/POST /api/appliances` is implemented against a **fake** autonomy for `quarkus:dev` and CI. The browser is REST only. Production keeps the route disabled (404), OIDC off, and MQTT disconnected. Integration contract: [`docs/appliances.md`](docs/appliances.md). Autonomy MQTT how-to: [`docs/autonomy-mqtt.md`](docs/autonomy-mqtt.md).
+`GET/POST /api/appliances` is implemented against **mock-autonomy** on the same `ApplianceControl` bus for `quarkus:dev` and CI. The browser is REST only. Production keeps the route disabled (404), OIDC off, and MQTT disconnected. Integration contract: [`docs/appliances.md`](docs/appliances.md). Autonomy MQTT how-to: [`docs/autonomy-mqtt.md`](docs/autonomy-mqtt.md).
 
 The live command route is **not** Done. It is blocked on [#25](https://github.com/kazetsukaimiko/freedriver-web/issues/25) and Security sign-off on [#27](https://github.com/kazetsukaimiko/freedriver-web/issues/27).
 
@@ -59,7 +60,7 @@ The live command route is **not** Done. It is blocked on [#25](https://github.co
 
 Push or merge to `main`, or run the **Deploy** workflow. GitHub Actions rsyncs this repo to `/opt/freedriver-web` and runs `docker compose --env-file /opt/freedriver-secrets/.env up -d` so `${VAR}` interpolation reads the secrets file, not a `.env` in the git tree.
 
-The compose image build resolves `autonomy-mqtt-contract` from GitHub Packages with a job-scoped `GITHUB_TOKEN` Maven settings file (`server` id `github`). That file is gitignored, used in the Dockerfile build stage only, and deleted on the VPS after `--build`. Do not commit a PAT or pass the token as a Docker ARG/ENV.
+The compose image build compiles `mqtt-contract` from this repo (no GitHub Packages pin). Do not commit a PAT or pass a token as a Docker ARG/ENV.
 
 ### Build number
 

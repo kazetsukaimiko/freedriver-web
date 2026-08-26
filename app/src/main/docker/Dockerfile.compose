@@ -1,49 +1,35 @@
-# Multi-stage image for docker compose `build:` from app/.
-#   docker build -f src/main/docker/Dockerfile.compose -t freedriver-app .
-# Stock Quarkus Dockerfiles are unchanged; this one packages in the builder.
+# Multi-stage image for docker compose `build:` from the repo root.
+#   docker build -f app/src/main/docker/Dockerfile.compose -t freedriver-app .
+# mqtt-contract is a reactor sibling; no GitHub Packages pin.
 
 FROM maven:3.9-eclipse-temurin-23 AS build
 WORKDIR /workspace
 
-# *.xml always matches pom.xml. Deploy writes gitignored settings.xml for GitHub Packages.
-# Local compose without that file still copies. Not a Docker ARG/ENV (those leak in history).
-COPY *.xml ./
-COPY src src
+COPY pom.xml ./
+COPY mqtt-contract/pom.xml mqtt-contract/pom.xml
+COPY app/pom.xml app/pom.xml
+COPY mqtt-contract/src mqtt-contract/src
+COPY app/src app/src
 
-# ARG after COPY so a new stamp does not bust the source layer.
-# Default keeps local/compose builds at the git POM version.
 ARG BUILD_NUMBER=1.0.0-SNAPSHOT
-# versions:set is image-workspace only (git POM stays 1.0.0-SNAPSHOT).
-# quarkus.application.version is what GET /api/build and the running app report.
-# Implementation-Version is set if the jar plugin writes a manifest.
-# Both mvn calls use deploy settings when present. Runtime stage does not COPY them.
 RUN set -eu; \
-    if [ -f /workspace/settings.xml ]; then \
-      mkdir -p /root/.m2; \
-      mv /workspace/settings.xml /root/.m2/settings.xml; \
-      MVN_SETTINGS="-s /root/.m2/settings.xml"; \
-    else \
-      MVN_SETTINGS=""; \
-    fi; \
-    mvn -B ${MVN_SETTINGS} \
+    mvn -B \
       org.codehaus.mojo:versions-maven-plugin:2.21.0:set \
       -DnewVersion="${BUILD_NUMBER}" \
       -DgenerateBackupPoms=false \
- && mvn -B ${MVN_SETTINGS} -DskipTests \
+      -DprocessAllModules=true \
+ && mvn -B -pl app -am -DskipTests \
       -Dquarkus.application.version="${BUILD_NUMBER}" \
       -Dquarkus.package.jar.manifest.attributes.Implementation-Version="${BUILD_NUMBER}" \
-      package \
- && rm -f /root/.m2/settings.xml
+      package
 
-# UBI has no openjdk-23-runtime (17/21/25 only). 25 is newer than --release 23.
-# Do not drop the runtime below 23; do not compile the app down to 21.
 FROM registry.access.redhat.com/ubi9/openjdk-25-runtime:1.24
 ENV LANGUAGE='en_US:en'
 
-COPY --from=build --chown=185 /workspace/target/quarkus-app/lib/ /deployments/lib/
-COPY --from=build --chown=185 /workspace/target/quarkus-app/*.jar /deployments/
-COPY --from=build --chown=185 /workspace/target/quarkus-app/app/ /deployments/app/
-COPY --from=build --chown=185 /workspace/target/quarkus-app/quarkus/ /deployments/quarkus/
+COPY --from=build --chown=185 /workspace/app/target/quarkus-app/lib/ /deployments/lib/
+COPY --from=build --chown=185 /workspace/app/target/quarkus-app/*.jar /deployments/
+COPY --from=build --chown=185 /workspace/app/target/quarkus-app/app/ /deployments/app/
+COPY --from=build --chown=185 /workspace/app/target/quarkus-app/quarkus/ /deployments/quarkus/
 
 EXPOSE 8080
 USER 185

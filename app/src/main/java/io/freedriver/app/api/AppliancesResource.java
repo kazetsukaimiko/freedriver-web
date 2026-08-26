@@ -3,8 +3,9 @@ package io.freedriver.app.api;
 import io.freedriver.app.appliances.ApplianceCommandRequest;
 import io.freedriver.app.appliances.ApplianceMapResponse;
 import io.freedriver.app.appliances.ApplianceService;
+import io.freedriver.app.appliances.InstanceView;
 import io.freedriver.app.security.RateLimited;
-import io.freedriver.autonomy.mqtt.contract.ApplianceSchemas;
+import io.freedriver.mqtt.contract.ApplianceSchemas;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -18,6 +19,8 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
+
+import java.util.UUID;
 
 @Path("/api/appliances")
 @Produces(MediaType.APPLICATION_JSON)
@@ -33,13 +36,14 @@ public class AppliancesResource {
     }
 
     @POST
-    @Path("/{id}")
+    @Path("/{instanceId}/{applianceName}")
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({"dashboard", "portal-admin"})
     @RateLimited("appliances.commands")
-    public ApplianceMapResponse command(
-            @PathParam("id") @NotBlank @Size(max = ApplianceSchemas.NAME_MAX) String id,
+    public InstanceView command(
+            @PathParam("instanceId") UUID instanceId,
+            @PathParam("applianceName") @NotBlank @Size(max = ApplianceSchemas.NAME_MAX) String applianceName,
             @Valid @NotNull ApplianceCommandRequest body) {
-        return appliances.issueCommand(id, body.getOn());
+        return appliances.issueCommand(instanceId, applianceName, body.getOn());
     }
 }

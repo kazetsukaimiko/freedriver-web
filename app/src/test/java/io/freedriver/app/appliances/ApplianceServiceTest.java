@@ -1,16 +1,14 @@
 package io.freedriver.app.appliances;
 
-import io.freedriver.autonomy.mqtt.contract.Appliance;
-import io.freedriver.autonomy.mqtt.contract.ApplianceCommandMessage;
+import io.freedriver.mqtt.contract.Appliance;
+import io.freedriver.mqtt.contract.ApplianceCommandMessage;
+import jakarta.enterprise.inject.Vetoed;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -22,156 +20,130 @@ class ApplianceServiceTest {
     private static final UUID INSTANCE = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
 
     @Test
-    void currentMap_absent_is_stale_empty() {
-        MemoryBackend backend = new MemoryBackend();
-        ApplianceMapResponse map = service(backend).currentMap();
-        assertTrue(map.stale());
-        assertFalse(map.timeout());
-        assertEquals(null, map.lastUpdated());
-        assertTrue(map.appliances().isEmpty());
+    void currentMap_empty_has_no_instances() {
+        ApplianceControl control = new ApplianceControl();
+        ApplianceMapResponse map = service(control).currentMap();
+        assertTrue(map.instances().isEmpty());
     }
 
     @Test
-    void issueCommand_absent_is_stale_and_does_not_publish() {
-        MemoryBackend backend = new MemoryBackend();
-        ApplianceStaleException thrown = assertThrows(
-                ApplianceStaleException.class,
-                () -> service(backend).issueCommand("living-room-lamp", true));
-        assertTrue(thrown.snapshot().isEmpty());
-        assertTrue(backend.publishedCommands().isEmpty());
+    void issueCommand_unknown_instance_does_not_publish() {
+        RecordingControl control = RecordingControl.withCabin(false);
+        control.known = false;
+        ApplianceInstanceNotFoundException thrown = assertThrows(
+                ApplianceInstanceNotFoundException.class,
+                () -> service(control).issueCommand(INSTANCE, "hallway", true));
+        assertEquals(INSTANCE.toString(), thrown.getMessage());
+        assertTrue(control.published.isEmpty());
     }
 
     @Test
-    void issueCommand_stale_carries_snapshot_and_does_not_publish() {
-        MemoryBackend backend = new MemoryBackend();
-        ApplianceSnapshot stale = new ApplianceSnapshot(
+    void issueCommand_stale_does_not_publish() {
+        RecordingControl control = RecordingControl.withCabin(true);
+        control.snapshot = new ApplianceSnapshot(
                 Instant.now().minusSeconds(30),
-                INSTANCE,
-                "Cabin",
-                null,
-                List.of(new Appliance("living-room-lamp", true)));
-        backend.setSnapshot(stale);
-
+                List.of(new Appliance("hallway", true)));
         ApplianceStaleException thrown = assertThrows(
                 ApplianceStaleException.class,
-                () -> service(backend).issueCommand("living-room-lamp", false));
-        assertEquals(stale, thrown.snapshot().orElseThrow());
-        assertTrue(backend.publishedCommands().isEmpty());
+                () -> service(control).issueCommand(INSTANCE, "hallway", false));
+        assertEquals(INSTANCE, thrown.instanceId());
+        assertTrue(control.published.isEmpty());
     }
 
     @Test
     void issueCommand_unknown_appliance_is_not_found() {
-        MemoryBackend backend = freshLamp(false);
+        RecordingControl control = RecordingControl.withCabin(false);
         ApplianceNotFoundException thrown = assertThrows(
                 ApplianceNotFoundException.class,
-                () -> service(backend).issueCommand("kitchen-toaster", true));
-        assertEquals("kitchen-toaster", thrown.getMessage());
-        assertTrue(backend.publishedCommands().isEmpty());
+                () -> service(control).issueCommand(INSTANCE, "attic", true));
+        assertEquals("attic", thrown.getMessage());
+        assertTrue(control.published.isEmpty());
     }
 
     @Test
-    void issueCommand_missing_instanceId_on_fresh_map_is_corrupt() {
-        MemoryBackend backend = new MemoryBackend();
-        backend.setSnapshot(new ApplianceSnapshot(
-                Instant.now(),
-                null,
-                "Cabin",
-                null,
-                List.of(new Appliance("living-room-lamp", false))));
-        assertThrows(
-                IllegalStateException.class,
-                () -> service(backend).issueCommand("living-room-lamp", true));
-        assertTrue(backend.publishedCommands().isEmpty());
-    }
-
-    @Test
-    void issueCommand_confirm_updates_map() {
-        MemoryBackend backend = freshLamp(false);
-        backend.confirm = true;
-        ApplianceMapResponse map = service(backend).issueCommand("living-room-lamp", true);
-        assertFalse(map.timeout());
-        assertFalse(map.stale());
-        assertEquals(1, backend.publishedCommands().size());
-        assertTrue(map.appliances().getFirst().on());
+    void issueCommand_confirm_updates_view() {
+        RecordingControl control = RecordingControl.withCabin(false);
+        control.confirm = true;
+        InstanceView view = service(control).issueCommand(INSTANCE, "hallway", true);
+        assertFalse(view.timeout());
+        assertFalse(view.stale());
+        assertEquals(1, control.published.size());
+        assertTrue(view.appliances().getFirst().on());
     }
 
     @Test
     void issueCommand_timeout_is_200_shape_not_an_exception() {
-        MemoryBackend backend = freshLamp(false);
-        backend.confirm = false;
-        ApplianceMapResponse map = service(backend).issueCommand("living-room-lamp", true);
-        assertTrue(map.timeout());
-        assertFalse(map.stale());
-        assertFalse(map.appliances().getFirst().on());
-        assertEquals(1, backend.publishedCommands().size());
+        RecordingControl control = RecordingControl.withCabin(false);
+        control.confirm = false;
+        InstanceView view = service(control).issueCommand(INSTANCE, "hallway", true);
+        assertTrue(view.timeout());
+        assertFalse(view.stale());
+        assertFalse(view.appliances().getFirst().on());
+        assertEquals(1, control.published.size());
     }
 
-    private static ApplianceService service(ApplianceBackend backend) {
+    private static ApplianceService service(ApplianceControl control) {
         AppliancesConfig config = new AppliancesConfig();
         config.staleAfter = Duration.ofSeconds(20);
         config.commandTimeout = Duration.ofMillis(50);
         config.commandTimeoutMax = Duration.ofSeconds(30);
-        return new ApplianceService(config, backend, new ApplianceAudit());
+        return new ApplianceService(config, control, new ApplianceAudit());
     }
 
-    private static MemoryBackend freshLamp(boolean on) {
-        MemoryBackend backend = new MemoryBackend();
-        backend.setSnapshot(new ApplianceSnapshot(
-                Instant.now(),
-                INSTANCE,
-                "Cabin",
-                null,
-                List.of(new Appliance("living-room-lamp", on))));
-        return backend;
-    }
-
-    private static final class MemoryBackend implements ApplianceBackend {
-        private ApplianceSnapshot snapshot;
+    /** Test double. @Vetoed so Arc does not treat it as a second ApplianceControl. */
+    @Vetoed
+    private static final class RecordingControl extends ApplianceControl {
+        private boolean known = true;
         private boolean confirm = true;
-        private final List<ApplianceCommandMessage> commands = new CopyOnWriteArrayList<>();
+        private ApplianceSnapshot snapshot;
+        private final java.util.List<ApplianceCommandMessage> published = new java.util.ArrayList<>();
 
-        void setSnapshot(ApplianceSnapshot snapshot) {
-            this.snapshot = snapshot;
+        static RecordingControl withCabin(boolean on) {
+            RecordingControl control = new RecordingControl();
+            control.snapshot = new ApplianceSnapshot(Instant.now(), List.of(new Appliance("hallway", on)));
+            return control;
         }
 
         @Override
-        public Optional<ApplianceSnapshot> snapshot() {
-            return Optional.ofNullable(snapshot);
+        public java.util.Optional<String> instanceName(UUID instanceId) {
+            return known ? java.util.Optional.of("Cabin") : java.util.Optional.empty();
         }
 
         @Override
-        public void publishCommand(ApplianceCommandMessage command) {
-            commands.add(command);
-            if (!confirm || snapshot == null) {
-                return;
+        public java.util.Optional<ApplianceSnapshot> instanceSnapshot(UUID instanceId) {
+            return known ? java.util.Optional.of(snapshot) : java.util.Optional.empty();
+        }
+
+        @Override
+        public boolean publishCommand(UUID instanceId, ApplianceCommandMessage command) {
+            if (!known) {
+                return false;
             }
-            List<Appliance> next = new ArrayList<>();
-            for (Appliance appliance : snapshot.appliances()) {
-                if (appliance.applianceName().equals(command.applianceName())) {
-                    next.add(new Appliance(appliance.applianceName(), command.on()));
-                } else {
-                    next.add(appliance);
-                }
+            published.add(command);
+            if (confirm) {
+                snapshot = new ApplianceSnapshot(
+                        Instant.now(), List.of(new Appliance(command.applianceName(), command.state())));
             }
-            snapshot = new ApplianceSnapshot(
-                    Instant.now(),
-                    snapshot.instanceId(),
-                    snapshot.instanceName(),
-                    command.commandId(),
-                    next);
+            return true;
         }
 
         @Override
-        public Optional<ApplianceSnapshot> awaitApplied(String commandId, Duration timeout) {
-            if (snapshot != null && commandId.equals(snapshot.appliedCommandId())) {
-                return Optional.of(snapshot);
+        public java.util.Optional<ApplianceSnapshot> publishCommandAndWait(
+                UUID instanceId, ApplianceCommandMessage command, Duration timeout) {
+            if (!publishCommand(instanceId, command) || !confirm) {
+                return java.util.Optional.empty();
             }
-            return Optional.empty();
+            return java.util.Optional.of(snapshot);
         }
 
         @Override
-        public List<ApplianceCommandMessage> publishedCommands() {
-            return List.copyOf(commands);
+        public java.util.Map<UUID, ApplianceSnapshot> allKnownInstances() {
+            return known ? java.util.Map.of(INSTANCE, snapshot) : java.util.Map.of();
+        }
+
+        @Override
+        public java.util.Map<UUID, String> instanceNames() {
+            return known ? java.util.Map.of(INSTANCE, "Cabin") : java.util.Map.of();
         }
     }
 }

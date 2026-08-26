@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
+import java.util.UUID;
 
 @ApplicationScoped
 public class ApplianceAudit {
@@ -13,8 +14,9 @@ public class ApplianceAudit {
 
     public void record(Event event) {
         log.info(
-                "audit appliance when={} appliance={} on={} commandId={} result={}",
+                "audit appliance when={} instance={} appliance={} on={} commandId={} result={}",
                 event.when(),
+                event.instanceId(),
                 event.applianceName(),
                 event.on(),
                 event.commandId(),
@@ -23,6 +25,7 @@ public class ApplianceAudit {
 
     public record Event(
             Instant when,
+            UUID instanceId,
             String applianceName,
             boolean on,
             String commandId,

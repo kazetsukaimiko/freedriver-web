@@ -1,39 +1,21 @@
-# Consume autonomy-mqtt-contract
+# Consume freedriver-mqtt-contract
 
-Coordinates: `io.freedriver.autonomy:autonomy-mqtt-contract:2026-08_r51`
+Coordinates: `io.freedriver:freedriver-mqtt-contract` (reactor module in this repo; published from `main` as `YEAR-MONTH_rBUILD_NUM`).
 
-Repository: `https://maven.pkg.github.com/kazetsukaimiko/autonomy` (Maven repo id `github`).
+The portal owns the dialect. Topics are `freedriver/v1/{instanceId}/appliances|commands`. Autonomy is a leaf: it pins this artifact. Do not depend on `io.freedriver.autonomy:autonomy-mqtt-contract`. Do not vendor the records into `app/` or into autonomy.
 
-Published package: https://github.com/kazetsukaimiko/autonomy/packages/3213073 (`io.freedriver.autonomy.autonomy-mqtt-contract`).
+Repository (for out-of-repo consumers): `https://maven.pkg.github.com/kazetsukaimiko/freedriver-web` (Maven repo id `github`).
 
-`app/pom.xml` depends on that exact version. Do not use `1.0.0-SNAPSHOT`. Do not use `2026-08_r45`. Do not vendor the jar.
+Do not use `1.0.0-SNAPSHOT` from GitHub Packages. Local `./mvnw` builds the SNAPSHOT from the reactor.
 
-GitHub Maven packages are repository-scoped. They inherit permissions from the publishing repo (`kazetsukaimiko/autonomy`). Autonomy is public, so this package is public. There is no extra package grant.
+## In this repo
 
-Maven packages have no Manage Actions access UI.
+`app` depends on `${project.version}` of `freedriver-mqtt-contract`. Change the records and the app in the same PR. Parse JSON in `ApplianceJson` (MQTT handler codec), never on the records.
+
+## Autonomy
+
+Pin a published `YEAR-MONTH_rBUILD_NUM` after `main` publishes. MQTT handler maps topic `{instanceId}` plus body. Body has no `instanceId`.
 
 ## CI
 
-CI already authenticates with `GITHUB_TOKEN` + `packages: read` via `actions/setup-java` (`server-id: github`). That is enough. Leave the workflow unchanged.
-
-If resolve returns 401/403, use a classic PAT with `read:packages` (repo secret or `~/.m2/settings.xml`). Do not add that unless a job actually fails.
-
-## VPS deploy
-
-Same job-scoped `GITHUB_TOKEN` (not a PAT). `deploy.yml` writes gitignored `app/settings.xml` (`server` id `github`, username `github.actor`) and rsyncs it for `Dockerfile.compose` `mvn` only. The runtime image does not COPY that file. The VPS deletes it after `docker compose --build`. Do not put a token in git or a Docker ARG/ENV.
-
-## quarkus:dev
-
-Do not put a token in git. Use `~/.m2/settings.xml`:
-
-```xml
-<settings>
-  <servers>
-    <server>
-      <id>github</id>
-      <username>YOUR_GITHUB_LOGIN</username>
-      <password>A_PAT_WITH_read:packages</password>
-    </server>
-  </servers>
-</settings>
-```
+This repo no longer resolves the contract from autonomy's GitHub Packages. `./mvnw -B test` at the repo root builds the module then the app.
