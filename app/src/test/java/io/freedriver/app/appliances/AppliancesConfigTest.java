@@ -17,15 +17,13 @@ class AppliancesConfigTest {
     }
 
     @Test
-    void null_zero_negative_max_use_30s_ceiling() {
-        assertEquals(Duration.ofSeconds(30), config(Duration.ofSeconds(60), null).boundedCommandTimeout());
+    void zero_negative_max_use_30s_ceiling() {
         assertEquals(Duration.ofSeconds(30), config(Duration.ofSeconds(60), Duration.ZERO).boundedCommandTimeout());
         assertEquals(Duration.ofSeconds(30), config(Duration.ofSeconds(60), Duration.ofSeconds(-1)).boundedCommandTimeout());
     }
 
     @Test
-    void null_zero_negative_timeout_default_5s_then_clamp() {
-        assertEquals(Duration.ofSeconds(5), config(null, Duration.ofSeconds(30)).boundedCommandTimeout());
+    void zero_negative_timeout_default_5s_then_clamp() {
         assertEquals(Duration.ofSeconds(5), config(Duration.ZERO, Duration.ofSeconds(30)).boundedCommandTimeout());
         assertEquals(Duration.ofSeconds(5), config(Duration.ofSeconds(-3), Duration.ofSeconds(30)).boundedCommandTimeout());
     }

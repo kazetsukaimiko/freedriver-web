@@ -3,8 +3,6 @@ package io.freedriver.app.appliances;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.time.Duration;
-import java.util.Optional;
-import java.util.function.Predicate;
 
 @ApplicationScoped
 public class AppliancesConfig {
@@ -69,10 +67,9 @@ public class AppliancesConfig {
 
     /** REST confirm wait. Not part of the MQTT contract. */
     public Duration boundedCommandTimeout() {
-        Duration use = Optional.ofNullable(commandTimeout)
-                .filter(Predicate.not(Duration::isZero))
-                .filter(Predicate.not(Duration::isNegative))
-                .orElseGet(() -> Duration.ofSeconds(5));
+        Duration use = commandTimeout.isZero() || commandTimeout.isNegative()
+                ? Duration.ofSeconds(5)
+                : commandTimeout;
         Duration ceiling = boundedCommandCeiling();
         Duration floor = boundedCommandFloor();
         if (use.compareTo(ceiling) > 0) {
@@ -85,10 +82,9 @@ public class AppliancesConfig {
     }
 
     Duration boundedCommandCeiling() {
-        return Optional.ofNullable(commandTimeoutMax)
-                .filter(Predicate.not(Duration::isZero))
-                .filter(Predicate.not(Duration::isNegative))
-                .orElseGet(() -> Duration.ofSeconds(30));
+        return commandTimeoutMax.isZero() || commandTimeoutMax.isNegative()
+                ? Duration.ofSeconds(30)
+                : commandTimeoutMax;
     }
 
     Duration boundedCommandFloor() {

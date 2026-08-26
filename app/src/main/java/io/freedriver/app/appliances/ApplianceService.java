@@ -9,6 +9,7 @@ import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.NotAuthorizedException;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.Response;
+import lombok.NonNull;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -30,11 +31,11 @@ public class ApplianceService {
     @Inject
     ApplianceAudit audit;
 
-    public void assertCanAccess(SecurityIdentity identity) {
+    public void assertCanAccess(@NonNull SecurityIdentity identity) {
         if (!config.authRequired()) {
             return;
         }
-        if (identity == null || identity.isAnonymous()) {
+        if (identity.isAnonymous()) {
             throw new NotAuthorizedException("Bearer");
         }
         if (!identity.hasRole("dashboard") && !identity.hasRole("portal-admin")) {
@@ -48,7 +49,8 @@ public class ApplianceService {
         return snapshot.toResponse(snapshot.stale(config.staleAfter(), now), false);
     }
 
-    public ApplianceMapResponse issueCommand(SecurityIdentity identity, String applianceName, boolean on) {
+    public ApplianceMapResponse issueCommand(
+            @NonNull SecurityIdentity identity, @NonNull String applianceName, boolean on) {
         if (config.liveCommands()) {
             throw new IllegalStateException("Live MQTT commands are off until #25 and #27");
         }
@@ -85,12 +87,8 @@ public class ApplianceService {
         return last.toResponse(last.stale(config.staleAfter(), Instant.now()), true);
     }
 
-    private static String userName(SecurityIdentity identity) {
-        if (identity == null || identity.isAnonymous() || identity.getPrincipal() == null) {
-            return "anonymous";
-        }
-        String name = identity.getPrincipal().getName();
-        return name == null || name.isBlank() ? "anonymous" : name;
+    private static String userName(@NonNull SecurityIdentity identity) {
+        return identity.getPrincipal().getName();
     }
 
     public record ErrorBody(String error) {
