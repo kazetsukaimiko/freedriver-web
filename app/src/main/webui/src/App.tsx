@@ -1,4 +1,5 @@
 import { useEffect, useState, type MouseEvent } from 'react'
+import { demoBuild, publishedBuild } from './build.ts'
 import { Dashboard } from './Dashboard'
 import './App.css'
 
@@ -103,7 +104,50 @@ function App() {
       </aside>
 
       <div className="workspace">{page === 'not-found' ? <NotFound /> : <Dashboard search={search} />}</div>
+      <BuildStamp />
     </div>
+  )
+}
+
+function BuildStamp() {
+  const [build, setBuild] = useState<string | null>(() => demoBuild())
+
+  useEffect(() => {
+    if (build) {
+      return
+    }
+    const controller = new AbortController()
+
+    fetch('/api/build', { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) {
+          return null
+        }
+        return (await response.json()) as { build?: unknown }
+      })
+      .then((data) => {
+        if (!data) {
+          return
+        }
+        setBuild(publishedBuild(data.build))
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return
+        }
+      })
+
+    return () => controller.abort()
+  }, [build])
+
+  if (!build) {
+    return null
+  }
+
+  return (
+    <p className="build-stamp" aria-label="Build">
+      {build}
+    </p>
   )
 }
 

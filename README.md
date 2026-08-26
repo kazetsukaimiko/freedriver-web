@@ -47,7 +47,7 @@ cd app
 ./mvnw quarkus:dev
 ```
 
-Requires Java 21. Quinoa can install Node for the UI build. Open http://localhost:8080 for the dashboard (`GET /api/hello` is public). Production is `https://app.freedriver.io` via Caddy → the Compose `app` service.
+Requires Java 21. Quinoa can install Node for the UI build. Open http://localhost:8080 for the dashboard (`GET /api/hello` and `GET /api/build` are public). Production is `https://app.freedriver.io` via Caddy → the Compose `app` service.
 
 ## Appliances API
 
@@ -58,6 +58,19 @@ The live command route is **not** Done. It is blocked on [#25](https://github.co
 ## Deploy
 
 Push or merge to `main`, or run the **Deploy** workflow. GitHub Actions rsyncs this repo to `/opt/freedriver-web` and runs `docker compose --env-file /opt/freedriver-secrets/.env up -d` so `${VAR}` interpolation reads the secrets file, not a `.env` in the git tree.
+
+### Build number
+
+A successful `main` deploy stamps `YEAR-MONTH_rBUILD_NUM` (UTC year-month + `github.run_number`), same scheme as autonomy mqtt-contract. Example: `2026-08_r45`. Not semver. Not `1.0.<run>`.
+
+That string is:
+
+1. Written to `BUILD_NUMBER` (rsynced; not committed) and passed as the Compose `app` build arg
+2. Baked into the image: Maven `versions:set` in the Docker builder (git POM stays `1.0.0-SNAPSHOT`) plus `-Dquarkus.application.version`
+3. Annotated-tagged on `GITHUB_SHA` **after** SSH deploy succeeds (not on PRs)
+4. Exposed for UX [#49](https://github.com/kazetsukaimiko/freedriver-web/issues/49) at public `GET /api/build` → `{"build":"2026-08_r45"}`
+
+Local `./mvnw` and Compose builds without `BUILD_NUMBER` report `1.0.0-SNAPSHOT`. Read the stamp from `/api/build` (or `quarkus.application.version`); do not put MQTT or port 8883 in webui.
 
 Required repository secrets:
 

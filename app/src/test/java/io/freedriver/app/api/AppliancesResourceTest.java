@@ -1,10 +1,10 @@
 package io.freedriver.app.api;
 
-import io.freedriver.app.appliances.Appliance;
-import io.freedriver.app.appliances.ApplianceCommandMessage;
-import io.freedriver.app.appliances.ApplianceStateMessage;
 import io.freedriver.app.appliances.CommandRateLimiter;
 import io.freedriver.app.appliances.FakeApplianceBackend;
+import io.freedriver.autonomy.mqtt.contract.Appliance;
+import io.freedriver.autonomy.mqtt.contract.ApplianceCommandMessage;
+import io.freedriver.autonomy.mqtt.contract.ApplianceStateMessage;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import io.restassured.http.ContentType;
@@ -79,7 +79,7 @@ class AppliancesResourceTest {
                 .body("stale", is(false))
                 .body("timeout", is(false))
                 .body("lastUpdated", notNullValue())
-                .body("appliances[0].id", is("living-room-lamp"))
+                .body("appliances[0].applianceName", is("living-room-lamp"))
                 .body("appliances[0].on", is(true));
     }
 
@@ -119,7 +119,7 @@ class AppliancesResourceTest {
 
     @Test
     @TestSecurity(user = "scott", roles = {"dashboard"})
-    void unknown_id_404_no_command() {
+    void unknown_name_404_no_command() {
         seedFreshLamp(false);
         given().contentType(ContentType.JSON)
                 .body("{\"on\":true}")
@@ -170,7 +170,8 @@ class AppliancesResourceTest {
 
         assertEquals(1, fake.publishedCommands().size());
         ApplianceCommandMessage command = fake.publishedCommands().getFirst();
-        assertEquals("living-room-lamp", command.applianceId());
+        assertEquals("living-room-lamp", command.applianceName());
+        assertEquals(FakeApplianceBackend.INSTANCE_ID, command.instanceId());
         assertTrue(command.on());
         assertEquals(command.commandId(), fake.snapshot().appliedCommandId());
     }
@@ -218,8 +219,9 @@ class AppliancesResourceTest {
 
     private void seedFreshLamp(boolean on) {
         fake.publishState(new ApplianceStateMessage(
-                1,
+                FakeApplianceBackend.INSTANCE_ID,
+                FakeApplianceBackend.INSTANCE_NAME,
                 null,
-                List.of(new Appliance("living-room-lamp", "Living room lamp", on))));
+                List.of(new Appliance("living-room-lamp", on))));
     }
 }

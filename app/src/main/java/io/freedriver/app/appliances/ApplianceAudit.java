@@ -1,16 +1,33 @@
 package io.freedriver.app.appliances;
 
-import io.quarkus.logging.Log;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 
 @ApplicationScoped
 public class ApplianceAudit {
 
-    public void record(String user, Instant when, String applianceId, boolean on, String commandId, String result) {
-        Log.infof(
-                "audit appliance user=%s when=%s appliance=%s on=%s commandId=%s result=%s",
-                user, when, applianceId, on, commandId, result);
+    private static final Logger log = LoggerFactory.getLogger(ApplianceAudit.class);
+
+    public void record(Event event) {
+        log.info(
+                "audit appliance user={} when={} appliance={} on={} commandId={} result={}",
+                event.user(),
+                event.when(),
+                event.applianceName(),
+                event.on(),
+                event.commandId(),
+                event.result());
+    }
+
+    public record Event(
+            String user,
+            Instant when,
+            String applianceName,
+            boolean on,
+            String commandId,
+            String result) {
     }
 }

@@ -3,6 +3,8 @@ package io.freedriver.app.appliances;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.time.Duration;
+import java.util.Optional;
+import java.util.function.Predicate;
 
 @ApplicationScoped
 public class AppliancesConfig {
@@ -70,6 +72,34 @@ public class AppliancesConfig {
 
     public Duration commandTimeoutMax() {
         return commandTimeoutMax;
+    }
+
+    /** REST confirm wait. Not part of the MQTT contract. */
+    public Duration boundedCommandTimeout() {
+        Duration use = Optional.ofNullable(commandTimeout)
+                .filter(Predicate.not(Duration::isZero))
+                .filter(Predicate.not(Duration::isNegative))
+                .orElseGet(() -> Duration.ofSeconds(5));
+        Duration ceiling = boundedCommandCeiling();
+        Duration floor = boundedCommandFloor();
+        if (use.compareTo(ceiling) > 0) {
+            return ceiling;
+        }
+        if (use.compareTo(floor) < 0) {
+            return floor;
+        }
+        return use;
+    }
+
+    Duration boundedCommandCeiling() {
+        return Optional.ofNullable(commandTimeoutMax)
+                .filter(Predicate.not(Duration::isZero))
+                .filter(Predicate.not(Duration::isNegative))
+                .orElseGet(() -> Duration.ofSeconds(30));
+    }
+
+    Duration boundedCommandFloor() {
+        return Duration.ofMillis(50);
     }
 
     public boolean fakeRefresh() {
