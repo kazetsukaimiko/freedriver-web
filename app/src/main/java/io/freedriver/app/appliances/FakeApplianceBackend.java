@@ -73,17 +73,17 @@ public class FakeApplianceBackend implements ApplianceBackend {
     }
 
     @Override
-    public ApplianceSnapshot snapshot() {
+    public Optional<ApplianceSnapshot> snapshot() {
         synchronized (lock) {
             if (state == null) {
-                return ApplianceSnapshot.never();
+                return Optional.empty();
             }
-            return new ApplianceSnapshot(
+            return Optional.of(new ApplianceSnapshot(
                     receivedAt,
                     state.instanceId(),
                     state.instanceName(),
                     state.appliedCommandId(),
-                    state.appliances());
+                    state.appliances()));
         }
     }
 
@@ -97,16 +97,16 @@ public class FakeApplianceBackend implements ApplianceBackend {
 
     @Override
     public Optional<ApplianceSnapshot> awaitApplied(String commandId, Duration timeout) {
-        ApplianceSnapshot current = snapshot();
-        if (commandId.equals(current.appliedCommandId())) {
-            return Optional.of(current);
+        Optional<ApplianceSnapshot> current = snapshot();
+        if (applied(current, commandId)) {
+            return current;
         }
         CompletableFuture<ApplianceSnapshot> future = new CompletableFuture<>();
         waiters.put(commandId, future);
         try {
             current = snapshot();
-            if (commandId.equals(current.appliedCommandId())) {
-                return Optional.of(current);
+            if (applied(current, commandId)) {
+                return current;
             }
             return Optional.of(future.get(timeout.toMillis(), TimeUnit.MILLISECONDS));
         } catch (TimeoutException e) {
@@ -147,6 +147,10 @@ public class FakeApplianceBackend implements ApplianceBackend {
 
     public void publishStateJson(String json) {
         publishState(ApplianceStateMessage.parse(json));
+    }
+
+    private static boolean applied(Optional<ApplianceSnapshot> snapshot, String commandId) {
+        return snapshot.isPresent() && commandId.equals(snapshot.get().appliedCommandId());
     }
 
     public void markStale() {

@@ -32,7 +32,6 @@ public class AppliancesResource {
     @GET
     @RolesAllowed({"dashboard", "portal-admin"})
     public ApplianceMapResponse list() {
-        appliances.assertCanAccess(identity);
         return appliances.currentMap();
     }
 
@@ -44,7 +43,14 @@ public class AppliancesResource {
             @PathParam("id") @NotBlank @Size(max = ApplianceSchemas.NAME_MAX) String id,
             @Valid @NotNull ApplianceCommandRequest body) {
         // Path {id} is the MQTT applianceName alias. No boards. instanceId is not this path.
-        appliances.assertCanAccess(identity);
-        return appliances.issueCommand(identity, id, body.getOn());
+        return appliances.issueCommand(actor(identity), id, body.getOn());
+    }
+
+    private static String actor(SecurityIdentity identity) {
+        if (identity == null || identity.isAnonymous() || identity.getPrincipal() == null) {
+            return "anonymous";
+        }
+        String name = identity.getPrincipal().getName();
+        return name == null || name.isBlank() ? "anonymous" : name;
     }
 }

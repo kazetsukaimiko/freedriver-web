@@ -16,9 +16,6 @@ public class AppliancesConfig {
     @ConfigProperty(name = "freedriver.appliances.backend", defaultValue = "none")
     String backend;
 
-    @ConfigProperty(name = "freedriver.appliances.auth-required", defaultValue = "true")
-    boolean authRequired;
-
     @ConfigProperty(name = "freedriver.appliances.stale-after", defaultValue = "20s")
     Duration staleAfter;
 
@@ -47,10 +44,6 @@ public class AppliancesConfig {
 
     public String backend() {
         return backend;
-    }
-
-    public boolean authRequired() {
-        return authRequired;
     }
 
     public Duration staleAfter() {

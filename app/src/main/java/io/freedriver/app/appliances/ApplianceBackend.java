@@ -8,7 +8,7 @@ import java.util.Optional;
 
 public interface ApplianceBackend {
 
-    ApplianceSnapshot snapshot();
+    Optional<ApplianceSnapshot> snapshot();
 
     void publishCommand(ApplianceCommandMessage command);
 

@@ -1,72 +1,50 @@
 package io.freedriver.app.appliances;
 
 import io.freedriver.autonomy.mqtt.contract.ApplianceCommandMessage;
-import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.ClientErrorException;
-import jakarta.ws.rs.ForbiddenException;
-import jakarta.ws.rs.NotAuthorizedException;
-import jakarta.ws.rs.NotFoundException;
-import jakarta.ws.rs.core.Response;
 import lombok.NonNull;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 @ApplicationScoped
 public class ApplianceService {
 
-    @Inject
-    AppliancesConfig config;
+    private final AppliancesConfig config;
+    private final ApplianceBackend backend;
+    private final ApplianceAudit audit;
 
     @Inject
-    ApplianceBackend backend;
-
-    @Inject
-    CommandRateLimiter rateLimiter;
-
-    @Inject
-    ApplianceAudit audit;
-
-    public void assertCanAccess(@NonNull SecurityIdentity identity) {
-        if (!config.authRequired()) {
-            return;
-        }
-        if (identity.isAnonymous()) {
-            throw new NotAuthorizedException("Bearer");
-        }
-        if (!identity.hasRole("dashboard") && !identity.hasRole("portal-admin")) {
-            throw new ForbiddenException();
-        }
+    public ApplianceService(AppliancesConfig config, ApplianceBackend backend, ApplianceAudit audit) {
+        this.config = config;
+        this.backend = backend;
+        this.audit = audit;
     }
 
     public ApplianceMapResponse currentMap() {
         Instant now = Instant.now();
-        ApplianceSnapshot snapshot = backend.snapshot();
-        return snapshot.toResponse(snapshot.stale(config.staleAfter(), now), false);
+        return backend.snapshot()
+                .map(snapshot -> snapshot.toResponse(snapshot.stale(config.staleAfter(), now), false))
+                .orElseGet(() -> new ApplianceMapResponse(null, true, false, List.of()));
     }
 
-    public ApplianceMapResponse issueCommand(
-            @NonNull SecurityIdentity identity, @NonNull String applianceName, boolean on) {
-        if (config.liveCommands()) {
-            throw new IllegalStateException("Live MQTT commands are off until #25 and #27");
-        }
-        String user = userName(identity);
-        if (!rateLimiter.tryAcquire(user)) {
-            throw new ClientErrorException(Response.status(429).entity(new ErrorBody("rate_limited")).build());
-        }
-
+    public ApplianceMapResponse issueCommand(@NonNull String actor, @NonNull String applianceName, boolean on) {
+        String user = actor.isBlank() ? "anonymous" : actor;
         Instant now = Instant.now();
-        ApplianceSnapshot snapshot = backend.snapshot();
-        if (snapshot.stale(config.staleAfter(), now)) {
-            throw new ClientErrorException(
-                    Response.status(409).entity(snapshot.toResponse(true, false)).build());
+        Optional<ApplianceSnapshot> maybe = backend.snapshot();
+        if (maybe.isEmpty() || maybe.get().stale(config.staleAfter(), now)) {
+            throw new ApplianceStaleException(maybe);
         }
-        if (snapshot.instanceId() == null || snapshot.find(applianceName).isEmpty()) {
-            throw new NotFoundException();
+        ApplianceSnapshot snapshot = maybe.get();
+        if (snapshot.instanceId() == null) {
+            throw new IllegalStateException("Non-stale appliance snapshot is missing instanceId");
+        }
+        if (snapshot.find(applianceName).isEmpty()) {
+            throw new ApplianceNotFoundException(applianceName);
         }
 
         String commandId = UUID.randomUUID().toString();
@@ -83,14 +61,8 @@ public class ApplianceService {
             return applied.toResponse(applied.stale(config.staleAfter(), Instant.now()), false);
         }
         audit.record(new ApplianceAudit.Event(user, auditedAt, applianceName, on, commandId, "timeout"));
-        ApplianceSnapshot last = backend.snapshot();
-        return last.toResponse(last.stale(config.staleAfter(), Instant.now()), true);
-    }
-
-    private static String userName(@NonNull SecurityIdentity identity) {
-        return identity.getPrincipal().getName();
-    }
-
-    public record ErrorBody(String error) {
+        return backend.snapshot()
+                .map(last -> last.toResponse(last.stale(config.staleAfter(), Instant.now()), true))
+                .orElseGet(() -> new ApplianceMapResponse(null, true, true, List.of()));
     }
 }

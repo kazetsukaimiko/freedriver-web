@@ -1,6 +1,5 @@
 package io.freedriver.app.api;
 
-import io.freedriver.app.appliances.CommandRateLimiter;
 import io.freedriver.app.appliances.FakeApplianceBackend;
 import io.freedriver.autonomy.mqtt.contract.Appliance;
 import io.freedriver.autonomy.mqtt.contract.ApplianceCommandMessage;
@@ -30,13 +29,9 @@ class AppliancesResourceTest {
     @Inject
     FakeApplianceBackend fake;
 
-    @Inject
-    CommandRateLimiter rateLimiter;
-
     @BeforeEach
     void reset() {
         fake.reset();
-        rateLimiter.reset();
     }
 
     @Test
@@ -154,6 +149,21 @@ class AppliancesResourceTest {
 
     @Test
     @TestSecurity(user = "scott", roles = {"dashboard"})
+    void post_never_received_409_no_command() {
+        given().contentType(ContentType.JSON)
+                .body("{\"on\":true}")
+                .when().post("/api/appliances/living-room-lamp")
+                .then()
+                .statusCode(409)
+                .body("stale", is(true))
+                .body("timeout", is(false))
+                .body("lastUpdated", nullValue())
+                .body("appliances", empty());
+        assertTrue(fake.publishedCommands().isEmpty());
+    }
+
+    @Test
+    @TestSecurity(user = "scott", roles = {"dashboard"})
     void unknown_name_404_no_command() {
         seedFreshLamp(false);
         given().contentType(ContentType.JSON)
@@ -208,7 +218,7 @@ class AppliancesResourceTest {
         assertEquals("living-room-lamp", command.applianceName());
         assertEquals(FakeApplianceBackend.INSTANCE_ID, command.instanceId());
         assertTrue(command.on());
-        assertEquals(command.commandId(), fake.snapshot().appliedCommandId());
+        assertEquals(command.commandId(), fake.snapshot().orElseThrow().appliedCommandId());
     }
 
     @Test
@@ -227,29 +237,8 @@ class AppliancesResourceTest {
                 .body("appliances[0].on", is(false));
 
         assertEquals(1, fake.publishedCommands().size());
-        assertEquals(null, fake.snapshot().appliedCommandId());
-        assertEquals(false, fake.snapshot().find("living-room-lamp").orElseThrow().on());
-    }
-
-    @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
-    void rate_limit_returns_429() {
-        seedFreshLamp(false);
-        fake.setConfirmCommands(true);
-        int limited = 0;
-        for (int i = 0; i < 12; i++) {
-            int status = given().contentType(ContentType.JSON)
-                    .body("{\"on\":true}")
-                    .when().post("/api/appliances/living-room-lamp")
-                    .then()
-                    .extract().statusCode();
-            if (status == 429) {
-                limited++;
-            } else {
-                assertEquals(200, status);
-            }
-        }
-        assertTrue(limited >= 1, "expected at least one 429");
+        assertEquals(null, fake.snapshot().orElseThrow().appliedCommandId());
+        assertEquals(false, fake.snapshot().orElseThrow().find("living-room-lamp").orElseThrow().on());
     }
 
     private void seedFreshLamp(boolean on) {

@@ -15,10 +15,6 @@ public record ApplianceSnapshot(
         String appliedCommandId,
         List<Appliance> appliances) {
 
-    public static ApplianceSnapshot never() {
-        return new ApplianceSnapshot(null, null, null, null, List.of());
-    }
-
     public boolean stale(Duration window, Instant now) {
         if (receivedAt == null) {
             return true;
