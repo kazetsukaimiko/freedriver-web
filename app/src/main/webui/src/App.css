@@ -97,6 +97,163 @@ h1 {
   font-weight: 600;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.empty-copy {
+  margin: 0;
+  color: #9a9a9a;
+}
+
+.unreachable-banner {
+  margin: 0 0 1rem;
+  color: #f0b4b4;
+}
+
+.unreachable-banner p {
+  margin: 0;
+}
+
+.last-heard {
+  margin: 0.25rem 0 0;
+  color: #9a9a9a;
+  font-size: 0.85rem;
+}
+
+.card.is-unreachable {
+  background: #161616;
+}
+
+.appliance-list {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+}
+
+.appliance-list.is-frozen {
+  opacity: 0.78;
+  pointer-events: none;
+}
+
+.appliance-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.35rem 1rem;
+  padding: 0.85rem 0;
+  border-top: 1px solid #2a2a2a;
+}
+
+.appliance-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.appliance-row:last-child {
+  padding-bottom: 0;
+}
+
+.appliance-name {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.last-known {
+  color: #9a9a9a;
+  font-size: 0.8rem;
+}
+
+.switch-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #f0b4b4;
+  font-size: 0.85rem;
+}
+
+.switch {
+  position: relative;
+  width: 52px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: #2a2a2a;
+  cursor: pointer;
+}
+
+.switch.is-on {
+  background: #3d5a66;
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #c8c8c8;
+  transition:
+    transform 0.18s ease,
+    background 0.18s ease;
+}
+
+.switch.is-on .switch-thumb {
+  transform: translateX(20px);
+  background: #e8efe8;
+}
+
+.switch.is-pending {
+  background: #243038;
+  animation: pending-pulse 1s ease-in-out infinite;
+}
+
+.switch.is-pending .switch-thumb {
+  transform: translateX(10px);
+  background: #9a9a9a;
+}
+
+@keyframes pending-pulse {
+  50% { opacity: 0.65; }
+}
+
+.switch:disabled {
+  cursor: default;
+}
+
+.switch:focus-visible {
+  outline: 2px solid #e8efe8;
+  outline-offset: 2px;
+}
+
+.card.is-unreachable .switch {
+  background: #222;
+}
+
+.card.is-unreachable .switch .switch-thumb {
+  background: #6a6a6a;
+}
+
+.card.is-unreachable .switch.is-on {
+  background: #3a4448;
+}
+
+.card.is-unreachable .switch.is-on .switch-thumb {
+  background: #c8c8c8;
+}
+
 .endpoint {
   margin: 0 0 1rem;
   color: #9a9a9a;
