@@ -95,12 +95,14 @@ Summary (required), then findings. Each finding:
 - Suggestion: smallest fix or “file a ticket, do not balloon this PR”
 - Related: issue numbers if known (#57, #58, #26, #27)
 
-Verdict: approve-with-tickets | comment | request-changes
+Verdict: approve-as-is | approve-with-tickets | comment | request-changes
+- approve-as-is: no findings, or every adjacent item is already ticketed and this PR did not make it worse. **No new tickets required.** Do not write `approve-with-tickets (no new tickets required)`.
+- approve-with-tickets: adjacent smells that need a **new** ticket. Name the ticket to file.
+- comment: discussion, questions, or adjacent smells you are not ready to classify
 - request-changes: in-diff correctness/security/layering the PR introduced or spread
-- comment: adjacent smells, including pre-existing mixing the PR touched
-- Do not approve while adjacent JAX-RS-in-service (or equivalent) sits in a file this PR edited, unless you explicitly listed it and said “ticket, don’t balloon” AND the PR did not make it worse
+- Do not approve while adjacent JAX-RS-in-service (or equivalent) sits in a file this PR edited, unless you explicitly listed it and said “already ticketed, don’t balloon” AND the PR did not make it worse
 
-If there are no findings, say so in one paragraph. Do not invent nits to look busy.
+If there are no findings, say so in one paragraph and verdict `approve-as-is`. Do not invent nits to look busy.
 
 ============================================================
 DO NOT
