@@ -12,6 +12,8 @@ import jakarta.enterprise.context.ApplicationScoped;
 /**
  * %dev only: quarkus:dev works with no Keycloak. Grants {@code dashboard} to anonymous callers.
  * Tests use %test and {@code @TestSecurity} instead — auth is required there.
+ * Do not add an AuthorizationController: {@code %dev.quarkus.security.auth.enabled-in-dev-mode=false}
+ * already installs Quarkus's DevModeDisabledAuthorizationController; a second one made quarkus:dev fail to start.
  */
 @ApplicationScoped
 @IfBuildProfile("dev")
