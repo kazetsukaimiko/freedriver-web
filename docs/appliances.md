@@ -151,6 +151,20 @@ quarkus.oidc.enabled=false
 
 `./mvnw quarkus:dev` uses the **fake** backend (`%dev`): no broker, no Keycloak, `/api/hello` and `/api/health` stay 200, `/api/appliances` is served from an in-process fixture.
 
+### One `%dev` auth path
+
+Authorization stays **on** in `%dev`. The only open-auth type is `DevOpenAuthAugmentor` in `io.freedriver.app.security`, gated with `@IfBuildProfile("dev")` (never test or prod). It grants principal `dev` and role `dashboard` to anonymous callers so `@RolesAllowed` actually runs. There is no Keycloak.
+
+Do **not** add a second escape:
+
+- no `DevAuthMechanism` (or any other auth type) under `io.freedriver.app.appliances`
+- no `freedriver.appliances.auth-required` knob
+- no `%dev.quarkus.security.auth.enabled-in-dev-mode=false`
+
+`AppliancesDisabledFilter` stays in appliances. That is the feature-off URL tree (404), not auth.
+
+`%test` uses `@TestSecurity`. Unauthenticated calls are 401; wrong role is 403. The augmentor is not in the test build.
+
 The fake backend is not what ships in prod. The live MQTT path is compiled as contract helpers only; it is not a CDI bean, does not connect, and refuses `mqtt.freedriver.io`. When live is later enabled, Quarkus must use the compose-network hostname (`mosquitto`), never the public broker.
 
 Live command route is **not** Done. Blocked on #25 and #27. `live-commands` stays `false`.
