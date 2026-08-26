@@ -1,5 +1,7 @@
 package io.freedriver.app.appliances;
 
+import io.freedriver.autonomy.mqtt.contract.ApplianceCommandMessage;
+
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
