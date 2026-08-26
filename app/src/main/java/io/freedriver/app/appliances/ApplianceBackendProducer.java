@@ -18,6 +18,9 @@ public class ApplianceBackendProducer {
         if ("fake".equals(config.backend())) {
             return fake;
         }
-        return new DisabledApplianceBackend();
+        if (!config.liveCommands()) {
+            return new DisabledApplianceBackend();
+        }
+        throw new IllegalStateException("Live MQTT command adapter is not produced");
     }
 }

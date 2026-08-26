@@ -4,7 +4,6 @@ import io.freedriver.app.appliances.ApplianceCommandRequest;
 import io.freedriver.app.appliances.ApplianceMapResponse;
 import io.freedriver.app.appliances.ApplianceService;
 import io.freedriver.autonomy.mqtt.contract.ApplianceSchemas;
-import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -26,13 +25,9 @@ public class AppliancesResource {
     @Inject
     ApplianceService appliances;
 
-    @Inject
-    SecurityIdentity identity;
-
     @GET
     @RolesAllowed({"dashboard", "portal-admin"})
     public ApplianceMapResponse list() {
-        appliances.assertCanAccess(identity);
         return appliances.currentMap();
     }
 
@@ -43,8 +38,6 @@ public class AppliancesResource {
     public ApplianceMapResponse command(
             @PathParam("id") @NotBlank @Size(max = ApplianceSchemas.NAME_MAX) String id,
             @Valid @NotNull ApplianceCommandRequest body) {
-        // Path {id} is the MQTT applianceName alias. No boards. instanceId is not this path.
-        appliances.assertCanAccess(identity);
-        return appliances.issueCommand(identity, id, body.getOn());
+        return appliances.issueCommand(id, body.getOn());
     }
 }

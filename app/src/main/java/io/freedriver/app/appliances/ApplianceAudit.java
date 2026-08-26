@@ -13,8 +13,7 @@ public class ApplianceAudit {
 
     public void record(Event event) {
         log.info(
-                "audit appliance user={} when={} appliance={} on={} commandId={} result={}",
-                event.user(),
+                "audit appliance when={} appliance={} on={} commandId={} result={}",
                 event.when(),
                 event.applianceName(),
                 event.on(),
@@ -23,7 +22,6 @@ public class ApplianceAudit {
     }
 
     public record Event(
-            String user,
             Instant when,
             String applianceName,
             boolean on,

@@ -10,8 +10,8 @@ import java.util.Optional;
 public class DisabledApplianceBackend implements ApplianceBackend {
 
     @Override
-    public ApplianceSnapshot snapshot() {
-        return ApplianceSnapshot.never();
+    public Optional<ApplianceSnapshot> snapshot() {
+        return Optional.empty();
     }
 
     @Override
