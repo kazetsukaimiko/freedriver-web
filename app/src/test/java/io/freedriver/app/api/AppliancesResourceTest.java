@@ -4,6 +4,7 @@ import io.freedriver.app.appliances.CommandRateLimiter;
 import io.freedriver.app.appliances.FakeApplianceBackend;
 import io.freedriver.autonomy.mqtt.contract.Appliance;
 import io.freedriver.autonomy.mqtt.contract.ApplianceCommandMessage;
+import io.freedriver.autonomy.mqtt.contract.ApplianceSchemas;
 import io.freedriver.autonomy.mqtt.contract.ApplianceStateMessage;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
@@ -113,6 +114,40 @@ class AppliancesResourceTest {
         given().contentType(ContentType.JSON)
                 .body("{\"on\":true,\"extra\":1}")
                 .when().post("/api/appliances/living-room-lamp")
+                .then().statusCode(400);
+        assertTrue(fake.publishedCommands().isEmpty());
+    }
+
+    @Test
+    @TestSecurity(user = "scott", roles = {"dashboard"})
+    void missing_on_400_from_constraint() {
+        seedFreshLamp(false);
+        given().contentType(ContentType.JSON)
+                .body("{}")
+                .when().post("/api/appliances/living-room-lamp")
+                .then().statusCode(400);
+        assertTrue(fake.publishedCommands().isEmpty());
+    }
+
+    @Test
+    @TestSecurity(user = "scott", roles = {"dashboard"})
+    void blank_path_400_from_constraint() {
+        seedFreshLamp(false);
+        given().contentType(ContentType.JSON)
+                .body("{\"on\":true}")
+                .when().post("/api/appliances/%20")
+                .then().statusCode(400);
+        assertTrue(fake.publishedCommands().isEmpty());
+    }
+
+    @Test
+    @TestSecurity(user = "scott", roles = {"dashboard"})
+    void oversized_path_400_from_constraint() {
+        seedFreshLamp(false);
+        String tooLong = "a".repeat(ApplianceSchemas.NAME_MAX + 1);
+        given().contentType(ContentType.JSON)
+                .body("{\"on\":true}")
+                .when().post("/api/appliances/" + tooLong)
                 .then().statusCode(400);
         assertTrue(fake.publishedCommands().isEmpty());
     }
