@@ -3,6 +3,7 @@ package io.freedriver.app.api;
 import io.freedriver.app.appliances.ApplianceCommandRequest;
 import io.freedriver.app.appliances.ApplianceMapResponse;
 import io.freedriver.app.appliances.ApplianceService;
+import io.freedriver.app.security.RateLimited;
 import io.freedriver.autonomy.mqtt.contract.ApplianceSchemas;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
@@ -35,6 +36,7 @@ public class AppliancesResource {
     @Path("/{id}")
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({"dashboard", "portal-admin"})
+    @RateLimited("appliances.commands")
     public ApplianceMapResponse command(
             @PathParam("id") @NotBlank @Size(max = ApplianceSchemas.NAME_MAX) String id,
             @Valid @NotNull ApplianceCommandRequest body) {
