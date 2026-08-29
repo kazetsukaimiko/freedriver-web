@@ -21,6 +21,9 @@ class BffSessionLockTest {
         assertFalse(properties.contains("quarkus.oidc.authentication.cookie-http-only"));
         assertTrue(properties.contains("quarkus.oidc.authentication.java-script-auto-redirect=false"));
         assertTrue(properties.contains("quarkus.http.auth.permission.appliances.policy=authenticated"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.login.paths=/login"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.login.policy=authenticated"));
+        assertTrue(properties.contains("quarkus.quinoa.ignored-path-prefixes=/api,/q,/login"));
         assertTrue(properties.contains("quarkus.oidc.enabled=false"));
         assertFalse(properties.matches("(?s).*\\nquarkus\\.oidc\\.enabled=true.*"));
         assertTrue(properties.contains("quarkus.oidc.auth-server-url=https://auth.freedriver.io/realms/freedriver"));

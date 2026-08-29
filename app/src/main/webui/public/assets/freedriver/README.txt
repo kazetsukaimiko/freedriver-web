@@ -17,6 +17,7 @@ pages/
   freedriver-404.png        fractured snowflake + 404
   freedriver-500.png        cracked snowflake + 500
   freedriver-loader.png     same as icon (spin/pulse in CSS)
+  freedriver-denied.png     intact red snowflake (401/403)
 
 previews/                   review-only, do not ship if you can avoid it
 
