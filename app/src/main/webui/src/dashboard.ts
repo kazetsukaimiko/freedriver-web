@@ -140,9 +140,12 @@ function readAppliance(raw: unknown): Appliance {
   return { id: body.applianceName, name: body.applianceName, on: body.on }
 }
 
+/** Quarkus OIDC returns 401 (not a login redirect) when this header is present. */
+const API_HEADERS = { 'X-Requested-With': 'XMLHttpRequest' }
+
 export async function fetchApplianceMap(signal?: AbortSignal): Promise<MapResult> {
   try {
-    const response = await fetch('/api/appliances', { signal })
+    const response = await fetch('/api/appliances', { signal, headers: API_HEADERS })
     if (response.status === 401) {
       return { status: 'denied', reason: 'session' }
     }
@@ -172,7 +175,7 @@ export async function postApplianceCommand(
       `/api/appliances/${encodeURIComponent(instanceId)}/${encodeURIComponent(applianceName)}`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...API_HEADERS, 'Content-Type': 'application/json' },
         body: JSON.stringify({ on }),
         signal,
       },
