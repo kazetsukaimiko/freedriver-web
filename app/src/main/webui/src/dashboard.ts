@@ -34,6 +34,8 @@ export type ApplianceMap = {
   instances: Instance[]
 }
 
+let csrfToken: string | null = null
+
 export type DeniedReason = 'session' | 'role'
 
 export type CommandResult =
@@ -84,9 +86,12 @@ export function parseApplianceMap(raw: unknown): ApplianceMap {
   if (!raw || typeof raw !== 'object') {
     throw new Error('Invalid appliance map')
   }
-  const body = raw as { instances?: unknown }
+  const body = raw as { instances?: unknown; csrfToken?: unknown }
   if (!Array.isArray(body.instances)) {
     throw new Error('Invalid appliance map')
+  }
+  if (typeof body.csrfToken === 'string' && body.csrfToken.length > 0) {
+    csrfToken = body.csrfToken
   }
   return { instances: body.instances.map(readInstance) }
 }
@@ -175,7 +180,11 @@ export async function postApplianceCommand(
       `/api/appliances/${encodeURIComponent(instanceId)}/${encodeURIComponent(applianceName)}`,
       {
         method: 'POST',
-        headers: { ...API_HEADERS, 'Content-Type': 'application/json' },
+        headers: {
+          ...API_HEADERS,
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+        },
         body: JSON.stringify({ on }),
         signal,
       },
