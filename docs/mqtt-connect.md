@@ -66,7 +66,7 @@ Compose injects OIDC on the `app` service only (not the image, not the SPA):
 - `QUARKUS_OIDC_CLIENT_ID=freedriver-api`
 - `QUARKUS_OIDC_CREDENTIALS_SECRET` from `/opt/freedriver-secrets/.env` (copied from `keycloak-freedriver-api.secret`)
 
-`quarkus.oidc.enabled` stays off until #25 and #27.
+`quarkus.oidc.enabled` stays off in the default profile until #27. The BFF (web-app, HTTP-only cookie, `freedriver-api` confidential client) is wired; compose already injects the env. Do not put the secret in the SPA.
 
 
 ## Keycloak (auth, not MQTT)

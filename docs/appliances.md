@@ -117,15 +117,13 @@ Reconnect / latest-per-alias: [autonomy-mqtt.md](autonomy-mqtt.md). kaze owns th
 
 ## BFF / session
 
-Quarkus owns the OIDC code flow. The browser gets an HTTP-only, Secure, SameSite=Lax session cookie (Lax so the Keycloak return from auth.freedriver.io to app.freedriver.io still has a session). It is not readable from JS. The confidential client secret never goes in `webui`.
+Quarkus owns the OIDC code flow (`application-type=web-app`). The browser gets an HTTP-only, Secure, SameSite=Lax session cookie (Lax so the Keycloak return from auth.freedriver.io to app.freedriver.io still has a session). It is not readable from JS. The confidential client secret is `QUARKUS_OIDC_CREDENTIALS_SECRET` only — never `webui`.
 
-`commandId` is minted in Quarkus. The browser only sends `{ "on": bool }`.
+`commandId` is minted in Quarkus. The browser only sends `{ "on": bool }`. Appliance fetches send `X-Requested-With: XMLHttpRequest` so a missing session is 401, not a login HTML redirect.
 
-OIDC is off. GET `/api/appliances` does not return `csrfToken`. POST does not require `X-CSRF-Token`.
+OIDC stays **off** in the default profile (`quarkus.oidc.enabled=false`) until #27. Map/command are still fail-closed: no session → 401, wrong role → 403 (`dashboard` or `portal-admin`). GET `/api/appliances` does not return `csrfToken`. POST does not require `X-CSRF-Token`.
 
-**Future-BFF** ([#26](https://github.com/kazetsukaimiko/freedriver-web/issues/26) / [#58](https://github.com/kazetsukaimiko/freedriver-web/issues/58)): when OIDC is on, POST `/api/appliances/{instanceId}/{applianceName}` will require `X-CSRF-Token` matching a `csrfToken`. That is not current behavior. Do not treat today's GET map as if it already includes `csrfToken`. SameSite=Lax is not a CSRF substitute.
-
-When OIDC is on, the API still checks session + (`dashboard` or `portal-admin`).
+**CSRF** (when OIDC is later flipped on): POST `/api/appliances/{instanceId}/{applianceName}` will require `X-CSRF-Token` matching a `csrfToken`. That is not current behavior. SameSite=Lax is not a CSRF substitute.
 
 ## lastUpdated / stale / timeout
 

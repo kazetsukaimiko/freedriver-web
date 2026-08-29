@@ -118,7 +118,10 @@ function BuildStamp() {
     }
     const controller = new AbortController()
 
-    fetch('/api/build', { signal: controller.signal })
+    fetch('/api/build', {
+      signal: controller.signal,
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    })
       .then(async (response) => {
         if (!response.ok) {
           return null

@@ -23,5 +23,7 @@ class DefaultProfileSafetyTest {
         assertFalse(Files.exists(Path.of("src/main/java/io/freedriver/app/appliances/ApplianceBackend.java")));
         assertTrue(Files.exists(Path.of("src/main/java/io/freedriver/app/appliances/MockAutonomy.java")));
         assertTrue(Files.exists(Path.of("src/main/java/io/freedriver/app/appliances/ApplianceControl.java")));
+        assertTrue(properties.contains("quarkus.oidc.enabled=false"));
+        assertFalse(properties.matches("(?s).*\\nquarkus\\.oidc\\.enabled=true.*"));
     }
 }
