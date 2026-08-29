@@ -62,7 +62,7 @@ Use these exact topics (retain=false, QoS 1, `live-commands` stays `false`):
 
 A display name for the first house will live in the portal/DB later. That name is UX-only — never a topic segment, never in ACL/compose/code.
 
-First-house apply is Techops + `/opt/freedriver-secrets/mosquitto/acl` **after Security locks the mint**. Hold VPS apply until then. See [mqtt-connect.md](mqtt-connect.md).
+First-house apply is Techops + `/opt/freedriver-secrets/mosquitto/acl`. Mint is locked; `877b33d0-6e53-4212-a53f-52107383eec2` is the live first-house instanceId. The apply command on [mqtt-connect.md](mqtt-connect.md) is the repeatable procedure (idempotent; do not invent another UUID).
 
 | | Topic | Publisher | Subscriber | QoS | Retain |
 | --- | --- | --- | --- | --- | --- |
@@ -155,4 +155,4 @@ Either:
 | Publish Topic A, subscribe Topic B for `877b33d0-6e53-4212-a53f-52107383eec2` | Publish Topic B, subscribe Topic A, or invent another `instanceId` |
 | Echo `appliedCommandId` on the next map | Depend on a closed Freedriver library suite PR |
 | Ask Techops for `/opt/freedriver-secrets/mosquitto/autonomy.pass` | Put secrets in the doc or invent a Maven Central version |
-| Speak to the broker after Techops applies (Security lock first) | Run the VPS apply, flip `live-commands`, or open 1883 |
+| Speak to the broker after Techops applies | Run the VPS apply, flip `live-commands`, or open 1883 |

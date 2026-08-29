@@ -6,8 +6,7 @@ On GitHub: kaze / [@kazetsukaimiko](https://github.com/kazetsukaimiko).
 
 ## Locks (read before any VPS or client work)
 
-- **Hold the VPS ACL apply until Security locks the mint.** This page is the guide. It is not permission to apply.
-- Do **not** apply on the VPS from a docs change. Do **not** run `scripts/provision-mosquitto.sh` against live secrets from this page.
+- **Mint is locked.** `877b33d0-6e53-4212-a53f-52107383eec2` is the live first-house instanceId. The apply command below is the repeatable procedure (idempotent; do not invent another UUID).
 - Do **not** enable `live-commands`. Do **not** open 1883.
 - Do **not** put a house display name or any appliance name in code, compose, ACL, or as a topic segment. Names are UX-only. The first house will have a display name in the portal/DB later — never bake that name into a config an agent would copy.
 - Never put a broker password in this doc, in git, or in an issue.
@@ -24,11 +23,11 @@ The first-house `instanceId` for the apply command (UUID hex+hyphens; do **not**
 
 That already excludes `/`, `+`, `#`. Do not invent another UUID. Do not add a portal paste UI. The house does **not** mint the first id.
 
-## First-house apply (Techops only, after Security lock)
+## First-house apply (Techops only)
 
 Live ACL is `/opt/freedriver-secrets/mosquitto/acl`. Git keeps `mosquitto/acl.template` only. Compose does **not** mount the git template as live (`mosquitto.conf` uses `acl_file /mosquitto/config/secrets/acl` on the existing `/opt/freedriver-secrets/mosquitto` bind). Do not ship `__INSTANCE_ID__` or any fake id as the compose-mounted ACL.
 
-Copy-paste apply (Techops, root/sudo, **after** Security locks the mint):
+Copy-paste apply (Techops, root/sudo):
 
 ```
 INSTANCE_ID=877b33d0-6e53-4212-a53f-52107383eec2 ./scripts/provision-mosquitto.sh
