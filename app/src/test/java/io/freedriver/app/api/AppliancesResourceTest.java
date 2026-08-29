@@ -4,10 +4,12 @@ import io.freedriver.app.appliances.ApplianceControl;
 import io.freedriver.app.appliances.ApplianceCommandRouted;
 import io.freedriver.app.appliances.CommandRateLimiter;
 import io.freedriver.app.appliances.MockAutonomy;
+import io.freedriver.app.security.CsrfFilter;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import io.restassured.http.ContentType;
+import io.restassured.specification.RequestSpecification;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,6 +47,14 @@ class AppliancesResourceTest {
 
     private static String commandPath(String applianceName) {
         return "/api/appliances/" + MockAutonomy.INSTANCE_ID + "/" + applianceName;
+    }
+
+    private static RequestSpecification commandSpec() {
+        var get = given().when().get("/api/appliances");
+        return given()
+                .contentType(ContentType.JSON)
+                .cookie(CsrfFilter.COOKIE, get.cookie(CsrfFilter.COOKIE))
+                .header(CsrfFilter.HEADER, get.path("csrfToken"));
     }
 
     @Test
@@ -91,7 +101,9 @@ class AppliancesResourceTest {
                 .body("instances[0].lastUpdated", notNullValue())
                 .body("instances[0].appliances.size()", is(6))
                 .body("instances[0].appliances.applianceName", hasItems(
-                        "hallway", "kitchen", "living-room", "bedroom", "garage", "porch"));
+                        "hallway", "kitchen", "living-room", "bedroom", "garage", "porch"))
+                .body("csrfToken", notNullValue())
+                .cookie(CsrfFilter.COOKIE, notNullValue());
     }
 
     @Test
@@ -115,8 +127,35 @@ class AppliancesResourceTest {
 
     @Test
     @TestSecurity(user = "scott", roles = {"dashboard"})
-    void extra_json_fields_400() {
+    void post_without_csrf_400_no_command() {
         given().contentType(ContentType.JSON)
+                .body("{\"on\":true}")
+                .when().post(commandPath("hallway"))
+                .then()
+                .statusCode(400)
+                .body(is("{}"));
+        assertTrue(mock.publishedCommands().isEmpty());
+    }
+
+    @Test
+    @TestSecurity(user = "scott", roles = {"dashboard"})
+    void post_wrong_csrf_400_no_command() {
+        var get = given().when().get("/api/appliances");
+        given().contentType(ContentType.JSON)
+                .cookie(CsrfFilter.COOKIE, get.cookie(CsrfFilter.COOKIE))
+                .header(CsrfFilter.HEADER, "nope")
+                .body("{\"on\":true}")
+                .when().post(commandPath("hallway"))
+                .then()
+                .statusCode(400)
+                .body(is("{}"));
+        assertTrue(mock.publishedCommands().isEmpty());
+    }
+
+    @Test
+    @TestSecurity(user = "scott", roles = {"dashboard"})
+    void extra_json_fields_400() {
+        commandSpec()
                 .body("{\"on\":true,\"extra\":1}")
                 .when().post(commandPath("hallway"))
                 .then().statusCode(400);
@@ -126,7 +165,7 @@ class AppliancesResourceTest {
     @Test
     @TestSecurity(user = "scott", roles = {"dashboard"})
     void missing_on_400_from_constraint() {
-        given().contentType(ContentType.JSON)
+        commandSpec()
                 .body("{}")
                 .when().post(commandPath("hallway"))
                 .then().statusCode(400);
@@ -137,7 +176,7 @@ class AppliancesResourceTest {
     @TestSecurity(user = "scott", roles = {"dashboard"})
     void oversized_name_400_from_constraint() {
         String tooLong = "a".repeat(ApplianceSchemas.NAME_MAX + 1);
-        given().contentType(ContentType.JSON)
+        commandSpec()
                 .body("{\"on\":true}")
                 .when().post(commandPath(tooLong))
                 .then().statusCode(400);
@@ -148,7 +187,7 @@ class AppliancesResourceTest {
     @TestSecurity(user = "scott", roles = {"dashboard"})
     void unknown_instance_404_no_command() {
         UUID missing = UUID.fromString("00000000-0000-4000-8000-000000000000");
-        given().contentType(ContentType.JSON)
+        commandSpec()
                 .body("{\"on\":true}")
                 .when().post("/api/appliances/" + missing + "/hallway")
                 .then().statusCode(404);
@@ -158,7 +197,7 @@ class AppliancesResourceTest {
     @Test
     @TestSecurity(user = "scott", roles = {"dashboard"})
     void unknown_name_404_no_command() {
-        given().contentType(ContentType.JSON)
+        commandSpec()
                 .body("{\"on\":true}")
                 .when().post(commandPath("attic"))
                 .then().statusCode(404);
@@ -177,7 +216,7 @@ class AppliancesResourceTest {
                 .body("instances[0].timeout", is(false))
                 .body("instances[0].lastUpdated", notNullValue());
 
-        given().contentType(ContentType.JSON)
+        commandSpec()
                 .body("{\"on\":false}")
                 .when().post(commandPath("hallway"))
                 .then()
@@ -193,7 +232,7 @@ class AppliancesResourceTest {
     void confirm_path_updates_map() {
         mock.setConfirmCommands(true);
 
-        given().contentType(ContentType.JSON)
+        commandSpec()
                 .body("{\"on\":true}")
                 .when().post(commandPath("hallway"))
                 .then()
@@ -217,7 +256,7 @@ class AppliancesResourceTest {
     void timeout_path_does_not_look_confirmed() {
         mock.setConfirmCommands(false);
 
-        given().contentType(ContentType.JSON)
+        commandSpec()
                 .body("{\"on\":true}")
                 .when().post(commandPath("hallway"))
                 .then()
@@ -234,8 +273,9 @@ class AppliancesResourceTest {
     void rate_limit_returns_429() {
         mock.setConfirmCommands(true);
         int limited = 0;
+        RequestSpecification spec = commandSpec();
         for (int i = 0; i < 12; i++) {
-            int status = given().contentType(ContentType.JSON)
+            int status = spec
                     .body("{\"on\":true}")
                     .when().post(commandPath("hallway"))
                     .then()
@@ -255,9 +295,9 @@ class AppliancesResourceTest {
         for (int i = 0; i < 12; i++) {
             given().when().get("/api/appliances").then().statusCode(200);
         }
+        RequestSpecification spec = commandSpec();
         for (int i = 0; i < 12; i++) {
-            given().contentType(ContentType.JSON)
-                    .body("{\"on\":false}")
+            spec.body("{\"on\":false}")
                     .when().post(commandPath("hallway"));
         }
         given().when().get("/api/appliances").then().statusCode(200);

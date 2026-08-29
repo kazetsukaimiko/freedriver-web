@@ -17,8 +17,8 @@ CORS allowlist: `https://app.freedriver.io` only (dev may also allow localhost).
 
 | Method | Path | Body | Success |
 | --- | --- | --- | --- |
-| GET | `/api/appliances` | — | 200 `{ "instances": [ ... ] }` |
-| POST | `/api/appliances/{instanceId}/{applianceName}` | `{ "on": false }` | 200 that instance |
+| GET | `/api/appliances` | — | 200 `{ "instances": [ ... ], "csrfToken": "..." }` |
+| POST | `/api/appliances/{instanceId}/{applianceName}` | `{ "on": false }` plus `X-CSRF-Token` | 200 that instance |
 
 `instanceId` is a UUID. `applianceName` is the alias. Extra JSON fields on POST are rejected. The browser sends `{ "on": bool }` only. `commandId` is minted in Quarkus. HTTP keeps `on`; MQTT uses `state`.
 
@@ -26,6 +26,7 @@ GET:
 
 ```json
 {
+  "csrfToken": "…",
   "instances": [
     {
       "instanceId": "550e8400-e29b-41d4-a716-446655440000",
@@ -44,10 +45,10 @@ GET:
 No instances yet:
 
 ```json
-{ "instances": [] }
+{ "csrfToken": "…", "instances": [] }
 ```
 
-Each `instanceName` is a dashboard tab. GET does not return a CSRF token.
+Each `instanceName` is a dashboard tab. GET returns `csrfToken`. POST requires `X-CSRF-Token` matching the HttpOnly `freedriver-csrf` cookie. A bad or missing token is 400 with an empty body (that switch fails; not a new login screen).
 
 ### Status codes
 
@@ -56,6 +57,7 @@ Each `instanceName` is a dashboard tab. GET does not return a CSRF token.
 | No session | 401 | 401 |
 | Wrong role | 403 | 403 |
 | Extra JSON fields | — | 400 |
+| Missing or wrong CSRF | — | 400, no command, empty body |
 | Unknown `instanceId` | — | 404, no command |
 | Unknown `applianceName` | — | 404, no command |
 | Known instance, stale | 200, that instance `stale: true` | 409, no command |
@@ -121,9 +123,7 @@ Quarkus owns the OIDC code flow (`application-type=web-app`). The browser gets a
 
 `commandId` is minted in Quarkus. The browser only sends `{ "on": bool }`. Appliance fetches send `X-Requested-With: XMLHttpRequest` so a missing session is 401, not a login HTML redirect.
 
-OIDC stays **off** in the default profile (`quarkus.oidc.enabled=false`) until #27. Map/command are still fail-closed: no session → 401, wrong role → 403 (`dashboard` or `portal-admin`). GET `/api/appliances` does not return `csrfToken`. POST does not require `X-CSRF-Token`.
-
-**CSRF** (when OIDC is later flipped on): POST `/api/appliances/{instanceId}/{applianceName}` will require `X-CSRF-Token` matching a `csrfToken`. That is not current behavior. SameSite=Lax is not a CSRF substitute.
+OIDC stays **off** in the default profile (`quarkus.oidc.enabled=false`) until CSRF (#98) is in and later cards flip it. Map/command are fail-closed: no session → 401, wrong role → 403 (`dashboard` or `portal-admin`). Command POST requires `X-CSRF-Token`. The session cookie stays HTTP-only, Secure, SameSite=Lax. SameSite=Lax is not a CSRF substitute.
 
 ## lastUpdated / stale / timeout
 
