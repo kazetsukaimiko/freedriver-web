@@ -49,7 +49,7 @@ The product app lives in `app/`: Quarkus 3.38 (Java 21) with Quinoa serving a Re
 
 Requires Java 23. Quinoa can install Node for the UI build. Open http://localhost:8080 for the dashboard (`GET /api/hello` and `GET /api/build` are public). Production is `https://app.freedriver.io` via Caddy → the Compose `app` service.
 
-`mqtt-contract/` is a reactor sibling (`io.freedriver:freedriver-mqtt-contract`). The app does not pin autonomy's GitHub Packages jar.
+`mqtt-contract/`, `mqtt/`, and `mqtt-paho/` are reactor siblings (`io.freedriver:freedriver-mqtt-contract`, `freedriver-mqtt`, `freedriver-mqtt-paho`). The app does not pin autonomy's GitHub Packages jar.
 
 ## Appliances API
 
@@ -61,7 +61,7 @@ The live command route is **not** Done. It is blocked on [#25](https://github.co
 
 Push or merge to `main`, or run the **Deploy** workflow. GitHub Actions rsyncs this repo to `/opt/freedriver-web` and runs `docker compose --env-file /opt/freedriver-secrets/.env up -d` so `${VAR}` interpolation reads the secrets file, not a `.env` in the git tree.
 
-The compose image build compiles `mqtt-contract` from this repo (no GitHub Packages pin). Do not commit a PAT or pass a token as a Docker ARG/ENV.
+The compose image build compiles `mqtt-contract`, `mqtt`, and `mqtt-paho` from this repo (no GitHub Packages pin). Do not commit a PAT or pass a token as a Docker ARG/ENV.
 
 ### Build number
 

@@ -23,6 +23,9 @@ class ApplianceSchemasTest {
                 () -> MqttLiveRoute.assertPrivateBroker("mqtt.freedriver.io"));
         assertTrue(ex.getMessage().contains("mqtt.freedriver.io"));
         MqttLiveRoute.assertPrivateBroker("mosquitto");
+        MqttLiveRoute.assertLiveBroker("mosquitto", 8883, true);
+        assertThrows(IllegalStateException.class, () -> MqttLiveRoute.assertLiveBroker("mosquitto", 1883, true));
+        assertThrows(IllegalStateException.class, () -> MqttLiveRoute.assertLiveBroker("mosquitto", 8883, false));
         ApplianceCommandMessage command = MqttLiveRoute.command("cmd-1", "hallway", true);
         assertEquals("hallway", command.applianceName());
         assertTrue(command.state());

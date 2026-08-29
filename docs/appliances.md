@@ -160,6 +160,6 @@ Do **not** add a second escape:
 
 `%test` uses `@TestSecurity`. Unauthenticated calls are 401; wrong role is 403. The augmentor is not in the test build.
 
-The mock event source is not what ships in prod. The live MQTT path is compiled as contract helpers only; it is not a CDI bean, does not connect, and refuses `mqtt.freedriver.io`. When live is later enabled, it must observe/fire the same bus `ApplianceControl` already uses. Quarkus must use the compose-network hostname (`mosquitto`), never the public broker.
+The mock event source is not what ships in prod. Live MQTT is `io.freedriver:freedriver-mqtt` plus `freedriver-mqtt-paho`. The app CDI adapter (`MqttLiveClient`) talks to the same `ApplianceControl` bus and connects only when `live-commands=true`. Default/prod keeps that flag false. Host is compose-network `mosquitto:8883` with TLS; it refuses `mqtt.freedriver.io` and port 1883. Exact instance topics only (no `+`/`#`). Instance ids come from `FREEDRIVER_MQTT_INSTANCE_IDS`, not git. `freedriver.mqtt` is a mapped object (host, port, tls, username).
 
 Live command route is **not** Done. Blocked on #25 and #27. `live-commands` stays `false`.
