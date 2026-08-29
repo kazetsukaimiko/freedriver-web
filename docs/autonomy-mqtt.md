@@ -22,7 +22,7 @@ Do **not** depend on `io.freedriver.autonomy:autonomy-mqtt-contract`. Do **not**
 | --- | --- | --- |
 | Host | `mqtt.freedriver.io:8883` | compose hostname `mosquitto:8883` |
 | TLS | MQTTS — **must verify** (no skip-verify) | MQTTS on the docker network |
-| User | `autonomy` | `api` |
+| User | `autonomy` (this instance only) | `api` (exact-topic for this instance) |
 | Auth | broker password, not Keycloak | broker password, not Keycloak |
 
 Quarkus **never** uses `mqtt.freedriver.io`. That name is for home/autonomy only.
@@ -39,16 +39,20 @@ Ask **Techops** for the current trust material and Let’s Encrypt status. The b
 
 Broker passwords live on the VPS at `/opt/freedriver-secrets/mosquitto/*.pass` (`autonomy.pass`, `api.pass`). **Ask Techops.** Do not put secrets in this repo or in issues.
 
+v1 one house: `autonomy` is that instance's broker user. A later instance gets its own user — do not share `autonomy` across instances. `api` is the opposite exact-topic pair for that same instance, not a wildcard superuser.
+
 ## Topics
 
-One broker can carry more than one autonomy instance. Interpolate `instanceId` (UUID hex + hyphens). No wildcards, no `$SYS`, no `#`. `instanceName` is never a topic segment.
+One broker can carry more than one autonomy instance. Interpolate `instanceId` (UUID hex + hyphens). Version nibbles are not checked. No wildcards (`+`, `#`), no `$SYS`, no `freedriver/v1/#`. Never `freedriver/v1/+/appliances` or `.../commands`. `instanceName` is never a topic segment or ACL. Boards stay off MQTT.
+
+The first-house `instanceId` is not in this repo. kaze has not issued it. Broker ACLs use `__INSTANCE_ID__` until Techops applies `INSTANCE_ID=<uuid-from-kaze> ./scripts/provision-mosquitto.sh`. Do not invent a UUID. See [mqtt-connect.md](mqtt-connect.md).
 
 | | Topic | Publisher | Subscriber | QoS | Retain |
 | --- | --- | --- | --- | --- | --- |
-| A (state) | `freedriver/v1/{instanceId}/appliances` | `autonomy` | `api` | 1 | **false** |
-| B (commands) | `freedriver/v1/{instanceId}/commands` | `api` | `autonomy` | 1 | **false** always |
+| A (state) | `freedriver/v1/{instanceId}/appliances` | that instance's `autonomy` | `api` | 1 | **false** |
+| B (commands) | `freedriver/v1/{instanceId}/commands` | `api` | that instance's `autonomy` | 1 | **false** always |
 
-The broker cannot forbid retain. Publishers must set retain=false. Do not retain the appliance map (Quarkus liveness is receive-time; a retained map would lie after a restart).
+The broker cannot forbid retain. Publishers must set retain=false. Do not retain the appliance map (Quarkus liveness is receive-time; a retained map would lie after a restart). `live-commands` stays `false`.
 
 ## Topic A — state (autonomy → Quarkus)
 

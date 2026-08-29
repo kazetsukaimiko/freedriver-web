@@ -35,6 +35,37 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./mvnw -B test
 
+      - name: Mosquitto ACL is instance-scoped (no leftover home/ segment)
+        run: |
+          if grep -RInE 'freedriver/v1/home|/home/appliances|/home/commands' mosquitto scripts docs; then
+            echo "remove leftover home/ MQTT topics from ACL/docs/scripts"
+            exit 1
+          fi
+          if grep -E '^topic .*(home/|[+#]|freedriver/v1/#)' mosquitto/acl; then
+            echo "ACL topic lines must be exact instance topics"
+            exit 1
+          fi
+          if ! grep -Fq '__INSTANCE_ID__' mosquitto/acl; then
+            echo "in-repo ACL must keep the apply-time __INSTANCE_ID__ placeholder"
+            exit 1
+          fi
+          tmp="$(mktemp)"
+          # Non-v4 UUID (version nibble 1) must be accepted.
+          ./scripts/provision-mosquitto.sh --acl-only \
+            --instance-id 123e4567-e89b-12d3-a456-426614174000 \
+            --acl-out "$tmp"
+          grep -Fq 'freedriver/v1/123e4567-e89b-12d3-a456-426614174000/appliances' "$tmp"
+          grep -Fq 'freedriver/v1/123e4567-e89b-12d3-a456-426614174000/commands' "$tmp"
+          if grep -E 'home/|[+#]|__INSTANCE_ID__' "$tmp" | grep -E '^topic '; then
+            echo "applied ACL leaked placeholder, leftover home/ segment, or wildcards"
+            exit 1
+          fi
+          if ./scripts/provision-mosquitto.sh --acl-only --instance-id not-a-uuid --acl-out "$tmp"; then
+            echo "provision must reject a non-UUID instanceId"
+            exit 1
+          fi
+          rm -f "$tmp"
+
       - name: Browser must not speak MQTT
         run: |
           if grep -RInE 'mqtt|8883|mosquitto' app/src/main/webui; then

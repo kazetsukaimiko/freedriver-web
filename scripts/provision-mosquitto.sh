@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# Provision Mosquitto MQTTS secrets and storage on the VPS.
-# Run as root/sudo. Idempotent: never overwrites existing pass or cert files.
-# Do not echo passwords. GitHub Actions must not run this script.
+# Provision Mosquitto MQTTS secrets, storage, and instance-scoped ACLs on the VPS.
+# Run as root/sudo (except --acl-only). Idempotent: never overwrites existing
+# pass or cert files. Do not echo passwords. GitHub Actions must not run this
+# script except --acl-only in CI.
+#
+# First-house instanceId is not in git. kaze has not issued it. Do not invent
+# one. Apply when the UUID exists:
+#   INSTANCE_ID=<uuid-from-kaze> ./scripts/provision-mosquitto.sh
+#   ./scripts/provision-mosquitto.sh --instance-id <uuid-from-kaze>
 set -euo pipefail
 
 SECRETS=/opt/freedriver-secrets/mosquitto
@@ -9,9 +15,152 @@ STORAGE=/opt/freedriver-storage/mosquitto
 IMAGE=eclipse-mosquitto:2.1.2-alpine
 CN=mqtt.freedriver.io
 GROUP=lonewatt-techops
+CHECKOUT_ACL=/opt/freedriver-web/mosquitto/acl
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ACL_PLACEHOLDER='__INSTANCE_ID__'
+# UUID hex+hyphens. Do not enforce a UUIDv4 version nibble.
+INSTANCE_ID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+
+INSTANCE_ID="${INSTANCE_ID:-}"
+ACL_TEMPLATE="${ACL_TEMPLATE:-${REPO_ROOT}/mosquitto/acl}"
+ACL_OUT="${ACL_OUT:-}"
+ACL_ONLY=0
+
+usage() {
+  cat <<'EOF'
+Usage: provision-mosquitto.sh [--instance-id UUID] [--acl-only] [--acl-template PATH] [--acl-out PATH]
+
+  INSTANCE_ID / --instance-id   First-house UUID from kaze. Substitutes
+                                __INSTANCE_ID__ in the ACL template. Do not
+                                invent a value. Version nibble is not checked.
+  --acl-only                    Substitute ACL only. No root, no secrets.
+  --acl-template PATH           Template (default: <repo>/mosquitto/acl)
+  --acl-out PATH                Write substituted ACL here (required with
+                                --acl-only). Full provision also writes
+                                /opt/freedriver-secrets/mosquitto/acl and the
+                                compose checkout ACL when those paths exist.
+
+Without INSTANCE_ID the in-repo ACL keeps the placeholder. live-commands stays
+false. Do not open 1883.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --instance-id)
+      INSTANCE_ID="${2:-}"
+      shift 2
+      ;;
+    --acl-template)
+      ACL_TEMPLATE="${2:-}"
+      shift 2
+      ;;
+    --acl-out)
+      ACL_OUT="${2:-}"
+      shift 2
+      ;;
+    --acl-only)
+      ACL_ONLY=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+is_instance_id() {
+  [[ "$1" =~ $INSTANCE_ID_RE ]]
+}
+
+# topic lines only: comments may mention forbidden + / # / wildcards.
+assert_exact_topic_acl() {
+  local file="$1"
+  local topics
+  topics="$(grep -E '^topic ' "$file" || true)"
+  if [[ -z "$topics" ]]; then
+    echo "ACL has no topic lines: ${file}" >&2
+    exit 1
+  fi
+  if grep -E '^topic .*(home/|[+#]|freedriver/v1/#)' <<<"$topics"; then
+    echo "ACL topic lines must be exact instance topics (no leftover home/ segment, no + or #)." >&2
+    exit 1
+  fi
+}
+
+apply_instance_acl() {
+  local instance_id="$1"
+  local template="$2"
+  local out="$3"
+
+  if ! is_instance_id "$instance_id"; then
+    echo "INSTANCE_ID must be a UUID (hex+hyphens). Do not enforce a version nibble. Do not invent a house id." >&2
+    exit 1
+  fi
+  case "$instance_id" in
+    *[+\#/]*)
+      echo "INSTANCE_ID must not contain / + #." >&2
+      exit 1
+      ;;
+  esac
+  if [[ ! -f "$template" ]]; then
+    echo "ACL template missing: ${template}" >&2
+    exit 1
+  fi
+  if ! grep -Fq "$ACL_PLACEHOLDER" "$template"; then
+    echo "ACL template must contain ${ACL_PLACEHOLDER} for apply-time substitution." >&2
+    exit 1
+  fi
+  assert_exact_topic_acl "$template"
+
+  local tmp
+  tmp="$(mktemp)"
+  # Placeholder is a fixed token; instance_id is hex+hyphens only.
+  # Substitute topic lines only so comments keep the documented token.
+  sed "/^topic /s/${ACL_PLACEHOLDER}/${instance_id}/g" "$template" > "$tmp"
+  if grep -E '^topic ' "$tmp" | grep -Fq "$ACL_PLACEHOLDER"; then
+    echo "ACL topic lines still contain ${ACL_PLACEHOLDER} after substitution." >&2
+    rm -f "$tmp"
+    exit 1
+  fi
+  if grep -E '^topic ' "$tmp" | grep -Fv "/${instance_id}/"; then
+    echo "ACL topic lines must include the applied instanceId." >&2
+    rm -f "$tmp"
+    exit 1
+  fi
+  assert_exact_topic_acl "$tmp"
+
+  local dest_dir
+  dest_dir="$(dirname "$out")"
+  mkdir -p "$dest_dir"
+  umask 022
+  cat "$tmp" > "$out"
+  rm -f "$tmp"
+  echo "Wrote instance-scoped ACL to ${out}."
+}
+
+if [[ "$ACL_ONLY" -eq 1 ]]; then
+  if [[ -z "$INSTANCE_ID" ]]; then
+    echo " --acl-only requires INSTANCE_ID or --instance-id (uuid from kaze)." >&2
+    exit 1
+  fi
+  if [[ -z "$ACL_OUT" ]]; then
+    echo "--acl-only requires --acl-out or ACL_OUT." >&2
+    exit 1
+  fi
+  apply_instance_acl "$INSTANCE_ID" "$ACL_TEMPLATE" "$ACL_OUT"
+  exit 0
+fi
 
 if [[ "$(id -u)" -ne 0 ]]; then
-  echo "Run as root (sudo)." >&2
+  echo "Run as root (sudo). Use --acl-only to substitute an ACL without root." >&2
   exit 1
 fi
 
@@ -69,6 +218,20 @@ else
   echo "Wrote self-signed cert for ${CN} (365 days). Let's Encrypt can replace it later."
 fi
 
+if [[ -n "$INSTANCE_ID" ]]; then
+  apply_instance_acl "$INSTANCE_ID" "$ACL_TEMPLATE" "${SECRETS}/acl"
+  if [[ -n "$ACL_OUT" ]]; then
+    apply_instance_acl "$INSTANCE_ID" "$ACL_TEMPLATE" "$ACL_OUT"
+  fi
+  if [[ -d "$(dirname "$CHECKOUT_ACL")" ]]; then
+    apply_instance_acl "$INSTANCE_ID" "$ACL_TEMPLATE" "$CHECKOUT_ACL"
+  fi
+  echo "Compose mounts ${CHECKOUT_ACL}. Re-run with the same INSTANCE_ID after a deploy so rsync does not restore the placeholder."
+  echo "Restart the mosquitto container to load the applied ACL. This script does not restart it and does not enable live-commands."
+else
+  echo "INSTANCE_ID unset: left ${ACL_PLACEHOLDER} in the in-repo ACL. Do not invent a first-house UUID; apply when kaze provides it."
+fi
+
 chown "root:${GROUP}" "$SECRETS"
 chmod 750 "$SECRETS"
 find "$SECRETS" -type f -exec chown "root:${GROUP}" {} +
@@ -79,7 +242,7 @@ find "$SECRETS" -type f -exec chmod 640 {} +
 # without world-readable files. Plaintext *.pass stay root:lonewatt-techops.
 chown "root:1883" "$SECRETS"
 chmod 750 "$SECRETS"
-for f in passwd server.crt server.key; do
+for f in passwd server.crt server.key acl; do
   if [[ -e "${SECRETS}/${f}" ]]; then
     chown 1883:1883 "${SECRETS}/${f}"
   fi
@@ -87,6 +250,7 @@ done
 [[ -e "${SECRETS}/server.key" ]] && chmod 0600 "${SECRETS}/server.key"
 [[ -e "${SECRETS}/server.crt" ]] && chmod 0640 "${SECRETS}/server.crt"
 [[ -e "${SECRETS}/passwd" ]] && chmod 0640 "${SECRETS}/passwd"
+[[ -e "${SECRETS}/acl" ]] && chmod 0640 "${SECRETS}/acl"
 for f in autonomy.pass api.pass; do
   if [[ -e "${SECRETS}/${f}" ]]; then
     chown "root:${GROUP}" "${SECRETS}/${f}"
@@ -98,4 +262,4 @@ chown 1883:1883 "$STORAGE"
 chmod 750 "$STORAGE"
 
 echo "Mosquitto secrets in ${SECRETS}; persistence in ${STORAGE}."
-echo "Sysadmin still needs ${CN} A → 138.197.90.42. Compose binds 127.0.0.1:8883 until #29 is verified from the internet."
+echo "Sysadmin still needs ${CN} A → 138.197.90.42. Compose binds 8883 only (no 1883)."

@@ -1,12 +1,26 @@
-# Exact-topic ACLs. No wildcards, no $SYS, no #.
+# Exact-topic ACLs. No wildcards, no $SYS, no +, no #.
+# Never freedriver/v1/#. Never freedriver/v1/+/appliances or .../commands.
+# instanceName is never a topic segment or ACL. Boards stay off MQTT.
+#
+# __INSTANCE_ID__ is an apply-time placeholder. kaze has not issued the
+# first-house UUID. Do not invent one. Substitute on the VPS:
+#   INSTANCE_ID=<uuid-from-kaze> ./scripts/provision-mosquitto.sh
+# instanceId is UUID hex+hyphens. Do not enforce a UUIDv4 version nibble.
+# That already excludes /, +, #.
+#
+# Per instance: its own autonomy broker user. Do not share one autonomy
+# user across instances. v1 one house: users autonomy and api are both
+# exact-topic for this instanceId. api is not a wildcard superuser.
+#
+# retain=false is a publisher rule. The broker cannot forbid retain.
+# Publishers MUST set retain=false on both topics. Do not retain appliances.
+# live-commands stays false. Do not open 1883.
 # QoS 1 is a client convention; the broker does not enforce it.
-# retain=false is required on both topics for v1. The broker cannot forbid
-# retain; publishers MUST set retain=false. Do not retain appliances.
 
 user autonomy
-topic write freedriver/v1/home/appliances
-topic read freedriver/v1/home/commands
+topic write freedriver/v1/__INSTANCE_ID__/appliances
+topic read freedriver/v1/__INSTANCE_ID__/commands
 
 user api
-topic read freedriver/v1/home/appliances
-topic write freedriver/v1/home/commands
+topic read freedriver/v1/__INSTANCE_ID__/appliances
+topic write freedriver/v1/__INSTANCE_ID__/commands
