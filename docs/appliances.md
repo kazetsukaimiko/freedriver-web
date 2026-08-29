@@ -70,7 +70,7 @@ After a Quarkus restart the map is empty until the next state event. Do not comb
 
 ## MQTT JSON
 
-One broker can carry more than one autonomy instance. Isolation is `instanceId` on the **topic** (UUID hex + hyphens), not a JSON field, not a board, not the MQTT client-id. Version nibbles are not checked. `instanceName` is JSON/UX only — not in the topic, not in an ACL.
+One broker can carry more than one autonomy instance. Isolation is `instanceId` on the **topic** (UUID hex + hyphens), not a JSON field, not a board, not the MQTT client-id. Version nibbles are not checked. `instanceName` is JSON/UX only — not in the topic, not in an ACL. Git keeps `mosquitto/acl.template` only; the live broker ACL is `/opt/freedriver-secrets/mosquitto/acl`. First-house apply is Techops + that secrets file (the house mints `instanceId`; kaze may hand it). Do not invent a UUID in git. No portal paste UI. See [mqtt-connect.md](mqtt-connect.md).
 
 | | Topic | Retain | QoS |
 | --- | --- | --- | --- |

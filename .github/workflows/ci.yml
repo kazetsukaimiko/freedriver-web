@@ -35,6 +35,70 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./mvnw -B test
 
+      - name: Mosquitto ACL template is not the live compose mount
+        run: |
+          if [[ -e mosquitto/acl ]]; then
+            echo "git must keep a template only (mosquitto/acl.template); do not ship mosquitto/acl as live"
+            exit 1
+          fi
+          if [[ ! -f mosquitto/acl.template ]]; then
+            echo "missing mosquitto/acl.template"
+            exit 1
+          fi
+          if grep -F './mosquitto/acl:/mosquitto/config/acl' docker-compose.yml; then
+            echo "compose must not mount the git ACL as live"
+            exit 1
+          fi
+          if grep -E '^\s+- \./mosquitto/acl:' docker-compose.yml; then
+            echo "compose must not bind-mount the git ACL file"
+            exit 1
+          fi
+          if ! grep -Eq '^acl_file /mosquitto/config/secrets/acl$' mosquitto/mosquitto.conf; then
+            echo "acl_file must point at the secrets mount, not a git-mounted ACL"
+            exit 1
+          fi
+          if grep -E 'CHECKOUT_ACL|/opt/freedriver-web/mosquitto/acl' scripts/provision-mosquitto.sh; then
+            echo "apply must write the secrets ACL only, not a checkout/git ACL"
+            exit 1
+          fi
+          if grep -RInE '^[[:space:]]*topic .*(freedriver/v1/home|/home/appliances|/home/commands|[+#]|freedriver/v1/#)' mosquitto scripts docs; then
+            echo "topic lines must be exact instance topics (no leftover home/, no + or #)"
+            exit 1
+          fi
+          if ! grep -Fq '__INSTANCE_ID__' mosquitto/acl.template; then
+            echo "template must keep the apply-time __INSTANCE_ID__ placeholder"
+            exit 1
+          fi
+          leftover="$(mktemp)"
+          printf '%s\n' \
+            'user autonomy' \
+            'topic write freedriver/v1/home/appliances' \
+            'topic read freedriver/v1/home/commands' \
+            > "$leftover"
+          # Non-v4 UUID (version nibble 1) must be accepted. Same write must
+          # replace leftover home/. CI substitutes into a temp file only —
+          # never treat the repo template as the live ACL.
+          ./scripts/provision-mosquitto.sh --acl-only \
+            --instance-id 123e4567-e89b-12d3-a456-426614174000 \
+            --acl-out "$leftover"
+          grep -Fq 'freedriver/v1/123e4567-e89b-12d3-a456-426614174000/appliances' "$leftover"
+          grep -Fq 'freedriver/v1/123e4567-e89b-12d3-a456-426614174000/commands' "$leftover"
+          if grep -E '^topic ' "$leftover" | grep -E 'home/|[+#]|__INSTANCE_ID__'; then
+            echo "apply must write exact topics and drop leftover home/ in the same step"
+            exit 1
+          fi
+          if ./scripts/provision-mosquitto.sh --acl-only \
+            --instance-id 123e4567-e89b-12d3-a456-426614174000 \
+            --acl-out mosquitto/acl.template; then
+            echo "provision must refuse to overwrite the git template"
+            exit 1
+          fi
+          if ./scripts/provision-mosquitto.sh --acl-only --instance-id not-a-uuid --acl-out "$leftover"; then
+            echo "provision must reject a non-UUID instanceId"
+            exit 1
+          fi
+          rm -f "$leftover"
+
       - name: Browser must not speak MQTT
         run: |
           if grep -RInE 'mqtt|8883|mosquitto' app/src/main/webui; then
