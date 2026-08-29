@@ -158,3 +158,26 @@ services:
       # this secrets mount). Do not bind-mount the git template as live.
       - /opt/freedriver-secrets/mosquitto:/mosquitto/config/secrets:ro
       - /opt/freedriver-storage/mosquitto:/mosquitto/data
+
+  # Stock caddy:2 has no cert_obtained exec hook. Watch Caddy's on-disk
+  # mqtt.freedriver.io material and copy it over Mosquitto server.{crt,key}.
+  mosquitto-cert-sync:
+    build:
+      context: ./scripts
+      dockerfile: mosquitto-cert-sync.Dockerfile
+    restart: unless-stopped
+    user: "0"
+    environment:
+      CADDY_CERTS: /caddy-data/caddy/certificates
+      DEST_DIR: /mosquitto-secrets
+      DOMAIN: mqtt.freedriver.io
+      MOSQUITTO_SERVICE: mosquitto
+    volumes:
+      - ./scripts/sync-mosquitto-le-cert.sh:/usr/local/bin/sync-mosquitto-le-cert.sh:ro
+      - /opt/freedriver-storage/caddy/data:/caddy-data:ro
+      - /opt/freedriver-secrets/mosquitto:/mosquitto-secrets
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - caddy
+      - mosquitto
+    mem_limit: 64m

@@ -19,6 +19,7 @@ The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{gra
   - `auth.freedriver.io` — Keycloak 26
   - `app.freedriver.io` — Quinoa app behind Caddy
   - `grafana.freedriver.io` — 404 on purpose; Grafana is loopback-only
+  - `mqtt.freedriver.io` — 404 on purpose (ACME HTTP-01). MQTTS is host 8883, not Caddy.
 - Keycloak 26 + local Postgres 16
 - Grafana + Loki + Prometheus + Alloy (see Observability)
 - Mosquitto 2.1.2 MQTTS at `mqtt.freedriver.io:8883` (host 8883 only; no 1883). Connect notes: [docs/mqtt-connect.md](docs/mqtt-connect.md).
@@ -31,7 +32,7 @@ Grafana and the Keycloak admin console are not on the public internet.
 ssh -L 3000:127.0.0.1:3000 -L 8081:127.0.0.1:8081 -i <key> lonewatt-techops@138.197.90.42
 ```
 
-Then Grafana is http://127.0.0.1:3000 (user `admin`, password `GF_SECURITY_ADMIN_PASSWORD` in `/opt/freedriver-secrets/.env`). Keycloak admin is http://127.0.0.1:8081/admin. Public `https://auth.freedriver.io/admin` returns 404; user login on that host is unchanged. `https://grafana.freedriver.io` returns 404.
+Then Grafana is http://127.0.0.1:3000 (user `admin`, password `GF_SECURITY_ADMIN_PASSWORD` in `/opt/freedriver-secrets/.env`). Keycloak admin is http://127.0.0.1:8081/admin. Public `https://auth.freedriver.io/admin` returns 404; user login on that host is unchanged. `https://grafana.freedriver.io` and `https://mqtt.freedriver.io` return 404.
 
 
 Alloy tails Docker container logs into Loki (14 days). Prometheus keeps ~15 days and scrapes itself, Alloy, and `app:8080/q/metrics` (that target is down until the Quarkus app exports Micrometer metrics). Loki, Prometheus, and Alloy stay on the compose network. Grafana and Keycloak admin bind 127.0.0.1 only.
