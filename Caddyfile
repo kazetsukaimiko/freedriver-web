@@ -22,3 +22,8 @@ app.freedriver.io {
 grafana.freedriver.io {
 	respond 404
 }
+
+# Public hostname so Caddy issues LE. MQTTS is Mosquitto :8883, not this site.
+mqtt.freedriver.io {
+	respond 404
+}

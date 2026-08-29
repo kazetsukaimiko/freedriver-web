@@ -19,6 +19,7 @@ The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{gra
   - `auth.freedriver.io` — Keycloak 26
   - `app.freedriver.io` — Quinoa app behind Caddy
   - `grafana.freedriver.io` — 404 on purpose; Grafana is loopback-only
+  - `mqtt.freedriver.io` — 404 on 443 on purpose; Caddy issues LE, MQTTS is Mosquitto :8883
 - Keycloak 26 + local Postgres 16
 - Grafana + Loki + Prometheus + Alloy (see Observability)
 - Mosquitto 2.1.2 MQTTS at `mqtt.freedriver.io:8883` (host 8883 only; no 1883). Connect notes: [docs/mqtt-connect.md](docs/mqtt-connect.md).

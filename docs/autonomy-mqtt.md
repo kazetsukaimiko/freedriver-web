@@ -39,7 +39,7 @@ Until Let's Encrypt replaces it, pin the current self-signed `mqtt.freedriver.io
 7A:B6:6D:AF:98:3D:15:94:8C:B9:F4:13:7C:AB:B1:CC:8A:B4:ED:8A:EF:90:E7:51:71:B9:2B:6C:09:9C:87:0A
 ```
 
-When LE is live, trust the public chain as usual and drop this pin. Do not copy certs or passwords into this doc or into git.
+When LE is live on 8883, trust the public chain as usual and drop this pin. Techops copies Caddy’s cert onto the broker with `scripts/sync-mosquitto-le.sh` — see [mqtt-connect.md](mqtt-connect.md). Do not copy certs or passwords into this doc or into git.
 
 ### Passwords
 
