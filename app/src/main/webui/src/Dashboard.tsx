@@ -170,6 +170,16 @@ export function Dashboard({ search }: { search: string }) {
     setView({ kind: 'denied', reason })
   }
 
+  function revertSwitch(id: string, message: string) {
+    const next = rowsRef.current.map((row) =>
+      row.id === id ? { ...row, pending: false, error: message } : row,
+    )
+    rowsRef.current = next
+    setView((current) =>
+      current.kind === 'ready' && !current.unreachable ? { ...current, rows: next } : current,
+    )
+  }
+
   function finishCommand(id: string, result: CommandResult) {
     inFlight.current.delete(id)
     if (result.status === 'denied') {
@@ -177,20 +187,21 @@ export function Dashboard({ search }: { search: string }) {
       return
     }
     if (result.status === 'stale') {
-      if (result.instance) {
+      const instance = result.instance
+      if (instance) {
         setView((current) => {
           if (current.kind !== 'ready') {
             return current
           }
           const instances = current.instances.map((item) =>
-            item.instanceId === result.instance?.instanceId ? result.instance : item,
+            item.instanceId === instance.instanceId ? instance : item,
           )
           return {
             ...current,
             instances,
             unreachable: true,
             rows: current.rows.map((row) => ({ ...row, pending: false })),
-            lastUpdated: result.instance.lastUpdated,
+            lastUpdated: instance.lastUpdated,
           }
         })
       } else {
@@ -204,6 +215,10 @@ export function Dashboard({ search }: { search: string }) {
     }
     if (result.status === 'confirmed') {
       const instance = result.instance
+      if (!instance) {
+        revertSwitch(id, 'Command timed out')
+        return
+      }
       lastFreshAt.current = Date.now()
       lastUpdatedRef.current = instance.lastUpdated
       setView((current) => {
@@ -229,13 +244,7 @@ export function Dashboard({ search }: { search: string }) {
     }
 
     const message = result.status === 'timeout' ? 'Command timed out' : result.message
-    const next = rowsRef.current.map((row) =>
-      row.id === id ? { ...row, pending: false, error: message } : row,
-    )
-    rowsRef.current = next
-    setView((current) =>
-      current.kind === 'ready' && !current.unreachable ? { ...current, rows: next } : current,
-    )
+    revertSwitch(id, message)
   }
 
   function toggle(row: Row) {

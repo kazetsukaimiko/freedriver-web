@@ -37,7 +37,7 @@ export type ApplianceMap = {
 export type DeniedReason = 'session' | 'role'
 
 export type CommandResult =
-  | { status: 'confirmed'; instance: Instance }
+  | { status: 'confirmed'; instance: Instance | null }
   | { status: 'timeout'; instance: Instance }
   | { status: 'stale'; instance: Instance | null }
   | { status: 'denied'; reason: DeniedReason }
