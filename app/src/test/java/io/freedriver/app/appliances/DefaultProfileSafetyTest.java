@@ -25,5 +25,10 @@ class DefaultProfileSafetyTest {
         assertTrue(Files.exists(Path.of("src/main/java/io/freedriver/app/appliances/ApplianceControl.java")));
         assertTrue(properties.contains("quarkus.oidc.enabled=false"));
         assertFalse(properties.matches("(?s).*\\nquarkus\\.oidc\\.enabled=true.*"));
+        assertTrue(properties.contains("freedriver.mqtt.host=mosquitto"));
+        assertTrue(properties.contains("freedriver.mqtt.port=8883"));
+        assertTrue(properties.contains("freedriver.mqtt.tls=true"));
+        assertFalse(properties.contains("freedriver.mqtt.port=1883"));
+        assertFalse(properties.contains("freedriver.mqtt.host=mqtt.freedriver.io"));
     }
 }

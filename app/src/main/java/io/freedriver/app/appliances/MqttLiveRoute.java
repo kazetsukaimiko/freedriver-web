@@ -26,6 +26,20 @@ public final class MqttLiveRoute {
         }
     }
 
+    /** Docker-network MQTTS only. No 1883, no skip-verify, no public hostname. */
+    public static void assertLiveBroker(String host, int port, boolean tls) {
+        assertPrivateBroker(host);
+        if (port == 1883) {
+            throw new IllegalStateException("Refusing plaintext MQTT port 1883");
+        }
+        if (port != 8883) {
+            throw new IllegalStateException("Live MQTT must use docker-network 8883");
+        }
+        if (!tls) {
+            throw new IllegalStateException("Live MQTT requires TLS");
+        }
+    }
+
     public static ApplianceCommandMessage command(String commandId, String applianceName, boolean state) {
         return new ApplianceCommandMessage(commandId, applianceName, state);
     }

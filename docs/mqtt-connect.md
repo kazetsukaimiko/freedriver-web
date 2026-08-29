@@ -58,7 +58,7 @@ Self-signed cert for `mqtt.freedriver.io` (365 days) until Let's Encrypt replace
 
 ## Quarkus
 
-On the compose network, connect to hostname `mosquitto` port 8883. Never use `mqtt.freedriver.io` from Quarkus — that name is for public/home clients.
+On the compose network, connect to hostname `mosquitto` port 8883. Never use `mqtt.freedriver.io` from Quarkus — that name is for public/home clients. `MqttLiveClient` is compiled against that host; `live-commands` stays false so it does not connect. Instance ids are `FREEDRIVER_MQTT_INSTANCE_IDS` (not git). Password is `FREEDRIVER_MQTT_API_PASSWORD`.
 
 Compose injects OIDC on the `app` service only (not the image, not the SPA):
 
