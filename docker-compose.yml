@@ -161,22 +161,25 @@ services:
 
   # Stock caddy:2 has no cert_obtained exec hook. Watch Caddy's on-disk
   # mqtt.freedriver.io material and copy it over Mosquitto server.{crt,key}.
+  # Share mosquitto's PID namespace and SIGHUP that process (pid 1 after
+  # exec, else comm=mosquitto). Do not mount the Docker daemon socket.
+  # If a HUP is missed: first install is read on mosquitto start; renew
+  # Techops can `docker compose --env-file /opt/freedriver-secrets/.env kill -s HUP mosquitto`.
   mosquitto-cert-sync:
     build:
       context: ./scripts
       dockerfile: mosquitto-cert-sync.Dockerfile
     restart: unless-stopped
     user: "0"
+    pid: "service:mosquitto"
     environment:
       CADDY_CERTS: /caddy-data/caddy/certificates
       DEST_DIR: /mosquitto-secrets
       DOMAIN: mqtt.freedriver.io
-      MOSQUITTO_SERVICE: mosquitto
     volumes:
       - ./scripts/sync-mosquitto-le-cert.sh:/usr/local/bin/sync-mosquitto-le-cert.sh:ro
       - /opt/freedriver-storage/caddy/data:/caddy-data:ro
       - /opt/freedriver-secrets/mosquitto:/mosquitto-secrets
-      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - caddy
       - mosquitto

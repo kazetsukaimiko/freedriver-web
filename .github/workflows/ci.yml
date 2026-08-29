@@ -117,6 +117,28 @@ jobs:
             echo "compose must run the Techops LE→Mosquitto cert sync sidecar"
             exit 1
           fi
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          compose = Path("docker-compose.yml").read_text()
+          i = compose.find("  mosquitto-cert-sync:")
+          if i < 0:
+              raise SystemExit("missing mosquitto-cert-sync service")
+          rest = compose[i:]
+          nxt = re.search(r"\n  [A-Za-z0-9_-]+:", rest[1:])
+          block = rest if nxt is None else rest[: nxt.start() + 1]
+          if "/var/run/docker.sock" in block:
+              raise SystemExit("cert-sync sidecar must not mount the Docker daemon socket")
+          if 'pid: "service:mosquitto"' not in block and "pid: service:mosquitto" not in block:
+              raise SystemExit("cert-sync must share mosquitto PID namespace")
+          df = Path("scripts/mosquitto-cert-sync.Dockerfile").read_text()
+          if "docker-cli" in df or "docker.sock" in df:
+              raise SystemExit("cert-sync image must not include docker-cli or a daemon socket")
+          script = Path("scripts/sync-mosquitto-le-cert.sh").read_text()
+          if "docker.sock" in script or "docker kill" in script or "docker ps" in script:
+              raise SystemExit("sync script must not use the Docker API")
+          print("cert-sync: no daemon socket; pid-share SIGHUP")
+          PY
           if ! grep -q 'will not overwrite Let' scripts/provision-mosquitto.sh; then
             echo "provision-mosquitto.sh must leave existing server.crt/key in place"
             exit 1

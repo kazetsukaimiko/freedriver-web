@@ -8,6 +8,8 @@
 #
 # Replaces /opt/freedriver-secrets/mosquitto/server.{crt,key} in place.
 # No self-signed leftovers. uid 1883 can read the key; not world-readable.
+# Reloads Mosquitto via SIGHUP in a shared PID namespace (compose
+# pid: service:mosquitto). No Docker daemon socket, no Docker CLI.
 # Does not touch passwd, ACL, instanceId, or 1883. live-commands stays false.
 set -eu
 
@@ -19,7 +21,6 @@ DEST_KEY="${DEST_DIR}/server.key"
 MQTT_UID="${MQTT_UID:-1883}"
 MQTT_GID="${MQTT_GID:-1883}"
 POLL_SECONDS="${POLL_SECONDS:-20}"
-MOSQUITTO_SERVICE="${MOSQUITTO_SERVICE:-mosquitto}"
 
 usage() {
   cat <<'EOF'
@@ -129,19 +130,36 @@ drop_selfsigned_leftovers() {
     "${DEST_DIR}/server.key.old"
 }
 
+# Shared PID namespace with compose `pid: service:mosquitto`.
+# eclipse-mosquitto:2.1.2-alpine execs mosquitto as pid 1; if it does not,
+# walk /proc for comm=mosquitto. Never kill pid 1 unless it is mosquitto
+# (host --once / CI fixture must not HUP systemd or this script).
+# Do not talk to the Docker daemon.
 reload_mosquitto() {
-  if ! command -v docker >/dev/null 2>&1; then
-    echo "docker not available; copied certs, skipped Mosquitto reload."
+  pid=""
+  if [ -r /proc/1/comm ]; then
+    comm1=$(tr -d '\0' < /proc/1/comm 2>/dev/null || true)
+    if [ "$comm1" = "mosquitto" ]; then
+      pid=1
+    fi
+  fi
+  if [ -z "$pid" ]; then
+    for commfile in /proc/[0-9]*/comm; do
+      [ -r "$commfile" ] || continue
+      name=$(tr -d '\0' < "$commfile" 2>/dev/null || true)
+      [ "$name" = "mosquitto" ] || continue
+      p=${commfile#/proc/}
+      p=${p%/comm}
+      [ "$p" != "$$" ] || continue
+      pid=$p
+      break
+    done
+  fi
+  if [ -n "$pid" ] && kill -HUP "$pid" 2>/dev/null; then
+    echo "Sent SIGHUP to mosquitto pid ${pid}."
     return 0
   fi
-  ids=$(docker ps -q --filter "label=com.docker.compose.service=${MOSQUITTO_SERVICE}" || true)
-  if [ -z "$ids" ]; then
-    echo "Mosquitto container not running; copied certs, skipped reload."
-    return 0
-  fi
-  # shellcheck disable=SC2086
-  docker kill -s HUP $ids >/dev/null
-  echo "Sent SIGHUP to Mosquitto (${MOSQUITTO_SERVICE})."
+  echo "Copied certs; no mosquitto pid in this namespace to SIGHUP (ok for --once/CI). First install is read on mosquitto start."
 }
 
 install_pair() {
