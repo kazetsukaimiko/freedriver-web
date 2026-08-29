@@ -39,13 +39,13 @@ Ask **Techops** for the current trust material and Let’s Encrypt status. The b
 
 Broker passwords live on the VPS at `/opt/freedriver-secrets/mosquitto/*.pass` (`autonomy.pass`, `api.pass`). **Ask Techops.** Do not put secrets in this repo or in issues.
 
-v1 one house: `autonomy` is that instance's broker user. A later instance gets its own user — do not share `autonomy` across instances. `api` is the opposite exact-topic pair for that same instance, not a wildcard superuser.
+v1 one house: shared `autonomy` + `api` users, exact-topic only. `api` is not a wildcard superuser. No `+`/`#` bootstrap. A later instance gets its own autonomy user — do not share `autonomy` across instances.
 
 ## Topics
 
 One broker can carry more than one autonomy instance. Interpolate `instanceId` (UUID hex + hyphens). Version nibbles are not checked. No wildcards (`+`, `#`), no `$SYS`, no `freedriver/v1/#`. Never `freedriver/v1/+/appliances` or `.../commands`. `instanceName` is never a topic segment or ACL. Boards stay off MQTT.
 
-The first-house `instanceId` is not in this repo. kaze has not issued it. Broker ACLs use `__INSTANCE_ID__` until Techops applies `INSTANCE_ID=<uuid-from-kaze> ./scripts/provision-mosquitto.sh`. Do not invent a UUID. See [mqtt-connect.md](mqtt-connect.md).
+The first-house `instanceId` is minted by the house. Do not invent a UUID in git. kaze may hand that id to Techops. First-house apply is Techops + `/opt/freedriver-secrets/mosquitto/acl` (git keeps `mosquitto/acl.template` only; compose does not mount it as live). See [mqtt-connect.md](mqtt-connect.md).
 
 | | Topic | Publisher | Subscriber | QoS | Retain |
 | --- | --- | --- | --- | --- | --- |

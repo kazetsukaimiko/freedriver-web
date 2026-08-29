@@ -1,0 +1,32 @@
+# TEMPLATE ONLY. Never compose-mount this file as the live broker ACL.
+# Apply writes /opt/freedriver-secrets/mosquitto/acl (exact instance topics)
+# and drops leftover freedriver/v1/home/... in that same write.
+# Git must not ship __INSTANCE_ID__ or any fake id as the live ACL.
+#
+# Exact-topic ACLs. No wildcards, no $SYS, no +, no #.
+# Never freedriver/v1/#. Never freedriver/v1/+/appliances or .../commands.
+# instanceName is never a topic segment or ACL. Boards stay off MQTT.
+# No C/DB plugin. No portal paste UI.
+#
+# instanceId is minted by the house (UUID hex+hyphens). Do not invent a
+# UUID in git. Do not enforce a UUIDv4 version nibble. That already
+# excludes /, +, #. kaze may hand the house-minted id to Techops:
+#   INSTANCE_ID=<house-minted-uuid> ./scripts/provision-mosquitto.sh
+#
+# v1 one house: shared users autonomy and api, exact-topic only.
+# api is not a wildcard superuser. No +/# bootstrap. A later instance
+# gets its own autonomy user — do not share autonomy across instances.
+#
+# retain=false is a publisher rule. The broker cannot forbid retain.
+# Publishers MUST set retain=false on both topics. Do not retain appliances.
+# live-commands stays false. Do not open 1883.
+# QoS 1 is a client convention; the broker does not enforce it.
+# Quarkus does not SSH or restart Mosquitto.
+
+user autonomy
+topic write freedriver/v1/__INSTANCE_ID__/appliances
+topic read freedriver/v1/__INSTANCE_ID__/commands
+
+user api
+topic read freedriver/v1/__INSTANCE_ID__/appliances
+topic write freedriver/v1/__INSTANCE_ID__/commands

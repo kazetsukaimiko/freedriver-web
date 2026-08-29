@@ -4,10 +4,20 @@
 # pass or cert files. Do not echo passwords. GitHub Actions must not run this
 # script except --acl-only in CI.
 #
-# First-house instanceId is not in git. kaze has not issued it. Do not invent
-# one. Apply when the UUID exists:
-#   INSTANCE_ID=<uuid-from-kaze> ./scripts/provision-mosquitto.sh
-#   ./scripts/provision-mosquitto.sh --instance-id <uuid-from-kaze>
+# Git keeps mosquitto/acl.template only. Never ship __INSTANCE_ID__ (or any
+# fake id) as the live compose-mounted ACL. Compose must not mount the git
+# template over the broker ACL. Live ACL is
+# /opt/freedriver-secrets/mosquitto/acl (secrets mount →
+# /mosquitto/config/secrets/acl).
+#
+# instanceId is minted by the house (UUID hex+hyphens). Do not invent a UUID
+# in git. Do not add a portal paste UI. kaze may hand the house-minted id:
+#   INSTANCE_ID=<house-minted-uuid> ./scripts/provision-mosquitto.sh
+#   ./scripts/provision-mosquitto.sh --instance-id <house-minted-uuid>
+# First-house apply is Techops + that secrets file. Apply writes exact
+# instance topics and drops leftover freedriver/v1/home/... in the same step.
+# This script does not restart Mosquitto. Quarkus does not SSH or restart it.
+# live-commands stays false. Do not open 1883. No C/DB plugin.
 set -euo pipefail
 
 SECRETS=/opt/freedriver-secrets/mosquitto
@@ -15,7 +25,6 @@ STORAGE=/opt/freedriver-storage/mosquitto
 IMAGE=eclipse-mosquitto:2.1.2-alpine
 CN=mqtt.freedriver.io
 GROUP=lonewatt-techops
-CHECKOUT_ACL=/opt/freedriver-web/mosquitto/acl
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ACL_PLACEHOLDER='__INSTANCE_ID__'
@@ -23,7 +32,7 @@ ACL_PLACEHOLDER='__INSTANCE_ID__'
 INSTANCE_ID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
 
 INSTANCE_ID="${INSTANCE_ID:-}"
-ACL_TEMPLATE="${ACL_TEMPLATE:-${REPO_ROOT}/mosquitto/acl}"
+ACL_TEMPLATE="${ACL_TEMPLATE:-${REPO_ROOT}/mosquitto/acl.template}"
 ACL_OUT="${ACL_OUT:-}"
 ACL_ONLY=0
 
@@ -31,18 +40,21 @@ usage() {
   cat <<'EOF'
 Usage: provision-mosquitto.sh [--instance-id UUID] [--acl-only] [--acl-template PATH] [--acl-out PATH]
 
-  INSTANCE_ID / --instance-id   First-house UUID from kaze. Substitutes
-                                __INSTANCE_ID__ in the ACL template. Do not
-                                invent a value. Version nibble is not checked.
+  INSTANCE_ID / --instance-id   House-minted UUID (kaze may hand it).
+                                Substitutes __INSTANCE_ID__ in the template.
+                                Do not invent a value. Version nibble is
+                                not checked. No portal paste UI.
   --acl-only                    Substitute ACL only. No root, no secrets.
-  --acl-template PATH           Template (default: <repo>/mosquitto/acl)
+                                CI writes a temp file; never the live ACL.
+  --acl-template PATH           Template (default: <repo>/mosquitto/acl.template)
   --acl-out PATH                Write substituted ACL here (required with
-                                --acl-only). Full provision also writes
-                                /opt/freedriver-secrets/mosquitto/acl and the
-                                compose checkout ACL when those paths exist.
+                                --acl-only). Full provision writes only
+                                /opt/freedriver-secrets/mosquitto/acl.
 
-Without INSTANCE_ID the in-repo ACL keeps the placeholder. live-commands stays
-false. Do not open 1883.
+Git is the template. Compose does not mount it as live. First-house apply
+is Techops + the secrets file: exact instance topics in, leftover
+freedriver/v1/home/... out, same write. live-commands stays false. Do not
+open 1883.
 EOF
 }
 
@@ -80,7 +92,14 @@ is_instance_id() {
   [[ "$1" =~ $INSTANCE_ID_RE ]]
 }
 
-# topic lines only: comments may mention forbidden + / # / wildcards.
+same_path() {
+  local a="$1"
+  local b="$2"
+  [[ -e "$a" && -e "$b" ]] || return 1
+  [[ "$(realpath "$a")" == "$(realpath "$b")" ]]
+}
+
+# topic lines only: comments may mention forbidden + / # / wildcards / home/.
 assert_exact_topic_acl() {
   local file="$1"
   local topics
@@ -95,6 +114,9 @@ assert_exact_topic_acl() {
   fi
 }
 
+# One write: exact instance topics in, leftover freedriver/v1/home/... out.
+# Never merge-append onto an existing home/ ACL. Never write the git
+# template (or __INSTANCE_ID__) as the live secrets ACL.
 apply_instance_acl() {
   local instance_id="$1"
   local template="$2"
@@ -119,6 +141,10 @@ apply_instance_acl() {
     exit 1
   fi
   assert_exact_topic_acl "$template"
+  if same_path "$out" "$template"; then
+    echo "Refusing to overwrite the git template as if it were the live ACL." >&2
+    exit 1
+  fi
 
   local tmp
   tmp="$(mktemp)"
@@ -141,14 +167,20 @@ apply_instance_acl() {
   dest_dir="$(dirname "$out")"
   mkdir -p "$dest_dir"
   umask 022
+  # Replace the dest in one write. Any leftover home/ lines already on
+  # the live file are dropped here — not in a later pass.
   cat "$tmp" > "$out"
   rm -f "$tmp"
-  echo "Wrote instance-scoped ACL to ${out}."
+  if grep -E '^topic .*(home/|[+#]|__INSTANCE_ID__)' "$out"; then
+    echo "Applied ACL still has leftover home/, wildcards, or the placeholder." >&2
+    exit 1
+  fi
+  echo "Wrote exact-topic ACL to ${out} (leftover freedriver/v1/home/... dropped in this write)."
 }
 
 if [[ "$ACL_ONLY" -eq 1 ]]; then
   if [[ -z "$INSTANCE_ID" ]]; then
-    echo " --acl-only requires INSTANCE_ID or --instance-id (uuid from kaze)." >&2
+    echo "--acl-only requires INSTANCE_ID or --instance-id (house-minted uuid; kaze may hand it)." >&2
     exit 1
   fi
   if [[ -z "$ACL_OUT" ]]; then
@@ -223,13 +255,11 @@ if [[ -n "$INSTANCE_ID" ]]; then
   if [[ -n "$ACL_OUT" ]]; then
     apply_instance_acl "$INSTANCE_ID" "$ACL_TEMPLATE" "$ACL_OUT"
   fi
-  if [[ -d "$(dirname "$CHECKOUT_ACL")" ]]; then
-    apply_instance_acl "$INSTANCE_ID" "$ACL_TEMPLATE" "$CHECKOUT_ACL"
-  fi
-  echo "Compose mounts ${CHECKOUT_ACL}. Re-run with the same INSTANCE_ID after a deploy so rsync does not restore the placeholder."
-  echo "Restart the mosquitto container to load the applied ACL. This script does not restart it and does not enable live-commands."
+  echo "Live ACL is ${SECRETS}/acl (compose secrets mount). Git template is not mounted."
+  echo "Restart the mosquitto container to load the applied ACL. This script does not restart it, Quarkus does not SSH or restart it, and this does not enable live-commands."
 else
-  echo "INSTANCE_ID unset: left ${ACL_PLACEHOLDER} in the in-repo ACL. Do not invent a first-house UUID; apply when kaze provides it."
+  echo "INSTANCE_ID unset: left the git template unchanged and did not write ${SECRETS}/acl."
+  echo "First-house apply is Techops + that secrets file. The house mints instanceId; kaze may hand it. Do not invent a UUID."
 fi
 
 chown "root:${GROUP}" "$SECRETS"
@@ -237,7 +267,7 @@ chmod 750 "$SECRETS"
 find "$SECRETS" -type f -exec chown "root:${GROUP}" {} +
 find "$SECRETS" -type f -exec chmod 640 {} +
 
-# Broker uid 1883 must traverse the secrets dir and read passwd/TLS.
+# Broker uid 1883 must traverse the secrets dir and read passwd/TLS/ACL.
 # Never chmod 644 a private key. Directory is root:1883 750 so 1883 can enter
 # without world-readable files. Plaintext *.pass stay root:lonewatt-techops.
 chown "root:1883" "$SECRETS"
