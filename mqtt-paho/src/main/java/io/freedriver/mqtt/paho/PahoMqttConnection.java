@@ -1,6 +1,8 @@
-package io.freedriver.app.appliances;
+package io.freedriver.mqtt.paho;
 
-import io.quarkus.logging.Log;
+import io.freedriver.mqtt.MqttBrokers;
+import io.freedriver.mqtt.MqttConnection;
+import io.freedriver.mqtt.MqttEndpoint;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.eclipse.paho.client.mqttv3.MqttClient;
@@ -10,35 +12,38 @@ import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 
 import javax.net.ssl.SSLContext;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
- * Production MQTTS client. Not a CDI bean unless live-commands is on.
- * TCP host is docker-network {@code mosquitto}, never mqtt.freedriver.io.
+ * Production MQTTS client. TCP host is docker-network {@code mosquitto}, never mqtt.freedriver.io.
  */
 public final class PahoMqttConnection implements MqttConnection {
 
-    private final MqttConfig config;
+    private static final Logger LOG = Logger.getLogger(PahoMqttConnection.class.getName());
+
+    private final MqttEndpoint endpoint;
+    private final String password;
     private final Map<String, MessageHandler> handlers = new ConcurrentHashMap<>();
     private MqttClient client;
 
-    public PahoMqttConnection(MqttConfig config) {
-        this.config = config;
+    public PahoMqttConnection(MqttEndpoint endpoint, String password) {
+        this.endpoint = endpoint;
+        this.password = password == null ? "" : password;
     }
 
     @Override
     public void connect() {
-        MqttLiveRoute.assertLiveBroker(config.host(), config.port(), config.tls());
-        String uri = (config.tls() ? "ssl://" : "tcp://") + config.host() + ":" + config.port();
+        String uri = (endpoint.tls() ? "ssl://" : "tcp://") + endpoint.host() + ":" + endpoint.port();
         try {
             client = new MqttClient(uri, "freedriver-api-" + UUID.randomUUID(), new MemoryPersistence());
             client.setCallback(new MqttCallback() {
                 @Override
                 public void connectionLost(Throwable cause) {
-                    Log.warn("live MQTT connection lost", cause);
+                    LOG.log(Level.WARNING, "live MQTT connection lost", cause);
                 }
 
                 @Override
@@ -47,7 +52,7 @@ public final class PahoMqttConnection implements MqttConnection {
                     if (handler == null) {
                         return;
                     }
-                    handler.onMessage(topic, new String(message.getPayload(), StandardCharsets.UTF_8));
+                    handler.onMessage(topic, message.getPayload());
                 }
 
                 @Override
@@ -57,11 +62,11 @@ public final class PahoMqttConnection implements MqttConnection {
             MqttConnectOptions options = new MqttConnectOptions();
             options.setCleanSession(true);
             options.setAutomaticReconnect(true);
-            options.setUserName(config.username());
-            if (!config.password().isEmpty()) {
-                options.setPassword(config.password().toCharArray());
+            options.setUserName(endpoint.username());
+            if (!password.isEmpty()) {
+                options.setPassword(password.toCharArray());
             }
-            if (config.tls()) {
+            if (endpoint.tls()) {
                 options.setSocketFactory(SSLContext.getDefault().getSocketFactory());
                 options.setHttpsHostnameVerificationEnabled(true);
             }
@@ -74,9 +79,7 @@ public final class PahoMqttConnection implements MqttConnection {
 
     @Override
     public void subscribe(String topic, int qos, MessageHandler handler) {
-        if (topic.contains("+") || topic.contains("#")) {
-            throw new IllegalArgumentException("Exact topics only");
-        }
+        MqttBrokers.assertExactTopic(topic);
         handlers.put(topic, handler);
         try {
             client.subscribe(topic, qos);
@@ -86,15 +89,13 @@ public final class PahoMqttConnection implements MqttConnection {
     }
 
     @Override
-    public void publish(String topic, String payload, int qos, boolean retain) {
+    public void publish(String topic, byte[] payload, int qos, boolean retain) {
         if (retain) {
             throw new IllegalArgumentException("retain must be false");
         }
-        if (topic.contains("+") || topic.contains("#")) {
-            throw new IllegalArgumentException("Exact topics only");
-        }
+        MqttBrokers.assertExactTopic(topic);
         try {
-            MqttMessage message = new MqttMessage(payload.getBytes(StandardCharsets.UTF_8));
+            MqttMessage message = new MqttMessage(payload);
             message.setQos(qos);
             message.setRetained(false);
             client.publish(topic, message);
@@ -115,12 +116,12 @@ public final class PahoMqttConnection implements MqttConnection {
                 current.disconnect();
             }
         } catch (MqttException e) {
-            Log.warn("live MQTT disconnect failed", e);
+            LOG.log(Level.WARNING, "live MQTT disconnect failed", e);
         }
         try {
             current.close();
         } catch (MqttException e) {
-            Log.warn("live MQTT close failed", e);
+            LOG.log(Level.WARNING, "live MQTT close failed", e);
         }
     }
 }

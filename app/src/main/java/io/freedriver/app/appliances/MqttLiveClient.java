@@ -1,5 +1,6 @@
 package io.freedriver.app.appliances;
 
+import io.freedriver.mqtt.MqttConnection;
 import io.freedriver.mqtt.contract.ApplianceJson;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
 import io.freedriver.mqtt.contract.ApplianceStateMessage;
@@ -12,6 +13,7 @@ import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
@@ -23,7 +25,7 @@ import java.util.UUID;
 public class MqttLiveClient {
 
     private final AppliancesConfig appliances;
-    private final MqttConfig mqtt;
+    private final MqttSettings mqtt;
     private final Instance<MqttConnection> connections;
     private final Event<ApplianceStateRouted> states;
     private MqttConnection connection;
@@ -31,7 +33,7 @@ public class MqttLiveClient {
     @Inject
     public MqttLiveClient(
             AppliancesConfig appliances,
-            MqttConfig mqtt,
+            MqttSettings mqtt,
             Instance<MqttConnection> connections,
             Event<ApplianceStateRouted> states) {
         this.appliances = appliances;
@@ -47,7 +49,6 @@ public class MqttLiveClient {
         if (appliances.mock()) {
             throw new IllegalStateException("live MQTT must not run with mock=true");
         }
-        MqttLiveRoute.assertLiveBroker(mqtt.host(), mqtt.port(), mqtt.tls());
         List<UUID> instances = mqtt.instances();
         if (instances.isEmpty()) {
             throw new IllegalStateException("live-commands requires freedriver.mqtt.instance-ids");
@@ -68,7 +69,7 @@ public class MqttLiveClient {
         try {
             connection.publish(
                     topic,
-                    ApplianceJson.writeCommand(routed.command()),
+                    ApplianceJson.writeCommand(routed.command()).getBytes(StandardCharsets.UTF_8),
                     ApplianceSchemas.QOS,
                     ApplianceSchemas.RETAIN);
         } catch (RuntimeException e) {
@@ -76,13 +77,13 @@ public class MqttLiveClient {
         }
     }
 
-    void onBrokerMessage(String topic, String payload) {
+    void onBrokerMessage(String topic, byte[] payload) {
         UUID instanceId = MqttAcl.instanceIdFrom(topic, "appliances");
         if (instanceId == null) {
             return;
         }
         try {
-            ApplianceStateMessage state = ApplianceJson.readState(payload);
+            ApplianceStateMessage state = ApplianceJson.readState(new String(payload, StandardCharsets.UTF_8));
             states.fire(new ApplianceStateRouted(instanceId, state));
         } catch (RuntimeException e) {
             Log.warn("live MQTT state rejected", e);

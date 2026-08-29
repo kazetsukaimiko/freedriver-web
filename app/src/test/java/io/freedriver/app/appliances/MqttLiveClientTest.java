@@ -95,11 +95,11 @@ class MqttLiveClientTest {
         assertEquals(ApplianceSchemas.commandsTopic(MockAutonomy.INSTANCE_ID), published.topic());
         assertEquals(ApplianceSchemas.QOS, published.qos());
         assertFalse(published.retain());
-        ApplianceCommandMessage wire = ApplianceJson.readCommand(published.payload());
+        ApplianceCommandMessage wire = ApplianceJson.readCommand(published.payloadUtf8());
         assertEquals("cmd-live-1", wire.commandId());
         assertEquals("hallway", wire.applianceName());
         assertTrue(wire.state());
-        assertFalse(published.payload().contains("instanceId"));
+        assertFalse(published.payloadUtf8().contains("instanceId"));
     }
 
     @Test

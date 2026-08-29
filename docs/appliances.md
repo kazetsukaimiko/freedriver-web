@@ -160,6 +160,6 @@ Do **not** add a second escape:
 
 `%test` uses `@TestSecurity`. Unauthenticated calls are 401; wrong role is 403. The augmentor is not in the test build.
 
-The mock event source is not what ships in prod. The live MQTT adapter (`MqttLiveClient`) is compiled and talks to the same `ApplianceControl` bus. It is created only when `live-commands=true`. Default/prod keeps that flag false, so it does not connect. Host is compose-network `mosquitto:8883` with TLS; it refuses `mqtt.freedriver.io` and port 1883. Exact instance topics only (no `+`/`#`). Instance ids come from `FREEDRIVER_MQTT_INSTANCE_IDS`, not git.
+The mock event source is not what ships in prod. Live MQTT is `io.freedriver:freedriver-mqtt` plus `freedriver-mqtt-paho`. The app CDI adapter (`MqttLiveClient`) talks to the same `ApplianceControl` bus and connects only when `live-commands=true`. Default/prod keeps that flag false. Host is compose-network `mosquitto:8883` with TLS; it refuses `mqtt.freedriver.io` and port 1883. Exact instance topics only (no `+`/`#`). Instance ids come from `FREEDRIVER_MQTT_INSTANCE_IDS`, not git. `freedriver.mqtt` is a mapped object (host, port, tls, username).
 
 Live command route is **not** Done. Blocked on #25 and #27. `live-commands` stays `false`.

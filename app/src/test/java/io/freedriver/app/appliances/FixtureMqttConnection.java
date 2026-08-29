@@ -1,8 +1,11 @@
 package io.freedriver.app.appliances;
 
+import io.freedriver.mqtt.MqttBrokers;
+import io.freedriver.mqtt.MqttConnection;
 import io.quarkus.test.Mock;
 import jakarta.enterprise.context.ApplicationScoped;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -14,7 +17,11 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @ApplicationScoped
 public class FixtureMqttConnection implements MqttConnection {
 
-    public record Published(String topic, String payload, int qos, boolean retain) {}
+    public record Published(String topic, byte[] payload, int qos, boolean retain) {
+        String payloadUtf8() {
+            return new String(payload, StandardCharsets.UTF_8);
+        }
+    }
 
     private final Map<String, MessageHandler> handlers = new ConcurrentHashMap<>();
     private final List<Published> published = new CopyOnWriteArrayList<>();
@@ -27,14 +34,12 @@ public class FixtureMqttConnection implements MqttConnection {
 
     @Override
     public void subscribe(String topic, int qos, MessageHandler handler) {
-        if (topic.contains("+") || topic.contains("#")) {
-            throw new IllegalArgumentException("Exact topics only");
-        }
+        MqttBrokers.assertExactTopic(topic);
         handlers.put(topic, handler);
     }
 
     @Override
-    public void publish(String topic, String payload, int qos, boolean retain) {
+    public void publish(String topic, byte[] payload, int qos, boolean retain) {
         published.add(new Published(topic, payload, qos, retain));
     }
 
@@ -57,13 +62,12 @@ public class FixtureMqttConnection implements MqttConnection {
         connected = true;
     }
 
-    /** Fixture autonomy: publish Topic A into the live adapter. */
     public void publishState(String topic, String payload) {
         MessageHandler handler = handlers.get(topic);
         if (handler == null) {
             throw new IllegalStateException("no subscriber for " + topic);
         }
-        handler.onMessage(topic, payload);
+        handler.onMessage(topic, payload.getBytes(StandardCharsets.UTF_8));
     }
 
     public List<String> subscriptions() {
