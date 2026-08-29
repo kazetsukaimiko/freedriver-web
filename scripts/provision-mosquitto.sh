@@ -247,7 +247,7 @@ else
     -out "${SECRETS}/server.crt" \
     -subj "/CN=${CN}" \
     -addext "subjectAltName=DNS:${CN}"
-  echo "Wrote self-signed cert for ${CN} (365 days). Let's Encrypt can replace it later."
+  echo "Wrote self-signed cert for ${CN} (365 days). Replace with Let's Encrypt via scripts/sync-mosquitto-le.sh (does not overwrite here)."
 fi
 
 if [[ -n "$INSTANCE_ID" ]]; then

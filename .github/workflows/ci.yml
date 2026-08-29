@@ -99,6 +99,42 @@ jobs:
           fi
           rm -f "$leftover"
 
+      - name: Mosquitto LE sync copies Caddy cert without restart
+        run: |
+          if ! grep -Fq 'mqtt.freedriver.io' Caddyfile; then
+            echo "Caddyfile must stub mqtt.freedriver.io so Caddy issues LE"
+            exit 1
+          fi
+          if [[ ! -x scripts/sync-mosquitto-le.sh ]]; then
+            echo "missing executable scripts/sync-mosquitto-le.sh"
+            exit 1
+          fi
+          work="$(mktemp -d)"
+          caddy_dir="${work}/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mqtt.freedriver.io"
+          secrets="${work}/secrets"
+          mkdir -p "$caddy_dir" "$secrets"
+          openssl req -x509 -newkey rsa:2048 -sha256 -days 1 -nodes \
+            -keyout "${caddy_dir}/mqtt.freedriver.io.key" \
+            -out "${caddy_dir}/mqtt.freedriver.io.crt" \
+            -subj "/CN=mqtt.freedriver.io" \
+            -addext "subjectAltName=DNS:mqtt.freedriver.io"
+          CADDY_DATA="${work}/caddy" SECRETS="$secrets" \
+            ./scripts/sync-mosquitto-le.sh --no-restart
+          [[ -f "${secrets}/server.crt" && -f "${secrets}/server.key" ]]
+          CADDY_DATA="${work}/caddy" SECRETS="$secrets" \
+            ./scripts/sync-mosquitto-le.sh --no-restart
+          empty="$(mktemp -d)"
+          set +e
+          CADDY_DATA="$empty" SECRETS="$secrets" \
+            ./scripts/sync-mosquitto-le.sh --no-restart
+          rc=$?
+          set -e
+          if [[ "$rc" -ne 2 ]]; then
+            echo "expected exit 2 when Caddy has not issued, got $rc"
+            exit 1
+          fi
+          rm -rf "$work" "$empty"
+
       - name: Browser must not speak MQTT
         run: |
           if grep -RInE 'mqtt|8883|mosquitto' app/src/main/webui; then

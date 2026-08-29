@@ -111,7 +111,25 @@ Until Let's Encrypt replaces it, pin the current self-signed `mqtt.freedriver.io
 7A:B6:6D:AF:98:3D:15:94:8C:B9:F4:13:7C:AB:B1:CC:8A:B4:ED:8A:EF:90:E7:51:71:B9:2B:6C:09:9C:87:0A
 ```
 
-When LE is live, trust the public chain as usual and drop this pin.
+When LE is live on 8883, trust the public chain as usual and drop this pin.
+
+## Let's Encrypt on 8883 (Techops)
+
+DNS and 80/443 are already live. Caddy issues `mqtt.freedriver.io` via the 404 stub in the Caddyfile (same pattern as `grafana.freedriver.io`). MQTTS stays Mosquitto :8883.
+
+Copy-paste sync (Techops, root/sudo) after Caddy has issued the name:
+
+```
+sudo ./scripts/sync-mosquitto-le.sh
+```
+
+Idempotent. Restarts mosquitto only when the leaf changed. Re-running provision will not overwrite the copied files. Install a root cron so renewals reach 8883:
+
+```
+*/30 * * * * root /opt/freedriver-web/scripts/sync-mosquitto-le.sh
+```
+
+Until that copy is live, keep the self-signed pin above. After it is live, drop the pin. `live-commands` stays `false`. Do not open 1883. Do not invent another UUID.
 
 ## Quarkus
 
