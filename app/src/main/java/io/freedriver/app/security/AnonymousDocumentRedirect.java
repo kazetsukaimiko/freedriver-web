@@ -6,23 +6,24 @@ import io.vertx.ext.web.RoutingContext;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
+import lombok.RequiredArgsConstructor;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
  * When OIDC is on, anonymous full documents go to {@code /login} (Keycloak start).
  * XHR keeps 401 on the API. No-op while {@code quarkus.oidc.enabled} is false so
  * the house site and quarkus:dev still load without Keycloak.
+ *
+ * Vert.x HTTP, not {@link jakarta.ws.rs.container.ContainerRequestFilter}: quinoa
+ * serves GET {@code /} outside JAX-RS, and this module has no servlet/Undertow
+ * dispatcher. {@code java-script-auto-redirect} stays false (#101).
  */
 @ApplicationScoped
+@RequiredArgsConstructor(onConstructor_ = @Inject)
 public class AnonymousDocumentRedirect {
 
+    @ConfigProperty(name = "quarkus.oidc.enabled", defaultValue = "false")
     private final boolean oidcEnabled;
-
-    @Inject
-    public AnonymousDocumentRedirect(
-            @ConfigProperty(name = "quarkus.oidc.enabled", defaultValue = "false") boolean oidcEnabled) {
-        this.oidcEnabled = oidcEnabled;
-    }
 
     void register(@Observes Filters filters) {
         filters.register(this::filter, 150);
