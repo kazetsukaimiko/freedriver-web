@@ -106,25 +106,13 @@ Let's Encrypt is live on `mqtt.freedriver.io:8883`. Autonomy must verify the ser
 
 ## Let's Encrypt on 8883 (Techops)
 
-The Caddy `mqtt.freedriver.io` 404 stub and cert-sync (`scripts/sync-mosquitto-le.sh`) are already live. DNS and 80/443 are live. Caddy issues `mqtt.freedriver.io` via the 404 stub in the Caddyfile (same pattern as `grafana.freedriver.io`). MQTTS stays Mosquitto :8883.
-
-Copy-paste sync (Techops, root/sudo) after Caddy renews the name:
-
-```
-sudo ./scripts/sync-mosquitto-le.sh
-```
-
-Idempotent. Restarts mosquitto only when the leaf changed. Re-running provision will not overwrite the copied files. Install a root cron so renewals reach 8883:
-
-```
-*/30 * * * * root /opt/freedriver-web/scripts/sync-mosquitto-le.sh
-```
+Let's Encrypt is live on `mqtt.freedriver.io:8883`. Caddy issues the name via the 404 stub (HTTP-01). The `mosquitto-cert-sync` sidecar copies that cert onto `/opt/freedriver-secrets/mosquitto/server.{crt,key}` and SIGHUPs mosquitto (shared PID namespace; no Docker socket). Manual: `scripts/sync-mosquitto-le-cert.sh`. Re-running provision will not overwrite the live pair.
 
 `live-commands` stays `false`. Do not open 1883. Do not invent another UUID.
 
 ## Quarkus
 
-On the compose network, connect to hostname `mosquitto` port 8883. **Never** use `mqtt.freedriver.io` from Quarkus — that name is for public/home clients.
+On the compose network, connect to hostname `mosquitto` port 8883. **Never** use `mqtt.freedriver.io` from Quarkus — that name is for public/home clients. `MqttLiveClient` is compiled against that host; `live-commands` stays false so it does not connect. Instance ids are `FREEDRIVER_MQTT_INSTANCE_IDS` (not git). Password is `FREEDRIVER_MQTT_API_PASSWORD`.
 
 Compose injects OIDC on the `app` service only (not the image, not the SPA):
 
@@ -132,7 +120,7 @@ Compose injects OIDC on the `app` service only (not the image, not the SPA):
 - `QUARKUS_OIDC_CLIENT_ID=freedriver-api`
 - `QUARKUS_OIDC_CREDENTIALS_SECRET` from `/opt/freedriver-secrets/.env` (copied from `keycloak-freedriver-api.secret`)
 
-`quarkus.oidc.enabled` stays off until #25 and #27.
+`quarkus.oidc.enabled` stays off in the default profile until #27. The BFF (web-app, HTTP-only cookie, `freedriver-api` confidential client) is wired; compose already injects the env. Do not put the secret in the SPA.
 
 ## Keycloak (auth, not MQTT)
 

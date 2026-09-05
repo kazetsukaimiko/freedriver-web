@@ -79,18 +79,6 @@ jobs:
           export BUILD_NUMBER="$(cat BUILD_NUMBER)"
           docker compose --env-file /opt/freedriver-secrets/.env up -d --pull always --build
           docker compose --env-file /opt/freedriver-secrets/.env up -d --force-recreate --no-deps caddy
-          if [[ -x /opt/freedriver-web/scripts/sync-mosquitto-le.sh ]]; then
-            if /opt/freedriver-web/scripts/sync-mosquitto-le.sh; then
-              echo "Mosquitto LE cert synced."
-            else
-              rc=$?
-              if [[ "$rc" -eq 2 ]]; then
-                echo "Caddy has not issued mqtt.freedriver.io yet; leaving Mosquitto certs in place."
-              else
-                exit "$rc"
-              fi
-            fi
-          fi
           REMOTE
 
       # Tag only after SSH deploy succeeds, and only on main (not PRs / other refs).

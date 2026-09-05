@@ -17,8 +17,8 @@ CORS allowlist: `https://app.freedriver.io` only (dev may also allow localhost).
 
 | Method | Path | Body | Success |
 | --- | --- | --- | --- |
-| GET | `/api/appliances` | — | 200 `{ "instances": [ ... ] }` |
-| POST | `/api/appliances/{instanceId}/{applianceName}` | `{ "on": false }` | 200 that instance |
+| GET | `/api/appliances` | — | 200 `{ "instances": [ ... ], "csrfToken": "..." }` |
+| POST | `/api/appliances/{instanceId}/{applianceName}` | `{ "on": false }` plus `X-CSRF-Token` | 200 that instance |
 
 `instanceId` is a UUID. `applianceName` is the alias. Extra JSON fields on POST are rejected. The browser sends `{ "on": bool }` only. `commandId` is minted in Quarkus. HTTP keeps `on`; MQTT uses `state`.
 
@@ -26,6 +26,7 @@ GET:
 
 ```json
 {
+  "csrfToken": "…",
   "instances": [
     {
       "instanceId": "550e8400-e29b-41d4-a716-446655440000",
@@ -44,10 +45,10 @@ GET:
 No instances yet:
 
 ```json
-{ "instances": [] }
+{ "csrfToken": "…", "instances": [] }
 ```
 
-Each `instanceName` is a dashboard tab. GET does not return a CSRF token.
+Each `instanceName` is a dashboard tab. GET returns `csrfToken`. POST requires `X-CSRF-Token` matching the HttpOnly `freedriver-csrf` cookie. A bad or missing token is 400 with an empty body (that switch fails; not a new login screen).
 
 ### Status codes
 
@@ -56,6 +57,7 @@ Each `instanceName` is a dashboard tab. GET does not return a CSRF token.
 | No session | 401 | 401 |
 | Wrong role | 403 | 403 |
 | Extra JSON fields | — | 400 |
+| Missing or wrong CSRF | — | 400, no command, empty body |
 | Unknown `instanceId` | — | 404, no command |
 | Unknown `applianceName` | — | 404, no command |
 | Known instance, stale | 200, that instance `stale: true` | 409, no command |
@@ -117,15 +119,11 @@ Reconnect / latest-per-alias: [autonomy-mqtt.md](autonomy-mqtt.md). kaze owns th
 
 ## BFF / session
 
-Quarkus owns the OIDC code flow. The browser gets an HTTP-only, Secure, SameSite=Lax session cookie (Lax so the Keycloak return from auth.freedriver.io to app.freedriver.io still has a session). It is not readable from JS. The confidential client secret never goes in `webui`.
+Quarkus owns the OIDC code flow (`application-type=web-app`). The browser gets an HTTP-only, Secure, SameSite=Lax session cookie (Lax so the Keycloak return from auth.freedriver.io to app.freedriver.io still has a session). It is not readable from JS. The confidential client secret is `QUARKUS_OIDC_CREDENTIALS_SECRET` only — never `webui`.
 
-`commandId` is minted in Quarkus. The browser only sends `{ "on": bool }`.
+`commandId` is minted in Quarkus. The browser only sends `{ "on": bool }`. Appliance fetches send `X-Requested-With: XMLHttpRequest` so a missing session is 401, not a login HTML redirect.
 
-OIDC is off. GET `/api/appliances` does not return `csrfToken`. POST does not require `X-CSRF-Token`.
-
-**Future-BFF** ([#26](https://github.com/kazetsukaimiko/freedriver-web/issues/26) / [#58](https://github.com/kazetsukaimiko/freedriver-web/issues/58)): when OIDC is on, POST `/api/appliances/{instanceId}/{applianceName}` will require `X-CSRF-Token` matching a `csrfToken`. That is not current behavior. Do not treat today's GET map as if it already includes `csrfToken`. SameSite=Lax is not a CSRF substitute.
-
-When OIDC is on, the API still checks session + (`dashboard` or `portal-admin`).
+OIDC stays **off** in the default profile (`quarkus.oidc.enabled=false`) until CSRF (#98) is in and later cards flip it. Map/command are fail-closed: no session → 401, wrong role → 403 (`dashboard` or `portal-admin`). Command POST requires `X-CSRF-Token`. The session cookie stays HTTP-only, Secure, SameSite=Lax. SameSite=Lax is not a CSRF substitute.
 
 ## lastUpdated / stale / timeout
 
@@ -162,6 +160,6 @@ Do **not** add a second escape:
 
 `%test` uses `@TestSecurity`. Unauthenticated calls are 401; wrong role is 403. The augmentor is not in the test build.
 
-The mock event source is not what ships in prod. The live MQTT path is compiled as contract helpers only; it is not a CDI bean, does not connect, and refuses `mqtt.freedriver.io`. When live is later enabled, it must observe/fire the same bus `ApplianceControl` already uses. Quarkus must use the compose-network hostname (`mosquitto`), never the public broker.
+The mock event source is not what ships in prod. Live MQTT is `io.freedriver:freedriver-mqtt` plus `freedriver-mqtt-paho`. The app CDI adapter (`MqttLiveClient`) talks to the same `ApplianceControl` bus and connects only when `live-commands=true`. Default/prod keeps that flag false. Host is compose-network `mosquitto:8883` with TLS; it refuses `mqtt.freedriver.io` and port 1883. Exact instance topics only (no `+`/`#`). Instance ids come from `FREEDRIVER_MQTT_INSTANCE_IDS`, not git. `freedriver.mqtt` is a mapped object (host, port, tls, username).
 
 Live command route is **not** Done. Blocked on #25 and #27. `live-commands` stays `false`.

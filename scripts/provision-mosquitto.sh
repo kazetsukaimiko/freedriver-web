@@ -10,14 +10,18 @@
 # /opt/freedriver-secrets/mosquitto/acl (secrets mount →
 # /mosquitto/config/secrets/acl).
 #
-# instanceId is minted by the house (UUID hex+hyphens). Do not invent a UUID
-# in git. Do not add a portal paste UI. kaze may hand the house-minted id:
-#   INSTANCE_ID=<house-minted-uuid> ./scripts/provision-mosquitto.sh
-#   ./scripts/provision-mosquitto.sh --instance-id <house-minted-uuid>
+# Long-term, freedriver-web owns minting instanceId. First-house id is
+# locked (877b33d0-6e53-4212-a53f-52107383eec2). Do not invent another UUID.
+#   INSTANCE_ID=<uuid> ./scripts/provision-mosquitto.sh
+#   ./scripts/provision-mosquitto.sh --instance-id <uuid>
 # First-house apply is Techops + that secrets file. Apply writes exact
 # instance topics and drops leftover freedriver/v1/home/... in the same step.
 # This script does not restart Mosquitto. Quarkus does not SSH or restart it.
 # live-commands stays false. Do not open 1883. No C/DB plugin.
+# TLS: write a self-signed cert only when server.crt and server.key are
+# both missing. Never overwrite a live Let's Encrypt pair (same paths).
+# After Caddy issues mqtt.freedriver.io, scripts/sync-mosquitto-le-cert.sh
+# replaces those files in place. Do not leave server.crt.selfsigned leftovers.
 set -euo pipefail
 
 SECRETS=/opt/freedriver-secrets/mosquitto
@@ -237,17 +241,24 @@ else
 fi
 
 if [[ -e "${SECRETS}/server.crt" && -e "${SECRETS}/server.key" ]]; then
-  echo "TLS certs already present; leaving them in place."
+  echo "TLS certs already present; leaving them in place (will not overwrite Let's Encrypt)."
 elif [[ -e "${SECRETS}/server.crt" || -e "${SECRETS}/server.key" ]]; then
   echo "Partial TLS material exists; refusing to overwrite. Fix by hand." >&2
   exit 1
 else
-  openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
-    -keyout "${SECRETS}/server.key" \
-    -out "${SECRETS}/server.crt" \
-    -subj "/CN=${CN}" \
-    -addext "subjectAltName=DNS:${CN}"
-  echo "Wrote self-signed cert for ${CN} (365 days). Replace with Let's Encrypt via scripts/sync-mosquitto-le.sh (does not overwrite here)."
+  # Prefer Caddy's already-issued LE pair over writing a new self-signed.
+  if CADDY_CERTS=/opt/freedriver-storage/caddy/data/caddy/certificates \
+     DEST_DIR="$SECRETS" \
+     "${SCRIPT_DIR}/sync-mosquitto-le-cert.sh" --once; then
+    echo "Installed Let's Encrypt ${CN} from Caddy (no self-signed written)."
+  else
+    openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
+      -keyout "${SECRETS}/server.key" \
+      -out "${SECRETS}/server.crt" \
+      -subj "/CN=${CN}" \
+      -addext "subjectAltName=DNS:${CN}"
+    echo "Wrote self-signed cert for ${CN} (365 days). Compose sidecar replaces it in place once Caddy issues LE; no leftover self-signed filename."
+  fi
 fi
 
 if [[ -n "$INSTANCE_ID" ]]; then
