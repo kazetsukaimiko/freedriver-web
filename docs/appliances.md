@@ -5,7 +5,7 @@ This is blocked on [#25](https://github.com/kazetsukaimiko/freedriver-web/issues
 
 The browser never speaks MQTT. Quarkus is the only MQTT client, and only on the docker-network Mosquitto broker when live commands are later turned on. Never `mqtt.freedriver.io`.
 
-This page is the portal REST contract. Broker connect, TLS, passwords, and ACL: [autonomy-mqtt.md](autonomy-mqtt.md). Wire types: [mqtt-contract-consume.md](mqtt-contract-consume.md) (`io.freedriver:freedriver-mqtt-contract`).
+This page is the portal REST contract. Broker connect, TLS, passwords, and ACL: [autonomy-mqtt.md](autonomy-mqtt.md). Let's Encrypt is live on `mqtt.freedriver.io:8883`; houses verify the server certificate against the public CA (no skip-verify, no leaf fingerprint pin). Wire types: [mqtt-contract-consume.md](mqtt-contract-consume.md) (`io.freedriver:freedriver-mqtt-contract`).
 
 `ApplianceControl` is the one router, keyed by `instanceId`. Mock event sources and a later MQTT client fire/observe the same CDI bus. There is no fake/disabled/live `ApplianceBackend`.
 
