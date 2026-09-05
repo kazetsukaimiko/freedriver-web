@@ -10,10 +10,10 @@
 # /opt/freedriver-secrets/mosquitto/acl (secrets mount →
 # /mosquitto/config/secrets/acl).
 #
-# instanceId is minted by the house (UUID hex+hyphens). Do not invent a UUID
-# in git. Do not add a portal paste UI. kaze may hand the house-minted id:
-#   INSTANCE_ID=<house-minted-uuid> ./scripts/provision-mosquitto.sh
-#   ./scripts/provision-mosquitto.sh --instance-id <house-minted-uuid>
+# Long-term, freedriver-web owns minting instanceId. First-house id is
+# locked (877b33d0-6e53-4212-a53f-52107383eec2). Do not invent another UUID.
+#   INSTANCE_ID=<uuid> ./scripts/provision-mosquitto.sh
+#   ./scripts/provision-mosquitto.sh --instance-id <uuid>
 # First-house apply is Techops + that secrets file. Apply writes exact
 # instance topics and drops leftover freedriver/v1/home/... in the same step.
 # This script does not restart Mosquitto. Quarkus does not SSH or restart it.

@@ -5,7 +5,7 @@ This is blocked on [#25](https://github.com/kazetsukaimiko/freedriver-web/issues
 
 The browser never speaks MQTT. Quarkus is the only MQTT client, and only on the docker-network Mosquitto broker when live commands are later turned on. Never `mqtt.freedriver.io`.
 
-This page is the portal REST contract. Broker connect, TLS, passwords, and ACL: [autonomy-mqtt.md](autonomy-mqtt.md). Wire types: [mqtt-contract-consume.md](mqtt-contract-consume.md) (`io.freedriver:freedriver-mqtt-contract`).
+This page is the portal REST contract. Broker connect, TLS, passwords, and ACL: [autonomy-mqtt.md](autonomy-mqtt.md). Let's Encrypt is live on `mqtt.freedriver.io:8883`; houses verify the server certificate against the public CA (no skip-verify, no leaf fingerprint pin). Wire types: [mqtt-contract-consume.md](mqtt-contract-consume.md) (`io.freedriver:freedriver-mqtt-contract`).
 
 `ApplianceControl` is the one router, keyed by `instanceId`. Mock event sources and a later MQTT client fire/observe the same CDI bus. There is no fake/disabled/live `ApplianceBackend`.
 
@@ -72,7 +72,7 @@ After a Quarkus restart the map is empty until the next state event. Do not comb
 
 ## MQTT JSON
 
-One broker can carry more than one autonomy instance. Isolation is `instanceId` on the **topic** (UUID hex + hyphens), not a JSON field, not a board, not the MQTT client-id. Version nibbles are not checked. `instanceName` is JSON/UX only — not in the topic, not in an ACL. Git keeps `mosquitto/acl.template` only; the live broker ACL is `/opt/freedriver-secrets/mosquitto/acl`. First-house apply is Techops + that secrets file (the house mints `instanceId`; kaze may hand it). Do not invent a UUID in git. No portal paste UI. See [mqtt-connect.md](mqtt-connect.md).
+One broker can carry more than one autonomy instance. Isolation is `instanceId` on the **topic** (UUID hex + hyphens), not a JSON field, not a board, not the MQTT client-id. Version nibbles are not checked. `instanceName` is JSON/UX only — not in the topic, not in an ACL. Git keeps `mosquitto/acl.template` only; the live broker ACL is `/opt/freedriver-secrets/mosquitto/acl`. Long-term, freedriver-web owns minting `instanceId`. First house is not an admin screen. Quarkus does not mint for v1 apply. First-house id is `877b33d0-6e53-4212-a53f-52107383eec2`. Mint is locked; that UUID is live. Techops runs the secrets-file apply — the command on [mqtt-connect.md](mqtt-connect.md) is the repeatable procedure (idempotent; do not invent another UUID).
 
 | | Topic | Retain | QoS |
 | --- | --- | --- | --- |
