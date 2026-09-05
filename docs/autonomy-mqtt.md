@@ -21,7 +21,7 @@ Do **not** depend on `io.freedriver.autonomy:autonomy-mqtt-contract`. Do **not**
 | | Autonomy (home) | Quarkus (`api`) |
 | --- | --- | --- |
 | Host | `mqtt.freedriver.io:8883` | compose hostname `mosquitto:8883` |
-| TLS | MQTTS — **must verify** (no skip-verify). Pin below. | MQTTS on the docker network |
+| TLS | MQTTS — **must verify** against the public CA (no skip-verify). Do not pin a leaf fingerprint. | MQTTS on the docker network |
 | User | `autonomy` (this instance only) | `api` (exact-topic for this instance) |
 | Auth | broker password, not Keycloak | broker password, not Keycloak |
 
@@ -31,15 +31,9 @@ Protocol: MQTT only. No WebSockets. No plaintext 1883.
 
 ### TLS
 
-Verify the server certificate for `mqtt.freedriver.io`. Do not disable hostname or chain checks. No skip-verify.
+Let's Encrypt is live on `mqtt.freedriver.io:8883`. Verify the server certificate against the public CA. Do not disable hostname or chain checks. No skip-verify. Do not pin a leaf fingerprint.
 
-Until Let's Encrypt replaces it, pin the current self-signed `mqtt.freedriver.io` cert SHA-256:
-
-```
-7A:B6:6D:AF:98:3D:15:94:8C:B9:F4:13:7C:AB:B1:CC:8A:B4:ED:8A:EF:90:E7:51:71:B9:2B:6C:09:9C:87:0A
-```
-
-When LE is live on 8883, trust the public chain as usual and drop this pin. Techops copies Caddy’s cert onto the broker with `scripts/sync-mosquitto-le.sh` — see [mqtt-connect.md](mqtt-connect.md). Do not copy certs or passwords into this doc or into git.
+Techops copies Caddy’s cert onto the broker with `scripts/sync-mosquitto-le.sh` — see [mqtt-connect.md](mqtt-connect.md). Do not copy certs or passwords into this doc or into git.
 
 ### Passwords
 
@@ -151,7 +145,7 @@ Either:
 
 | Do | Do not |
 | --- | --- |
-| Connect as `autonomy` to `mqtt.freedriver.io:8883` with TLS verify + the pin in this page | Skip TLS verify |
+| Connect as `autonomy` to `mqtt.freedriver.io:8883` with TLS verify against the public CA | Skip TLS verify, disable hostname/chain checks, or pin a leaf fingerprint |
 | Publish Topic A, subscribe Topic B for `877b33d0-6e53-4212-a53f-52107383eec2` | Publish Topic B, subscribe Topic A, or invent another `instanceId` |
 | Echo `appliedCommandId` on the next map | Depend on a closed Freedriver library suite PR |
 | Ask Techops for `/opt/freedriver-secrets/mosquitto/autonomy.pass` | Put secrets in the doc or invent a Maven Central version |

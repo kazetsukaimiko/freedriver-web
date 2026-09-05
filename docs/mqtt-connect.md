@@ -56,8 +56,7 @@ Autonomy (home) talks to the public broker. Quarkus never uses this hostname.
 | Port | `8883` (MQTTS). No WebSockets. No plaintext 1883. |
 | User | `autonomy` |
 | Password | Ask Techops, or read `/opt/freedriver-secrets/mosquitto/autonomy.pass` on the VPS. **Never put that password in this doc.** |
-| TLS | **Must verify.** No skip-verify. No disabled hostname or chain checks. |
-| Cert pin | Current self-signed `mqtt.freedriver.io` SHA-256 `7A:B6:6D:AF:98:3D:15:94:8C:B9:F4:13:7C:AB:B1:CC:8A:B4:ED:8A:EF:90:E7:51:71:B9:2B:6C:09:9C:87:0A` until Let's Encrypt replaces it |
+| TLS | **Must verify** against the public CA. Let's Encrypt is live on `mqtt.freedriver.io:8883`. No skip-verify. No disabled hostname or chain checks. Do not pin a leaf fingerprint. |
 | Topic A (publish) | `freedriver/v1/877b33d0-6e53-4212-a53f-52107383eec2/appliances` |
 | Topic B (subscribe) | `freedriver/v1/877b33d0-6e53-4212-a53f-52107383eec2/commands` |
 | Retain | `false` on both |
@@ -103,21 +102,13 @@ v1 is one house: shared `autonomy` + `api`, exact-topic only. `api` is not a wil
 
 ## TLS
 
-Verify the server certificate. No skip-verify.
-
-Until Let's Encrypt replaces it, pin the current self-signed `mqtt.freedriver.io` cert SHA-256:
-
-```
-7A:B6:6D:AF:98:3D:15:94:8C:B9:F4:13:7C:AB:B1:CC:8A:B4:ED:8A:EF:90:E7:51:71:B9:2B:6C:09:9C:87:0A
-```
-
-When LE is live on 8883, trust the public chain as usual and drop this pin.
+Let's Encrypt is live on `mqtt.freedriver.io:8883`. Autonomy must verify the server certificate against the public CA. No skip-verify. No disabled hostname or chain checks. Do not pin a leaf fingerprint.
 
 ## Let's Encrypt on 8883 (Techops)
 
-DNS and 80/443 are already live. Caddy issues `mqtt.freedriver.io` via the 404 stub in the Caddyfile (same pattern as `grafana.freedriver.io`). MQTTS stays Mosquitto :8883.
+The Caddy `mqtt.freedriver.io` 404 stub and cert-sync (`scripts/sync-mosquitto-le.sh`) are already live. DNS and 80/443 are live. Caddy issues `mqtt.freedriver.io` via the 404 stub in the Caddyfile (same pattern as `grafana.freedriver.io`). MQTTS stays Mosquitto :8883.
 
-Copy-paste sync (Techops, root/sudo) after Caddy has issued the name:
+Copy-paste sync (Techops, root/sudo) after Caddy renews the name:
 
 ```
 sudo ./scripts/sync-mosquitto-le.sh
@@ -129,7 +120,7 @@ Idempotent. Restarts mosquitto only when the leaf changed. Re-running provision 
 */30 * * * * root /opt/freedriver-web/scripts/sync-mosquitto-le.sh
 ```
 
-Until that copy is live, keep the self-signed pin above. After it is live, drop the pin. `live-commands` stays `false`. Do not open 1883. Do not invent another UUID.
+`live-commands` stays `false`. Do not open 1883. Do not invent another UUID.
 
 ## Quarkus
 
