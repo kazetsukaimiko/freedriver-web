@@ -23,7 +23,8 @@ grafana.freedriver.io {
 	respond 404
 }
 
-# Public hostname so Caddy issues LE. MQTTS is Mosquitto :8883, not this site.
+# 443 cert is for ACME; autonomy speaks MQTTS on 8883.
+# HTTP-01 stub only (same lockdown as grafana). Do not proxy MQTT.
 mqtt.freedriver.io {
 	respond 404
 }

@@ -34,18 +34,20 @@ export type ApplianceMap = {
   instances: Instance[]
 }
 
-export type DeniedReason = 'session' | 'role'
+let csrfToken: string | null = null
 
 export type CommandResult =
-  | { status: 'confirmed'; instance: Instance }
+  | { status: 'confirmed'; instance: Instance | null }
   | { status: 'timeout'; instance: Instance }
   | { status: 'stale'; instance: Instance | null }
-  | { status: 'denied'; reason: DeniedReason }
+  | { status: 'denied' }
+  | { status: 'login' }
   | { status: 'error'; message: string }
 
 export type MapResult =
   | { status: 'ok'; map: ApplianceMap }
-  | { status: 'denied'; reason: DeniedReason }
+  | { status: 'denied' }
+  | { status: 'login' }
   | { status: 'error'; message: string }
 
 export function demoModeFromSearch(search: string): DemoMode | null {
@@ -84,9 +86,12 @@ export function parseApplianceMap(raw: unknown): ApplianceMap {
   if (!raw || typeof raw !== 'object') {
     throw new Error('Invalid appliance map')
   }
-  const body = raw as { instances?: unknown }
+  const body = raw as { instances?: unknown; csrfToken?: unknown }
   if (!Array.isArray(body.instances)) {
     throw new Error('Invalid appliance map')
+  }
+  if (typeof body.csrfToken === 'string' && body.csrfToken.length > 0) {
+    csrfToken = body.csrfToken
   }
   return { instances: body.instances.map(readInstance) }
 }
@@ -140,14 +145,18 @@ function readAppliance(raw: unknown): Appliance {
   return { id: body.applianceName, name: body.applianceName, on: body.on }
 }
 
+/** Quarkus OIDC returns 401 (not a login redirect) when this header is present. */
+const API_HEADERS = { 'X-Requested-With': 'XMLHttpRequest' }
+
 export async function fetchApplianceMap(signal?: AbortSignal): Promise<MapResult> {
   try {
-    const response = await fetch('/api/appliances', { signal })
+    const response = await fetch('/api/appliances', { signal, headers: API_HEADERS })
     if (response.status === 401) {
-      return { status: 'denied', reason: 'session' }
+      window.location.replace('/login')
+      return { status: 'login' }
     }
     if (response.status === 403) {
-      return { status: 'denied', reason: 'role' }
+      return { status: 'denied' }
     }
     if (!response.ok) {
       return { status: 'error', message: `GET /api/appliances failed (${response.status})` }
@@ -172,16 +181,21 @@ export async function postApplianceCommand(
       `/api/appliances/${encodeURIComponent(instanceId)}/${encodeURIComponent(applianceName)}`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          ...API_HEADERS,
+          'Content-Type': 'application/json',
+          ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+        },
         body: JSON.stringify({ on }),
         signal,
       },
     )
     if (response.status === 401) {
-      return { status: 'denied', reason: 'session' }
+      window.location.replace('/login')
+      return { status: 'login' }
     }
     if (response.status === 403) {
-      return { status: 'denied', reason: 'role' }
+      return { status: 'denied' }
     }
     if (response.status === 409) {
       let instance: Instance | null = null

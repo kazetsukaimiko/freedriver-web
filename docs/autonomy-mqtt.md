@@ -33,7 +33,7 @@ Protocol: MQTT only. No WebSockets. No plaintext 1883.
 
 Let's Encrypt is live on `mqtt.freedriver.io:8883`. Verify the server certificate against the public CA. Do not disable hostname or chain checks. No skip-verify. Do not pin a leaf fingerprint.
 
-Techops copies Caddy’s cert onto the broker with `scripts/sync-mosquitto-le.sh` — see [mqtt-connect.md](mqtt-connect.md). Do not copy certs or passwords into this doc or into git.
+The `mosquitto-cert-sync` sidecar copies Caddy’s cert onto the broker (`scripts/sync-mosquitto-le-cert.sh`) — see [mqtt-connect.md](mqtt-connect.md). Do not copy certs or passwords into this doc or into git.
 
 ### Passwords
 

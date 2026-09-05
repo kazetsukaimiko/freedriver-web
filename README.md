@@ -19,7 +19,7 @@ The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{gra
   - `auth.freedriver.io` — Keycloak 26
   - `app.freedriver.io` — Quinoa app behind Caddy
   - `grafana.freedriver.io` — 404 on purpose; Grafana is loopback-only
-  - `mqtt.freedriver.io` — 404 on 443 on purpose; Caddy issues LE, MQTTS is Mosquitto :8883
+  - `mqtt.freedriver.io` — 404 on purpose (ACME HTTP-01). MQTTS is host 8883, not Caddy.
 - Keycloak 26 + local Postgres 16
 - Grafana + Loki + Prometheus + Alloy (see Observability)
 - Mosquitto 2.1.2 MQTTS at `mqtt.freedriver.io:8883` (host 8883 only; no 1883). Connect notes: [docs/mqtt-connect.md](docs/mqtt-connect.md).
@@ -32,7 +32,7 @@ Grafana and the Keycloak admin console are not on the public internet.
 ssh -L 3000:127.0.0.1:3000 -L 8081:127.0.0.1:8081 -i <key> lonewatt-techops@138.197.90.42
 ```
 
-Then Grafana is http://127.0.0.1:3000 (user `admin`, password `GF_SECURITY_ADMIN_PASSWORD` in `/opt/freedriver-secrets/.env`). Keycloak admin is http://127.0.0.1:8081/admin. Public `https://auth.freedriver.io/admin` returns 404; user login on that host is unchanged. `https://grafana.freedriver.io` returns 404.
+Then Grafana is http://127.0.0.1:3000 (user `admin`, password `GF_SECURITY_ADMIN_PASSWORD` in `/opt/freedriver-secrets/.env`). Keycloak admin is http://127.0.0.1:8081/admin. Public `https://auth.freedriver.io/admin` returns 404; user login on that host is unchanged. `https://grafana.freedriver.io` and `https://mqtt.freedriver.io` return 404.
 
 
 Alloy tails Docker container logs into Loki (14 days). Prometheus keeps ~15 days and scrapes itself, Alloy, and `app:8080/q/metrics` (that target is down until the Quarkus app exports Micrometer metrics). Loki, Prometheus, and Alloy stay on the compose network. Grafana and Keycloak admin bind 127.0.0.1 only.
@@ -49,7 +49,7 @@ The product app lives in `app/`: Quarkus 3.38 (Java 21) with Quinoa serving a Re
 
 Requires Java 23. Quinoa can install Node for the UI build. Open http://localhost:8080 for the dashboard (`GET /api/hello` and `GET /api/build` are public). Production is `https://app.freedriver.io` via Caddy → the Compose `app` service.
 
-`mqtt-contract/` is a reactor sibling (`io.freedriver:freedriver-mqtt-contract`). The app does not pin autonomy's GitHub Packages jar.
+`mqtt-contract/`, `mqtt/`, and `mqtt-paho/` are reactor siblings (`io.freedriver:freedriver-mqtt-contract`, `freedriver-mqtt`, `freedriver-mqtt-paho`). The app does not pin autonomy's GitHub Packages jar.
 
 ## Appliances API
 
@@ -61,7 +61,7 @@ The live command route is **not** Done. It is blocked on [#25](https://github.co
 
 Push or merge to `main`, or run the **Deploy** workflow. GitHub Actions rsyncs this repo to `/opt/freedriver-web` and runs `docker compose --env-file /opt/freedriver-secrets/.env up -d` so `${VAR}` interpolation reads the secrets file, not a `.env` in the git tree.
 
-The compose image build compiles `mqtt-contract` from this repo (no GitHub Packages pin). Do not commit a PAT or pass a token as a Docker ARG/ENV.
+The compose image build compiles `mqtt-contract`, `mqtt`, and `mqtt-paho` from this repo (no GitHub Packages pin). Do not commit a PAT or pass a token as a Docker ARG/ENV.
 
 ### Build number
 

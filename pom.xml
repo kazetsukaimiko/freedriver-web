@@ -11,6 +11,8 @@
 
     <modules>
         <module>mqtt-contract</module>
+        <module>mqtt</module>
+        <module>mqtt-paho</module>
         <module>app</module>
     </modules>
 

@@ -99,41 +99,56 @@ jobs:
           fi
           rm -f "$leftover"
 
-      - name: Mosquitto LE sync copies Caddy cert without restart
+      - name: mqtt.freedriver.io is an ACME 404 stub; LE copy is Techops-owned
         run: |
-          if ! grep -Fq 'mqtt.freedriver.io' Caddyfile; then
-            echo "Caddyfile must stub mqtt.freedriver.io so Caddy issues LE"
+          if ! awk '/^mqtt\.freedriver\.io \{/,/^}/' Caddyfile | grep -q 'respond 404'; then
+            echo "mqtt.freedriver.io must be a 404 ACME stub"
             exit 1
           fi
-          if [[ ! -x scripts/sync-mosquitto-le.sh ]]; then
-            echo "missing executable scripts/sync-mosquitto-le.sh"
+          if awk '/^mqtt\.freedriver\.io \{/,/^}/' Caddyfile | grep -qiE 'reverse_proxy|redir'; then
+            echo "do not put an HTTP app or MQTT proxy on mqtt.freedriver.io"
             exit 1
           fi
-          work="$(mktemp -d)"
-          caddy_dir="${work}/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mqtt.freedriver.io"
-          secrets="${work}/secrets"
-          mkdir -p "$caddy_dir" "$secrets"
-          openssl req -x509 -newkey rsa:2048 -sha256 -days 1 -nodes \
-            -keyout "${caddy_dir}/mqtt.freedriver.io.key" \
-            -out "${caddy_dir}/mqtt.freedriver.io.crt" \
-            -subj "/CN=mqtt.freedriver.io" \
-            -addext "subjectAltName=DNS:mqtt.freedriver.io"
-          CADDY_DATA="${work}/caddy" SECRETS="$secrets" \
-            ./scripts/sync-mosquitto-le.sh --no-restart
-          [[ -f "${secrets}/server.crt" && -f "${secrets}/server.key" ]]
-          CADDY_DATA="${work}/caddy" SECRETS="$secrets" \
-            ./scripts/sync-mosquitto-le.sh --no-restart
-          empty="$(mktemp -d)"
-          set +e
-          CADDY_DATA="$empty" SECRETS="$secrets" \
-            ./scripts/sync-mosquitto-le.sh --no-restart
-          rc=$?
-          set -e
-          if [[ "$rc" -ne 2 ]]; then
-            echo "expected exit 2 when Caddy has not issued, got $rc"
+          if grep -E '"1883:|"1883' docker-compose.yml; then
+            echo "do not open 1883"
             exit 1
           fi
-          rm -rf "$work" "$empty"
+          if ! grep -q 'mosquitto-cert-sync:' docker-compose.yml; then
+            echo "compose must run the Techops LE→Mosquitto cert sync sidecar"
+            exit 1
+          fi
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          compose = Path("docker-compose.yml").read_text()
+          i = compose.find("  mosquitto-cert-sync:")
+          if i < 0:
+              raise SystemExit("missing mosquitto-cert-sync service")
+          rest = compose[i:]
+          nxt = re.search(r"\n  [A-Za-z0-9_-]+:", rest[1:])
+          block = rest if nxt is None else rest[: nxt.start() + 1]
+          if "/var/run/docker.sock" in block:
+              raise SystemExit("cert-sync sidecar must not mount the Docker daemon socket")
+          if 'pid: "service:mosquitto"' not in block and "pid: service:mosquitto" not in block:
+              raise SystemExit("cert-sync must share mosquitto PID namespace")
+          df = Path("scripts/mosquitto-cert-sync.Dockerfile").read_text()
+          if "docker-cli" in df or "docker.sock" in df:
+              raise SystemExit("cert-sync image must not include docker-cli or a daemon socket")
+          script = Path("scripts/sync-mosquitto-le-cert.sh").read_text()
+          if "docker.sock" in script or "docker kill" in script or "docker ps" in script:
+              raise SystemExit("sync script must not use the Docker API")
+          print("cert-sync: no daemon socket; pid-share SIGHUP")
+          PY
+          if ! grep -q 'will not overwrite Let' scripts/provision-mosquitto.sh; then
+            echo "provision-mosquitto.sh must leave existing server.crt/key in place"
+            exit 1
+          fi
+          if grep -E 'selfsigned' scripts/sync-mosquitto-le-cert.sh | grep -q 'cp \|mv '; then
+            echo "sync must replace server.crt/key in place, not keep a selfsigned leftover"
+            exit 1
+          fi
+          chmod +x scripts/sync-mosquitto-le-cert.sh scripts/test-sync-mosquitto-le-cert.sh
+          ./scripts/test-sync-mosquitto-le-cert.sh
 
       - name: Browser must not speak MQTT
         run: |

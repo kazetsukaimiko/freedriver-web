@@ -6,7 +6,6 @@ import {
   type Appliance,
   type CommandResult,
   type DemoMode,
-  type DeniedReason,
   type Instance,
   demoCommand,
   demoInstance,
@@ -20,7 +19,7 @@ type Row = Appliance & { pending: boolean; error: string | null }
 
 type View =
   | { kind: 'waiting' }
-  | { kind: 'denied'; reason: DeniedReason }
+  | { kind: 'denied' }
   | { kind: 'empty' }
   | {
       kind: 'ready'
@@ -86,11 +85,14 @@ export function Dashboard({ search }: { search: string }) {
         if (cancelled) {
           return
         }
+        if (result.status === 'login') {
+          return
+        }
         if (result.status === 'denied') {
           lastFreshAt.current = null
           lastUpdatedRef.current = null
           rowsRef.current = []
-          setView({ kind: 'denied', reason: result.reason })
+          setView({ kind: 'denied' })
           return
         }
         if (result.status === 'ok') {
@@ -161,36 +163,50 @@ export function Dashboard({ search }: { search: string }) {
     })
   }
 
-  function deny(reason: DeniedReason) {
+  function deny() {
     inFlight.current.forEach((controller) => controller.abort())
     inFlight.current.clear()
     rowsRef.current = []
     lastFreshAt.current = null
     lastUpdatedRef.current = null
-    setView({ kind: 'denied', reason })
+    setView({ kind: 'denied' })
+  }
+
+  function revertSwitch(id: string, message: string) {
+    const next = rowsRef.current.map((row) =>
+      row.id === id ? { ...row, pending: false, error: message } : row,
+    )
+    rowsRef.current = next
+    setView((current) =>
+      current.kind === 'ready' && !current.unreachable ? { ...current, rows: next } : current,
+    )
   }
 
   function finishCommand(id: string, result: CommandResult) {
     inFlight.current.delete(id)
+    if (result.status === 'login') {
+      return
+    }
     if (result.status === 'denied') {
-      deny(result.reason)
+      deny()
       return
     }
     if (result.status === 'stale') {
-      if (result.instance) {
+      const instance = result.instance
+      if (instance) {
         setView((current) => {
           if (current.kind !== 'ready') {
             return current
           }
           const instances = current.instances.map((item) =>
-            item.instanceId === result.instance?.instanceId ? result.instance : item,
+            item.instanceId === instance.instanceId ? instance : item,
           )
           return {
             ...current,
             instances,
             unreachable: true,
             rows: current.rows.map((row) => ({ ...row, pending: false })),
-            lastUpdated: result.instance.lastUpdated,
+            lastUpdated: instance.lastUpdated,
           }
         })
       } else {
@@ -204,6 +220,10 @@ export function Dashboard({ search }: { search: string }) {
     }
     if (result.status === 'confirmed') {
       const instance = result.instance
+      if (!instance) {
+        revertSwitch(id, 'Command timed out')
+        return
+      }
       lastFreshAt.current = Date.now()
       lastUpdatedRef.current = instance.lastUpdated
       setView((current) => {
@@ -229,13 +249,7 @@ export function Dashboard({ search }: { search: string }) {
     }
 
     const message = result.status === 'timeout' ? 'Command timed out' : result.message
-    const next = rowsRef.current.map((row) =>
-      row.id === id ? { ...row, pending: false, error: message } : row,
-    )
-    rowsRef.current = next
-    setView((current) =>
-      current.kind === 'ready' && !current.unreachable ? { ...current, rows: next } : current,
-    )
+    revertSwitch(id, message)
   }
 
   function toggle(row: Row) {
@@ -303,7 +317,7 @@ export function Dashboard({ search }: { search: string }) {
   }
 
   if (view.kind === 'denied') {
-    return <Denied reason={view.reason} />
+    return <Denied />
   }
 
   return (
@@ -346,7 +360,7 @@ export function Dashboard({ search }: { search: string }) {
 
 function initialView(demo: DemoMode | null): View {
   if (demo === 'denied') {
-    return { kind: 'denied', reason: 'role' }
+    return { kind: 'denied' }
   }
   if (demo === 'waiting') {
     return { kind: 'waiting' }
@@ -379,16 +393,12 @@ function initialView(demo: DemoMode | null): View {
   return { kind: 'waiting' }
 }
 
-function Denied({ reason }: { reason: DeniedReason }) {
+function Denied() {
   return (
     <main className="content status-page">
-      <img className="mark-art" src="/assets/freedriver/pages/freedriver-404.png" alt="" />
+      <img className="mark-art" src="/assets/freedriver/pages/freedriver-denied.png" alt="" />
       <h1>Access denied</h1>
-      <p className="lede">
-        {reason === 'session'
-          ? 'Sign in with a dashboard or portal-admin role.'
-          : 'This account needs a dashboard or portal-admin role.'}
-      </p>
+      <p className="lede">This account needs a dashboard or portal-admin role.</p>
     </main>
   )
 }

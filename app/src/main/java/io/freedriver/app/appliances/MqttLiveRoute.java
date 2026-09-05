@@ -1,14 +1,10 @@
 package io.freedriver.app.appliances;
 
+import io.freedriver.mqtt.MqttBrokers;
 import io.freedriver.mqtt.contract.ApplianceCommandMessage;
 
-import java.util.Locale;
-
 /**
- * Live MQTT command path. Compiled for later (#27) but not a CDI bean and not started.
- * Quarkus talks to Mosquitto on the docker network only — never mqtt.freedriver.io.
- * Browser never speaks MQTT. retain=false on commands, QoS 1.
- * {@code instanceId} is the topic, not a field on the command body.
+ * App-side command mint helper. Broker rules live in {@link MqttBrokers}.
  */
 public final class MqttLiveRoute {
 
@@ -16,14 +12,11 @@ public final class MqttLiveRoute {
     }
 
     public static void assertPrivateBroker(String host) {
-        if (host == null || host.isBlank()) {
-            throw new IllegalArgumentException("MQTT host required");
-        }
-        String normalized = host.toLowerCase(Locale.ROOT).strip();
-        if (normalized.contains("mqtt.freedriver.io") || normalized.endsWith("freedriver.io")) {
-            throw new IllegalStateException(
-                    "Refusing public MQTT hostname. Use docker-network Mosquitto, never mqtt.freedriver.io");
-        }
+        MqttBrokers.assertPrivateBroker(host);
+    }
+
+    public static void assertLiveBroker(String host, int port, boolean tls) {
+        MqttBrokers.assertLiveBroker(host, port, tls);
     }
 
     public static ApplianceCommandMessage command(String commandId, String applianceName, boolean state) {
