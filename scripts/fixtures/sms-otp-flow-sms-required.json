@@ -1,0 +1,23 @@
+[
+  {
+    "id": "forms",
+    "displayName": "browser forms",
+    "requirement": "ALTERNATIVE",
+    "authenticationFlow": true,
+    "level": 0
+  },
+  {
+    "id": "user-pass",
+    "providerId": "auth-username-password-form",
+    "requirement": "REQUIRED",
+    "authenticationFlow": false,
+    "level": 1
+  },
+  {
+    "id": "sms",
+    "providerId": "freedriver-sms-otp",
+    "requirement": "REQUIRED",
+    "authenticationFlow": false,
+    "level": 0
+  }
+]
