@@ -11,8 +11,10 @@ import jakarta.enterprise.event.Event;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
@@ -22,6 +24,9 @@ import java.util.concurrent.TimeUnit;
 /**
  * Dev/test event source on the same CDI bus as production. Not an ApplianceControl
  * implementation. Disable with {@code freedriver.appliances.mock=false}.
+ * <p>
+ * Holds a map of autonomy instance id to instance name and appliance on/off.
+ * Startup seeds the Cabin fixture only. A command for an unknown instance id is ignored.
  */
 @ApplicationScoped
 public class MockAutonomy {
@@ -38,7 +43,7 @@ public class MockAutonomy {
     Event<ApplianceStateRouted> states;
 
     private final Object lock = new Object();
-    private final LinkedHashMap<String, Boolean> house = new LinkedHashMap<>();
+    private final Map<UUID, InstanceSlot> instances = new LinkedHashMap<>();
     private final List<ApplianceCommandRouted> published = new CopyOnWriteArrayList<>();
     private volatile boolean confirmCommands = true;
     private ScheduledExecutorService refresh;
@@ -51,7 +56,7 @@ public class MockAutonomy {
             return;
         }
         restoreFixtures();
-        emit(null);
+        emit(INSTANCE_ID, null);
         if (config.mockRefresh()) {
             refresh = Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "mock-autonomy-refresh");
@@ -73,14 +78,16 @@ public class MockAutonomy {
         if (!config.mock()) {
             return;
         }
-        if (!INSTANCE_ID.equals(routed.instanceId())) {
-            return;
+        synchronized (lock) {
+            if (!instances.containsKey(routed.instanceId())) {
+                return;
+            }
         }
         published.add(routed);
         if (!confirmCommands) {
             return;
         }
-        apply(routed.command());
+        apply(routed.instanceId(), routed.command());
     }
 
     public List<ApplianceCommandRouted> publishedCommands() {
@@ -92,57 +99,90 @@ public class MockAutonomy {
         published.clear();
         if (config.mock()) {
             restoreFixtures();
-            emit(null);
+            emit(INSTANCE_ID, null);
         }
+    }
+
+    /**
+     * Add or replace one simulated instance and publish its state on the existing bus.
+     * Commands do not call this. An unknown instance id is not created.
+     */
+    public void seedInstance(UUID instanceId, String instanceName, List<String> applianceNames) {
+        if (!config.mock()) {
+            return;
+        }
+        synchronized (lock) {
+            instances.put(instanceId, new InstanceSlot(instanceName, applianceNames));
+        }
+        emit(instanceId, null);
     }
 
     public void setConfirmCommands(boolean confirmCommands) {
         this.confirmCommands = confirmCommands;
     }
 
-    private void apply(ApplianceCommandMessage command) {
+    private void apply(UUID instanceId, ApplianceCommandMessage command) {
         synchronized (lock) {
-            if (!house.containsKey(command.applianceName())) {
+            InstanceSlot slot = instances.get(instanceId);
+            if (slot == null || !slot.appliances.containsKey(command.applianceName())) {
                 return;
             }
-            house.put(command.applianceName(), command.state());
+            slot.appliances.put(command.applianceName(), command.state());
         }
-        emit(command.commandId());
+        emit(instanceId, command.commandId());
     }
 
     private void restoreFixtures() {
         synchronized (lock) {
-            house.clear();
-            for (String name : FIXTURE_NAMES) {
-                house.put(name, false);
-            }
+            instances.clear();
+            instances.put(INSTANCE_ID, new InstanceSlot(INSTANCE_NAME, FIXTURE_NAMES));
         }
     }
 
-    private List<Appliance> appliances() {
+    private void emit(UUID instanceId, String appliedCommandId) {
+        String instanceName;
+        List<Appliance> appliances;
         synchronized (lock) {
-            return house.entrySet().stream()
-                    .map(e -> new Appliance(e.getKey(), e.getValue()))
-                    .toList();
+            InstanceSlot slot = instances.get(instanceId);
+            if (slot == null) {
+                return;
+            }
+            instanceName = slot.name;
+            appliances = new ArrayList<>(slot.appliances.size());
+            slot.appliances.forEach((name, on) -> appliances.add(new Appliance(name, on)));
         }
-    }
-
-    private void emit(String appliedCommandId) {
         states.fire(new ApplianceStateRouted(
-                INSTANCE_ID,
-                new ApplianceStateMessage(INSTANCE_NAME, appliedCommandId, appliances())));
+                instanceId,
+                new ApplianceStateMessage(instanceName, appliedCommandId, appliances)));
     }
 
     private void republishCurrent() {
         try {
+            List<UUID> ids;
             synchronized (lock) {
-                if (house.isEmpty()) {
+                if (instances.isEmpty()) {
                     return;
                 }
+                ids = List.copyOf(instances.keySet());
             }
-            emit(null);
+            for (UUID id : ids) {
+                emit(id, null);
+            }
         } catch (RuntimeException e) {
             Log.warn("mock-autonomy refresh failed", e);
+        }
+    }
+
+    /** Name plus appliance on/off for one autonomy instance. */
+    private static final class InstanceSlot {
+        private final String name;
+        private final LinkedHashMap<String, Boolean> appliances = new LinkedHashMap<>();
+
+        private InstanceSlot(String name, List<String> applianceNames) {
+            this.name = name;
+            for (String applianceName : applianceNames) {
+                appliances.put(applianceName, false);
+            }
         }
     }
 }
