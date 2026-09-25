@@ -54,8 +54,8 @@ services:
       KC_CACHE: local
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
-      # Phone OTP shared secret. Empty or the git placeholder fails closed
-      # inside the SPI. Not an AWS credential. Calls http://sms:8080 only.
+      # Shared secret the phone OTP SPI sends to http://sms:8080.
+      # The SPI skips phone sign-in while it is empty or the placeholder.
       SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
     depends_on:
       keycloak-db:
@@ -77,10 +77,9 @@ services:
       timeout: 5s
       retries: 10
 
-  # Internal OTP sibling. Keycloak calls http://sms:8080. No published ports
-  # and no Caddy site. Stub returns 503 on /health until kaze #107 replaces
-  # the image. Keycloak does not wait on this healthcheck, so password login
-  # still comes up while the stub is not the real service.
+  # Internal OTP service. Keycloak calls http://sms:8080 on the compose
+  # network. The stub answers 503 on /health until kaze's #107 image
+  # replaces it. Keycloak depends only on keycloak-db.
   sms:
     build:
       context: ./sms/stub

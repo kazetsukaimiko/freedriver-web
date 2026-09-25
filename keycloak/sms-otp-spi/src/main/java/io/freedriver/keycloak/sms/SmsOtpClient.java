@@ -8,8 +8,8 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 
 /**
- * HTTP client for the sms sibling. Fail closed: only 200 plus the expected
- * JSON counts, and the shared secret is a header, never the body or the URL.
+ * HTTP client for the sms service. Success is a 200 with the expected JSON.
+ * The shared secret travels in the X-Freedriver-Sms-Secret header.
  */
 public final class SmsOtpClient {
 
@@ -29,7 +29,7 @@ public final class SmsOtpClient {
     private static final int MAX_BODY = 8192;
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
-    /** Status and body only. The secret stays out of this record. */
+    /** HTTP status and response body. */
     record Wire(int status, String body) {}
 
     @FunctionalInterface
@@ -130,7 +130,7 @@ public final class SmsOtpClient {
         if ("sms".equals(host) && port == 8080) {
             return true;
         }
-        // Loopback is for the unit test server only. send/verify do not use it.
+        // Loopback serves the unit test server; send/verify use BASE_URL.
         return "127.0.0.1".equals(host) && port > 0 && port != 8080;
     }
 
@@ -159,7 +159,7 @@ public final class SmsOtpClient {
         return "{\"phone\":" + Json.quote(phone) + ",\"code\":" + Json.quote(code) + "}";
     }
 
-    /** Flat JSON helpers. The SPI does not take a JSON library. */
+    /** Flat JSON helpers that keep the SPI JAR self-contained. */
     static final class Json {
         private Json() {}
 

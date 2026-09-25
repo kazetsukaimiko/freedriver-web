@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Locks for the sms sibling and the Keycloak OTP scaffold. No live secret required.
+# Checks for the sms service and the Keycloak OTP scaffold. Runs with the git placeholder.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -90,8 +90,7 @@ done
 grep -q 'http://sms:8080' keycloak/sms-otp-spi/src/main/java/io/freedriver/keycloak/sms/SmsOtpConfig.java
 grep -q 'placeholder-not-a-live-secret' scripts/provision-keycloak-sms-otp.sh
 
-# The provision script may mention DISABLED only as a refusal. It must not
-# assign that requirement to the password provider.
+# The provision script keeps the password provider REQUIRED and SMS at ALTERNATIVE.
 if grep -n 'auth-username-password-form' scripts/provision-keycloak-sms-otp.sh | grep -i 'DISABLED'; then
   fail "provision script must not disable the password authenticator"
 fi

@@ -4,13 +4,13 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <!-- Standalone on purpose. Not a reactor module: the app image build
-         copies the parent pom and must not need this tree. -->
+    <!-- Standalone build outside the root reactor. keycloak/Dockerfile and CI
+         build it with -f keycloak/sms-otp-spi/pom.xml. -->
     <groupId>io.freedriver</groupId>
     <artifactId>freedriver-sms-otp-spi</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <name>Freedriver Keycloak SMS OTP SPI</name>
-    <description>Browser-flow alternative that calls http://sms:8080. Password stays a separate alternative.</description>
+    <description>Browser-flow Alternative for phone + SMS code, backed by http://sms:8080.</description>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -26,7 +26,7 @@
             <version>${keycloak.version}</version>
             <scope>provided</scope>
         </dependency>
-        <!-- Authenticator SPI lives here in Keycloak 26.3, not in keycloak-server-spi. -->
+        <!-- Keycloak 26.3 ships the Authenticator SPI in keycloak-server-spi-private. -->
         <dependency>
             <groupId>org.keycloak</groupId>
             <artifactId>keycloak-server-spi-private</artifactId>

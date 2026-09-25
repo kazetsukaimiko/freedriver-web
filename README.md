@@ -21,7 +21,7 @@ The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{gra
   - `grafana.freedriver.io` — 404 on purpose; Grafana is loopback-only
   - `mqtt.freedriver.io` — 404 on purpose (ACME HTTP-01). MQTTS is host 8883, not Caddy.
 - Keycloak 26.3 + local Postgres 16. The image build adds the phone OTP provider at `/opt/keycloak/providers/freedriver-sms-otp.jar`.
-- `sms` — Docker-network only, `http://sms:8080`. No public hostname and no Caddy site. Stub until kaze ships [#107](https://github.com/kazetsukaimiko/freedriver-web/issues/107). See [docs/sms-otp.md](docs/sms-otp.md).
+- `sms` — internal service at `http://sms:8080` on the compose network. Stub until kaze ships [#107](https://github.com/kazetsukaimiko/freedriver-web/issues/107).
 - Grafana + Loki + Prometheus + Alloy (see Observability)
 - Mosquitto 2.1.2 MQTTS at `mqtt.freedriver.io:8883` (host 8883 only; no 1883). Connect notes: [docs/mqtt-connect.md](docs/mqtt-connect.md).
 
@@ -54,11 +54,7 @@ Requires Java 23. Quinoa can install Node for the UI build. Open http://localhos
 
 ## SMS OTP scaffold
 
-House phone + code is a compose sibling. Keycloak reaches it at `http://sms:8080`. There is no `sms.freedriver.io` site. Number hand-out stays on `app.freedriver.io` portal-admin (kaze [#107](https://github.com/kazetsukaimiko/freedriver-web/issues/107)).
-
-Both sides use `SMS_OTP_SHARED_SECRET` from `/opt/freedriver-secrets/.env` on the VPS. Git only has `secrets/sms-otp.env.example`. Compose does not load that file. The value in it is a placeholder, and the stub and the Keycloak SPI fail closed when the secret is missing or still that placeholder. Do not commit a real secret. Do not put AWS credentials in the Keycloak JVM.
-
-`freedriver.appliances.live-commands` stays `false`. `quarkus.oidc.enabled` stays `false`. Techops flow steps: [docs/sms-otp.md](docs/sms-otp.md).
+Phone + code sign-in for house users. The `sms` service and the Keycloak `freedriver-sms-otp` authenticator share `SMS_OTP_SHARED_SECRET` from `/opt/freedriver-secrets/.env` on the VPS. Setup and flow steps: [docs/sms-otp.md](docs/sms-otp.md).
 
 ## Appliances API
 

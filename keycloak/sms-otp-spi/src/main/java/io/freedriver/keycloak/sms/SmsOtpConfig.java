@@ -4,8 +4,8 @@ import java.net.URI;
 import java.util.Optional;
 
 /**
- * Shared-secret and URL locks for the Keycloak side.
- * The secret is an environment variable, never a realm attribute and never a built-in value.
+ * Shared secret and sms URL for the Keycloak side.
+ * The secret comes from the SMS_OTP_SHARED_SECRET environment variable.
  */
 public final class SmsOtpConfig {
 
@@ -13,7 +13,7 @@ public final class SmsOtpConfig {
     public static final String PLACEHOLDER = "placeholder-not-a-live-secret";
     public static final String HEADER = "X-Freedriver-Sms-Secret";
 
-    /** Compose DNS only. The client will not post the secret anywhere else. */
+    /** sms on the compose network, the one host that receives the secret. */
     public static final URI BASE_URL = URI.create("http://sms:8080");
 
     private SmsOtpConfig() {}

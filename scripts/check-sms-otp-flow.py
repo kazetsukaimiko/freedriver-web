@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Assert a Keycloak browser-flow copy still has password and does not force SMS.
+"""Check a Keycloak browser-flow copy keeps password REQUIRED and SMS optional.
 
 Reads a kcadm executions JSON array from a file or stdin.
-Exit 0 when the password authenticator stays REQUIRED and SMS is not REQUIRED.
---require-sms also demands the SMS execution be present and ALTERNATIVE.
+Exit 0 when the password authenticator is REQUIRED inside a top-level
+ALTERNATIVE subflow and SMS OTP is ALTERNATIVE or DISABLED.
+--require-sms also requires exactly one SMS execution, set to ALTERNATIVE.
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ def main() -> None:
     if not password:
         fail("password authenticator auth-username-password-form is missing")
     if any(e.get("requirement") == "DISABLED" for e in password):
-        fail("password authenticator must not be DISABLED")
+        fail("password authenticator is DISABLED; it must be REQUIRED")
     if not any(e.get("requirement") == "REQUIRED" for e in password):
         fail("password authenticator must stay REQUIRED inside the forms Alternative")
 
@@ -63,12 +64,12 @@ def main() -> None:
 
     sms = [e for e in executions if e.get("providerId") == SMS]
     if any(e.get("requirement") == "REQUIRED" for e in sms):
-        fail("SMS OTP must not be REQUIRED; that would block the password Alternative")
+        fail("SMS OTP is REQUIRED; set it to ALTERNATIVE so password stays available")
     if args.require_sms:
         if len(sms) != 1:
             fail("expected exactly one freedriver-sms-otp execution")
         if sms[0].get("requirement") != "ALTERNATIVE":
-            fail("SMS OTP must be ALTERNATIVE, not %s" % sms[0].get("requirement"))
+            fail("SMS OTP must be ALTERNATIVE, found %s" % sms[0].get("requirement"))
 
     print("password Alternative preserved")
 

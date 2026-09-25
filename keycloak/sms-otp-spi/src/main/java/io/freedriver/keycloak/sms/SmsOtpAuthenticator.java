@@ -13,9 +13,9 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
- * Phone + code as its own alternative. It never disables password.
- * Missing or placeholder secret: this execution is skipped ({@code attempted}).
- * sms returning anything other than the documented 200 shapes: no session.
+ * Phone + code sign-in as an Alternative beside the password form.
+ * With an empty or placeholder secret the execution marks itself {@code attempted}.
+ * Sign-in completes only on the documented 200 responses from sms.
  */
 public final class SmsOtpAuthenticator implements Authenticator {
 
@@ -188,7 +188,7 @@ public final class SmsOtpAuthenticator implements Authenticator {
 
     @Override
     public void setRequiredActions(KeycloakSession session, RealmModel realm, UserModel user) {
-        // Number hand-out is portal-admin on app.freedriver.io (#107), not a Keycloak required action.
+        // Number hand-out lives in portal-admin on app.freedriver.io (#107).
     }
 
     @Override

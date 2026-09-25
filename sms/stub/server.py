@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
-"""Fail-closed SMS OTP stub.
+"""Fail-closed SMS OTP stub for the Keycloak SPI.
 
-Listens for the Keycloak SPI (POST /otp/send and POST /otp/verify).
-Rejects those calls unless SMS_OTP_SHARED_SECRET is set and the
-X-Freedriver-Sms-Secret header matches. Even a matching secret gets
-503: this process does not send or accept codes. Replace the image
-with the Quarkus service from kaze #107.
-
-GET /health is always 503 so the container stays visibly not-ready.
-No AWS credentials. The phone and the secret are not logged.
+POST /otp/send and POST /otp/verify return 401 unless SMS_OTP_SHARED_SECRET
+is set and the X-Freedriver-Sms-Secret header matches it, and 503 when it
+matches. GET /health returns 503. Logs carry the client address and the
+request line. kaze's Quarkus service (#107) replaces this image.
 """
 
 from __future__ import annotations
@@ -34,10 +30,7 @@ def usable_secret(raw: str | None) -> str | None:
 
 
 def authorize(secret: str | None, header: str | None) -> int:
-    """401 when the shared secret is missing or wrong; 503 when it matches.
-
-    503 is intentional: the stub must not return a send/verify success.
-    """
+    """401 when the shared secret is missing or wrong; 503 when it matches."""
     if secret is None or header is None:
         return 401
     if not hmac.compare_digest(header.encode("utf-8"), secret.encode("utf-8")):
@@ -50,7 +43,7 @@ class StubHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt: str, *args) -> None:
-        # Default logging includes the request target only. Do not add bodies.
+        # Client address and request line.
         sys.stderr.write("%s %s\n" % (self.address_string(), fmt % args))
 
     def _send(self, status: int, payload: dict) -> None:
@@ -85,7 +78,7 @@ class StubHandler(BaseHTTPRequestHandler):
             self._send(413, {"error": "too-large"})
             return
         if length:
-            # Drain and discard. The stub does not use the phone or the code.
+            # Drain and discard the body.
             self.rfile.read(length)
         status = authorize(self.secret, self.headers.get(HEADER))
         if status == 401:
@@ -110,12 +103,12 @@ def main() -> None:
     StubHandler.secret = secret
     if secret is None:
         print(
-            "sms stub: SMS_OTP_SHARED_SECRET missing or placeholder; send/verify reject",
+            "sms stub: SMS_OTP_SHARED_SECRET is empty or the placeholder; send/verify return 401",
             file=sys.stderr,
         )
     else:
         print(
-            "sms stub: shared secret is set; send/verify still fail closed until #107",
+            "sms stub: shared secret set; send/verify return 503 until #107",
             file=sys.stderr,
         )
     server = ThreadingHTTPServer((host, port), StubHandler)

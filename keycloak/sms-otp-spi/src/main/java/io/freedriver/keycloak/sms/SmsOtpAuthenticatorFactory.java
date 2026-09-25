@@ -11,8 +11,8 @@ import org.keycloak.provider.ProviderConfigProperty;
 import java.util.List;
 
 /**
- * Alternative or disabled only. REQUIRED is not offered, so this factor
- * cannot be turned into a gate in front of the password form.
+ * Requirement choices are ALTERNATIVE and DISABLED, so phone sign-in
+ * always sits beside the password form.
  */
 public final class SmsOtpAuthenticatorFactory implements AuthenticatorFactory {
 
@@ -58,8 +58,8 @@ public final class SmsOtpAuthenticatorFactory implements AuthenticatorFactory {
     @Override
     public String getHelpText() {
         return "Phone + SMS code via http://sms:8080 using SMS_OTP_SHARED_SECRET. "
-                + "Alternative only. Does not replace the password form. "
-                + "Fail closed when the secret or sms is unavailable.";
+                + "Runs as an Alternative beside the password form. "
+                + "Fails closed when the secret or sms is unavailable.";
     }
 
     @Override
