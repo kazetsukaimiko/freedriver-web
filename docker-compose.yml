@@ -51,7 +51,7 @@ services:
       KC_HEALTH_ENABLED: "true"
       KC_CACHE: local
       # Shared secret the phone OTP SPI sends to http://sms:8080.
-      SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:?SMS_OTP_SHARED_SECRET is required}
+      SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?KC_BOOTSTRAP_ADMIN_PASSWORD is required}
     depends_on:
@@ -81,7 +81,7 @@ services:
     pull_policy: build
     restart: unless-stopped
     environment:
-      SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:?SMS_OTP_SHARED_SECRET is required}
+      SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
     expose:
       - "8080"
     healthcheck:

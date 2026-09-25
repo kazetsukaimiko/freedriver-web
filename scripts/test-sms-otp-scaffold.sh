@@ -32,18 +32,18 @@ if re.search(r"^\s+ports:\s*$", block, re.M):
     raise SystemExit("sms must not publish ports")
 if "8080:8080" in block or '"8080:' in block or "'8080:" in block:
     raise SystemExit("sms must not map host port 8080")
-REQUIRED = "SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:?"
+SECRET = "SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}"
 env = re.search(r"^    environment:\n((?:      .*\n)+)", block, re.M)
 keys = [] if env is None else re.findall(r"^      ([A-Z0-9_]+):", env.group(1), re.M)
-if "env_file" in block or keys != ["SMS_OTP_SHARED_SECRET"] or REQUIRED not in block:
-    raise SystemExit("sms environment is exactly SMS_OTP_SHARED_SECRET, required via ${SMS_OTP_SHARED_SECRET:?}")
+if "env_file" in block or keys != ["SMS_OTP_SHARED_SECRET"] or SECRET not in block:
+    raise SystemExit("sms environment is exactly SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}")
 if "sms-otp.env.example" in block or "sms-otp.env.example" in compose:
     raise SystemExit("compose must not load the git secret example")
 if "SMS_OTP_SHARED_SECRET" not in block:
     raise SystemExit("sms must receive SMS_OTP_SHARED_SECRET")
 kc = compose.split("\n  keycloak:\n", 1)[1].split("\n  keycloak-db:\n", 1)[0]
-if "env_file" in kc or REQUIRED not in kc:
-    raise SystemExit("keycloak gets SMS_OTP_SHARED_SECRET via ${SMS_OTP_SHARED_SECRET:?} in environment")
+if "env_file" in kc or SECRET not in kc:
+    raise SystemExit("keycloak environment has SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}")
 if "AWS_" in kc or "AKIA" in kc:
     raise SystemExit("do not put AWS credentials on the keycloak service")
 if "keycloak/Dockerfile" not in kc:
@@ -108,6 +108,17 @@ if grep -q -- '-e TECHOPS_PASS=' scripts/provision-keycloak-sms-otp.sh; then
 fi
 
 bash -n scripts/provision-keycloak-sms-otp.sh
+
+# The realm browser flow switches only after the in-container secret check passes.
+python3 - <<'PY'
+from pathlib import Path
+script = Path("scripts/provision-keycloak-sms-otp.sh").read_text()
+check = script.index('[ -z "$v" ] || [ "$v" = "$PLACEHOLDER" ]')
+bind = script.index('-s "browserFlow=${FLOW}"')
+if script.count("browserFlow=") != 1 or check > bind:
+    raise SystemExit("bind browserFlow once, after the secret check")
+print("browser flow binds after the secret check")
+PY
 
 # Phone sign-in pages come from the freedriver login theme through context.form().
 THEME=keycloak/themes/freedriver/login

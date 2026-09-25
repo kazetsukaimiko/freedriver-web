@@ -157,11 +157,16 @@ def test_http_stub() -> None:
     finally:
         httpd.shutdown()
 
-    httpd, base = start(server.PLACEHOLDER, server.OtpService())
-    try:
-        check(request(base, "POST", "/otp/send", server.PLACEHOLDER, phone_body(KNOWN))[0] == 401, "placeholder secret")
-    finally:
-        httpd.shutdown()
+    for secret in ("", server.PLACEHOLDER):
+        otp, _, _ = service()
+        httpd, base = start(secret, otp)
+        try:
+            for header in ("", server.PLACEHOLDER, "real-secret"):
+                for path in ("/otp/send", "/otp/verify"):
+                    status = request(base, "POST", path, header, phone_body(KNOWN))[0]
+                    check(status == 401, "secret %r answers 401 on %s" % (secret, path))
+        finally:
+            httpd.shutdown()
 
 
 def test_http_with_sender() -> None:

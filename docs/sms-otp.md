@@ -21,13 +21,13 @@ The service enforces:
 
 The stub in `sms/stub` implements these rules in `OtpService` and runs with an empty registry and no SMS sender, so `/health`, send and verify answer `503`. The #107 service keeps this HTTP contract, header and limits, and connects the portal-admin registry and the vendor.
 
-Compose passes `SMS_OTP_SHARED_SECRET` from `/opt/freedriver-secrets/.env` to `sms` and `keycloak` through each service's `environment`, and `docker compose up` stops with an error while it is unset.
+Compose passes `SMS_OTP_SHARED_SECRET` from `/opt/freedriver-secrets/.env` to `sms` and `keycloak` through each service's `environment` as `${SMS_OTP_SHARED_SECRET:-}`. When the secret is empty or the placeholder, phone sign-in is off: the Keycloak step skips itself, the stub answers `401`, and the provisioning script leaves the realm flow unchanged.
 
 ## Keycloak SPI
 
 Source: `keycloak/sms-otp-spi`. Provider id: `freedriver-sms-otp`. The Keycloak image build copies the JAR to `/opt/keycloak/providers/freedriver-sms-otp.jar`, copies the `freedriver` login theme to `/opt/keycloak/themes/freedriver`, and runs `kc.sh build`. Requirement choices: ALTERNATIVE and DISABLED.
 
-On the browser flow the password form is the first challenge. Phone sign-in is the last top-level Alternative, reached with "Try another way". When the secret is empty or the placeholder, the SPI marks the attempt as skipped and the flow continues to password.
+On the browser flow the password form is the first challenge. Phone sign-in is the last top-level Alternative, reached with "Try another way".
 
 Pages render through `context.form()` with `freedriver-sms-phone.ftl` and `freedriver-sms-code.ftl` from `keycloak/themes/freedriver/login`, which extends `keycloak.v2`, so the phone pages share the password page's look and Keycloak's security headers. Strings live in the theme's `messages_en.properties`. Both pages carry a "Sign in with password" link that restarts the login on the password form.
 
@@ -49,7 +49,7 @@ This keeps privileged accounts on the password flow and its MFA ([#27](https://g
 
 As root on the VPS:
 
-1. Add `SMS_OTP_SHARED_SECRET` to `/opt/freedriver-secrets/.env` before this change deploys. Generate the value with `openssl rand -base64 32`.
+1. Add `SMS_OTP_SHARED_SECRET` to `/opt/freedriver-secrets/.env`. Generate the value with `openssl rand -base64 32`.
 2. Recreate both services so they pick it up:
 
 ```shell
@@ -59,6 +59,6 @@ docker compose --env-file /opt/freedriver-secrets/.env up -d --build keycloak sm
 
 3. Run `./scripts/provision-keycloak-sms-otp.sh`.
 
-The script copies the built-in `browser` flow to `browser-freedriver` and adds `freedriver-sms-otp` as the last top-level ALTERNATIVE on the copy. It checks that `auth-username-password-form` stays REQUIRED inside the forms Alternative. It creates the `phone-sign-in` group, adds the user profile attribute `phone` with admin-only view and edit, and sets the realm login theme to `freedriver`. Once the Keycloak container has a real secret, it sets `browser-freedriver` as the realm browser flow. Otherwise it exits 1 and the realm keeps its current flow.
+The script copies the built-in `browser` flow to `browser-freedriver` and adds `freedriver-sms-otp` as the last top-level ALTERNATIVE on the copy. It checks that `auth-username-password-form` stays REQUIRED inside the forms Alternative. It creates the `phone-sign-in` group, adds the user profile attribute `phone` with admin-only view and edit, and sets the realm login theme to `freedriver`. Once the Keycloak container has a real secret, it sets `browser-freedriver` as the realm browser flow.
 
 `sms` reports unhealthy while the stub answers 503 on `/health`. Keycloak depends only on `keycloak-db`, so password login comes up either way.

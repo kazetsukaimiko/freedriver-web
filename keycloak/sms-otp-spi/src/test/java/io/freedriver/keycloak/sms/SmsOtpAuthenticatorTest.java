@@ -165,10 +165,21 @@ class SmsOtpAuthenticatorTest {
     }
 
     @Test
-    void emptySecretMarksAttempted() {
-        SmsOtpAuthenticator off = new SmsOtpAuthenticator(new SmsOtpClient(), Optional::empty);
-        off.authenticate(context);
-        assertEquals("attempted", outcome);
+    void emptyOrPlaceholderSecretSkipsTheStep() {
+        for (String raw : new String[] {null, "", SmsOtpConfig.PLACEHOLDER}) {
+            SmsOtpAuthenticator off = new SmsOtpAuthenticator(new SmsOtpClient(), () -> SmsOtpConfig.normalize(raw));
+            outcome = null;
+            off.authenticate(context);
+            assertEquals("attempted", outcome);
+            outcome = null;
+            params = new MultivaluedHashMap<>();
+            params.add("phone", PHONE);
+            off.action(context);
+            assertEquals("attempted", outcome);
+            assertEquals(false, off.configuredFor(null, null, null));
+        }
+        assertTrue(sends.isEmpty());
+        assertTrue(pages.isEmpty());
     }
 
     @Test
