@@ -3,8 +3,8 @@
 
 OtpService holds the rules: a registry of provisioned numbers (phone -> Keycloak
 username), 6-digit codes that expire, and per-phone limits on sends and wrong codes.
-main() starts it with an empty registry and no SMS sender, so /health, send and
-verify answer 503 until kaze's Quarkus service (#107) replaces this image.
+main() starts it with an empty registry and sender=None, so /health, send and
+verify answer 503. The Quarkus sms service (#107) replaces this image.
 """
 
 from __future__ import annotations

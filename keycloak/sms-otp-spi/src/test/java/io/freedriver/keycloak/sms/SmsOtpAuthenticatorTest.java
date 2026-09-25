@@ -263,7 +263,7 @@ class SmsOtpAuthenticatorTest {
             post("code", "000000");
             assertPage(SmsOtpAuthenticator.CODE_TEMPLATE, SmsOtpAuthenticator.MSG_WRONG_CODE);
         }
-        // A malformed code counts as a wrong code without calling sms.
+        // A malformed code counts as a wrong code and skips the sms call.
         post("code", "12ab");
         assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_TOO_MANY_TRIES);
         assertNull(notes.get(SmsOtpAuthenticator.NOTE_PHONE));

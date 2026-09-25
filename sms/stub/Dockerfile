@@ -1,4 +1,4 @@
-# Fail-closed stand-in until kaze ships the Quarkus sms service (#107).
+# Fail-closed stub of the sms service, replaced by the Quarkus sms service (#107).
 # Listens on 8080.
 FROM python:3.12-alpine
 
