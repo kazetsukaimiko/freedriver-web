@@ -6,7 +6,7 @@
   --brand-pad-x: 0.35rem;
   --brand-left: calc(var(--nav-pad-x) + var(--brand-pad-x));
   --brand-top: calc(var(--nav-pad-y) + var(--brand-pad-y));
-  --brand-width: calc(var(--nav-width) - (var(--nav-pad-x) * 2) - (var(--brand-pad-x) * 2));
+  --brand-size: 1.5rem;
 }
 
 .app {
@@ -27,12 +27,31 @@
 .nav-brand {
   display: block;
   padding: var(--brand-pad-y) var(--brand-pad-x) 0.5rem;
+  font-size: var(--brand-size);
+  text-decoration: none;
 }
 
-.nav-brand img {
+/* Icon + live "Freedriver" text in one row. */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  width: max-content;
+  color: #ffffff;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.brand.is-light {
+  color: #0f2a47;
+}
+
+.brand-icon {
   display: block;
-  width: 100%;
-  height: auto;
+  flex: none;
+  width: auto;
+  height: 1.2em;
 }
 
 .nav nav {
@@ -322,6 +341,11 @@ dd {
   gap: 0.75rem;
 }
 
+.loader {
+  justify-items: center;
+  text-align: center;
+}
+
 .status-page .mark-art,
 .loader .mark-art,
 .error .mark-art {
@@ -331,15 +355,6 @@ dd {
 
 .status-page .mark-art {
   margin: 0 auto 1rem;
-}
-
-.snow-spin {
-  animation: snow-spin 1.4s linear infinite;
-}
-
-@keyframes snow-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
 }
 
 .splash {
@@ -360,30 +375,28 @@ dd {
   opacity: 0;
 }
 
-.splash-lockup {
+.splash-brand {
   position: absolute;
   z-index: 1;
   left: 50%;
   top: 50%;
-  width: min(28rem, 90vw);
-  height: auto;
+  font-size: min(4rem, 11vw);
   transform: translate(-50%, -50%);
-  transform-origin: top left;
   transition:
     left 0.8s cubic-bezier(0.22, 1, 0.36, 1),
     top 0.8s cubic-bezier(0.22, 1, 0.36, 1),
-    width 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+    font-size 0.8s cubic-bezier(0.22, 1, 0.36, 1),
     transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.splash-lockup.is-docked {
+.splash-brand.is-docked {
   left: var(--brand-left);
   top: var(--brand-top);
-  width: var(--brand-width);
+  font-size: var(--brand-size);
   transform: none;
 }
 
-.app.is-splashing .nav-brand img {
+.app.is-splashing .nav-brand .brand {
   visibility: hidden;
 }
 
@@ -403,7 +416,7 @@ dd {
 @media (max-width: 720px) {
   :root {
     --nav-width: 100%;
-    --brand-width: 9.5rem;
+    --brand-size: 1.25rem;
     --brand-left: var(--nav-pad-x);
     --brand-top: var(--nav-pad-y);
   }
@@ -422,7 +435,6 @@ dd {
   }
 
   .nav-brand {
-    width: var(--brand-width);
     padding: 0;
   }
 

@@ -329,7 +329,7 @@ export function Dashboard({ search }: { search: string }) {
             Home status
           </h2>
           <p className="loader">
-            <img className="mark-art snow-spin" src="/assets/freedriver/pages/freedriver-loader.png" alt="" />
+            <img className="mark-art" src="/assets/freedriver/pages/freedriver-loader.svg" alt="Loading" />
             Waiting for home.
           </p>
         </section>

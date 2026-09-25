@@ -8,15 +8,14 @@ Backgrounds: production files are transparent PNGs. previews/ are on charcoal.
 
 logos/
   freedriver-icon.png       snowflake mark only (also app icon / favicon source)
-  freedriver-lockup.png     snowflake + FREEDRIVER wordmark
-  freedriver-wordmark.png   FREEDRIVER only (ice-slash I)
+  freedriver-icon.svg       icon v2 vector master (#127)
   favicon.png               256px snowflake
   favicon-32.png            32px
 
 pages/
   freedriver-404.png        fractured snowflake + 404
   freedriver-500.png        cracked snowflake + 500
-  freedriver-loader.png     same as icon (spin/pulse in CSS)
+  freedriver-loader.svg     icon v2 animated loader, static under prefers-reduced-motion (#127)
   freedriver-denied.png     intact red snowflake (401/403)
 
 previews/                   review-only, do not ship if you can avoid it
