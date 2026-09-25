@@ -19,7 +19,7 @@ The service enforces:
 - Code expiry. Codes are 6 digits, valid for 5 minutes, one pending code per number, and a code works once.
 - Attempts per phone. 5 wrong codes per number in 15 minutes drop the pending code, and verify answers `invalid-code` for that number until the window ends. 5 sends per number in 15 minutes, after which send answers `429`. Both limits count every number the same way.
 
-The stub in `sms/stub` implements these rules in `OtpService` and runs with an empty registry and no SMS sender, so `/health`, send and verify answer `503`. The #107 service keeps this HTTP contract, header and limits, and connects the portal-admin registry and the vendor.
+The stub in `sms/stub` implements these rules in `OtpService` and starts with an empty registry and an unset SMS sender, so `/health`, send and verify answer `503`. The #107 service keeps this HTTP contract, header and limits, and connects the portal-admin registry and the vendor.
 
 Compose passes `SMS_OTP_SHARED_SECRET` from `/opt/freedriver-secrets/.env` to `sms` and `keycloak` through each service's `environment` as `${SMS_OTP_SHARED_SECRET:-}`. When the secret is empty or the placeholder, phone sign-in is off: the Keycloak step skips itself, the stub answers `401`, and the provisioning script leaves the realm flow unchanged.
 
@@ -37,13 +37,12 @@ Per auth session, kept in auth session notes:
 - A wrong code keeps the code form with "That code didn't match. Try again." The 5th wrong code clears the pending code and returns to the phone form with "Too many tries. Enter your phone number to get a new code." while texts remain.
 - 4 texts per auth session: the first code and 3 resends. Entering the number again draws on the same budget. Once the 4 texts are used, the code page shows "Code limit reached. Try again in 15 minutes." with "Sign in with password" as its only link. The phone form, including after a 5th wrong code, shows the same message and skips the send.
 
-After sms verifies a code, the SPI signs in the Keycloak user named by `username` when all of these hold, and denies otherwise, including on any lookup error:
+After sms verifies a code, the SPI signs in the Keycloak user named by `username` when both of these hold:
 
 - the user is enabled and its `phone` attribute, normalized like the typed number (whitespace, dots, dashes and parentheses removed), equals the verified number;
-- the user is a direct member of the top-level group `phone-sign-in`;
-- the user's effective roles (direct, group and composite) include no realm or client role named `portal-admin` and no `realm-management` client role.
+- the user is a direct member of the top-level group `phone-sign-in`.
 
-This keeps privileged accounts on the password flow and its MFA ([#27](https://github.com/kazetsukaimiko/freedriver-web/issues/27)).
+The SPI denies a user whose effective roles (direct, group and composite) include a realm or client role named `portal-admin` or any `realm-management` client role, and denies on any lookup error. Those privileged accounts sign in with the password flow and its MFA ([#27](https://github.com/kazetsukaimiko/freedriver-web/issues/27)).
 
 ## Techops steps
 

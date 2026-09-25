@@ -1,27 +1,20 @@
-# TEMPLATE ONLY. Never compose-mount this file as the live broker ACL.
-# Apply writes /opt/freedriver-secrets/mosquitto/acl (exact instance topics)
-# and drops leftover freedriver/v1/home/... in that same write.
-# Git must not ship __INSTANCE_ID__ or any fake id as the live ACL.
+# Template for the live broker ACL. scripts/provision-mosquitto.sh fills in
+# __INSTANCE_ID__ and writes /opt/freedriver-secrets/mosquitto/acl, which
+# replaces the whole previous ACL (including leftover freedriver/v1/home/...
+# rules) in one write. The live ACL exists on the VPS.
 #
-# Exact-topic ACLs. No wildcards, no $SYS, no +, no #.
-# Never freedriver/v1/#. Never freedriver/v1/+/appliances or .../commands.
-# instanceName is never a topic segment or ACL. Boards stay off MQTT.
-# No C/DB plugin. No portal paste UI.
+# Each rule names one exact topic, freedriver/v1/<instanceId>/appliances or
+# freedriver/v1/<instanceId>/commands. The topic segment is the instanceId.
 #
-# instanceId is minted by the house (UUID hex+hyphens). Do not invent a
-# UUID in git. Do not enforce a UUIDv4 version nibble. That already
-# excludes /, +, #. kaze may hand the house-minted id to Techops:
+# instanceId is the UUID the house mints (hex digits and hyphens, any UUID
+# version). kaze hands the house-minted id to Techops, who runs:
 #   INSTANCE_ID=<house-minted-uuid> ./scripts/provision-mosquitto.sh
 #
-# v1 one house: shared users autonomy and api, exact-topic only.
-# api is not a wildcard superuser. No +/# bootstrap. A later instance
-# gets its own autonomy user — do not share autonomy across instances.
+# v1 serves one house with the broker users autonomy and api, each holding the
+# two exact-topic rules below. Each later instance gets its own autonomy user.
 #
-# retain=false is a publisher rule. The broker cannot forbid retain.
-# Publishers MUST set retain=false on both topics. Do not retain appliances.
-# live-commands stays false. Do not open 1883.
-# QoS 1 is a client convention; the broker does not enforce it.
-# Quarkus does not SSH or restart Mosquitto.
+# Publishers set retain=false on both topics and publish with QoS 1.
+# freedriver.appliances.live-commands stays false.
 
 user autonomy
 topic write freedriver/v1/__INSTANCE_ID__/appliances
