@@ -8,3 +8,7 @@ mqtt/.flattened-pom.xml
 mqtt-paho/target/
 mqtt-paho/.flattened-pom.xml
 app/target/
+keycloak/sms-otp-spi/target/
+keycloak/providers/*.jar
+__pycache__/
+*.pyc

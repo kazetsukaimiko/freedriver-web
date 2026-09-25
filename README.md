@@ -20,7 +20,8 @@ The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{gra
   - `app.freedriver.io` — Quinoa app behind Caddy
   - `grafana.freedriver.io` — 404 on purpose; Grafana is loopback-only
   - `mqtt.freedriver.io` — 404 on purpose (ACME HTTP-01). MQTTS is host 8883, not Caddy.
-- Keycloak 26 + local Postgres 16
+- Keycloak 26.3 + local Postgres 16. The image build adds the phone OTP provider at `/opt/keycloak/providers/freedriver-sms-otp.jar`.
+- `sms` — internal service at `http://sms:8080` on the compose network. Stub until kaze ships [#107](https://github.com/kazetsukaimiko/freedriver-web/issues/107).
 - Grafana + Loki + Prometheus + Alloy (see Observability)
 - Mosquitto 2.1.2 MQTTS at `mqtt.freedriver.io:8883` (host 8883 only; no 1883). Connect notes: [docs/mqtt-connect.md](docs/mqtt-connect.md).
 
@@ -50,6 +51,10 @@ The product app lives in `app/`: Quarkus 3.38 (Java 21) with Quinoa serving a Re
 Requires Java 23. Quinoa can install Node for the UI build. Open http://localhost:8080 for the dashboard (`GET /api/hello` and `GET /api/build` are public). Production is `https://app.freedriver.io` via Caddy → the Compose `app` service.
 
 `mqtt-contract/`, `mqtt/`, and `mqtt-paho/` are reactor siblings (`io.freedriver:freedriver-mqtt-contract`, `freedriver-mqtt`, `freedriver-mqtt-paho`). The app does not pin autonomy's GitHub Packages jar.
+
+## SMS OTP scaffold
+
+Phone + code sign-in for house users. The `sms` service and the Keycloak `freedriver-sms-otp` authenticator share `SMS_OTP_SHARED_SECRET` from `/opt/freedriver-secrets/.env` on the VPS. Setup and flow steps: [docs/sms-otp.md](docs/sms-otp.md).
 
 ## Appliances API
 

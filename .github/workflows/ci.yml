@@ -176,6 +176,12 @@ jobs:
             exit 1
           fi
 
+      - name: SMS OTP scaffold is internal and fail-closed
+        run: ./scripts/test-sms-otp-scaffold.sh
+
+      - name: Keycloak SMS OTP SPI tests
+        run: ./mvnw -B -f keycloak/sms-otp-spi/pom.xml test
+
       - name: VPS image must not bake a Packages token
         run: |
           if grep -E 'GITHUB_TOKEN|GH_TOKEN|PACKAGES_TOKEN' app/src/main/docker/Dockerfile.compose; then
