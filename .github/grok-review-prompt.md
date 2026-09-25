@@ -68,6 +68,18 @@ HUNT LIST (CLASSES OF PROBLEM — GENERALIZE, DO NOT ONLY GREP THESE STRINGS)
 If you see a new instance of a class already ticketed (#57 service/JAX-RS, #58 auth/rate-limit), say so and still flag it if the PR makes it worse.
 
 ============================================================
+TEAM WRITING POLICY (PROSE IN THE CHANGE)
+============================================================
+
+Team writing policy (kaze, 2026-09-25): specs, docs, PR descriptions, commit messages, and code comments state what something is and does, once. A note about a specific file (for example an env.example placeholder) lives in that file.
+
+Review the prose the change adds or edits: docs, the PR body above, code comments, log and error messages, and commit messages when they appear in the input. Raise a should-fix finding (In-diff: yes) when that prose:
+- lists what something is not or does not do ("no public hostname", "does not print the secret", "there is no Caddy site"), or
+- repeats the same fact across files, or carries a note about one file in a different file.
+
+Each such finding cites the team writing policy, quotes the sentence, and gives a rewrite that states what the thing is or does. Behavior constraints that code and tests enforce (guards, CI checks, assertions) are reviewed as behavior under the rest of this rubric; this finding covers the prose that describes them.
+
+============================================================
 PROCESS
 ============================================================
 
@@ -103,6 +115,12 @@ Verdict: approve-as-is | approve-with-tickets | comment | request-changes
 - Do not approve while adjacent JAX-RS-in-service (or equivalent) sits in a file this PR edited, unless you explicitly listed it and said “already ticketed, don’t balloon” AND the PR did not make it worse
 
 If there are no findings, say so in one paragraph and verdict `approve-as-is`. Do not invent nits to look busy.
+
+Writing style for this review:
+- The summary states what the change does, in positive terms, each point once.
+- Each finding names the concrete problem and the fix: what the code or prose does now, and what it should do instead.
+- Each fact appears once. A later finding that depends on an earlier one points to it by file and line.
+- Suggestions describe the target state, e.g. "ApplianceService throws ApplianceNotFoundException; ApplianceNotFoundExceptionMapper owns the 404."
 
 ============================================================
 DO NOT
