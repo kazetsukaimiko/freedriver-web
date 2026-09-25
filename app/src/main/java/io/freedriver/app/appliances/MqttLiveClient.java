@@ -19,7 +19,7 @@ import java.util.UUID;
 
 /**
  * Live MQTT adapter on the same CDI bus as {@link MockAutonomy}.
- * Compiled always; connects only when {@code live-commands=true}. Default/prod stays off.
+ * Always compiled; connects only when {@code live-commands=true}.
  */
 @ApplicationScoped
 public class MqttLiveClient {

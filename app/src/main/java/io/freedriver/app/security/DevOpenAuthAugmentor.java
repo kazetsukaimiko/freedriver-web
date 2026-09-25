@@ -10,11 +10,11 @@ import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 
 /**
- * The single {@code %dev} auth path. {@code @IfBuildProfile("dev")} only — never test or prod.
- * quarkus:dev has no Keycloak. This grants principal {@code dev} and role {@code dashboard}
- * to anonymous callers so {@code @RolesAllowed} actually runs.
- * Authorization stays on: do not set {@code quarkus.security.auth.enabled-in-dev-mode=false}.
- * Tests use {@code %test} and {@code @TestSecurity} — they 401/403 without it.
+ * The single {@code %dev} auth path, built into the dev profile only via {@code @IfBuildProfile("dev")}.
+ * quarkus:dev runs standalone, so this grants principal {@code dev} and role {@code dashboard}
+ * to anonymous callers and {@code @RolesAllowed} runs as it does in prod.
+ * Authorization stays on in dev mode (see application.properties).
+ * Tests authenticate with {@code @TestSecurity} under {@code %test}.
  */
 @ApplicationScoped
 @IfBuildProfile("dev")
