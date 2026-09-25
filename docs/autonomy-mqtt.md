@@ -21,7 +21,7 @@ Do **not** depend on `io.freedriver.autonomy:autonomy-mqtt-contract`. Do **not**
 | | Autonomy (home) | Quarkus (`api`) |
 | --- | --- | --- |
 | Host | `mqtt.freedriver.io:8883` | compose hostname `mosquitto:8883` |
-| TLS | MQTTS — **must verify** (no skip-verify) | MQTTS on the docker network |
+| TLS | MQTTS — **must verify** against the public CA (no skip-verify). Do not pin a leaf fingerprint. | MQTTS on the docker network |
 | User | `autonomy` (this instance only) | `api` (exact-topic for this instance) |
 | Auth | broker password, not Keycloak | broker password, not Keycloak |
 
@@ -31,13 +31,13 @@ Protocol: MQTT only. No WebSockets. No plaintext 1883.
 
 ### TLS
 
-Verify the server certificate for `mqtt.freedriver.io`. Do not disable hostname or chain checks.
+Let's Encrypt is live on `mqtt.freedriver.io:8883`. Verify the server certificate against the public CA. Do not disable hostname or chain checks. No skip-verify. Do not pin a leaf fingerprint.
 
-Ask **Techops** for the current trust material and Let’s Encrypt status. The broker may still be on a self-signed cert until LE replaces it; when it is LE, trust the public chain as usual. Do not copy certs or passwords into this doc or into git.
+The `mosquitto-cert-sync` sidecar copies Caddy’s cert onto the broker (`scripts/sync-mosquitto-le-cert.sh`) — see [mqtt-connect.md](mqtt-connect.md). Do not copy certs or passwords into this doc or into git.
 
 ### Passwords
 
-Broker passwords live on the VPS at `/opt/freedriver-secrets/mosquitto/*.pass` (`autonomy.pass`, `api.pass`). **Ask Techops.** Do not put secrets in this repo or in issues.
+Broker passwords live on the VPS at `/opt/freedriver-secrets/mosquitto/*.pass` (`autonomy.pass`, `api.pass`). **Ask Techops** (or read that path). Do not put secrets in this repo or in issues.
 
 v1 one house: shared `autonomy` + `api` users, exact-topic only. `api` is not a wildcard superuser. No `+`/`#` bootstrap. A later instance gets its own autonomy user — do not share `autonomy` across instances.
 
@@ -45,7 +45,18 @@ v1 one house: shared `autonomy` + `api` users, exact-topic only. `api` is not a 
 
 One broker can carry more than one autonomy instance. Interpolate `instanceId` (UUID hex + hyphens). Version nibbles are not checked. No wildcards (`+`, `#`), no `$SYS`, no `freedriver/v1/#`. Never `freedriver/v1/+/appliances` or `.../commands`. `instanceName` is never a topic segment or ACL. Boards stay off MQTT.
 
-The first-house `instanceId` is minted by the house. Do not invent a UUID in git. kaze may hand that id to Techops. First-house apply is Techops + `/opt/freedriver-secrets/mosquitto/acl` (git keeps `mosquitto/acl.template` only; compose does not mount it as live). See [mqtt-connect.md](mqtt-connect.md).
+Long-term, **freedriver-web owns minting `instanceId`**. First house is not an admin screen. Quarkus does not mint for v1 apply. The house does **not** mint the first id.
+
+First-house `instanceId` (UUID hex+hyphens; do not enforce a v4 nibble): `877b33d0-6e53-4212-a53f-52107383eec2`.
+
+Use these exact topics (retain=false, QoS 1, `live-commands` stays `false`):
+
+- `freedriver/v1/877b33d0-6e53-4212-a53f-52107383eec2/appliances`
+- `freedriver/v1/877b33d0-6e53-4212-a53f-52107383eec2/commands`
+
+A display name for the first house will live in the portal/DB later. That name is UX-only — never a topic segment, never in ACL/compose/code.
+
+First-house apply is Techops + `/opt/freedriver-secrets/mosquitto/acl`. Mint is locked; `877b33d0-6e53-4212-a53f-52107383eec2` is the live first-house instanceId. The apply command on [mqtt-connect.md](mqtt-connect.md) is the repeatable procedure (idempotent; do not invent another UUID).
 
 | | Topic | Publisher | Subscriber | QoS | Retain |
 | --- | --- | --- | --- | --- | --- |
@@ -134,8 +145,8 @@ Either:
 
 | Do | Do not |
 | --- | --- |
-| Connect as `autonomy` to `mqtt.freedriver.io:8883` with TLS verify | Skip TLS verify |
-| Publish Topic A, subscribe Topic B for your `instanceId` | Publish Topic B or subscribe Topic A |
+| Connect as `autonomy` to `mqtt.freedriver.io:8883` with TLS verify against the public CA | Skip TLS verify, disable hostname/chain checks, or pin a leaf fingerprint |
+| Publish Topic A, subscribe Topic B for `877b33d0-6e53-4212-a53f-52107383eec2` | Publish Topic B, subscribe Topic A, or invent another `instanceId` |
 | Echo `appliedCommandId` on the next map | Depend on a closed Freedriver library suite PR |
-| Ask Techops for password + current cert | Put secrets in the doc or invent a Maven Central version |
-| Speak to the broker now | Wait for or flip `live-commands` / OIDC |
+| Ask Techops for `/opt/freedriver-secrets/mosquitto/autonomy.pass` | Put secrets in the doc or invent a Maven Central version |
+| Speak to the broker after Techops applies | Run the VPS apply, flip `live-commands`, or open 1883 |

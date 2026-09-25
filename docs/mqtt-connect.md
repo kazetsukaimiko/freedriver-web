@@ -1,16 +1,78 @@
-# MQTT connect (Mosquitto MQTTS)
+# MQTT connect — first-house Mosquitto (v1)
 
-Not live until the #25 lockdown is merged (PR #29). Broker and Keycloak role wiring is #24; product MQTT work is #21.
+Agent-followable first-house provisioning. Broker/Keycloak wiring is #24; product MQTT is #21; command-live is #27. File shape for instance ACLs is on main (PR #87). Live VPS apply is still [#59](https://github.com/kazetsukaimiko/freedriver-web/issues/59) — **do not close #59 from a docs PR.**
+
+On GitHub: kaze / [@kazetsukaimiko](https://github.com/kazetsukaimiko).
+
+## Locks (read before any VPS or client work)
+
+- **Mint is locked.** `877b33d0-6e53-4212-a53f-52107383eec2` is the live first-house instanceId. The apply command below is the repeatable procedure (idempotent; do not invent another UUID).
+- Do **not** enable `live-commands`. Do **not** open 1883.
+- Do **not** put a house display name or any appliance name in code, compose, ACL, or as a topic segment. Names are UX-only. The first house will have a display name in the portal/DB later — never bake that name into a config an agent would copy.
+- Never put a broker password in this doc, in git, or in an issue.
+
+## Who mints `instanceId`
+
+Long-term, **freedriver-web owns minting `instanceId`**. First house is **not** an admin screen. Quarkus does **not** mint for v1 apply. Techops runs the secrets-file apply.
+
+The first-house `instanceId` for the apply command (UUID hex+hyphens; do **not** enforce a UUIDv4 version nibble):
+
+```
+877b33d0-6e53-4212-a53f-52107383eec2
+```
+
+That already excludes `/`, `+`, `#`. Do not invent another UUID. Do not add a portal paste UI. The house does **not** mint the first id.
+
+## First-house apply (Techops only)
+
+Live ACL is `/opt/freedriver-secrets/mosquitto/acl`. Git keeps `mosquitto/acl.template` only. Compose does **not** mount the git template as live (`mosquitto.conf` uses `acl_file /mosquitto/config/secrets/acl` on the existing `/opt/freedriver-secrets/mosquitto` bind). Do not ship `__INSTANCE_ID__` or any fake id as the compose-mounted ACL.
+
+Copy-paste apply (Techops, root/sudo):
+
+```
+INSTANCE_ID=877b33d0-6e53-4212-a53f-52107383eec2 ./scripts/provision-mosquitto.sh
+```
+
+(`./scripts/provision-mosquitto.sh --instance-id 877b33d0-6e53-4212-a53f-52107383eec2` is the same.)
+
+That **one write** puts exact topics into `/opt/freedriver-secrets/mosquitto/acl` and drops leftover `freedriver/v1/home/...` in the same step:
+
+- `freedriver/v1/877b33d0-6e53-4212-a53f-52107383eec2/appliances`
+- `freedriver/v1/877b33d0-6e53-4212-a53f-52107383eec2/commands`
+
+It does not write a checkout/git ACL. A later deploy cannot rsync the live ACL back to a placeholder.
+
+**Techops runs the script and restarts mosquitto.** The script does **not** restart by itself. Quarkus does **not** SSH or restart the broker. GitHub Actions must not run the secrets path — deploy only `mkdir`/`chown`s `/opt/freedriver-storage/mosquitto` (uid 1883). CI may run `--acl-only` into a temp file; it must not treat the repo template as the live ACL.
+
+The script is idempotent for pass/cert files (never overwrites existing ones). The broker will not start until the secrets ACL exists.
+
+## Autonomy connect (after ACL is live)
+
+Autonomy (home) talks to the public broker. Quarkus never uses this hostname.
+
+| | Autonomy (home) |
+| --- | --- |
+| Host | `mqtt.freedriver.io` |
+| Port | `8883` (MQTTS). No WebSockets. No plaintext 1883. |
+| User | `autonomy` |
+| Password | Ask Techops, or read `/opt/freedriver-secrets/mosquitto/autonomy.pass` on the VPS. **Never put that password in this doc.** |
+| TLS | **Must verify** against the public CA. Let's Encrypt is live on `mqtt.freedriver.io:8883`. No skip-verify. No disabled hostname or chain checks. Do not pin a leaf fingerprint. |
+| Topic A (publish) | `freedriver/v1/877b33d0-6e53-4212-a53f-52107383eec2/appliances` |
+| Topic B (subscribe) | `freedriver/v1/877b33d0-6e53-4212-a53f-52107383eec2/commands` |
+| Retain | `false` on both |
+| QoS | `1` (client convention; the broker does not enforce it) |
+| `live-commands` | stays `false` |
+
+JSON and handshake: [autonomy-mqtt.md](autonomy-mqtt.md). Portal REST: [appliances.md](appliances.md).
 
 ## Broker
 
-- Host: `mqtt.freedriver.io:8883` (MQTTS / TLS). Compose publishes host 8883. Self-signed until Let's Encrypt; autonomy must verify TLS (no skip-verify).
-- Protocol: MQTT only — no WebSockets, no plaintext 1883 listener
-- Auth: v1 one house shares broker users `autonomy` and `api` (not Keycloak passwords). No anonymous. Exact-topic only — no `+`/`#` bootstrap. `api` is not a wildcard superuser. Each later instance gets its own autonomy user — do not share `autonomy` across instances.
 - Image: `eclipse-mosquitto:2.1.2-alpine`
-- QoS 1 is the client convention. The broker does not enforce QoS.
-
-Sysadmin still needs `mqtt.freedriver.io` A → `138.197.90.42`. Let's Encrypt can replace the self-signed cert later. Home IP is treated as dynamic; 8883 is world-reachable with broker passwords and exact-topic ACLs. Not command-live until #27.
+- Compose publishes host 8883. Home IP is treated as dynamic; 8883 is world-reachable with broker passwords and exact-topic ACLs.
+- Sysadmin still needs `mqtt.freedriver.io` A → `138.197.90.42`.
+- Auth: v1 one house shares broker users `autonomy` and `api` (not Keycloak). No anonymous. Exact-topic only — no `+`/`#`. `api` is not a wildcard superuser. Each later instance gets its own autonomy user — do not share `autonomy` across instances.
+- Persistence: `/opt/freedriver-storage/mosquitto`.
+- Not command-live until #27.
 
 ## Secrets (not in git)
 
@@ -23,12 +85,6 @@ Sysadmin still needs `mqtt.freedriver.io` A → `138.197.90.42`. Let's Encrypt c
 | `/opt/freedriver-secrets/mosquitto/server.crt` | TLS cert |
 | `/opt/freedriver-secrets/mosquitto/server.key` | TLS key |
 
-Git keeps `mosquitto/acl.template` only. Compose does **not** mount that template (or any git ACL) as live. `mosquitto.conf` sets `acl_file /mosquitto/config/secrets/acl` on the existing `/opt/freedriver-secrets/mosquitto` bind. Do not ship `__INSTANCE_ID__` or any fake id as the compose-mounted ACL. No portal paste UI.
-
-Provision on the VPS with `scripts/provision-mosquitto.sh` (root/sudo). Idempotent; never overwrites existing pass or cert files. GitHub Actions must not run the secrets path — deploy only `mkdir`/`chown`s `/opt/freedriver-storage/mosquitto` (uid 1883). CI may run `--acl-only` into a temp file; it must not treat the repo template as the live ACL.
-
-Persistence: `/opt/freedriver-storage/mosquitto`. The broker will not start until the secrets ACL exists — apply first. The provision script does not restart Mosquitto. Quarkus does not SSH or restart it.
-
 ## Topics
 
 Exact topics only. No wildcards (`+`, `#`), no `$SYS`, no `freedriver/v1/#`. Never `freedriver/v1/+/appliances` or `freedriver/v1/+/commands`.
@@ -38,27 +94,25 @@ Exact topics only. No wildcards (`+`, `#`), no `$SYS`, no `freedriver/v1/#`. Nev
 | `freedriver/v1/{instanceId}/appliances` | that instance's autonomy user | api |
 | `freedriver/v1/{instanceId}/commands` | api | that instance's autonomy user |
 
-`instanceId` is a UUID (hex + hyphens) on the topic. Do not enforce a UUIDv4 version nibble. That already excludes `/`, `+`, `#`. `instanceName` is UX-only and is never a topic segment or ACL. Boards stay off MQTT.
+`instanceId` is the UUID topic segment. `instanceName` is UX-only and is never a topic segment or ACL. Boards stay off MQTT.
 
-v1 is one house: shared `autonomy` + `api` users, exact-topic only. `api` is not a wildcard superuser. A later instance gets its own autonomy broker user. Do not share one `autonomy` user across instances.
+v1 is one house: shared `autonomy` + `api`, exact-topic only. `api` is not a wildcard superuser.
 
-The first-house `instanceId` is minted by the house (UUID hex + hyphens). Do not invent a UUID in git. Do not add a portal paste UI. kaze may hand that house-minted id to Techops. First-house apply is **Techops + the secrets file**:
-
-```
-INSTANCE_ID=<house-minted-uuid> ./scripts/provision-mosquitto.sh
-```
-
-or `./scripts/provision-mosquitto.sh --instance-id <house-minted-uuid>`. That one write puts exact instance topics into `/opt/freedriver-secrets/mosquitto/acl` and drops leftover `freedriver/v1/home/...` in the same step. It does not write a checkout/git ACL. A later deploy cannot rsync the live ACL back to a placeholder.
-
-**retain=false on both topics for v1.** The broker cannot forbid retain; publishers must set it. That instance's autonomy user must publish appliances with retain=false. `api` must publish commands with retain=false. Do not retain appliances. `live-commands` stays `false`. Do not open 1883.
+**retain=false on both topics for v1.** The broker cannot forbid retain; publishers must set it. Do not retain appliances.
 
 ## TLS
 
-Self-signed cert for `mqtt.freedriver.io` (365 days) until Let's Encrypt replaces it. Home/autonomy clients should expect to trust that cert (or the later LE cert).
+Let's Encrypt is live on `mqtt.freedriver.io:8883`. Autonomy must verify the server certificate against the public CA. No skip-verify. No disabled hostname or chain checks. Do not pin a leaf fingerprint.
+
+## Let's Encrypt on 8883 (Techops)
+
+Let's Encrypt is live on `mqtt.freedriver.io:8883`. Caddy issues the name via the 404 stub (HTTP-01). The `mosquitto-cert-sync` sidecar copies that cert onto `/opt/freedriver-secrets/mosquitto/server.{crt,key}` and SIGHUPs mosquitto (shared PID namespace; no Docker socket). Manual: `scripts/sync-mosquitto-le-cert.sh`. Re-running provision will not overwrite the live pair.
+
+`live-commands` stays `false`. Do not open 1883. Do not invent another UUID.
 
 ## Quarkus
 
-On the compose network, connect to hostname `mosquitto` port 8883. Never use `mqtt.freedriver.io` from Quarkus — that name is for public/home clients. `MqttLiveClient` is compiled against that host; `live-commands` stays false so it does not connect. Instance ids are `FREEDRIVER_MQTT_INSTANCE_IDS` (not git). Password is `FREEDRIVER_MQTT_API_PASSWORD`.
+On the compose network, connect to hostname `mosquitto` port 8883. **Never** use `mqtt.freedriver.io` from Quarkus — that name is for public/home clients. `MqttLiveClient` is compiled against that host; `live-commands` stays false so it does not connect. Instance ids are `FREEDRIVER_MQTT_INSTANCE_IDS` (not git). Password is `FREEDRIVER_MQTT_API_PASSWORD`.
 
 Compose injects OIDC on the `app` service only (not the image, not the SPA):
 
@@ -67,7 +121,6 @@ Compose injects OIDC on the `app` service only (not the image, not the SPA):
 - `QUARKUS_OIDC_CREDENTIALS_SECRET` from `/opt/freedriver-secrets/.env` (copied from `keycloak-freedriver-api.secret`)
 
 `quarkus.oidc.enabled` stays off in the default profile until #27. The BFF (web-app, HTTP-only cookie, `freedriver-api` confidential client) is wired; compose already injects the env. Do not put the secret in the SPA.
-
 
 ## Keycloak (auth, not MQTT)
 
@@ -81,5 +134,3 @@ Compose injects OIDC on the `app` service only (not the image, not the SPA):
 - Users: `kazetsukai` (dashboard + portal-admin), placeholder `second` (dashboard only)
 
 Provision on the VPS with `scripts/provision-keycloak-freedriver.sh`. Idempotent. It does not rotate the client secret if the secret file already exists, and it does not set or print user passwords.
-
-See #21 and #24.
