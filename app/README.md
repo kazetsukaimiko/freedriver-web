@@ -1,6 +1,6 @@
 # freedriver-app
 
-Quarkus 3.38 product app (Java 21) with Quinoa + React. Compose, Caddy, and Keycloak are Techops-owned — run this app with Maven, not docker-compose.
+Quarkus 3.38 product app (Java 23) with Quinoa + React. Develop and run it with Maven (commands below); Compose, Caddy, and Keycloak are Techops-owned.
 
 If you want to learn more about Quarkus, please visit its website: <https://quarkus.io/>.
 
@@ -24,7 +24,7 @@ The application can be packaged using:
 ```
 
 It produces the `quarkus-run.jar` file in the `target/quarkus-app/` directory.
-Be aware that it’s not an _über-jar_ as the dependencies are copied into the `target/quarkus-app/lib/` directory.
+Its dependencies sit next to it in `target/quarkus-app/lib/`.
 
 The application is now runnable using `java -jar target/quarkus-app/quarkus-run.jar`.
 
@@ -44,7 +44,7 @@ You can create a native executable using:
 ./mvnw package -Dnative
 ```
 
-Or, if you don't have GraalVM installed, you can run the native executable build in a container using:
+To build the native executable inside a GraalVM builder container, use:
 
 ```shell script
 ./mvnw package -Dnative -Dquarkus.native.container-build=true
@@ -57,7 +57,7 @@ If you want to learn more about building native executables, please consult <htt
 ## Related Guides
 
 - REST ([guide](https://quarkus.io/guides/rest)): Build RESTful web services and APIs using Jakarta REST (formerly JAX-RS)
-- REST Jackson ([guide](https://quarkus.io/guides/rest#json-serialisation)): Jackson serialization support for Quarkus REST. This extension is not compatible with the quarkus-resteasy extension, or any of the extensions that depend on it
+- REST Jackson ([guide](https://quarkus.io/guides/rest#json-serialisation)): Jackson serialization support for Quarkus REST
 - OpenID Connect ([guide](https://quarkus.io/guides/security-openid-connect)): Secure applications with OpenID Connect and OAuth 2.0 using bearer tokens and authorization code flow
 - Quinoa ([guide](https://quarkiverse.github.io/quarkiverse-docs/quarkus-quinoa/dev/index.html)): Develop, build, and serve your npm-compatible web applications such as React, Angular, Vue, Lit, Svelte, Astro, SolidJS, and others alongside Quarkus.
 
@@ -65,9 +65,7 @@ If you want to learn more about building native executables, please consult <htt
 
 ### Quinoa + React
 
-The UI is a React TypeScript SPA in `src/main/webui` (Vite, served by Quinoa at `/`). SPA routing is enabled. The dashboard fetches public `GET /api/hello`. Public `GET /api/build` returns `{"build":"<quarkus.application.version>"}` (`1.0.0-SNAPSHOT` locally; `YEAR-MONTH_rBUILD_NUM` after a main deploy) for the UX badge. `quarkus:dev` also serves a fake `GET/POST /api/appliances` (no broker, no Keycloak). See `docs/appliances.md`.
-
-Requires **Java 21**. Compose, Caddy, and Keycloak are Techops-owned and are not started from this directory.
+The UI is a React TypeScript SPA in `src/main/webui` (Vite, served by Quinoa at `/`). SPA routing is enabled. The dashboard fetches public `GET /api/hello`. Public `GET /api/build` returns `{"build":"<quarkus.application.version>"}` (`1.0.0-SNAPSHOT` locally; `YEAR-MONTH_rBUILD_NUM` after a main deploy) for the UX badge. `quarkus:dev` also serves `GET/POST /api/appliances` from the in-process mock. See `docs/appliances.md`.
 
 [Related guide section...](https://docs.quarkiverse.io/quarkus-quinoa/dev/index.html)
 

@@ -145,7 +145,7 @@ function readAppliance(raw: unknown): Appliance {
   return { id: body.applianceName, name: body.applianceName, on: body.on }
 }
 
-/** Quarkus OIDC returns 401 (not a login redirect) when this header is present. */
+/** With this header, Quarkus OIDC answers an anonymous API call with 401, and the SPA sends the browser to /login. */
 const API_HEADERS = { 'X-Requested-With': 'XMLHttpRequest' }
 
 export async function fetchApplianceMap(signal?: AbortSignal): Promise<MapResult> {

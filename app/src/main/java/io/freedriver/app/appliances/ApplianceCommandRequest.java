@@ -10,9 +10,9 @@ import java.util.Map;
 
 /**
  * POST body {@code { "on": bool }}. Extra JSON fields are rejected (400).
- * Uses {@code @JsonAnySetter} so we do not flip FAIL_ON_UNKNOWN_PROPERTIES globally.
- * Unknown fields become a Bean Validation constraint — Hibernate Validator does not
- * reject unknown JSON properties on its own.
+ * {@code @JsonAnySetter} collects extra fields and {@link #isKnownFieldsOnly()} turns them into a
+ * Bean Validation failure, so the rule is scoped to this body and the global Jackson
+ * FAIL_ON_UNKNOWN_PROPERTIES setting keeps its default.
  */
 public class ApplianceCommandRequest {
 

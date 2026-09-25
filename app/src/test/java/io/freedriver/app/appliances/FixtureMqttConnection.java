@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-/** CI fixture publisher. Replaces the Paho client in tests. Not a broker. */
+/** CI fixture publisher. Replaces the Paho client in tests. */
 @Mock
 @ApplicationScoped
 public class FixtureMqttConnection implements MqttConnection {
