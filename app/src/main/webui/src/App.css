@@ -333,15 +333,6 @@ dd {
   margin: 0 auto 1rem;
 }
 
-.snow-spin {
-  animation: snow-spin 1.4s linear infinite;
-}
-
-@keyframes snow-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
 .splash {
   position: fixed;
   inset: 0;
