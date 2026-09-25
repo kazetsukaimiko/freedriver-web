@@ -21,6 +21,7 @@ import java.util.regex.Pattern;
  * Pages render through {@code context.form()} with the freedriver login theme templates.
  * Per auth session, stored in auth notes: 4 texts (the first code and 3 resends) and
  * 5 wrong codes, after which the pending code is cleared and the phone form returns.
+ * With the texts used up, both pages show the code-limit message and the phone form skips the send.
  * A verified code signs in the user only when {@link PhoneSignInPolicy} allows it.
  */
 public final class SmsOtpAuthenticator implements Authenticator {
@@ -40,7 +41,7 @@ public final class SmsOtpAuthenticator implements Authenticator {
     static final String MSG_UNAVAILABLE = "freedriverSmsUnavailable";
     static final String MSG_WRONG_CODE = "freedriverSmsWrongCode";
     static final String MSG_TOO_MANY_TRIES = "freedriverSmsTooManyTries";
-    static final String MSG_SEND_LIMIT = "freedriverSmsSendLimit";
+    static final String MSG_CODE_LIMIT = "freedriverSmsCodeLimit";
     static final String MSG_DENIED = "freedriverSmsDenied";
 
     private static final Pattern CODE = Pattern.compile("^[0-9]{6}$");
@@ -67,7 +68,7 @@ public final class SmsOtpAuthenticator implements Authenticator {
             context.challenge(codePage(context, null));
             return;
         }
-        context.challenge(phonePage(context, null));
+        context.challenge(phonePage(context, sendAllowed(context) ? null : MSG_CODE_LIMIT));
     }
 
     @Override
@@ -83,11 +84,6 @@ public final class SmsOtpAuthenticator implements Authenticator {
             context.attempted();
             return;
         }
-        if (form.containsKey("startOver")) {
-            clearPending(context);
-            context.challenge(phonePage(context, null));
-            return;
-        }
         String pending = session(context).getAuthNote(NOTE_PHONE);
         if (pending == null) {
             sendFirst(context, key.get(), form.getFirst("phone"));
@@ -101,13 +97,13 @@ public final class SmsOtpAuthenticator implements Authenticator {
     }
 
     private void sendFirst(AuthenticationFlowContext context, String key, String raw) {
+        if (!sendAllowed(context)) {
+            context.challenge(phonePage(context, MSG_CODE_LIMIT));
+            return;
+        }
         String phone = PhoneSignInPolicy.normalizePhone(raw);
         if (!PhoneSignInPolicy.validPhone(phone)) {
             context.challenge(phonePage(context, MSG_PHONE_INVALID));
-            return;
-        }
-        if (!sendAllowed(context)) {
-            context.challenge(phonePage(context, MSG_SEND_LIMIT));
             return;
         }
         if (text(context, key, phone) != SmsOtpClient.Outcome.SENT) {
@@ -156,7 +152,7 @@ public final class SmsOtpAuthenticator implements Authenticator {
         if (wrong >= MAX_WRONG_CODES) {
             clearPending(context);
             context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS,
-                    phonePage(context, MSG_TOO_MANY_TRIES));
+                    phonePage(context, sendAllowed(context) ? MSG_TOO_MANY_TRIES : MSG_CODE_LIMIT));
             return;
         }
         session(context).setAuthNote(NOTE_WRONG_CODES, Integer.toString(wrong));

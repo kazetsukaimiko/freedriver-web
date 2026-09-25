@@ -275,7 +275,7 @@ class SmsOtpAuthenticatorTest {
     }
 
     @Test
-    void resendWorksThreeTimesThenOffersStartOver() {
+    void resendWorksThreeTimesThenShowsTheCodeLimit() {
         enterPhone();
         for (int i = 1; i <= SmsOtpAuthenticator.MAX_RESENDS; i++) {
             assertEquals(true, page().attributes().get(SmsOtpAuthenticator.ATTR_RESEND_ALLOWED));
@@ -288,14 +288,36 @@ class SmsOtpAuthenticatorTest {
         post("resend", "1");
         assertEquals(1 + SmsOtpAuthenticator.MAX_RESENDS, sends.size());
         assertEquals(false, page().attributes().get(SmsOtpAuthenticator.ATTR_RESEND_ALLOWED));
+    }
 
-        post("startOver", "1");
-        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, null);
+    @Test
+    void fifthWrongCodeWithTextsUsedUpShowsTheCodeLimitOnThePhoneForm() {
+        enterPhone();
+        for (int i = 1; i <= SmsOtpAuthenticator.MAX_RESENDS; i++) {
+            post("resend", "1");
+        }
+        for (int i = 1; i <= SmsOtpAuthenticator.MAX_WRONG_CODES; i++) {
+            verifyReplies.add(new SmsOtpClient.Wire(400, WRONG));
+            post("code", "000000");
+        }
+        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_CODE_LIMIT);
         assertNull(notes.get(SmsOtpAuthenticator.NOTE_PHONE));
 
         post("phone", PHONE);
-        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_SEND_LIMIT);
+        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_CODE_LIMIT);
         assertEquals(1 + SmsOtpAuthenticator.MAX_RESENDS, sends.size());
+    }
+
+    @Test
+    void phoneFormAfterTextsUsedUpShowsTheCodeLimitAndSkipsTheSend() {
+        notes.put(SmsOtpAuthenticator.NOTE_SENDS, Integer.toString(1 + SmsOtpAuthenticator.MAX_RESENDS));
+        authenticator.authenticate(context);
+        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_CODE_LIMIT);
+        post("phone", PHONE);
+        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_CODE_LIMIT);
+        post("phone", "not-a-number");
+        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_CODE_LIMIT);
+        assertTrue(sends.isEmpty());
     }
 
     @Test
@@ -303,7 +325,7 @@ class SmsOtpAuthenticatorTest {
         notes.put(SmsOtpAuthenticator.NOTE_SENDS, "junk");
         authenticator.authenticate(context);
         post("phone", PHONE);
-        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_SEND_LIMIT);
+        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_CODE_LIMIT);
         assertTrue(sends.isEmpty());
     }
 

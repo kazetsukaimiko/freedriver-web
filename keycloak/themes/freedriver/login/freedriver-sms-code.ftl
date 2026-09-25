@@ -11,14 +11,13 @@
             <@field.input name="code" label=msg("freedriverSmsCodeLabel") autocomplete="one-time-code" autofocus=true />
             <@buttons.loginButton />
         </form>
-        <form id="freedriver-sms-more-form" class="${properties.kcFormGroupClass!}" action="${url.loginAction}" method="post" novalidate="novalidate">
-            <#if freedriverSmsResendAllowed!false>
+        <#if freedriverSmsResendAllowed!false>
+            <form id="freedriver-sms-more-form" class="${properties.kcFormGroupClass!}" action="${url.loginAction}" method="post" novalidate="novalidate">
                 <button type="submit" name="resend" value="1" class="${properties.kcButtonLinkClass!}">${msg("freedriverSmsResend")}</button>
-            <#else>
-                <span>${msg("freedriverSmsCodeLimit")}</span>
-                <button type="submit" name="startOver" value="1" class="${properties.kcButtonLinkClass!}">${msg("freedriverSmsStartOver")}</button>
-            </#if>
-        </form>
+            </form>
+        <#else>
+            <p id="freedriver-sms-code-limit" class="${properties.kcFormGroupClass!}">${msg("freedriverSmsCodeLimit")}</p>
+        </#if>
         <div id="freedriver-sms-password" class="${properties.kcFormGroupClass!}">
             <a class="${properties.kcButtonLinkClass!}" href="${url.loginRestartFlowUrl}">${msg("freedriverSmsUsePassword")}</a>
         </div>

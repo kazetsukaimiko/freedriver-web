@@ -34,8 +34,8 @@ Pages render through `context.form()` with `freedriver-sms-phone.ftl` and `freed
 Per auth session, kept in auth session notes:
 
 - The code page reads "Enter the 6-digit code we texted to your phone." for every number.
-- A wrong code keeps the code form with "That code didn't match. Try again." The 5th wrong code clears the pending code and returns to the phone form with "Too many tries. Enter your phone number to get a new code."
-- 4 texts per auth session: the first code and 3 resends. Entering the number again draws on the same budget. After the third resend, "Resend code" becomes "Code limit reached. Start over", which returns to the phone form.
+- A wrong code keeps the code form with "That code didn't match. Try again." The 5th wrong code clears the pending code and returns to the phone form with "Too many tries. Enter your phone number to get a new code." while texts remain.
+- 4 texts per auth session: the first code and 3 resends. Entering the number again draws on the same budget. Once the 4 texts are used, the code page shows "Code limit reached. Try again in 15 minutes." with "Sign in with password" as its only link. The phone form, including after a 5th wrong code, shows the same message and skips the send.
 
 After sms verifies a code, the SPI signs in the Keycloak user named by `username` when all of these hold, and denies otherwise, including on any lookup error:
 
