@@ -32,15 +32,18 @@ if re.search(r"^\s+ports:\s*$", block, re.M):
     raise SystemExit("sms must not publish ports")
 if "8080:8080" in block or '"8080:' in block or "'8080:" in block:
     raise SystemExit("sms must not map host port 8080")
-if "env_file:" not in block or "/opt/freedriver-secrets/.env" not in block:
-    raise SystemExit("sms must read the VPS secrets env file")
+REQUIRED = "SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:?"
+env = re.search(r"^    environment:\n((?:      .*\n)+)", block, re.M)
+keys = [] if env is None else re.findall(r"^      ([A-Z0-9_]+):", env.group(1), re.M)
+if "env_file" in block or keys != ["SMS_OTP_SHARED_SECRET"] or REQUIRED not in block:
+    raise SystemExit("sms environment is exactly SMS_OTP_SHARED_SECRET, required via ${SMS_OTP_SHARED_SECRET:?}")
 if "sms-otp.env.example" in block or "sms-otp.env.example" in compose:
     raise SystemExit("compose must not load the git secret example")
 if "SMS_OTP_SHARED_SECRET" not in block:
     raise SystemExit("sms must receive SMS_OTP_SHARED_SECRET")
 kc = compose.split("\n  keycloak:\n", 1)[1].split("\n  keycloak-db:\n", 1)[0]
-if "SMS_OTP_SHARED_SECRET" not in kc:
-    raise SystemExit("keycloak must receive SMS_OTP_SHARED_SECRET")
+if "env_file" in kc or REQUIRED not in kc:
+    raise SystemExit("keycloak gets SMS_OTP_SHARED_SECRET via ${SMS_OTP_SHARED_SECRET:?} in environment")
 if "AWS_" in kc or "AKIA" in kc:
     raise SystemExit("do not put AWS credentials on the keycloak service")
 if "keycloak/Dockerfile" not in kc:
