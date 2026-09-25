@@ -42,7 +42,7 @@ Alloy tails Docker container logs into Loki (14 days). Prometheus keeps ~15 days
 
 ## App
 
-The product app lives in `app/`: Quarkus 3.38 (Java 21) with Quinoa serving a React TypeScript SPA. It talks normal REST under `/api`. Keycloak at `https://auth.freedriver.io` will handle auth later; OIDC is present as a dependency with commented config so the app starts without secrets.
+The product app lives in `app/`: Quarkus 3.38 (Java 21) with Quinoa serving a React TypeScript SPA. It talks normal REST under `/api`. Auth is an OIDC BFF against Keycloak at `https://auth.freedriver.io`, switched off by default (`quarkus.oidc.enabled=false`) so the app starts with no secrets set. App details: [app/README.md](app/README.md).
 
 ```shell
 ./mvnw -pl app -am quarkus:dev
@@ -50,7 +50,7 @@ The product app lives in `app/`: Quarkus 3.38 (Java 21) with Quinoa serving a Re
 
 Requires Java 23. Quinoa can install Node for the UI build. Open http://localhost:8080 for the dashboard (`GET /api/hello` and `GET /api/build` are public). Production is `https://app.freedriver.io` via Caddy → the Compose `app` service.
 
-`mqtt-contract/`, `mqtt/`, and `mqtt-paho/` are reactor siblings (`io.freedriver:freedriver-mqtt-contract`, `freedriver-mqtt`, `freedriver-mqtt-paho`). The app does not pin autonomy's GitHub Packages jar.
+`mqtt-contract/`, `mqtt/`, and `mqtt-paho/` are reactor siblings (`io.freedriver:freedriver-mqtt-contract`, `freedriver-mqtt`, `freedriver-mqtt-paho`). The app builds the contract from this reactor ([docs/mqtt-contract-consume.md](docs/mqtt-contract-consume.md)).
 
 ## SMS OTP scaffold
 
@@ -60,7 +60,7 @@ Phone + code sign-in for house users. The `sms` service and the Keycloak `freedr
 
 `GET/POST /api/appliances` is implemented against **mock-autonomy** on the same `ApplianceControl` bus for `quarkus:dev` and CI. The browser is REST only. Production keeps the route disabled (404), OIDC off, and MQTT disconnected. Integration contract: [`docs/appliances.md`](docs/appliances.md). Autonomy MQTT how-to: [`docs/autonomy-mqtt.md`](docs/autonomy-mqtt.md).
 
-The live command route is **not** Done. It is blocked on [#25](https://github.com/kazetsukaimiko/freedriver-web/issues/25) and Security sign-off on [#27](https://github.com/kazetsukaimiko/freedriver-web/issues/27).
+The live command route is blocked on [#25](https://github.com/kazetsukaimiko/freedriver-web/issues/25) and Security sign-off on [#27](https://github.com/kazetsukaimiko/freedriver-web/issues/27).
 
 ## Deploy
 

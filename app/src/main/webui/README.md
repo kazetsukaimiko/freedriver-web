@@ -2,10 +2,4 @@
 
 React + TypeScript SPA built with Vite and served by Quarkus Quinoa.
 
-Do not run this folder on its own for normal development. From `app/`:
-
-```shell
-./mvnw quarkus:dev
-```
-
-Quarkus proxies the Vite dev server and serves `/api`.
+Develop it through Quarkus dev mode ([app/README.md](../../../README.md#running-the-application-in-dev-mode)). Quarkus proxies the Vite dev server and serves `/api`.
