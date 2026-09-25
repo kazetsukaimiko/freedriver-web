@@ -27,7 +27,7 @@ The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{gra
 
 ## Observability
 
-Grafana and the Keycloak admin console are reachable through an SSH tunnel to the VPS host (the `DEPLOY_HOST` secret), signed in as your ops user:
+Grafana and the Keycloak admin console listen on 127.0.0.1 on the VPS host and are reached through an SSH tunnel to the `DEPLOY_HOST` address, signed in as your ops user:
 
 ```
 ssh -L 3000:127.0.0.1:3000 -L 8081:127.0.0.1:8081 -i <key> <ops-user>@<DEPLOY_HOST>
