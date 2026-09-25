@@ -1,5 +1,6 @@
 # Keycloak 26.3 plus the Freedriver SMS OTP provider at
-# /opt/keycloak/providers/freedriver-sms-otp.jar.
+# /opt/keycloak/providers/freedriver-sms-otp.jar and the freedriver login theme
+# at /opt/keycloak/themes/freedriver.
 # SMS_OTP_SHARED_SECRET comes from the runtime environment.
 
 FROM maven:3.9-eclipse-temurin-21 AS spi
@@ -14,6 +15,7 @@ ENV KC_DB=postgres \
     KC_HEALTH_ENABLED=true \
     KC_HTTP_ENABLED=true
 COPY --from=spi --chown=keycloak:keycloak /freedriver-sms-otp.jar /opt/keycloak/providers/freedriver-sms-otp.jar
+COPY --chown=keycloak:keycloak keycloak/themes/freedriver /opt/keycloak/themes/freedriver
 # Fixed mtime so optimized starts see the same provider that kc.sh build indexed.
 RUN touch -m --date=@1743465600 /opt/keycloak/providers/freedriver-sms-otp.jar \
  && /opt/keycloak/bin/kc.sh build

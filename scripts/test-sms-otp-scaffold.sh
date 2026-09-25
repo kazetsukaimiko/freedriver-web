@@ -103,6 +103,18 @@ fi
 
 bash -n scripts/provision-keycloak-sms-otp.sh
 
+# Phone sign-in pages come from the freedriver login theme through context.form().
+THEME=keycloak/themes/freedriver/login
+grep -qx 'parent=keycloak.v2' "$THEME/theme.properties"
+for template in freedriver-sms-phone.ftl freedriver-sms-code.ftl; do
+  grep -q "\"$template\"" keycloak/sms-otp-spi/src/main/java/io/freedriver/keycloak/sms/SmsOtpAuthenticator.java
+  grep -q 'url.loginRestartFlowUrl' "$THEME/$template"
+done
+grep -q 'keycloak/themes/freedriver /opt/keycloak/themes/freedriver' keycloak/Dockerfile
+if grep -RIn 'Response.ok' keycloak/sms-otp-spi/src/main; then
+  fail "render authenticator pages with context.form()"
+fi
+
 python3 scripts/check-sms-otp-flow.py scripts/fixtures/sms-otp-flow-password-only.json >/dev/null
 python3 scripts/check-sms-otp-flow.py scripts/fixtures/sms-otp-flow-ok.json >/dev/null
 python3 scripts/check-sms-otp-flow.py --require-sms scripts/fixtures/sms-otp-flow-ok.json >/dev/null

@@ -1,179 +1,225 @@
 package io.freedriver.keycloak.sms;
 
-import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import org.keycloak.authentication.AuthenticationFlowContext;
+import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.authentication.Authenticator;
+import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.sessions.AuthenticationSessionModel;
 
 import java.util.Optional;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 /**
  * Phone + code sign-in as an Alternative beside the password form.
  * With an empty or placeholder secret the execution marks itself {@code attempted}.
- * Sign-in completes only on the documented 200 responses from sms.
+ * Pages render through {@code context.form()} with the freedriver login theme templates.
+ * Per auth session, stored in auth notes: 4 texts (the first code and 3 resends) and
+ * 5 wrong codes, after which the pending code is cleared and the phone form returns.
+ * A verified code signs in the user only when {@link PhoneSignInPolicy} allows it.
  */
 public final class SmsOtpAuthenticator implements Authenticator {
 
     static final String NOTE_PHONE = "freedriver.sms.phone";
-    private static final Pattern PHONE = Pattern.compile("^\\+[1-9][0-9]{7,14}$");
-    private static final Pattern CODE = Pattern.compile("^[0-9]{4,10}$");
-    private static final String UNAVAILABLE =
-            "Phone sign-in is unavailable. Password sign-in still works.";
+    static final String NOTE_WRONG_CODES = "freedriver.sms.wrong-codes";
+    static final String NOTE_SENDS = "freedriver.sms.sends";
+
+    static final int MAX_WRONG_CODES = 5;
+    static final int MAX_RESENDS = 3;
+
+    static final String PHONE_TEMPLATE = "freedriver-sms-phone.ftl";
+    static final String CODE_TEMPLATE = "freedriver-sms-code.ftl";
+    static final String ATTR_RESEND_ALLOWED = "freedriverSmsResendAllowed";
+
+    static final String MSG_PHONE_INVALID = "freedriverSmsPhoneInvalid";
+    static final String MSG_UNAVAILABLE = "freedriverSmsUnavailable";
+    static final String MSG_WRONG_CODE = "freedriverSmsWrongCode";
+    static final String MSG_TOO_MANY_TRIES = "freedriverSmsTooManyTries";
+    static final String MSG_SEND_LIMIT = "freedriverSmsSendLimit";
+    static final String MSG_DENIED = "freedriverSmsDenied";
+
+    private static final Pattern CODE = Pattern.compile("^[0-9]{6}$");
 
     private final SmsOtpClient client;
+    private final Supplier<Optional<String>> secret;
 
     public SmsOtpAuthenticator() {
-        this(new SmsOtpClient());
+        this(new SmsOtpClient(), SmsOtpConfig::secret);
     }
 
-    SmsOtpAuthenticator(SmsOtpClient client) {
+    SmsOtpAuthenticator(SmsOtpClient client, Supplier<Optional<String>> secret) {
         this.client = client;
+        this.secret = secret;
     }
 
     @Override
     public void authenticate(AuthenticationFlowContext context) {
-        if (SmsOtpConfig.secret().isEmpty()) {
+        if (secret.get().isEmpty()) {
             context.attempted();
             return;
         }
-        context.challenge(page(context, null, null));
+        if (session(context).getAuthNote(NOTE_PHONE) != null) {
+            context.challenge(codePage(context, null));
+            return;
+        }
+        context.challenge(phonePage(context, null));
     }
 
     @Override
     public void action(AuthenticationFlowContext context) {
-        Optional<String> secret = SmsOtpConfig.secret();
-        if (secret.isEmpty()) {
+        Optional<String> key = secret.get();
+        if (key.isEmpty()) {
             context.attempted();
             return;
         }
         MultivaluedMap<String, String> form = context.getHttpRequest().getDecodedFormParameters();
         if (form.containsKey("tryAnotherWay")) {
-            context.getAuthenticationSession().removeAuthNote(NOTE_PHONE);
+            clearPending(context);
             context.attempted();
             return;
         }
-        String noted = context.getAuthenticationSession().getAuthNote(NOTE_PHONE);
+        if (form.containsKey("startOver")) {
+            clearPending(context);
+            context.challenge(phonePage(context, null));
+            return;
+        }
+        String pending = session(context).getAuthNote(NOTE_PHONE);
+        if (pending == null) {
+            sendFirst(context, key.get(), form.getFirst("phone"));
+            return;
+        }
         if (form.containsKey("resend")) {
-            send(context, secret.get(), noted);
+            resend(context, key.get(), pending);
             return;
         }
-        String code = form.getFirst("code");
-        if (noted != null && code != null && !code.isBlank()) {
-            verify(context, secret.get(), noted, code.trim());
-            return;
-        }
-        send(context, secret.get(), form.getFirst("phone"));
+        verify(context, key.get(), pending, form.getFirst("code"));
     }
 
-    private void send(AuthenticationFlowContext context, String secret, String phone) {
-        context.getAuthenticationSession().removeAuthNote(NOTE_PHONE);
-        String normalized = phone == null ? "" : phone.trim().replace(" ", "");
-        if (!PHONE.matcher(normalized).matches()) {
-            context.challenge(page(context, null, "Enter the house phone number in international form."));
+    private void sendFirst(AuthenticationFlowContext context, String key, String raw) {
+        String phone = PhoneSignInPolicy.normalizePhone(raw);
+        if (!PhoneSignInPolicy.validPhone(phone)) {
+            context.challenge(phonePage(context, MSG_PHONE_INVALID));
             return;
         }
-        SmsOtpClient.Result result = client.send(secret, normalized);
-        if (result.outcome() != SmsOtpClient.Outcome.SENT) {
-            context.challenge(page(context, null, UNAVAILABLE));
+        if (!sendAllowed(context)) {
+            context.challenge(phonePage(context, MSG_SEND_LIMIT));
             return;
         }
-        context.getAuthenticationSession().setAuthNote(NOTE_PHONE, normalized);
-        context.challenge(page(context, normalized, null));
+        if (text(context, key, phone) != SmsOtpClient.Outcome.SENT) {
+            context.challenge(phonePage(context, MSG_UNAVAILABLE));
+            return;
+        }
+        session(context).setAuthNote(NOTE_PHONE, phone);
+        session(context).removeAuthNote(NOTE_WRONG_CODES);
+        context.challenge(codePage(context, null));
     }
 
-    private void verify(AuthenticationFlowContext context, String secret, String phone, String code) {
+    private void resend(AuthenticationFlowContext context, String key, String phone) {
+        if (!sendAllowed(context)) {
+            context.challenge(codePage(context, null));
+            return;
+        }
+        if (text(context, key, phone) != SmsOtpClient.Outcome.SENT) {
+            context.challenge(codePage(context, MSG_UNAVAILABLE));
+            return;
+        }
+        context.challenge(codePage(context, null));
+    }
+
+    /** Counts the send in the auth session, then asks sms to text the code. */
+    private SmsOtpClient.Outcome text(AuthenticationFlowContext context, String key, String phone) {
+        session(context).setAuthNote(NOTE_SENDS, Integer.toString(count(context, NOTE_SENDS) + 1));
+        return client.send(key, phone).outcome();
+    }
+
+    private void verify(AuthenticationFlowContext context, String key, String phone, String raw) {
+        String code = raw == null ? "" : raw.trim();
         if (!CODE.matcher(code).matches()) {
-            context.challenge(page(context, phone, UNAVAILABLE));
+            wrongCode(context);
             return;
         }
-        SmsOtpClient.Result result = client.verify(secret, phone, code);
-        if (result.outcome() != SmsOtpClient.Outcome.VERIFIED || result.username() == null) {
-            context.challenge(page(context, phone, UNAVAILABLE));
+        SmsOtpClient.Result result = client.verify(key, phone, code);
+        switch (result.outcome()) {
+            case VERIFIED -> signIn(context, phone, result.username());
+            case INVALID_CODE -> wrongCode(context);
+            default -> context.challenge(codePage(context, MSG_UNAVAILABLE));
+        }
+    }
+
+    private void wrongCode(AuthenticationFlowContext context) {
+        int wrong = count(context, NOTE_WRONG_CODES) + 1;
+        if (wrong >= MAX_WRONG_CODES) {
+            clearPending(context);
+            context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS,
+                    phonePage(context, MSG_TOO_MANY_TRIES));
             return;
         }
-        UserModel user = context.getSession().users().getUserByUsername(context.getRealm(), result.username());
-        if (user == null || !user.isEnabled()) {
-            context.challenge(page(context, phone, UNAVAILABLE));
+        session(context).setAuthNote(NOTE_WRONG_CODES, Integer.toString(wrong));
+        context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS, codePage(context, MSG_WRONG_CODE));
+    }
+
+    private void signIn(AuthenticationFlowContext context, String phone, String username) {
+        UserModel user;
+        try {
+            user = context.getSession().users().getUserByUsername(context.getRealm(), username);
+        } catch (RuntimeException ex) {
+            user = null;
+        }
+        clearPending(context);
+        if (!PhoneSignInPolicy.allows(user, phone)) {
+            context.failureChallenge(AuthenticationFlowError.ACCESS_DENIED, phonePage(context, MSG_DENIED));
             return;
         }
         context.setUser(user);
         context.success();
     }
 
-    private static Response page(AuthenticationFlowContext context, String phone, String message) {
-        String action = context.getActionUrl(context.generateAccessCode()).toString();
-        String html = phone == null ? phoneForm(action, message) : codeForm(action, phone, message);
-        return Response.ok(html, MediaType.TEXT_HTML_TYPE).build();
+    private static boolean sendAllowed(AuthenticationFlowContext context) {
+        return count(context, NOTE_SENDS) < 1 + MAX_RESENDS;
     }
 
-    private static String phoneForm(String action, String message) {
-        return shell(message, """
-                <form method="post" action="%s">
-                  <label>Phone
-                    <input name="phone" autocomplete="tel" inputmode="tel" required>
-                  </label>
-                  <button type="submit">Send code</button>
-                </form>
-                %s
-                """.formatted(escape(action), tryAnother(action)));
-    }
-
-    private static String codeForm(String action, String phone, String message) {
-        return shell(message, """
-                <p>Code sent to %s</p>
-                <form method="post" action="%s">
-                  <label>Code
-                    <input name="code" autocomplete="one-time-code" inputmode="numeric" required>
-                  </label>
-                  <button type="submit">Sign in</button>
-                </form>
-                <form method="post" action="%s">
-                  <button type="submit" name="resend" value="1">Resend code</button>
-                </form>
-                %s
-                """.formatted(escape(mask(phone)), escape(action), escape(action), tryAnother(action)));
-    }
-
-    private static String tryAnother(String action) {
-        return """
-                <form method="post" action="%s">
-                  <button type="submit" name="tryAnotherWay" value="on">Use password instead</button>
-                </form>
-                """.formatted(escape(action));
-    }
-
-    private static String shell(String message, String body) {
-        String banner = message == null ? "" : "<p role=\"alert\">" + escape(message) + "</p>";
-        return """
-                <!DOCTYPE html>
-                <html lang="en">
-                <head><meta charset="utf-8"><title>Phone sign-in</title></head>
-                <body>
-                  <h1>Phone sign-in</h1>
-                  %s
-                  %s
-                </body>
-                </html>
-                """.formatted(banner, body);
-    }
-
-    static String mask(String phone) {
-        if (phone.length() < 4) {
-            return "••••";
+    /** Integer auth note; a malformed value reads as the maximum, which closes the cap. */
+    static int count(AuthenticationFlowContext context, String note) {
+        String value = session(context).getAuthNote(note);
+        if (value == null) {
+            return 0;
         }
-        return "••••" + phone.substring(phone.length() - 2);
+        try {
+            return Math.max(0, Integer.parseInt(value));
+        } catch (NumberFormatException ex) {
+            return Integer.MAX_VALUE - 1;
+        }
     }
 
-    static String escape(String value) {
-        return value.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;");
+    /** Clears the pending phone and its wrong-code count. The send count stays for the auth session. */
+    private static void clearPending(AuthenticationFlowContext context) {
+        session(context).removeAuthNote(NOTE_PHONE);
+        session(context).removeAuthNote(NOTE_WRONG_CODES);
+    }
+
+    private static AuthenticationSessionModel session(AuthenticationFlowContext context) {
+        return context.getAuthenticationSession();
+    }
+
+    private static Response phonePage(AuthenticationFlowContext context, String error) {
+        LoginFormsProvider form = context.form();
+        if (error != null) {
+            form.setError(error);
+        }
+        return form.createForm(PHONE_TEMPLATE);
+    }
+
+    private static Response codePage(AuthenticationFlowContext context, String error) {
+        LoginFormsProvider form = context.form().setAttribute(ATTR_RESEND_ALLOWED, sendAllowed(context));
+        if (error != null) {
+            form.setError(error);
+        }
+        return form.createForm(CODE_TEMPLATE);
     }
 
     @Override
@@ -183,7 +229,7 @@ public final class SmsOtpAuthenticator implements Authenticator {
 
     @Override
     public boolean configuredFor(KeycloakSession session, RealmModel realm, UserModel user) {
-        return SmsOtpConfig.secret().isPresent();
+        return secret.get().isPresent();
     }
 
     @Override
