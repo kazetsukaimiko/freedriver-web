@@ -4,7 +4,8 @@
 Reads a kcadm executions JSON array from a file or stdin.
 Exit 0 when the password authenticator is REQUIRED inside a top-level
 ALTERNATIVE subflow and SMS OTP is ALTERNATIVE or DISABLED.
---require-sms also requires exactly one SMS execution, set to ALTERNATIVE.
+--require-sms also requires exactly one SMS execution, set to ALTERNATIVE, at the
+top level after the forms Alternative that holds the password authenticator.
 """
 
 from __future__ import annotations
@@ -70,6 +71,13 @@ def main() -> None:
             fail("expected exactly one freedriver-sms-otp execution")
         if sms[0].get("requirement") != "ALTERNATIVE":
             fail("SMS OTP must be ALTERNATIVE, found %s" % sms[0].get("requirement"))
+        sms_index = executions.index(sms[0])
+        if sms[0].get("level", 0) != 0:
+            fail("SMS OTP must be a top-level execution")
+        forms = [parent_flow(i) for i, e in enumerate(executions) if e.get("providerId") == PASSWORD]
+        forms_index = max(executions.index(f) for f in forms if f is not None)
+        if sms_index < forms_index:
+            fail("SMS OTP must come after the forms Alternative so password is the first challenge")
 
     print("password Alternative preserved")
 

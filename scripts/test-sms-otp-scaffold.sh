@@ -101,6 +101,12 @@ if grep -E 'requirement.*REQUIRED' scripts/provision-keycloak-sms-otp.sh | grep 
   fail "provision script must not set SMS OTP to REQUIRED"
 fi
 
+# docker exec receives the admin password by variable name.
+grep -q 'docker exec -e TECHOPS_PASS "\$CONTAINER"' scripts/provision-keycloak-sms-otp.sh
+if grep -q -- '-e TECHOPS_PASS=' scripts/provision-keycloak-sms-otp.sh; then
+  fail "pass TECHOPS_PASS to docker exec by name"
+fi
+
 bash -n scripts/provision-keycloak-sms-otp.sh
 
 # Phone sign-in pages come from the freedriver login theme through context.form().
@@ -120,6 +126,9 @@ python3 scripts/check-sms-otp-flow.py scripts/fixtures/sms-otp-flow-ok.json >/de
 python3 scripts/check-sms-otp-flow.py --require-sms scripts/fixtures/sms-otp-flow-ok.json >/dev/null
 if python3 scripts/check-sms-otp-flow.py --require-sms scripts/fixtures/sms-otp-flow-password-only.json >/dev/null 2>&1; then
   fail "checker must reject a flow that has no SMS execution when SMS is required"
+fi
+if python3 scripts/check-sms-otp-flow.py --require-sms scripts/fixtures/sms-otp-flow-sms-first.json >/dev/null 2>&1; then
+  fail "checker must reject a flow where SMS comes before the forms Alternative"
 fi
 for bad in password-disabled sms-required password-missing forms-disabled; do
   if python3 scripts/check-sms-otp-flow.py "scripts/fixtures/sms-otp-flow-${bad}.json" >/dev/null 2>&1; then
