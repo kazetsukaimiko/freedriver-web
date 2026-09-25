@@ -1,6 +1,6 @@
 # Multi-stage image for docker compose `build:` from the repo root.
 #   docker build -f app/src/main/docker/Dockerfile.compose -t freedriver-app .
-# mqtt-contract, mqtt, and mqtt-paho are reactor siblings; no GitHub Packages pin.
+# mqtt-contract, mqtt, and mqtt-paho build from source here as reactor siblings.
 
 FROM maven:3.9-eclipse-temurin-23 AS build
 WORKDIR /workspace

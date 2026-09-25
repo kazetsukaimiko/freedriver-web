@@ -22,8 +22,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Dev/test event source on the same CDI bus as production. Not an ApplianceControl
- * implementation. Disable with {@code freedriver.appliances.mock=false}.
+ * Dev/test event source that talks to {@link ApplianceControl} over the same CDI bus as
+ * production. Disable with {@code freedriver.appliances.mock=false}.
  * <p>
  * Holds a map of autonomy instance id to instance name and appliance on/off.
  * Startup seeds the Cabin fixture only. A command for an unknown instance id is ignored.
@@ -105,7 +105,6 @@ public class MockAutonomy {
 
     /**
      * Add or replace one simulated instance and publish its state on the existing bus.
-     * Commands do not call this. An unknown instance id is not created.
      */
     public void seedInstance(UUID instanceId, String instanceName, List<String> applianceNames) {
         if (!config.mock()) {

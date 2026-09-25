@@ -90,7 +90,7 @@ class ApplianceServiceTest {
         return new ApplianceService(config, control, new ApplianceAudit());
     }
 
-    /** Test double. @Vetoed so Arc does not treat it as a second ApplianceControl. */
+    /** Test double. @Vetoed keeps it out of CDI, so ApplianceControl stays the single bean. */
     @Vetoed
     private static final class RecordingControl extends ApplianceControl {
         private boolean known = true;

@@ -42,7 +42,7 @@ public class AppliancesConfig {
         return liveCommands;
     }
 
-    /** Mock event source on the same bus. Not a backend picker. */
+    /** Turns on the {@link MockAutonomy} event source on the shared CDI bus. */
     public boolean mock() {
         return mock;
     }
@@ -59,7 +59,7 @@ public class AppliancesConfig {
         return commandTimeoutMax;
     }
 
-    /** REST confirm wait. Not part of the MQTT contract. */
+    /** REST-side confirm wait for one command, clamped between a 50 ms floor and {@code command-timeout-max}. */
     public Duration boundedCommandTimeout() {
         Duration use = commandTimeout.isZero() || commandTimeout.isNegative()
                 ? Duration.ofSeconds(5)
