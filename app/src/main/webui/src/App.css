@@ -31,7 +31,7 @@
   text-decoration: none;
 }
 
-/* Icon + live "Freedriver" text. Icon is ~1.25x the cap height. */
+/* Icon + live "Freedriver" text in one row. */
 .brand {
   display: flex;
   align-items: center;
@@ -51,7 +51,7 @@
   display: block;
   flex: none;
   width: auto;
-  height: 0.9em;
+  height: 1.2em;
 }
 
 .nav nav {
