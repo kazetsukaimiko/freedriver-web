@@ -42,7 +42,7 @@ Alloy tails Docker container logs into Loki (14 days). Prometheus keeps ~15 days
 
 ## App
 
-The product app lives in `app/`: Quarkus 3.38 (Java 21) with Quinoa serving a React TypeScript SPA. It talks normal REST under `/api`. Auth is an OIDC BFF against Keycloak at `https://auth.freedriver.io`, switched off by default (`quarkus.oidc.enabled=false`) so the app starts with no secrets set. App details: [app/README.md](app/README.md).
+The product app lives in `app/`: Quarkus 3.38 (Java 23) with Quinoa serving a React TypeScript SPA. It talks normal REST under `/api`. Auth is an OIDC BFF against Keycloak at `https://auth.freedriver.io`, switched off by default (`quarkus.oidc.enabled=false`) so the app starts with no secrets set. App details: [app/README.md](app/README.md).
 
 ```shell
 ./mvnw -pl app -am quarkus:dev
