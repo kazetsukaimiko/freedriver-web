@@ -115,12 +115,26 @@ class SmsOtpClientTest {
     }
 
     @Test
-    void jsonHelpersDoNotTreatTheSecretAsAField() {
+    void wrongCodeIsItsOwnOutcome() {
+        assertEquals(SmsOtpClient.Outcome.INVALID_CODE,
+                SmsOtpClient.interpret(400, "{\"error\":\"invalid-code\"}", true).outcome());
+        assertEquals(SmsOtpClient.Outcome.UNAVAILABLE,
+                SmsOtpClient.interpret(400, "{\"error\":\"bad-request\"}", true).outcome());
+        assertEquals(SmsOtpClient.Outcome.UNAVAILABLE,
+                SmsOtpClient.interpret(400, "{\"error\":\"invalid-code\"}", false).outcome());
+    }
+
+    @Test
+    void jsonGoesThroughJackson() {
         String body = SmsOtpClient.jsonVerify("+15555550100", "123456");
-        assertFalse(body.contains("real-secret"));
-        assertEquals("+15555550100", SmsOtpClient.Json.stringField(body, "phone"));
-        assertEquals("123456", SmsOtpClient.Json.stringField(body, "code"));
-        assertEquals("A", SmsOtpClient.Json.stringField("{\"username\":\"\\u0041\"}", "username"));
-        assertEquals("a\"b", SmsOtpClient.Json.stringField("{\"username\":" + SmsOtpClient.Json.quote("a\"b") + "}", "username"));
+        assertEquals("{\"phone\":\"+15555550100\",\"code\":\"123456\"}", body);
+        assertEquals("{\"phone\":\"a\\\"b\"}", SmsOtpClient.jsonPhone("a\"b"));
+        assertEquals("+15555550100", SmsOtpClient.textField(body, "phone"));
+        assertEquals("A", SmsOtpClient.textField("{\"username\":\"\\u0041\"}", "username"));
+        assertEquals("real", SmsOtpClient.textField("{\"note\":\"\\\"username\\\":\\\"fake\\\"\",\"username\":\"real\"}", "username"));
+        assertNull(SmsOtpClient.textField("{\"username\":42}", "username"));
+        assertNull(SmsOtpClient.textField("[\"username\"]", "username"));
+        assertNull(SmsOtpClient.textField("{\"username\":", "username"));
+        assertNull(SmsOtpClient.textField(null, "username"));
     }
 }

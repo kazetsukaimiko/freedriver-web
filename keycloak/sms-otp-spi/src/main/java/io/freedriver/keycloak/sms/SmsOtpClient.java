@@ -1,5 +1,9 @@
 package io.freedriver.keycloak.sms;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -10,12 +14,14 @@ import java.time.Duration;
 /**
  * HTTP client for the sms service. Success is a 200 with the expected JSON.
  * The shared secret travels in the X-Freedriver-Sms-Secret header.
+ * JSON goes through the Jackson that the Keycloak server provides.
  */
 public final class SmsOtpClient {
 
     public enum Outcome {
         SENT,
         VERIFIED,
+        INVALID_CODE,
         REJECTED,
         UNAVAILABLE
     }
@@ -28,6 +34,7 @@ public final class SmsOtpClient {
 
     private static final int MAX_BODY = 8192;
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     /** HTTP status and response body. */
     record Wire(int status, String body) {}
@@ -102,17 +109,20 @@ public final class SmsOtpClient {
         if (status == 401 || status == 403) {
             return Result.of(Outcome.REJECTED);
         }
+        if (expectUsername && status == 400 && "invalid-code".equals(textField(body, "error"))) {
+            return Result.of(Outcome.INVALID_CODE);
+        }
         if (status != 200) {
             return Result.of(Outcome.UNAVAILABLE);
         }
         if (expectUsername) {
-            String username = Json.stringField(body, "username");
+            String username = textField(body, "username");
             if (username == null || !usernameAllowed(username)) {
                 return Result.of(Outcome.UNAVAILABLE);
             }
             return new Result(Outcome.VERIFIED, username);
         }
-        if (!"sent".equals(Json.stringField(body, "status"))) {
+        if (!"sent".equals(textField(body, "status"))) {
             return Result.of(Outcome.UNAVAILABLE);
         }
         return Result.of(Outcome.SENT);
@@ -152,92 +162,26 @@ public final class SmsOtpClient {
     }
 
     static String jsonPhone(String phone) {
-        return "{\"phone\":" + Json.quote(phone) + "}";
+        return JSON.createObjectNode().put("phone", phone).toString();
     }
 
     static String jsonVerify(String phone, String code) {
-        return "{\"phone\":" + Json.quote(phone) + ",\"code\":" + Json.quote(code) + "}";
+        return JSON.createObjectNode().put("phone", phone).put("code", code).toString();
     }
 
-    /** Flat JSON helpers that keep the SPI JAR self-contained. */
-    static final class Json {
-        private Json() {}
-
-        static String quote(String value) {
-            StringBuilder out = new StringBuilder(value.length() + 2);
-            out.append('"');
-            for (int i = 0; i < value.length(); i++) {
-                char c = value.charAt(i);
-                switch (c) {
-                    case '\\' -> out.append("\\\\");
-                    case '"' -> out.append("\\\"");
-                    case '\n' -> out.append("\\n");
-                    case '\r' -> out.append("\\r");
-                    default -> {
-                        if (c < 0x20) {
-                            out.append(String.format("\\u%04x", (int) c));
-                        } else {
-                            out.append(c);
-                        }
-                    }
-                }
-            }
-            out.append('"');
-            return out.toString();
+    /** Text value of a top-level string field, or null for any other body. */
+    static String textField(String body, String field) {
+        if (body == null || body.isBlank()) {
+            return null;
         }
-
-        static String stringField(String json, String field) {
-            if (json == null) {
+        try {
+            JsonNode root = JSON.readTree(body);
+            if (root == null || !root.isObject()) {
                 return null;
             }
-            String key = "\"" + field + "\"";
-            int at = json.indexOf(key);
-            if (at < 0) {
-                return null;
-            }
-            int colon = json.indexOf(':', at + key.length());
-            if (colon < 0) {
-                return null;
-            }
-            int start = json.indexOf('"', colon + 1);
-            if (start < 0) {
-                return null;
-            }
-            StringBuilder value = new StringBuilder();
-            for (int i = start + 1; i < json.length(); i++) {
-                char c = json.charAt(i);
-                if (c == '\\') {
-                    if (i + 1 >= json.length()) {
-                        return null;
-                    }
-                    char next = json.charAt(++i);
-                    if (next == 'u') {
-                        if (i + 4 >= json.length()) {
-                            return null;
-                        }
-                        int cp;
-                        try {
-                            cp = Integer.parseInt(json.substring(i + 1, i + 5), 16);
-                        } catch (NumberFormatException ex) {
-                            return null;
-                        }
-                        value.append((char) cp);
-                        i += 4;
-                        continue;
-                    }
-                    value.append(switch (next) {
-                        case 'n' -> '\n';
-                        case 'r' -> '\r';
-                        case 't' -> '\t';
-                        default -> next;
-                    });
-                    continue;
-                }
-                if (c == '"') {
-                    return value.toString();
-                }
-                value.append(c);
-            }
+            JsonNode value = root.get(field);
+            return value != null && value.isTextual() ? value.textValue() : null;
+        } catch (JsonProcessingException ex) {
             return null;
         }
     }
