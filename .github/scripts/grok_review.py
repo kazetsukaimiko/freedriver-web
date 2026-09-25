@@ -58,7 +58,7 @@ LAYER_MARKERS = (
     "Exception",
 )
 ADVISORY_BANNER = (
-    "> Advisory xAI review. Not a merge gate. Does not count as the required human review.\n\n"
+    "> Advisory xAI review. kaze's approval is the required human review; this comment is informational.\n\n"
 )
 
 
