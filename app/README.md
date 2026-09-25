@@ -1,6 +1,6 @@
 # freedriver-app
 
-Quarkus 3.38 product app (Java 21) with Quinoa + React. Develop and run it with Maven (commands below); Compose, Caddy, and Keycloak are Techops-owned.
+Quarkus 3.38 product app (Java 23) with Quinoa + React. Develop and run it with Maven (commands below); Compose, Caddy, and Keycloak are Techops-owned.
 
 If you want to learn more about Quarkus, please visit its website: <https://quarkus.io/>.
 
