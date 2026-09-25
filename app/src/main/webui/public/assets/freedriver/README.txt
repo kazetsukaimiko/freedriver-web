@@ -9,8 +9,6 @@ Backgrounds: production files are transparent PNGs. previews/ are on charcoal.
 logos/
   freedriver-icon.png       snowflake mark only (also app icon / favicon source)
   freedriver-icon.svg       icon v2 vector master (#127)
-  freedriver-lockup.png     snowflake + FREEDRIVER wordmark
-  freedriver-wordmark.png   FREEDRIVER only (ice-slash I)
   favicon.png               256px snowflake
   favicon-32.png            32px
 

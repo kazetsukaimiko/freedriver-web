@@ -1,4 +1,5 @@
 import { useEffect, useState, type MouseEvent } from 'react'
+import { Brand } from './Brand'
 import { demoBuild, publishedBuild } from './build.ts'
 import { Dashboard } from './Dashboard'
 import './App.css'
@@ -80,17 +81,13 @@ function App() {
       {splash !== 'done' && (
         <div className="splash" aria-hidden="true">
           <div className={`splash-bg${splash === 'revealing' ? ' is-leaving' : ''}`} />
-          <img
-            className={`splash-lockup${splash === 'playing' ? '' : ' is-docked'}`}
-            src="/assets/freedriver/logos/freedriver-lockup.png"
-            alt=""
-          />
+          <Brand className={`splash-brand${splash === 'playing' ? '' : ' is-docked'}`} />
         </div>
       )}
 
       <aside className="nav">
         <a className="nav-brand" href={hrefFor('/')} onClick={(event) => go(event, '/')}>
-          <img src="/assets/freedriver/logos/freedriver-lockup.png" alt="Freedriver" />
+          <Brand />
         </a>
         <nav aria-label="Primary">
           <a
