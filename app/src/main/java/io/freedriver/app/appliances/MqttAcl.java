@@ -3,10 +3,10 @@ package io.freedriver.app.appliances;
 import java.util.UUID;
 
 /**
- * Opposite-ACL contract the broker must enforce (Techops / CI).
- * Not a live Mosquitto config.
- * Topics are {@code freedriver/v1/{instanceId}/appliances} and
- * {@code freedriver/v1/{instanceId}/commands}. {@code instanceName} is never an ACL.
+ * In-code model of the opposite-ACL contract the broker must enforce (Techops / CI own the
+ * live broker ACL). ACL topics are keyed by {@code instanceId} only:
+ * {@code freedriver/v1/{instanceId}/appliances} and {@code freedriver/v1/{instanceId}/commands}.
+ * {@code instanceName} is a display label.
  */
 public final class MqttAcl {
     public enum Identity {

@@ -10,12 +10,11 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
  * When OIDC is on, anonymous full documents go to {@code /login} (Keycloak start).
- * XHR keeps 401 on the API. No-op while {@code quarkus.oidc.enabled} is false so
- * the house site and quarkus:dev still load without Keycloak.
+ * XHR keeps 401 on the API. The filter acts only while {@code quarkus.oidc.enabled} is true,
+ * so the house site and quarkus:dev run standalone.
  *
- * Vert.x HTTP, not {@link jakarta.ws.rs.container.ContainerRequestFilter}: quinoa
- * serves GET {@code /} outside JAX-RS, and this module has no servlet/Undertow
- * dispatcher. {@code java-script-auto-redirect} stays false (#101).
+ * Registered as a Vert.x HTTP filter, which sees every request, including the GET {@code /}
+ * that Quinoa serves outside JAX-RS. {@code java-script-auto-redirect} stays false (#101).
  */
 @ApplicationScoped
 public class AnonymousDocumentRedirect {
