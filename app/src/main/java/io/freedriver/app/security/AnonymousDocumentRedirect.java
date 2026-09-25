@@ -6,7 +6,6 @@ import io.vertx.ext.web.RoutingContext;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
-import lombok.RequiredArgsConstructor;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
@@ -19,11 +18,15 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  * dispatcher. {@code java-script-auto-redirect} stays false (#101).
  */
 @ApplicationScoped
-@RequiredArgsConstructor(onConstructor_ = @Inject)
 public class AnonymousDocumentRedirect {
 
-    @ConfigProperty(name = "quarkus.oidc.enabled", defaultValue = "false")
     private final boolean oidcEnabled;
+
+    @Inject
+    public AnonymousDocumentRedirect(
+            @ConfigProperty(name = "quarkus.oidc.enabled", defaultValue = "false") boolean oidcEnabled) {
+        this.oidcEnabled = oidcEnabled;
+    }
 
     void register(@Observes Filters filters) {
         filters.register(this::filter, 150);

@@ -206,3 +206,17 @@ jobs:
             -DgenerateBackupPoms=false \
             -DprocessAllModules=true
           ./mvnw -B --no-transfer-progress -pl mqtt-contract -am deploy -DskipTests
+
+  # Same Maven package the VPS runs in `docker compose --build` (Deploy), so
+  # prod-build failures such as ArC validation are caught before merge (#116).
+  prod-image:
+    runs-on: ubuntu-latest
+    if: github.repository == 'kazetsukaimiko/freedriver-web'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build prod image path (Dockerfile.compose build stage)
+        run: docker build -f app/src/main/docker/Dockerfile.compose --target build .
