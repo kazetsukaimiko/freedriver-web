@@ -1,27 +1,21 @@
 #!/usr/bin/env bash
 # Provision Mosquitto MQTTS secrets, storage, and instance-scoped ACLs on the VPS.
-# Run as root/sudo (except --acl-only). Idempotent: never overwrites existing
-# pass or cert files. Do not echo passwords. GitHub Actions must not run this
-# script except --acl-only in CI.
+# Full provision runs as root/sudo. --acl-only runs as any user and is the
+# mode CI uses, writing to a temp file. Idempotent: existing pass and cert
+# files stay in place, and output reports password files by name.
 #
-# Git keeps mosquitto/acl.template only. Never ship __INSTANCE_ID__ (or any
-# fake id) as the live compose-mounted ACL. Compose must not mount the git
-# template over the broker ACL. Live ACL is
-# /opt/freedriver-secrets/mosquitto/acl (secrets mount →
-# /mosquitto/config/secrets/acl).
-#
-# Long-term, freedriver-web owns minting instanceId. First-house id is
-# locked (877b33d0-6e53-4212-a53f-52107383eec2). Do not invent another UUID.
+# Git keeps mosquitto/acl.template. The live ACL is
+# /opt/freedriver-secrets/mosquitto/acl (secrets mount ->
+# /mosquitto/config/secrets/acl). Apply substitutes the house instanceId for
+# __INSTANCE_ID__ in the template's topic lines:
 #   INSTANCE_ID=<uuid> ./scripts/provision-mosquitto.sh
 #   ./scripts/provision-mosquitto.sh --instance-id <uuid>
-# First-house apply is Techops + that secrets file. Apply writes exact
-# instance topics and drops leftover freedriver/v1/home/... in the same step.
-# This script does not restart Mosquitto. Quarkus does not SSH or restart it.
-# live-commands stays false. Do not open 1883. No C/DB plugin.
-# TLS: write a self-signed cert only when server.crt and server.key are
-# both missing. Never overwrite a live Let's Encrypt pair (same paths).
-# After Caddy issues mqtt.freedriver.io, scripts/sync-mosquitto-le-cert.sh
-# replaces those files in place. Do not leave server.crt.selfsigned leftovers.
+# Long-term, freedriver-web owns minting instanceId. Techops runs the
+# first-house apply with the locked first-house instanceId. Techops restarts
+# Mosquitto afterwards to load the ACL.
+# TLS: self-signed and Let's Encrypt share server.crt/server.key.
+# scripts/sync-mosquitto-le-cert.sh replaces them in place after Caddy
+# issues mqtt.freedriver.io.
 set -euo pipefail
 
 SECRETS=/opt/freedriver-secrets/mosquitto
@@ -32,8 +26,8 @@ GROUP=lonewatt-techops
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ACL_PLACEHOLDER='__INSTANCE_ID__'
-# UUID hex+hyphens. Do not enforce a UUIDv4 version nibble.
-INSTANCE_ID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+# Lowercase UUID of any version: 8-4-4-4-12 lowercase hex, anchored at both ends.
+INSTANCE_ID_RE='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 
 INSTANCE_ID="${INSTANCE_ID:-}"
 ACL_TEMPLATE="${ACL_TEMPLATE:-${REPO_ROOT}/mosquitto/acl.template}"
@@ -103,7 +97,7 @@ same_path() {
   [[ "$(realpath "$a")" == "$(realpath "$b")" ]]
 }
 
-# topic lines only: comments may mention forbidden + / # / wildcards / home/.
+# Checks topic lines only; comment lines carry free text.
 assert_exact_topic_acl() {
   local file="$1"
   local topics
@@ -118,9 +112,10 @@ assert_exact_topic_acl() {
   fi
 }
 
-# One write: exact instance topics in, leftover freedriver/v1/home/... out.
-# Never merge-append onto an existing home/ ACL. Never write the git
-# template (or __INSTANCE_ID__) as the live secrets ACL.
+# One write replaces the destination: exact instance topics in, leftover
+# freedriver/v1/home/... out. Exits non-zero on an instanceId that fails
+# INSTANCE_ID_RE, on the git template as destination, and on topic lines with
+# home/, wildcards, or __INSTANCE_ID__.
 apply_instance_acl() {
   local instance_id="$1"
   local template="$2"
@@ -152,8 +147,9 @@ apply_instance_acl() {
 
   local tmp
   tmp="$(mktemp)"
-  # Placeholder is a fixed token; instance_id is hex+hyphens only.
-  # Substitute topic lines only so comments keep the documented token.
+  # Placeholder is a fixed token and instance_id is lowercase hex+hyphens,
+  # so both are literal in sed. Substitution edits topic lines; comments keep
+  # the documented token.
   sed "/^topic /s/${ACL_PLACEHOLDER}/${instance_id}/g" "$template" > "$tmp"
   if grep -E '^topic ' "$tmp" | grep -Fq "$ACL_PLACEHOLDER"; then
     echo "ACL topic lines still contain ${ACL_PLACEHOLDER} after substitution." >&2
@@ -171,8 +167,6 @@ apply_instance_acl() {
   dest_dir="$(dirname "$out")"
   mkdir -p "$dest_dir"
   umask 022
-  # Replace the dest in one write. Any leftover home/ lines already on
-  # the live file are dropped here — not in a later pass.
   cat "$tmp" > "$out"
   rm -f "$tmp"
   if grep -E '^topic .*(home/|[+#]|__INSTANCE_ID__)' "$out"; then
@@ -230,7 +224,7 @@ write_pass "${SECRETS}/api.pass"
 
 if [[ ! -e "${SECRETS}/passwd" ]]; then
   # Official image runs as uid 1883; write the passwd file as root.
-  # Read pass files inside the container so passwords are not passed via -e.
+  # The container reads each password from its pass file on the secrets mount.
   docker run --rm --user root \
     -v "${SECRETS}:/mosquitto/config/secrets" \
     "$IMAGE" \
@@ -278,9 +272,9 @@ chmod 750 "$SECRETS"
 find "$SECRETS" -type f -exec chown "root:${GROUP}" {} +
 find "$SECRETS" -type f -exec chmod 640 {} +
 
-# Broker uid 1883 must traverse the secrets dir and read passwd/TLS/ACL.
-# Never chmod 644 a private key. Directory is root:1883 750 so 1883 can enter
-# without world-readable files. Plaintext *.pass stay root:lonewatt-techops.
+# Broker uid 1883 enters the secrets dir (root:1883 750) and owns
+# passwd/TLS/ACL. server.key is 0600. Plaintext *.pass stay
+# root:lonewatt-techops 640.
 chown "root:1883" "$SECRETS"
 chmod 750 "$SECRETS"
 for f in passwd server.crt server.key acl; do
