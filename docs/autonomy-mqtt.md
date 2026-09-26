@@ -1,73 +1,50 @@
 # Autonomy MQTT how-to (v1)
 
-How autonomy (home) talks to Freedriver’s Mosquitto broker. Follow this without guessing topics, JSON, or TLS.
+How autonomy (home) talks to Freedriver’s Mosquitto broker: topics, JSON, and TLS in one place.
 
-This is **not** the portal REST/BFF/OIDC essay. Portal product surface: [appliances.md](appliances.md). Broker/ops notes: [mqtt-connect.md](mqtt-connect.md).
+Portal product surface: [appliances.md](appliances.md). Broker, ACL, and apply: [mqtt-connect.md](mqtt-connect.md).
 
-**Out of scope for autonomy:** OIDC, UX, enabling live-commands, owning Mosquitto.
+**Autonomy scope:** connect, subscribe to commands, publish state. The portal owns OIDC, UX, `live-commands`, and Mosquitto.
 
-**live-commands stays `false`.** Autonomy may still connect, subscribe, and publish state. Quarkus will not publish Topic B in production until [freedriver-web#27](https://github.com/kazetsukaimiko/freedriver-web/issues/27). Treat incoming commands as optional until then.
+**live-commands stays `false`.** Quarkus publishes Topic B in production once [freedriver-web#27](https://github.com/kazetsukaimiko/freedriver-web/issues/27) lands. Until then, treat incoming commands as optional.
 
-## Contract home (do not use the closed suite PR)
+## Contract home
 
-MQTT v1 types live in `io.freedriver:freedriver-mqtt-contract` (`io.freedriver.mqtt.contract`), owned and published by this portal. Consume path: [mqtt-contract-consume.md](mqtt-contract-consume.md). Topic JSON is also in [appliances.md](appliances.md).
-
-Do **not** copy `Appliance` / `ApplianceStateMessage` / `ApplianceCommandMessage` / `ApplianceSchemas` / `ApplianceJson` into autonomy. Extra JSON fields are rejected. There is no `schemaVersion`. The wire field is `applianceName`, not `name`. The switch field is `state`, not `on`. `instanceId` is a UUID **topic segment only**. `instanceName` is UX-only.
-
-Do **not** depend on `io.freedriver.autonomy:autonomy-mqtt-contract`. Do **not** depend on `io.freedriver:mqtt-contract` from the Freedriver library suite, [freedriver#18](https://github.com/kazetsukaimiko/freedriver/issues/18), or the closed [freedriver#19](https://github.com/kazetsukaimiko/freedriver/pull/19). kaze rejected putting mqtt-contract in that suite.
+MQTT v1 types live in `io.freedriver:freedriver-mqtt-contract` (`io.freedriver.mqtt.contract`), owned and published by this portal. Consume path: [mqtt-contract-consume.md](mqtt-contract-consume.md). Autonomy depends on that artifact for `Appliance`, `ApplianceStateMessage`, `ApplianceCommandMessage`, `ApplianceSchemas`, and `ApplianceJson`. kaze keeps mqtt-contract in this portal, separate from the Freedriver library suite ([freedriver#18](https://github.com/kazetsukaimiko/freedriver/issues/18), closed [freedriver#19](https://github.com/kazetsukaimiko/freedriver/pull/19)).
 
 ## Connect
 
 | | Autonomy (home) | Quarkus (`api`) |
 | --- | --- | --- |
 | Host | `mqtt.freedriver.io:8883` | compose hostname `mosquitto:8883` |
-| TLS | MQTTS — **must verify** against the public CA (no skip-verify). Do not pin a leaf fingerprint. | MQTTS on the docker network |
-| User | `autonomy` (this instance only) | `api` (exact-topic for this instance) |
-| Auth | broker password, not Keycloak | broker password, not Keycloak |
-
-Quarkus **never** uses `mqtt.freedriver.io`. That name is for home/autonomy only.
-
-Protocol: MQTT only. No WebSockets. No plaintext 1883.
+| TLS | MQTTS, verified against the public CA | MQTTS on the docker network |
+| User | `autonomy` (this instance only) | `api` (exact topics for this instance) |
+| Auth | broker password | broker password |
 
 ### TLS
 
-Let's Encrypt is live on `mqtt.freedriver.io:8883`. Verify the server certificate against the public CA. Do not disable hostname or chain checks. No skip-verify. Do not pin a leaf fingerprint.
-
-The `mosquitto-cert-sync` sidecar copies Caddy’s cert onto the broker (`scripts/sync-mosquitto-le-cert.sh`) — see [mqtt-connect.md](mqtt-connect.md). Do not copy certs or passwords into this doc or into git.
+Let's Encrypt is live on `mqtt.freedriver.io:8883`. Verify the server certificate with hostname and chain checks, using the public CA as the trust anchor.
 
 ### Passwords
 
-Broker passwords live on the VPS at `/opt/freedriver-secrets/mosquitto/*.pass` (`autonomy.pass`, `api.pass`). **Ask Techops** (or read that path). Do not put secrets in this repo or in issues.
-
-v1 one house: shared `autonomy` + `api` users, exact-topic only. `api` is not a wildcard superuser. No `+`/`#` bootstrap. A later instance gets its own autonomy user — do not share `autonomy` across instances.
+Broker passwords live on the VPS at `/opt/freedriver-secrets/mosquitto/*.pass` (`autonomy.pass`, `api.pass`). **Ask Techops** for `autonomy.pass` and the first-house instanceId (or read that path), and connect once Techops has applied the ACL.
 
 ## Topics
 
-One broker can carry more than one autonomy instance. Interpolate `instanceId` (UUID hex + hyphens). Version nibbles are not checked. No wildcards (`+`, `#`), no `$SYS`, no `freedriver/v1/#`. Never `freedriver/v1/+/appliances` or `.../commands`. `instanceName` is never a topic segment or ACL. Boards stay off MQTT.
+One broker can carry more than one autonomy instance. Each topic carries `instanceId` (a lowercase UUID, any version) as its segment. ACLs grant exact topics only. Boards stay inside the instance.
 
-Long-term, **freedriver-web owns minting `instanceId`**. First house is not an admin screen. Quarkus does not mint for v1 apply. The house does **not** mint the first id.
+Long-term, **freedriver-web owns minting `instanceId`**. The first-house instanceId is locked. This doc writes it as `__INSTANCE_ID__`.
 
-First-house `instanceId` (UUID hex+hyphens; do not enforce a v4 nibble): `877b33d0-6e53-4212-a53f-52107383eec2`.
-
-Use these exact topics (retain=false, QoS 1, `live-commands` stays `false`):
-
-- `freedriver/v1/877b33d0-6e53-4212-a53f-52107383eec2/appliances`
-- `freedriver/v1/877b33d0-6e53-4212-a53f-52107383eec2/commands`
-
-A display name for the first house will live in the portal/DB later. That name is UX-only — never a topic segment, never in ACL/compose/code.
-
-First-house apply is Techops + `/opt/freedriver-secrets/mosquitto/acl`. Mint is locked; `877b33d0-6e53-4212-a53f-52107383eec2` is the live first-house instanceId. The apply command on [mqtt-connect.md](mqtt-connect.md) is the repeatable procedure (idempotent; do not invent another UUID).
+Use these exact topics:
 
 | | Topic | Publisher | Subscriber | QoS | Retain |
 | --- | --- | --- | --- | --- | --- |
-| A (state) | `freedriver/v1/{instanceId}/appliances` | that instance's `autonomy` | `api` | 1 | **false** |
-| B (commands) | `freedriver/v1/{instanceId}/commands` | `api` | that instance's `autonomy` | 1 | **false** always |
+| A (state) | `freedriver/v1/__INSTANCE_ID__/appliances` | that instance's `autonomy` | `api` | 1 | **false** |
+| B (commands) | `freedriver/v1/__INSTANCE_ID__/commands` | `api` | that instance's `autonomy` | 1 | **false** |
 
-The broker cannot forbid retain. Publishers must set retain=false. Do not retain the appliance map (Quarkus liveness is receive-time; a retained map would lie after a restart). `live-commands` stays `false`.
+QoS 1 is a client convention, and retain is a publisher setting. retain=false keeps every map Quarkus sees live, because Quarkus liveness is receive-time.
 
 ## Topic A — state (autonomy → Quarkus)
-
-Publish QoS 1, retain=false.
 
 ```json
 {
@@ -82,24 +59,23 @@ Publish QoS 1, retain=false.
 }
 ```
 
-There is **no** `instanceId` in the body (it is the topic). There is **no** separate `id` and no `name`. Each appliance is `{applianceName, state}` only. Boards are not on this wire.
+The body has exactly these fields: `instanceName`, `appliedCommandId`, and `appliances`, where each appliance is `{applianceName, state}`. `instanceId` is the topic segment.
 
-`applianceName` is the existing autonomy alias key (`AliasView.applianceStates`). It is not a new slug. Portal `POST /api/appliances/{instanceId}/{applianceName}` uses that same string.
+`applianceName` is the existing autonomy alias key (`AliasView.applianceStates`). Portal `POST /api/appliances/{instanceId}/{applianceName}` uses that same string.
 
-`instanceId` is a UUID topic segment, not the MQTT protocol client-id. Version nibbles are not checked. `instanceName` is the dashboard tab label only.
+`instanceName` is the dashboard tab label, UX-only. The MQTT protocol client-id is independent of `instanceId`.
 
-When no command produced this map, send `"appliedCommandId": null`.
+For a periodic map, send `"appliedCommandId": null`.
 
-Field rules (Quarkus rejects otherwise):
+Field rules (Quarkus rejects any other shape):
 
 - `instanceName`: non-blank UX label
-- `applianceName`: autonomy alias key, 1–64 characters (not blank)
+- `applianceName`: autonomy alias key, 1–64 characters
 - `state`: boolean
-- extra JSON fields: rejected (including `instanceId`, `on`, `name`, `id`, `schemaVersion`, board fields)
 
 ## Topic B — command (Quarkus → autonomy)
 
-Subscribe QoS 1. Messages are retain=false. Until live-commands is on, you may see **no** traffic here; still subscribe so you are ready.
+Topic B carries traffic once live-commands is on; subscribe now so you are ready.
 
 ```json
 {
@@ -109,9 +85,9 @@ Subscribe QoS 1. Messages are retain=false. Until live-commands is on, you may s
 }
 ```
 
-`applianceName` is the same alias key as Topic A. There is no `name` and no `applianceId`.
+`applianceName` is the same alias key as Topic A.
 
-Quarkus **mints** `commandId`. Autonomy never invents it.
+Quarkus **mints** `commandId`.
 
 ## commandId / appliedCommandId handshake
 
@@ -119,34 +95,15 @@ Quarkus **mints** `commandId`. Autonomy never invents it.
 2. Autonomy applies the flip (or the latest-per-alias rule below).
 3. Autonomy publishes the next Topic A with `appliedCommandId` set to that same id.
 
-Quarkus waits (API side, default 5s) for a valid Topic A whose `appliedCommandId` matches. If it never arrives, the API reports timeout and does **not** pretend the flip worked.
+The portal POST completes when that Topic A arrives (wait and timeout: [appliances.md](appliances.md#lastupdated--stale--timeout)).
 
-If you publish a periodic map with no command applied, use `appliedCommandId: null`.
+## lastUpdated / stale
 
-## lastUpdated / stale (API only — not in MQTT)
-
-Do **not** put `lastUpdated` or `stale` on Topic A.
-
-- `lastUpdated` is when **Quarkus received** a valid Topic A (ISO-8601 UTC). It is not autonomy’s clock.
-- **Stale** = no valid Topic A in **20 seconds**, or never received.
-
-After a Quarkus restart the map starts stale until the next **live** Topic A. That is why retain=false.
+`lastUpdated` and `stale` are portal API fields that Quarkus computes from receive time: [appliances.md](appliances.md#lastupdated--stale--timeout). Topic A carries the fields listed above.
 
 ## Reconnect
 
-QoS 1 can deliver a backlog after a disconnect. **Do not apply a pile of old commands.**
-
-Either:
+QoS 1 can deliver a backlog after a disconnect. Apply only current commands. Either:
 
 - apply **latest-per-alias** (`applianceName`) only, or
 - drop commands older than the **20s** stale window.
-
-## What you implement vs what you do not
-
-| Do | Do not |
-| --- | --- |
-| Connect as `autonomy` to `mqtt.freedriver.io:8883` with TLS verify against the public CA | Skip TLS verify, disable hostname/chain checks, or pin a leaf fingerprint |
-| Publish Topic A, subscribe Topic B for `877b33d0-6e53-4212-a53f-52107383eec2` | Publish Topic B, subscribe Topic A, or invent another `instanceId` |
-| Echo `appliedCommandId` on the next map | Depend on a closed Freedriver library suite PR |
-| Ask Techops for `/opt/freedriver-secrets/mosquitto/autonomy.pass` | Put secrets in the doc or invent a Maven Central version |
-| Speak to the broker after Techops applies | Run the VPS apply, flip `live-commands`, or open 1883 |
