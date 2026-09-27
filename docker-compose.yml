@@ -80,17 +80,24 @@ services:
       context: ./sms/stub
     pull_policy: build
     restart: unless-stopped
+    # Twilio Verify credentials (#170): TWILIO_ACCOUNT_SID, TWILIO_API_KEY_SID,
+    # TWILIO_API_KEY_SECRET and TWILIO_VERIFY_SERVICE_SID. Sysadmin writes the file.
+    env_file:
+      - path: /opt/freedriver-secrets/twilio-verify.env
+        required: true
     environment:
       SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
     expose:
       - "8080"
+    # /health/live answers 200 while the process serves HTTP. /health is
+    # readiness and answers 503 until an SMS sender is connected (#107).
     healthcheck:
       test:
         [
           "CMD",
           "python3",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/live')",
         ]
       interval: 30s
       timeout: 5s
