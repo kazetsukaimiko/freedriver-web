@@ -46,6 +46,7 @@ export type CommandResult =
 
 export type MapResult =
   | { status: 'ok'; map: ApplianceMap }
+  | { status: 'off' }
   | { status: 'denied' }
   | { status: 'login' }
   | { status: 'error'; message: string }
@@ -157,6 +158,9 @@ export async function fetchApplianceMap(signal?: AbortSignal): Promise<MapResult
     }
     if (response.status === 403) {
       return { status: 'denied' }
+    }
+    if (response.status === 404) {
+      return { status: 'off' }
     }
     if (!response.ok) {
       return { status: 'error', message: `GET /api/appliances failed (${response.status})` }
