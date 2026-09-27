@@ -31,6 +31,7 @@ class BffSessionLockTest {
         assertTrue(properties.contains("quarkus.oidc.credentials.secret=${QUARKUS_OIDC_CREDENTIALS_SECRET:}"));
         assertTrue(properties.contains("\n%prod.quarkus.oidc.enabled=true\n"));
         assertTrue(properties.contains("\n%prod.quarkus.oidc.credentials.secret=${QUARKUS_OIDC_CREDENTIALS_SECRET}\n"));
+        assertTrue(properties.contains("\n%prod.quarkus.oidc.authentication.force-redirect-https-scheme=true\n"));
         assertFalse(properties.contains("quarkus.oidc.credentials.secret=secret"));
     }
 
