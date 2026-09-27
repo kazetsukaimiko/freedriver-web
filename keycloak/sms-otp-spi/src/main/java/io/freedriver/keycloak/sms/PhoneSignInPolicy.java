@@ -11,11 +11,11 @@ import java.util.regex.Pattern;
 
 /**
  * Account checks that run after sms verifies a code. Phone sign-in succeeds for an
- * enabled user whose {@code phone} attribute equals the verified number, who is a
- * direct member of the top-level group {@code phone-sign-in}, and whose effective
- * roles (direct, group and composite) include neither a realm or client role named
- * {@code portal-admin} nor any {@code realm-management} client role.
- * Any exception during the lookup denies.
+ * enabled user whose {@code phone} attribute equals the verified number and who is a
+ * direct member of the top-level group {@code phone-sign-in}. It denies a user whose
+ * effective roles (direct, group and composite) include a realm or client role named
+ * {@code portal-admin} or any {@code realm-management} client role, and it denies on
+ * any exception during the lookup.
  */
 final class PhoneSignInPolicy {
 
@@ -66,7 +66,7 @@ final class PhoneSignInPolicy {
         if (!role.isClientRole()) {
             return false;
         }
-        // A client role whose client cannot be read counts as privileged.
+        // A client role with an unreadable client counts as privileged.
         return !(role.getContainer() instanceof ClientModel client)
                 || Constants.REALM_MANAGEMENT_CLIENT_ID.equals(client.getClientId());
     }

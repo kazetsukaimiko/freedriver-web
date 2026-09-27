@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Provision the freedriver Keycloak realm, confidential client, and roles.
 #
-# freedriver-api is the Quarkus BFF client only. The client secret must never
-# go in the React SPA. This script does not print the secret and will not
-# rotate it if /opt/freedriver-secrets/keycloak-freedriver-api.secret exists.
+# freedriver-api is the confidential client of the Quarkus BFF; its secret stays
+# on the server with the BFF. When /opt/freedriver-secrets/keycloak-freedriver-api.secret
+# is absent, the script writes the current client secret there (root:lonewatt-techops,
+# 0640). An existing file and the client secret stay as they are.
 #
-# Run as root/sudo on the VPS. Idempotent. Does not set or print user passwords.
+# Run as root/sudo on the VPS. Idempotent. New users get the UPDATE_PASSWORD
+# required action and choose their own password.
 set -euo pipefail
 
 CONTAINER="${KEYCLOAK_CONTAINER:-freedriver-web-keycloak-1}"
@@ -45,7 +47,7 @@ kcadm() {
   docker exec "$CONTAINER" "$KCADM" --config "$KCADM_CONFIG" "$@"
 }
 
-# Login as master-realm techops. Password is not printed.
+# Log in as master-realm techops with the password passed in the exec environment.
 docker exec -e TECHOPS_PASS="$(tr -d '\n' < "$TECHOPS_PASS_FILE")" "$CONTAINER" \
   sh -c "$KCADM --config $KCADM_CONFIG config credentials --server http://127.0.0.1:8080 --realm master --user techops --password \"\$TECHOPS_PASS\"" >/dev/null
 
@@ -66,7 +68,7 @@ CREATED_CLIENT=0
 if [[ -n "${CLIENT_UUID}" ]]; then
   echo "Client freedriver-api already exists."
 else
-  # Confidential client for the Quarkus BFF only — never the React SPA.
+  # Confidential client for the Quarkus BFF.
   kcadm create clients -r "$REALM" \
     -s clientId=freedriver-api \
     -s name='Freedriver API' \
@@ -86,7 +88,7 @@ else
   echo "Created confidential client freedriver-api (Quarkus BFF only)."
 fi
 
-# Keep redirect / origin lists current without rotating the secret.
+# Keep redirect / origin lists current; the client secret stays the same.
 kcadm update "clients/${CLIENT_UUID}" -r "$REALM" \
   -s publicClient=false \
   -s standardFlowEnabled=true \
@@ -98,7 +100,7 @@ kcadm update "clients/${CLIENT_UUID}" -r "$REALM" \
 if [[ -e "$SECRET_FILE" ]]; then
   echo "Client secret file already exists; not rotating or rewriting it."
 else
-  # Fetch the current secret. Never POST/regenerate.
+  # Read the current secret with a GET.
   tmp="$(mktemp)"
   chmod 600 "$tmp"
   kcadm get "clients/${CLIENT_UUID}/client-secret" -r "$REALM" --fields value --format csv --noquotes \
