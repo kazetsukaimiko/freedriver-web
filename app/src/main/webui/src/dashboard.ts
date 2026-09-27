@@ -1,6 +1,11 @@
+import { apiFetch, signInRequired } from './api'
+
 export const COMMAND_WAIT_MS = 5000
 export const STALE_AFTER_MS = 20_000
 export const POLL_MS = 4000
+/** How long a switch command left unconfirmed by sign-in shows its note before the page goes to sign-in. */
+export const SIGN_IN_NOTICE_MS = 2000
+export const SIGN_IN_NOTICE = "Couldn't confirm. Check it after you sign in."
 const DEMO_CONFIRM_MS = 900
 const DEMO_INSTANCE_ID = '550e8400-e29b-41d4-a716-446655440000'
 
@@ -146,14 +151,10 @@ function readAppliance(raw: unknown): Appliance {
   return { id: body.applianceName, name: body.applianceName, on: body.on }
 }
 
-/** With this header, Quarkus OIDC answers an anonymous API call with 401, and the SPA sends the browser to /login. */
-const API_HEADERS = { 'X-Requested-With': 'XMLHttpRequest' }
-
 export async function fetchApplianceMap(signal?: AbortSignal): Promise<MapResult> {
   try {
-    const response = await fetch('/api/appliances', { signal, headers: API_HEADERS })
-    if (response.status === 401) {
-      window.location.replace('/login')
+    const response = await apiFetch('/api/appliances', { signal })
+    if (signInRequired(response)) {
       return { status: 'login' }
     }
     if (response.status === 403) {
@@ -181,12 +182,11 @@ export async function postApplianceCommand(
   signal?: AbortSignal,
 ): Promise<CommandResult> {
   try {
-    const response = await fetch(
+    const response = await apiFetch(
       `/api/appliances/${encodeURIComponent(instanceId)}/${encodeURIComponent(applianceName)}`,
       {
         method: 'POST',
         headers: {
-          ...API_HEADERS,
           'Content-Type': 'application/json',
           ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
         },
@@ -194,8 +194,7 @@ export async function postApplianceCommand(
         signal,
       },
     )
-    if (response.status === 401) {
-      window.location.replace('/login')
+    if (signInRequired(response)) {
       return { status: 'login' }
     }
     if (response.status === 403) {

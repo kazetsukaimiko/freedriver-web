@@ -81,7 +81,7 @@ On the portal side:
 
 Quarkus owns the OIDC code flow (`application-type=web-app`). The browser gets an HTTP-only, Secure, SameSite=Lax session cookie (Lax so the Keycloak return from auth.freedriver.io to app.freedriver.io keeps the session). The confidential client secret is `QUARKUS_OIDC_CREDENTIALS_SECRET` on the server.
 
-Appliance fetches send `X-Requested-With: XMLHttpRequest`, so a missing session returns 401 to the fetch.
+Dashboard API requests send `X-Requested-With: JavaScript` (one shared fetch helper, `webui/src/api.ts`). With `java-script-auto-redirect=false`, a request without a session gets 499. The dashboard then stops polling and sends the whole page to `/login`; a switch command still waiting shows "Couldn't confirm. Check it after you sign in." for two seconds first. Sign-in returns to `/login`, which sends the browser to `/`, the dashboard. A browser opening an API path directly gets the redirect to sign-in.
 
 Map and command are fail-closed (status table above). CSRF protection is the `X-CSRF-Token` check. Sign-in is on in the prod profile (`%prod.quarkus.oidc.enabled=true`, #154).
 
