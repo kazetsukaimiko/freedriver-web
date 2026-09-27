@@ -42,7 +42,7 @@ Alloy tails Docker container logs into Loki (14 days). Prometheus keeps ~15 days
 
 ## App
 
-The product app lives in `app/`: Quarkus 3.38 (Java 23) with Quinoa serving a React TypeScript SPA. It talks normal REST under `/api`. Auth is an OIDC BFF against Keycloak at `https://auth.freedriver.io`, switched off by default (`quarkus.oidc.enabled=false`) so the app starts with no secrets set. App details: [app/README.md](app/README.md).
+The product app lives in `app/`: Quarkus 3.38 (Java 23) with Quinoa serving a React TypeScript SPA. It talks normal REST under `/api`. Auth is an OIDC BFF against Keycloak at `https://auth.freedriver.io`. It is on in the prod profile (`%prod.quarkus.oidc.enabled=true`) and off in the default, dev and test profiles, so the app starts locally with no secrets set. App details: [app/README.md](app/README.md).
 
 ```shell
 ./mvnw -pl app -am quarkus:dev
@@ -58,7 +58,7 @@ Phone + code sign-in for house users. The `sms` service and the Keycloak `freedr
 
 ## Appliances API
 
-`GET/POST /api/appliances` is implemented against **mock-autonomy** on the same `ApplianceControl` bus for `quarkus:dev` and CI. The browser is REST only. Production keeps the route disabled (404), OIDC off, and MQTT disconnected. Integration contract: [`docs/appliances.md`](docs/appliances.md). Autonomy MQTT how-to: [`docs/autonomy-mqtt.md`](docs/autonomy-mqtt.md).
+`GET/POST /api/appliances` is implemented against **mock-autonomy** on the same `ApplianceControl` bus for `quarkus:dev` and CI. The browser is REST only. Production has sign-in on, keeps the route disabled (404), and keeps MQTT disconnected. Integration contract: [`docs/appliances.md`](docs/appliances.md). Autonomy MQTT how-to: [`docs/autonomy-mqtt.md`](docs/autonomy-mqtt.md).
 
 The live command route is blocked on [#25](https://github.com/kazetsukaimiko/freedriver-web/issues/25) and Security sign-off on [#27](https://github.com/kazetsukaimiko/freedriver-web/issues/27).
 

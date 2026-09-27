@@ -83,7 +83,7 @@ Quarkus owns the OIDC code flow (`application-type=web-app`). The browser gets a
 
 Appliance fetches send `X-Requested-With: XMLHttpRequest`, so a missing session returns 401 to the fetch.
 
-Map and command are fail-closed (status table above). CSRF protection is the `X-CSRF-Token` check. `quarkus.oidc.enabled` flips on in a later card, after CSRF (#98).
+Map and command are fail-closed (status table above). CSRF protection is the `X-CSRF-Token` check. Sign-in is on in the prod profile (`%prod.quarkus.oidc.enabled=true`, #154).
 
 ## lastUpdated / stale / timeout
 
@@ -101,7 +101,10 @@ freedriver.appliances.enabled=false
 freedriver.appliances.live-commands=false
 freedriver.appliances.mock=false
 quarkus.oidc.enabled=false
+%prod.quarkus.oidc.enabled=true
 ```
+
+With sign-in on, the appliances API still returns 404 in prod and sends nothing to the house. The two appliance flags change only after #27 closes.
 
 `./mvnw -pl app -am quarkus:dev` runs **mock-autonomy** in-process on the same `ApplianceControl` bus (`%dev`): `/api/hello` and `/api/health` return 200, and `/api/appliances` serves the mock event source (one Cabin instance, six named appliances).
 
