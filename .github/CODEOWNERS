@@ -18,3 +18,11 @@
 /mqtt-contract/ @kazetsukaimiko
 /mqtt/ @kazetsukaimiko
 /mqtt-paho/ @kazetsukaimiko
+/app/src/main/docker/Dockerfile.compose @kazetsukaimiko
+/app/src/main/java/io/freedriver/app/appliances/Mqtt*.java @kazetsukaimiko
+/app/src/main/java/io/freedriver/app/api/AppliancesResource.java @kazetsukaimiko
+/app/src/test/java/io/freedriver/app/security/ @kazetsukaimiko
+/app/src/test/java/io/freedriver/app/appliances/CommandRateLimiterTest.java @kazetsukaimiko
+/app/src/test/java/io/freedriver/app/appliances/DefaultProfileSafetyTest.java @kazetsukaimiko
+/app/src/test/java/io/freedriver/app/api/AuthDocumentTest.java @kazetsukaimiko
+/app/src/test/java/io/freedriver/app/api/AppliancesDisabledTest.java @kazetsukaimiko
