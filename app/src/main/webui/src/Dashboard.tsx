@@ -21,6 +21,7 @@ type View =
   | { kind: 'waiting' }
   | { kind: 'denied' }
   | { kind: 'empty' }
+  | { kind: 'off' }
   | {
       kind: 'ready'
       instances: Instance[]
@@ -77,7 +78,14 @@ export function Dashboard({ search }: { search: string }) {
     }
 
     let cancelled = false
+    let id: number | undefined
     const poll = new AbortController()
+
+    function stop() {
+      cancelled = true
+      poll.abort()
+      window.clearInterval(id)
+    }
 
     async function load() {
       try {
@@ -93,6 +101,14 @@ export function Dashboard({ search }: { search: string }) {
           lastUpdatedRef.current = null
           rowsRef.current = []
           setView({ kind: 'denied' })
+          return
+        }
+        if (result.status === 'off') {
+          stop()
+          lastFreshAt.current = null
+          lastUpdatedRef.current = null
+          rowsRef.current = []
+          setView({ kind: 'off' })
           return
         }
         if (result.status === 'ok') {
@@ -114,12 +130,8 @@ export function Dashboard({ search }: { search: string }) {
     }
 
     void load()
-    const id = window.setInterval(() => void load(), POLL_MS)
-    return () => {
-      cancelled = true
-      poll.abort()
-      window.clearInterval(id)
-    }
+    id = window.setInterval(() => void load(), POLL_MS)
+    return stop
   }, [demo])
 
   useEffect(() => {
@@ -340,6 +352,14 @@ export function Dashboard({ search }: { search: string }) {
             Home status
           </h2>
           <p className="empty-copy">No homes yet</p>
+        </section>
+      )}
+      {view.kind === 'off' && (
+        <section className="card" aria-labelledby="home-status">
+          <h2 id="home-status" className="visually-hidden">
+            Home status
+          </h2>
+          <p className="empty-copy">Remote control is off for now. Your homes will appear here once it's switched on.</p>
         </section>
       )}
       {view.kind === 'ready' && (
