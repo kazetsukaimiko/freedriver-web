@@ -80,8 +80,7 @@ services:
       context: ./sms/stub
     pull_policy: build
     restart: unless-stopped
-    # Twilio Verify credentials (#170): TWILIO_ACCOUNT_SID, TWILIO_API_KEY_SID,
-    # TWILIO_API_KEY_SECRET and TWILIO_VERIFY_SERVICE_SID. Sysadmin writes the file.
+    # Twilio Verify credentials (#170), see docs/sms-otp.md.
     env_file:
       - path: /opt/freedriver-secrets/twilio-verify.env
         required: true
