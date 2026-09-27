@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import { goToSignIn } from './api'
 import {
   COMMAND_WAIT_MS,
   POLL_MS,
+  SIGN_IN_NOTICE,
+  SIGN_IN_NOTICE_MS,
   STALE_AFTER_MS,
   type Appliance,
   type CommandResult,
@@ -16,6 +19,9 @@ import {
 } from './dashboard'
 
 type Row = Appliance & { pending: boolean; error: string | null }
+
+/** 'now' goes to sign-in right away; 'notice' first shows SIGN_IN_NOTICE on the switches left unconfirmed. */
+type SignIn = 'now' | 'notice' | null
 
 type View =
   | { kind: 'waiting' }
@@ -58,6 +64,9 @@ export function Dashboard({ search }: { search: string }) {
   const lastFreshAt = useRef<number | null>(demo === 'live' || demo === 'timeout' || demo === 'empty' ? Date.now() : null)
   const lastUpdatedRef = useRef<string | null>(null)
   const inFlight = useRef(new Map<string, AbortController>())
+  const [signIn, setSignIn] = useState<SignIn>(null)
+  const signingIn = useRef(false)
+  const stopPolling = useRef<() => void>(() => {})
 
   useEffect(() => {
     rowsRef.current = view.kind === 'ready' ? view.rows : []
@@ -86,6 +95,7 @@ export function Dashboard({ search }: { search: string }) {
       poll.abort()
       window.clearInterval(id)
     }
+    stopPolling.current = stop
 
     async function load() {
       try {
@@ -94,9 +104,11 @@ export function Dashboard({ search }: { search: string }) {
           return
         }
         if (result.status === 'login') {
+          requireSignIn()
           return
         }
         if (result.status === 'denied') {
+          stop()
           lastFreshAt.current = null
           lastUpdatedRef.current = null
           rowsRef.current = []
@@ -143,6 +155,17 @@ export function Dashboard({ search }: { search: string }) {
   }, [view])
 
   useEffect(() => {
+    if (signIn === 'now') {
+      goToSignIn()
+      return
+    }
+    if (signIn === 'notice') {
+      const id = window.setTimeout(goToSignIn, SIGN_IN_NOTICE_MS)
+      return () => window.clearTimeout(id)
+    }
+  }, [signIn])
+
+  useEffect(() => {
     const pending = inFlight.current
     return () => {
       pending.forEach((controller) => controller.abort())
@@ -175,7 +198,28 @@ export function Dashboard({ search }: { search: string }) {
     })
   }
 
+  /** The session has ended: stop polling, keep the current view, and send the page to sign-in. */
+  function requireSignIn() {
+    if (signingIn.current) {
+      return
+    }
+    signingIn.current = true
+    stopPolling.current()
+    inFlight.current.forEach((controller) => controller.abort())
+    inFlight.current.clear()
+    const unconfirmed = rowsRef.current.some((row) => row.pending)
+    if (unconfirmed) {
+      const next = rowsRef.current.map((row) =>
+        row.pending ? { ...row, pending: false, error: SIGN_IN_NOTICE } : row,
+      )
+      rowsRef.current = next
+      setView((current) => (current.kind === 'ready' ? { ...current, rows: next } : current))
+    }
+    setSignIn(unconfirmed ? 'notice' : 'now')
+  }
+
   function deny() {
+    stopPolling.current()
     inFlight.current.forEach((controller) => controller.abort())
     inFlight.current.clear()
     rowsRef.current = []
@@ -196,7 +240,11 @@ export function Dashboard({ search }: { search: string }) {
 
   function finishCommand(id: string, result: CommandResult) {
     inFlight.current.delete(id)
+    if (signingIn.current) {
+      return
+    }
     if (result.status === 'login') {
+      requireSignIn()
       return
     }
     if (result.status === 'denied') {
@@ -265,7 +313,7 @@ export function Dashboard({ search }: { search: string }) {
   }
 
   function toggle(row: Row) {
-    if (view.kind !== 'ready' || view.unreachable || row.pending) {
+    if (signingIn.current || view.kind !== 'ready' || view.unreachable || row.pending) {
       return
     }
     if (inFlight.current.has(row.id)) {
@@ -370,6 +418,7 @@ export function Dashboard({ search }: { search: string }) {
           unreachable={view.unreachable}
           lastUpdated={view.lastUpdated}
           now={now}
+          locked={signIn !== null}
           onSelect={selectInstance}
           onToggle={toggle}
         />
@@ -430,6 +479,7 @@ function AppliancePanel({
   unreachable,
   lastUpdated,
   now,
+  locked,
   onSelect,
   onToggle,
 }: {
@@ -439,6 +489,7 @@ function AppliancePanel({
   unreachable: boolean
   lastUpdated: string | null
   now: number
+  locked: boolean
   onSelect: (instanceId: string) => void
   onToggle: (row: Row) => void
 }) {
@@ -487,7 +538,7 @@ function AppliancePanel({
               aria-checked={row.pending ? 'mixed' : row.on}
               aria-busy={row.pending}
               aria-label={row.name}
-              disabled={unreachable || row.pending}
+              disabled={unreachable || row.pending || locked}
               onClick={() => onToggle(row)}
             >
               <span className="switch-thumb" />

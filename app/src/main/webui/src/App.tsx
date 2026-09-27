@@ -1,4 +1,5 @@
 import { useEffect, useState, type MouseEvent } from 'react'
+import { apiFetch } from './api'
 import { Brand } from './Brand'
 import { demoBuild, publishedBuild } from './build.ts'
 import { Dashboard } from './Dashboard'
@@ -115,10 +116,7 @@ function BuildStamp() {
     }
     const controller = new AbortController()
 
-    fetch('/api/build', {
-      signal: controller.signal,
-      headers: { 'X-Requested-With': 'XMLHttpRequest' },
-    })
+    apiFetch('/api/build', { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) {
           return null
