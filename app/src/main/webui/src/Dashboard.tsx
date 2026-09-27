@@ -462,7 +462,7 @@ function initialView(demo: DemoMode | null): View {
   return { kind: 'waiting' }
 }
 
-function Denied() {
+export function Denied() {
   return (
     <main className="content status-page">
       <img className="mark-art" src="/assets/freedriver/pages/freedriver-denied.png" alt="" />

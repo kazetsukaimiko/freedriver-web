@@ -62,6 +62,10 @@ Phone + code sign-in for house users. The `sms` service and the Keycloak `freedr
 
 The live command route is blocked on [#25](https://github.com/kazetsukaimiko/freedriver-web/issues/25) and Security sign-off on [#27](https://github.com/kazetsukaimiko/freedriver-web/issues/27).
 
+## Changelog
+
+`GET /api/changelog` serves the changelog packaged in the jar at the classpath path `changelog/CHANGELOG.md` as plain text to the `portal-admin`, `dashboard` and `changelog` roles, and answers 404 while the jar has no changelog file. The portal shows it at `/changelog`, linked from the build stamp. Contract and file path for the release job: [`docs/changelog.md`](docs/changelog.md).
+
 ## Deploy
 
 Push or merge to `main`, or run the **Deploy** workflow. GitHub Actions rsyncs this repo to `/opt/freedriver-web` and runs `docker compose --env-file /opt/freedriver-secrets/.env up -d` so `${VAR}` interpolation reads the secrets file, not a `.env` in the git tree.
