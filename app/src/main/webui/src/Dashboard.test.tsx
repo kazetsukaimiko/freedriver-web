@@ -122,11 +122,12 @@ describe('Dashboard', () => {
     expect(screen.getByRole('switch', { name: 'hallway' })).toBeTruthy()
   })
 
-  it('shows Access denied on 403', async () => {
+  it('shows Access denied with the dashboard role line on 403', async () => {
     answer(403)
     await renderDashboard()
 
     expect(screen.getByRole('heading', { name: 'Access denied' })).toBeTruthy()
+    expect(screen.getByText('This account needs a dashboard or portal-admin role.')).toBeTruthy()
   })
 
   it('stops polling after a 403 on the first poll', async () => {

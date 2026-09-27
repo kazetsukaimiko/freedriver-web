@@ -3,6 +3,7 @@ import { apiFetch, signInRequired } from './api'
 export const CHANGELOG_PATH = '/changelog'
 export const NO_CHANGELOG = 'No changelog yet.'
 export const CHANGELOG_ERROR = "Couldn't load the changelog."
+export const CHANGELOG_DENIED = 'This account needs a dashboard, portal-admin or changelog role to see the changelog.'
 
 export type ChangelogResult =
   | { status: 'ok'; text: string }

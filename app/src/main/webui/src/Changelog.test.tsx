@@ -68,12 +68,16 @@ describe('Changelog', () => {
     expect(document.querySelector('.changelog-text')).toBeNull()
   })
 
-  it('shows the Access denied page on 403', async () => {
+  it('shows the Access denied page naming the changelog role on 403', async () => {
     const replace = vi.spyOn(window.location, 'replace').mockImplementation(() => {})
     answer(403)
     await renderPage()
 
     expect(screen.getByRole('heading', { level: 1, name: 'Access denied' })).toBeTruthy()
+    expect(
+      screen.getByText('This account needs a dashboard, portal-admin or changelog role to see the changelog.'),
+    ).toBeTruthy()
+    expect(screen.queryByText('This account needs a dashboard or portal-admin role.')).toBeNull()
     expect(screen.queryByRole('heading', { name: 'Changelog' })).toBeNull()
     expect(replace).not.toHaveBeenCalled()
   })

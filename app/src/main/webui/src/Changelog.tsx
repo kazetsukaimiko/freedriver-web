@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { goToSignIn } from './api'
-import { CHANGELOG_ERROR, NO_CHANGELOG, fetchChangelog } from './changelog'
+import { CHANGELOG_DENIED, CHANGELOG_ERROR, NO_CHANGELOG, fetchChangelog } from './changelog'
 import { Denied } from './Dashboard'
 
 type View =
@@ -37,7 +37,7 @@ export function Changelog() {
   }, [])
 
   if (view.kind === 'denied') {
-    return <Denied />
+    return <Denied message={CHANGELOG_DENIED} />
   }
 
   return (
