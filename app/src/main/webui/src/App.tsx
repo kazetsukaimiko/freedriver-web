@@ -1,13 +1,20 @@
 import { useEffect, useState, type MouseEvent } from 'react'
-import { apiFetch } from './api'
 import { Brand } from './Brand'
-import { demoBuild, publishedBuild } from './build.ts'
+import { BuildStamp } from './BuildStamp'
+import { Changelog } from './Changelog'
+import { CHANGELOG_PATH } from './changelog'
 import { Dashboard } from './Dashboard'
 import './App.css'
 
 type Splash = 'playing' | 'docking' | 'revealing' | 'done'
 
-const knownPaths = new Set(['/', '/dashboard'])
+type Page = 'dashboard' | 'changelog' | 'not-found'
+
+const pages = new Map<string, Page>([
+  ['/', 'dashboard'],
+  ['/dashboard', 'dashboard'],
+  [CHANGELOG_PATH, 'changelog'],
+])
 const SPLASH_KEY = 'freedriver.splash.seen'
 
 function shouldPlaySplash() {
@@ -63,7 +70,7 @@ function App() {
     return () => window.removeEventListener('popstate', onPop)
   }, [])
 
-  const page = knownPaths.has(path) ? 'dashboard' : 'not-found'
+  const page: Page = pages.get(path) ?? 'not-found'
   const hrefFor = (to: string) => to + search
 
   function go(event: MouseEvent<HTMLAnchorElement>, to: string) {
@@ -101,51 +108,13 @@ function App() {
         </nav>
       </aside>
 
-      <div className="workspace">{page === 'not-found' ? <NotFound /> : <Dashboard search={search} />}</div>
-      <BuildStamp />
+      <div className="workspace">
+        {page === 'dashboard' && <Dashboard search={search} />}
+        {page === 'changelog' && <Changelog />}
+        {page === 'not-found' && <NotFound />}
+      </div>
+      <BuildStamp changelogHref={hrefFor(CHANGELOG_PATH)} onOpenChangelog={(event) => go(event, CHANGELOG_PATH)} />
     </div>
-  )
-}
-
-function BuildStamp() {
-  const [build, setBuild] = useState<string | null>(() => demoBuild())
-
-  useEffect(() => {
-    if (build) {
-      return
-    }
-    const controller = new AbortController()
-
-    apiFetch('/api/build', { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) {
-          return null
-        }
-        return (await response.json()) as { build?: unknown }
-      })
-      .then((data) => {
-        if (!data) {
-          return
-        }
-        setBuild(publishedBuild(data.build))
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') {
-          return
-        }
-      })
-
-    return () => controller.abort()
-  }, [build])
-
-  if (!build) {
-    return null
-  }
-
-  return (
-    <p className="build-stamp" aria-label="Build">
-      {build}
-    </p>
   )
 }
 

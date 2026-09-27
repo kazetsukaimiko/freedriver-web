@@ -462,12 +462,15 @@ function initialView(demo: DemoMode | null): View {
   return { kind: 'waiting' }
 }
 
-function Denied() {
+export const DENIED_COPY = 'This account needs a dashboard or portal-admin role.'
+
+/** The Access denied page. `message` is the line under the heading. */
+export function Denied({ message = DENIED_COPY }: { message?: string }) {
   return (
     <main className="content status-page">
       <img className="mark-art" src="/assets/freedriver/pages/freedriver-denied.png" alt="" />
       <h1>Access denied</h1>
-      <p className="lede">This account needs a dashboard or portal-admin role.</p>
+      <p className="lede">{message}</p>
     </main>
   )
 }

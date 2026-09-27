@@ -65,7 +65,7 @@ If you want to learn more about building native executables, please consult <htt
 
 ### Quinoa + React
 
-The UI is a React TypeScript SPA in `src/main/webui` (Vite, served by Quinoa at `/`). SPA routing is enabled. The dashboard fetches public `GET /api/hello`. Public `GET /api/build` returns `{"build":"<quarkus.application.version>"}` (`1.0.0-SNAPSHOT` locally; `YEAR-MONTH_rBUILD_NUM` after a main deploy) for the UX badge. `quarkus:dev` also serves `GET/POST /api/appliances` from the in-process mock. See `docs/appliances.md`.
+The UI is a React TypeScript SPA in `src/main/webui` (Vite, served by Quinoa at `/`). SPA routing is enabled. The dashboard fetches public `GET /api/hello`. Public `GET /api/build` returns `{"build":"<quarkus.application.version>"}` (`1.0.0-SNAPSHOT` locally; `YEAR-MONTH_rBUILD_NUM` after a main deploy) for the UX badge. `quarkus:dev` also serves `GET/POST /api/appliances` from the in-process mock. See `docs/appliances.md`. `GET /api/changelog` serves the classpath resource `changelog/CHANGELOG.md` to the read-only roles and backs the `/changelog` page. See `docs/changelog.md`.
 
 [Related guide section...](https://docs.quarkiverse.io/quarkus-quinoa/dev/index.html)
 
