@@ -35,8 +35,19 @@ if "8080:8080" in block or '"8080:' in block or "'8080:" in block:
 SECRET = "SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}"
 env = re.search(r"^    environment:\n((?:      .*\n)+)", block, re.M)
 keys = [] if env is None else re.findall(r"^      ([A-Z0-9_]+):", env.group(1), re.M)
-if "env_file" in block or keys != ["SMS_OTP_SHARED_SECRET"] or SECRET not in block:
+if keys != ["SMS_OTP_SHARED_SECRET"] or SECRET not in block:
     raise SystemExit("sms environment is exactly SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}")
+TWILIO_ENV = (
+    "    env_file:\n"
+    "      - path: /opt/freedriver-secrets/twilio-verify.env\n"
+    "        required: true\n"
+)
+if TWILIO_ENV not in block:
+    raise SystemExit("sms loads /opt/freedriver-secrets/twilio-verify.env as a required env_file")
+if compose.count("env_file") != 1 or compose.count("twilio-verify.env") != 1:
+    raise SystemExit("twilio-verify.env is the only env_file, and only sms loads it")
+if "TWILIO_" in compose.replace(block, ""):
+    raise SystemExit("only sms receives TWILIO_ variables")
 if "sms-otp.env.example" in block or "sms-otp.env.example" in compose:
     raise SystemExit("compose must not load the git secret example")
 if "SMS_OTP_SHARED_SECRET" not in block:
@@ -53,6 +64,17 @@ PY
 
 if grep -q 'sms-otp.env.example' docker-compose.yml; then
   fail "compose must not reference the example secret file"
+fi
+if grep -q 'twilio-verify.env.example' docker-compose.yml; then
+  fail "compose must not reference the Twilio example file"
+fi
+if [[ "$(grep -v '^#' secrets/twilio-verify.env.example)" != "$(printf '%s=\n' TWILIO_ACCOUNT_SID TWILIO_API_KEY_SID TWILIO_API_KEY_SECRET TWILIO_VERIFY_SERVICE_SID)" ]]; then
+  fail "Twilio example file holds the four names with empty values"
+fi
+if grep -RInE '^TWILIO_[A-Z_]+=.+' \
+  --exclude-dir .git --exclude-dir target \
+  sms keycloak secrets scripts docs README.md docker-compose.yml Caddyfile .env.example; then
+  fail "do not commit a Twilio credential value"
 fi
 if [[ ! -f secrets/sms-otp.env.example ]]; then
   fail "missing secrets/sms-otp.env.example"

@@ -149,6 +149,8 @@ def test_http_stub() -> None:
     try:
         status, body = request(base, "GET", "/health")
         check(status == 503 and json.loads(body).get("status") == "stub", "stub health is 503")
+        status, body = request(base, "GET", "/health/live")
+        check(status == 200 and json.loads(body) == {"status": "up"}, "stub liveness is 200")
         check(request(base, "POST", "/otp/send", body=phone_body(KNOWN))[0] == 401, "send without secret")
         check(request(base, "POST", "/otp/verify", "nope", phone_body(KNOWN))[0] == 401, "verify wrong secret")
         check(request(base, "POST", "/otp/send", server.PLACEHOLDER, phone_body(KNOWN))[0] == 401, "placeholder header")

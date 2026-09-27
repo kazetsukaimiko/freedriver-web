@@ -19,9 +19,11 @@ The service enforces:
 - Code expiry. Codes are 6 digits, valid for 5 minutes, one pending code per number, and a code works once.
 - Attempts per phone. 5 wrong codes per number in 15 minutes drop the pending code, and verify answers `invalid-code` for that number until the window ends. 5 sends per number in 15 minutes, after which send answers `429`. Both limits count every number the same way.
 
-The stub in `sms/stub` implements these rules in `OtpService` and starts with an empty registry and an unset SMS sender, so `/health`, send and verify answer `503`. The #107 service keeps this HTTP contract, header and limits, and connects the portal-admin registry and the vendor.
+The stub in `sms/stub` implements these rules in `OtpService` and starts with an empty registry and an unset SMS sender, so `/health`, send and verify answer `503`. `/health/live` answers `200` while the server runs, and the compose healthcheck calls it. The #107 service keeps this HTTP contract, header and limits, and connects the portal-admin registry and the vendor.
 
 Compose passes `SMS_OTP_SHARED_SECRET` from `/opt/freedriver-secrets/.env` to `sms` and `keycloak` through each service's `environment` as `${SMS_OTP_SHARED_SECRET:-}`. When the secret is empty or the placeholder, phone sign-in is off: the Keycloak step skips itself, the stub answers `401`, and the provisioning script leaves the realm flow unchanged.
+
+The Twilio Verify credentials reach `sms` only, from `/opt/freedriver-secrets/twilio-verify.env` through a required `env_file` ([#170](https://github.com/kazetsukaimiko/freedriver-web/issues/170)). The variables are `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET` and `TWILIO_VERIFY_SERVICE_SID`. Sysadmin writes the file, `root:lonewatt-techops` mode 640. Placeholders: `secrets/twilio-verify.env.example`.
 
 ## Keycloak SPI
 
@@ -60,4 +62,4 @@ docker compose --env-file /opt/freedriver-secrets/.env up -d --build keycloak sm
 
 The script copies the built-in `browser` flow to `browser-freedriver` and adds `freedriver-sms-otp` as the last top-level ALTERNATIVE on the copy. It checks that `auth-username-password-form` stays REQUIRED inside the forms Alternative. It creates the `phone-sign-in` group, adds the user profile attribute `phone` with admin-only view and edit, and sets the realm login theme to `freedriver`. Once the Keycloak container has a real secret, it sets `browser-freedriver` as the realm browser flow.
 
-`sms` reports unhealthy while the stub answers 503 on `/health`. Keycloak depends only on `keycloak-db`, so password login comes up either way.
+Keycloak depends only on `keycloak-db`, so password login comes up whatever the `sms` health.

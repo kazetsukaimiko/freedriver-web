@@ -4,7 +4,8 @@
 OtpService holds the rules: a registry of provisioned numbers (phone -> Keycloak
 username), 6-digit codes that expire, and per-phone limits on sends and wrong codes.
 main() starts it with an empty registry and sender=None, so /health, send and
-verify answer 503. The Quarkus sms service (#107) replaces this image.
+verify answer 503. /health/live answers 200 while the server runs; the compose
+healthcheck uses it. The Quarkus sms service (#107) replaces this image.
 """
 
 from __future__ import annotations
@@ -158,7 +159,11 @@ class StubHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path.split("?", 1)[0] == "/health":
+        path = self.path.split("?", 1)[0]
+        if path == "/health/live":
+            self._send(200, {"status": "up"})
+            return
+        if path == "/health":
             if self.service.ready():
                 self._send(200, {"status": "ok"})
             else:
