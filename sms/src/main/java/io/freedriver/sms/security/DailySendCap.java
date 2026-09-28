@@ -10,8 +10,8 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 
 /**
- * Service-wide cap on sends per UTC day, on top of the per-number limits. When it is reached,
- * sends stop until the next UTC day and the service logs an error.
+ * Service-wide cap per UTC day on sends that reach the provider, on top of the per-number limits.
+ * When it is reached, no more codes are sent until the next UTC day and the service logs an error.
  */
 @ApplicationScoped
 public class DailySendCap {

@@ -4,6 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.freedriver.sms.api.ErrorResponse;
 import io.freedriver.sms.api.SendRequest;
+import io.freedriver.sms.api.SentResponse;
+import io.freedriver.sms.phones.ConsentLedger;
+import io.freedriver.sms.phones.ConsentPurpose;
+import io.freedriver.sms.phones.PhoneDirectory;
 import jakarta.annotation.Priority;
 import jakarta.inject.Inject;
 import jakarta.validation.Validator;
@@ -25,8 +29,10 @@ import java.lang.reflect.Method;
 
 /**
  * App-wide rate limits keyed on the phone number in the request body of methods marked
- * {@link PhoneRateLimited}. Sends: per-number window, then the service-wide daily cap. Code
- * checks: per-number wrong codes, counted from the response. A body without a well-formed US
+ * {@link PhoneRateLimited}. Sends: a per-number window for every number, then the service-wide
+ * daily cap, which counts only sends that reach the provider. Once the cap is reached, those sends
+ * get the same {@code sent} answer as any other number and no provider call. Code checks:
+ * per-number wrong codes, counted from the response. A body without a well-formed US
  * number is left to request validation, which refuses it with 400 and counts nothing.
  */
 @Provider
@@ -41,13 +47,18 @@ public class PhoneRateLimitFilter implements ContainerRequestFilter, ContainerRe
 
     private final PhoneRateLimiter limiter;
     private final DailySendCap dailyCap;
+    private final PhoneDirectory directory;
+    private final ConsentLedger consents;
     private final Validator validator;
     private final ObjectMapper json;
 
     @Inject
-    public PhoneRateLimitFilter(PhoneRateLimiter limiter, DailySendCap dailyCap, Validator validator, ObjectMapper json) {
+    public PhoneRateLimitFilter(PhoneRateLimiter limiter, DailySendCap dailyCap, PhoneDirectory directory,
+                                ConsentLedger consents, Validator validator, ObjectMapper json) {
         this.limiter = limiter;
         this.dailyCap = dailyCap;
+        this.directory = directory;
+        this.consents = consents;
         this.validator = validator;
         this.json = json;
     }
@@ -64,8 +75,11 @@ public class PhoneRateLimitFilter implements ContainerRequestFilter, ContainerRe
         }
         switch (limit.value()) {
             case SEND -> {
-                if (!limiter.tryAcquireSend(phone) || !dailyCap.tryAcquire()) {
+                if (!limiter.tryAcquireSend(phone)) {
                     request.abortWith(error(429, ErrorResponse.RATE_LIMITED));
+                } else if (reachesProvider(phone) && !dailyCap.tryAcquire()) {
+                    // Same answer an unlisted number gets, and no provider call.
+                    request.abortWith(Response.ok(SentResponse.SENT, MediaType.APPLICATION_JSON_TYPE.withCharset("UTF-8")).build());
                 }
             }
             case CODE_CHECK -> {
@@ -115,6 +129,15 @@ public class PhoneRateLimitFilter implements ContainerRequestFilter, ContainerRe
         }
         String value = phone.textValue();
         return validator.validateValue(SendRequest.class, "phone", value).isEmpty() ? value : null;
+    }
+
+    /**
+     * Whether this send would reach the provider: the number is on the phone list and has a
+     * sign-in agreement on file. Only those sends count against the daily cap. This decides
+     * counting only; the sender's own agreement check still guards the provider call.
+     */
+    private boolean reachesProvider(String phone) {
+        return directory.find(phone).isPresent() && consents.hasAgreed(phone, ConsentPurpose.SIGN_IN_CODES);
     }
 
     private static PhoneRateLimited limitOf(ResourceInfo info) {

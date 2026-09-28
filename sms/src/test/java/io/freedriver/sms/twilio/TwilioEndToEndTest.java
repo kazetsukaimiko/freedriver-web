@@ -31,6 +31,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -131,11 +132,21 @@ class TwilioEndToEndTest {
     }
 
     @Test
-    void daily_cap_stops_twilio_calls() {
+    void daily_cap_counts_only_twilio_sends_and_answers_like_an_unlisted_number() {
+        for (int i = 0; i < 4; i++) {
+            SmsCalls.send(TestNumbers.fresh()).statusCode(200);
+        }
         SmsCalls.send(agreed()).statusCode(200);
         SmsCalls.send(agreed()).statusCode(200);
-        SmsCalls.send(agreed()).statusCode(429);
         assertEquals(2, twilio.getAllServeEvents().size());
+
+        var capped = SmsCalls.send(agreed()).extract();
+        var unlisted = SmsCalls.send(TestNumbers.fresh()).extract();
+        assertEquals(unlisted.statusCode(), capped.statusCode());
+        assertEquals(200, capped.statusCode());
+        assertArrayEquals(unlisted.asByteArray(), capped.asByteArray());
+        assertEquals(unlisted.header("Content-Type"), capped.header("Content-Type"));
+        assertEquals(2, twilio.getAllServeEvents().size(), "no Twilio call once the cap is reached");
     }
 
     @Test
