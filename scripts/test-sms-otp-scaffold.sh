@@ -35,8 +35,11 @@ if "8080:8080" in block or '"8080:' in block or "'8080:" in block:
 SECRET = "SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}"
 env = re.search(r"^    environment:\n((?:      .*\n)+)", block, re.M)
 keys = [] if env is None else re.findall(r"^      ([A-Z0-9_]+):", env.group(1), re.M)
-if keys != ["SMS_OTP_SHARED_SECRET"] or SECRET not in block:
-    raise SystemExit("sms environment is exactly SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}")
+SEED = "FREEDRIVER_SEED_PHONE: ${FREEDRIVER_SEED_PHONE:-}"
+if keys != ["SMS_OTP_SHARED_SECRET", "FREEDRIVER_SEED_PHONE"] or SECRET not in block or SEED not in block:
+    raise SystemExit("sms environment is exactly SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-} and FREEDRIVER_SEED_PHONE: ${FREEDRIVER_SEED_PHONE:-}")
+if compose.count("FREEDRIVER_SEED_PHONE") != 2:
+    raise SystemExit("only sms receives FREEDRIVER_SEED_PHONE")
 TWILIO_ENV = (
     "    env_file:\n"
     "      - path: /opt/freedriver-secrets/twilio-verify.env\n"
@@ -76,6 +79,15 @@ if grep -RInE '^TWILIO_[A-Z_]+=.+' \
   sms keycloak secrets scripts docs README.md docker-compose.yml Caddyfile .env.example; then
   fail "do not commit a Twilio credential value"
 fi
+if [[ "$(grep '^FREEDRIVER_SEED_PHONE=' .env.example)" != "FREEDRIVER_SEED_PHONE=" ]]; then
+  fail ".env.example holds FREEDRIVER_SEED_PHONE with an empty value"
+fi
+if grep -RInE '^\s*(export\s+)?FREEDRIVER_SEED_PHONE=.+' \
+  --exclude-dir .git --exclude-dir target \
+  sms keycloak secrets scripts docs README.md docker-compose.yml Caddyfile .env.example; then
+  fail "do not commit a FREEDRIVER_SEED_PHONE value"
+fi
+bash -n scripts/provision-keycloak-freedriver.sh
 if [[ ! -f secrets/sms-otp.env.example ]]; then
   fail "missing secrets/sms-otp.env.example"
 fi

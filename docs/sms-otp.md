@@ -63,3 +63,11 @@ docker compose --env-file /opt/freedriver-secrets/.env up -d --build keycloak sm
 The script copies the built-in `browser` flow to `browser-freedriver` and adds `freedriver-sms-otp` as the last top-level ALTERNATIVE on the copy. It checks that `auth-username-password-form` stays REQUIRED inside the forms Alternative. It creates the `phone-sign-in` group, adds the user profile attribute `phone` with admin-only view and edit, and sets the realm login theme to `freedriver`. Once the Keycloak container has a real secret, it sets `browser-freedriver` as the realm browser flow.
 
 Keycloak depends only on `keycloak-db`, so password login comes up whatever the `sms` health.
+
+### kaze's phone user (#169)
+
+1. Put kaze's number in international form in `/opt/freedriver-secrets/.env` as `FREEDRIVER_SEED_PHONE`. Only the `sms` service receives it; `sms` seeds it once into its phone list under the username `kaze` ([#168](https://github.com/kazetsukaimiko/freedriver-web/issues/168)).
+2. Recreate `sms` with `docker compose --env-file /opt/freedriver-secrets/.env up -d sms`.
+3. Run `./scripts/provision-keycloak-freedriver.sh` after `./scripts/provision-keycloak-sms-otp.sh`.
+
+The script creates or updates the Keycloak user `kaze` with the `phone` attribute set to that number, direct membership in `phone-sign-in`, and the realm role `dashboard`. It stops with an error when `kaze` has another group or a role beyond `dashboard` and `default-roles-freedriver`, or when another user already has the number. It never prints the number. A second run changes nothing. With the setting empty, it leaves `kaze` as it is.
