@@ -134,7 +134,7 @@ class TwilioVerifySenderTest {
         try (LogCapture logs = LogCapture.open()) {
             assertEquals(SendOutcome.FAILED, sender.sendCode(phone));
             String out = logs.all();
-            assertTrue(out.contains("***" + phone.substring(phone.length() - 4)), out);
+            assertTrue(out.contains("***" + phone.substring(phone.length() - 2)), out);
             assertTrue(out.contains("60200"), out);
             assertFalse(out.contains(phone), "full number must not be logged: " + out);
             assertFalse(out.contains(phone.substring(2)), "full number must not be logged: " + out);
@@ -152,7 +152,7 @@ class TwilioVerifySenderTest {
             assertEquals(SendOutcome.FAILED, impatient.sendCode(phone));
             String out = logs.all();
             assertTrue(out.contains("timed out"), out);
-            assertTrue(out.contains("***" + phone.substring(phone.length() - 4)), out);
+            assertTrue(out.contains("***" + phone.substring(phone.length() - 2)), out);
             assertFalse(out.contains(phone), out);
         }
     }
@@ -178,7 +178,7 @@ class TwilioVerifySenderTest {
 
         try (LogCapture logs = LogCapture.open()) {
             assertEquals(SendOutcome.REFUSED_NO_AGREEMENT, sender.sendCode(phone));
-            assertTrue(logs.all().contains("***" + phone.substring(phone.length() - 4)), logs.all());
+            assertTrue(logs.all().contains("***" + phone.substring(phone.length() - 2)), logs.all());
             assertFalse(logs.all().contains(phone), logs.all());
         }
         assertEquals(0, twilio.getAllServeEvents().size(), "no Twilio call for a number with no agreement");

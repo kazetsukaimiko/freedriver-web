@@ -9,6 +9,7 @@ import io.freedriver.sms.api.VerifyRequest;
 import io.freedriver.sms.phones.ConsentLedger;
 import io.freedriver.sms.phones.ConsentPurpose;
 import io.freedriver.sms.phones.PhoneDirectory;
+import io.freedriver.sms.phones.SeedAgreement;
 import jakarta.annotation.Priority;
 import jakarta.inject.Inject;
 import jakarta.validation.Validator;
@@ -34,7 +35,7 @@ import java.lang.reflect.Method;
  * <ul>
  * <li>Sends: a per-number window, past which the request throws {@link RateLimitedException}. Then the
  * service-wide daily cap, which counts only sends that reach the provider (listed numbers with an
- * agreement on file). Once the cap is reached, those sends get the same {@code sent} answer every
+ * agreement on file, or the seeded number's first sign-in carrying its agreement). Once the cap is reached, those sends get the same {@code sent} answer every
  * other number gets, and no provider call.</li>
  * <li>Code checks: a per-number count of rejected codes, taken from the response; past it the
  * request throws {@link RateLimitedException}.</li>
@@ -56,16 +57,19 @@ public class PhoneRateLimitFilter implements ContainerRequestFilter, ContainerRe
     private final DailySendCap dailyCap;
     private final PhoneDirectory directory;
     private final ConsentLedger consents;
+    private final SeedAgreement seedAgreement;
     private final Validator validator;
     private final ObjectMapper json;
 
     @Inject
     public PhoneRateLimitFilter(PhoneRateLimiter limiter, DailySendCap dailyCap, PhoneDirectory directory,
-                                ConsentLedger consents, Validator validator, ObjectMapper json) {
+                                ConsentLedger consents, SeedAgreement seedAgreement, Validator validator,
+                                ObjectMapper json) {
         this.limiter = limiter;
         this.dailyCap = dailyCap;
         this.directory = directory;
         this.consents = consents;
+        this.seedAgreement = seedAgreement;
         this.validator = validator;
         this.json = json;
     }
@@ -79,14 +83,15 @@ public class PhoneRateLimitFilter implements ContainerRequestFilter, ContainerRe
         byte[] body = readBody(request);
         switch (limit.value()) {
             case SEND -> {
-                String phone = sendPhone(body);
-                if (phone == null) {
+                OtpSendRequest send = sendRequest(body);
+                if (send == null) {
                     return;
                 }
+                String phone = send.phone();
                 if (!limiter.tryAcquireSend(phone)) {
                     throw new RateLimitedException(limiter.window());
                 }
-                if (reachesProvider(phone) && !dailyCap.tryAcquire()) {
+                if (reachesProvider(send) && !dailyCap.tryAcquire()) {
                     // The cap answers exactly like a send to an unlisted number: sent, and no provider call.
                     request.abortWith(Response.ok(SentResponse.otp(phone),
                             MediaType.APPLICATION_JSON_TYPE.withCharset("UTF-8")).build());
@@ -119,11 +124,15 @@ public class PhoneRateLimitFilter implements ContainerRequestFilter, ContainerRe
 
     /**
      * Whether this send would reach the provider: the number is on the phone list and has a
-     * sign-in agreement on file. Only those sends count against the daily cap. This decides
-     * counting only; the sender's own agreement check still guards the provider call.
+     * sign-in agreement on file, or it is the seeded number's first sign-in and the request carries
+     * the agreement. Only those sends count against the daily cap. This decides counting only; the
+     * sender's own agreement check still guards the provider call.
      */
-    private boolean reachesProvider(String phone) {
-        return directory.find(phone).isPresent() && consents.hasAgreed(phone, ConsentPurpose.SIGN_IN_CODES);
+    private boolean reachesProvider(OtpSendRequest send) {
+        String phone = send.phone();
+        return directory.find(phone).isPresent()
+                && (consents.hasAgreed(phone, ConsentPurpose.SIGN_IN_CODES)
+                || send.agreement() != null && seedAgreement.awaited(phone));
     }
 
     /** Reads the body once and puts it back for the resource. */
@@ -139,10 +148,10 @@ public class PhoneRateLimitFilter implements ContainerRequestFilter, ContainerRe
         return body;
     }
 
-    /** The phone of a valid send request, or null. */
-    private String sendPhone(byte[] body) {
+    /** A valid send request, or null. */
+    private OtpSendRequest sendRequest(byte[] body) {
         SendRequest parsed = parse(body, SendRequest.class);
-        return parsed instanceof OtpSendRequest otp && validator.validate(otp).isEmpty() ? otp.phone() : null;
+        return parsed instanceof OtpSendRequest otp && validator.validate(otp).isEmpty() ? otp : null;
     }
 
     /** The phone of a valid verify request, or null. */

@@ -229,7 +229,7 @@ class SmsResourceTest {
         String phone = listed("house.user");
         try (LogCapture logs = LogCapture.open()) {
             send(phone).statusCode(200).body("sent.type", equalTo("otp"));
-            assertTrue(logs.all().contains("***" + phone.substring(phone.length() - 4)), logs.all());
+            assertTrue(logs.all().contains("***" + phone.substring(phone.length() - 2)), logs.all());
             assertFalse(logs.all().contains(phone), logs.all());
         }
         assertEquals(0, sender.deliveries());
