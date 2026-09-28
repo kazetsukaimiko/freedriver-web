@@ -1,8 +1,10 @@
 package io.freedriver.sms;
 
+import io.freedriver.sms.validation.UsPhoneNumber;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
 
 import java.nio.file.Path;
 import java.time.Duration;
@@ -18,6 +20,13 @@ public interface SmsConfig {
 
     /** Shared secret Keycloak sends in {@code X-Freedriver-Sms-Secret}. Empty or the placeholder turns the OTP endpoints off. */
     Optional<String> sharedSecret();
+
+    /**
+     * kaze's number from the server setting {@code FREEDRIVER_SEED_PHONE}. Startup puts it on the
+     * phone list when it is not there yet. It passes the same +1 check as every request number, and
+     * a value that fails it stops startup.
+     */
+    Optional<@Pattern(regexp = UsPhoneNumber.REGEX, message = UsPhoneNumber.MESSAGE) String> seedPhone();
 
     /** Directory holding the phone list and the agreement records. */
     Path dataDir();

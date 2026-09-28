@@ -3,6 +3,8 @@ package io.freedriver.sms.api;
 import io.freedriver.sms.otp.OtpService;
 import jakarta.inject.Inject;
 
+import java.util.Optional;
+
 public class SmsResource implements SmsApi {
 
     private final OtpService otp;
@@ -16,7 +18,7 @@ public class SmsResource implements SmsApi {
     public SentResponse send(SendRequest request) {
         return switch (request) {
             case OtpSendRequest code -> {
-                otp.send(code.phone());
+                otp.send(code.phone(), Optional.ofNullable(code.agreement()).map(AgreementShown::wording));
                 yield SentResponse.otp(code.phone());
             }
         };

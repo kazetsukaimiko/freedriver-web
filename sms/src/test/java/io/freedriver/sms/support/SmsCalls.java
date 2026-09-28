@@ -21,6 +21,13 @@ public final class SmsCalls {
                 .body(Map.of("type", "otp", "phone", phone)).post("/sms/send").then();
     }
 
+    /** A send from the sign-in page that showed the agreement wording under the number field. */
+    public static ValidatableResponse sendAgreeing(String phone, String wording) {
+        return given().header(SharedSecretFilter.HEADER, SECRET).contentType(ContentType.JSON)
+                .body(Map.of("type", "otp", "phone", phone, "agreement", Map.of("wording", wording)))
+                .post("/sms/send").then();
+    }
+
     public static ValidatableResponse verify(String phone, String code) {
         return given().header(SharedSecretFilter.HEADER, SECRET).contentType(ContentType.JSON)
                 .body(Map.of("phone", phone, "code", code)).post("/sms/verify").then();

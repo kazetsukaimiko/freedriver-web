@@ -12,24 +12,20 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/**
- * A US number in E.164 form: {@code +1} followed by ten digits. Keycloak normalizes the typed
- * number before calling sms, so any other country code or shape is refused here, before the
- * phone list, the agreement check or Twilio.
- */
+/** The sign-in agreement wording shown under the number field, character for character. */
 @Documented
 @NotNull
-@Pattern(regexp = UsPhoneNumber.REGEX)
+@Pattern(regexp = "\\Q" + SignInAgreementWording.TEXT + "\\E")
 @ReportAsSingleViolation
 @Constraint(validatedBy = {})
-@Target({ElementType.FIELD, ElementType.METHOD, ElementType.PARAMETER, ElementType.ANNOTATION_TYPE})
+@Target({ElementType.FIELD, ElementType.METHOD, ElementType.PARAMETER, ElementType.ANNOTATION_TYPE, ElementType.TYPE_USE})
 @Retention(RetentionPolicy.RUNTIME)
-public @interface UsPhoneNumber {
+public @interface SignInAgreementWording {
 
-    String REGEX = "^\\+1[0-9]{10}$";
-    String MESSAGE = "must be a US phone number in +1XXXXXXXXXX form";
+    String TEXT = "By tapping Send code, you agree to receive a one-time sign-in code by text from Freedriver. "
+            + "Message and data rates may apply. Reply STOP to opt out.";
 
-    String message() default MESSAGE;
+    String message() default "must be the sign-in agreement wording";
 
     Class<?>[] groups() default {};
 

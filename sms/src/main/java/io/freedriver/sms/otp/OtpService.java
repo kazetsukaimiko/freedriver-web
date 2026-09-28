@@ -2,10 +2,12 @@ package io.freedriver.sms.otp;
 
 import io.freedriver.sms.PhoneMask;
 import io.freedriver.sms.phones.PhoneDirectory;
+import io.freedriver.sms.phones.SeedAgreement;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
@@ -20,17 +22,27 @@ public class OtpService {
 
     private final PhoneDirectory directory;
     private final ActiveSender sender;
+    private final SeedAgreement seedAgreement;
 
     @Inject
-    public OtpService(PhoneDirectory directory, ActiveSender sender) {
+    public OtpService(PhoneDirectory directory, ActiveSender sender, SeedAgreement seedAgreement) {
         this.directory = directory;
         this.sender = sender;
+        this.seedAgreement = seedAgreement;
     }
 
-    /** Texts a code when the number is on the list. Unlisted numbers get no provider call and nothing is stored. */
-    public void send(String phone) {
+    /**
+     * Texts a code when the number is on the list. Unlisted numbers get no provider call and nothing
+     * is stored. On the seeded number's first sign-in, the agreement wording shown is stored first,
+     * and no code is sent when it cannot be stored.
+     */
+    public void send(String phone, Optional<String> agreementShown) {
         if (directory.find(phone).isEmpty()) {
             LOG.debugf("No code sent to %s: not on the phone list", PhoneMask.mask(phone));
+            return;
+        }
+        if (agreementShown.isPresent() && seedAgreement.awaited(phone)
+                && !seedAgreement.record(phone, agreementShown.get())) {
             return;
         }
         sender.get().sendCode(phone);

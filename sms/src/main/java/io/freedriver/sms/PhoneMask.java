@@ -1,6 +1,6 @@
 package io.freedriver.sms;
 
-/** Log form of a phone number: at most its last four digits. */
+/** Log form of a phone number: at most its last two digits. */
 public final class PhoneMask {
 
     private PhoneMask() {
@@ -17,9 +17,9 @@ public final class PhoneMask {
                 digits.append(c);
             }
         }
-        if (digits.length() <= 4) {
+        if (digits.length() <= 2) {
             return "***";
         }
-        return "***" + digits.substring(digits.length() - 4);
+        return "***" + digits.substring(digits.length() - 2);
     }
 }
