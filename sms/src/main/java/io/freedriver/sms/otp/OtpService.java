@@ -2,12 +2,10 @@ package io.freedriver.sms.otp;
 
 import io.freedriver.sms.PhoneMask;
 import io.freedriver.sms.phones.PhoneDirectory;
-import io.freedriver.sms.phones.PhoneEntry;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
-import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
@@ -38,15 +36,20 @@ public class OtpService {
         sender.get().sendCode(phone);
     }
 
-    public VerifyResult verify(String phone, String code) {
-        Optional<PhoneEntry> entry = directory.find(phone);
-        if (entry.isEmpty() || !CODE.matcher(code).matches()) {
-            return VerifyResult.of(VerifyResult.Status.INVALID_CODE);
+    /**
+     * Checks a code for a listed number. Throws {@link CodeRejectedException} for an unlisted number,
+     * a malformed code, or a code the provider rejects (wrong, expired or none pending), and
+     * {@link SenderUnavailableException} when the provider errors or times out.
+     */
+    public void verify(String phone, String code) {
+        if (directory.find(phone).isEmpty() || !CODE.matcher(code).matches()) {
+            throw new CodeRejectedException();
         }
-        return switch (sender.get().checkCode(phone, code)) {
-            case APPROVED -> VerifyResult.verified(entry.get().username());
-            case WRONG_CODE -> VerifyResult.of(VerifyResult.Status.INVALID_CODE);
-            case FAILED -> VerifyResult.of(VerifyResult.Status.UNAVAILABLE);
-        };
+        switch (sender.get().checkCode(phone, code)) {
+            case APPROVED -> {
+            }
+            case WRONG_CODE -> throw new CodeRejectedException();
+            case FAILED -> throw new SenderUnavailableException();
+        }
     }
 }

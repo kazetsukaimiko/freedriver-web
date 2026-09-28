@@ -14,7 +14,11 @@ import io.freedriver.sms.support.LogCapture;
 import io.freedriver.sms.support.SmsCalls;
 import io.freedriver.sms.support.TestNumbers;
 import io.quarkus.test.junit.QuarkusTest;
+import io.freedriver.sms.support.SameAnswer;
 import io.restassured.http.ContentType;
+import io.restassured.response.ExtractableResponse;
+import io.restassured.response.Response;
+import io.restassured.response.ValidatableResponse;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -32,9 +36,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** The HTTP contract Keycloak uses, with the fake sender. */
+/** The HTTP contract of {@code /sms/send} and {@code /sms/verify}, with the fake sender. */
 @QuarkusTest
-class OtpResourceTest {
+class SmsResourceTest {
 
     static final String SECRET = SmsCalls.SECRET;
 
@@ -72,11 +76,13 @@ class OtpResourceTest {
     @Test
     void missing_or_wrong_secret_is_401_and_reaches_nothing() {
         String phone = listedAndAgreed("house.user");
-        given().contentType(ContentType.JSON).body(Map.of("phone", phone)).post("/otp/send")
+        given().contentType(ContentType.JSON).body(Map.of("type", "otp", "phone", phone)).post("/sms/send")
                 .then().statusCode(401).body("error", equalTo("unauthorized"));
         given().header(SharedSecretFilter.HEADER, "wrong").contentType(ContentType.JSON)
-                .body(Map.of("phone", phone)).post("/otp/send").then().statusCode(401);
-        given().header(SharedSecretFilter.HEADER, "wrong").get("/otp/anything").then().statusCode(401);
+                .body(Map.of("type", "otp", "phone", phone)).post("/sms/send").then().statusCode(401);
+        given().header(SharedSecretFilter.HEADER, "wrong").contentType(ContentType.JSON)
+                .body(Map.of("phone", phone, "code", "123456")).post("/sms/verify").then().statusCode(401);
+        given().header(SharedSecretFilter.HEADER, "wrong").get("/sms/anything").then().statusCode(401);
         assertEquals(0, sender.deliveries());
     }
 
@@ -92,13 +98,116 @@ class OtpResourceTest {
         assertEquals(0, sender.checks());
     }
 
+    private static ValidatableResponse sendRaw(String body) {
+        return given().header(SharedSecretFilter.HEADER, SECRET).contentType(ContentType.JSON).body(body)
+                .post("/sms/send").then();
+    }
+
     @Test
     void missing_phone_and_malformed_json_are_bad_requests() {
-        given().header(SharedSecretFilter.HEADER, SECRET).contentType(ContentType.JSON).body("{}")
-                .post("/otp/send").then().statusCode(400);
-        given().header(SharedSecretFilter.HEADER, SECRET).contentType(ContentType.JSON).body("{\"phone\":")
-                .post("/otp/send").then().statusCode(400);
+        sendRaw("{\"type\":\"otp\"}").statusCode(400);
+        sendRaw("{\"type\":\"otp\",\"phone\":").statusCode(400);
+        sendRaw("{}").statusCode(400);
         assertEquals(0, sender.deliveries());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{\"phone\":\"+15555559999\"}",
+            "{\"type\":\"text\",\"phone\":\"+15555559999\"}",
+            "{\"type\":\"OTP\",\"phone\":\"+15555559999\"}",
+            "{\"type\":null,\"phone\":\"+15555559999\"}",
+            "{\"type\":7,\"phone\":\"+15555559999\"}"})
+    void missing_or_unknown_type_is_400_and_counts_nothing(String body) {
+        for (int i = 0; i < 6; i++) {
+            sendRaw(body).statusCode(400);
+        }
+        assertEquals(0, sender.deliveries());
+        send("+15555559999").statusCode(200);
+    }
+
+    @Test
+    void send_answers_with_the_request_type_and_number() {
+        String phone = listedAndAgreed("house.user");
+        String unlisted = TestNumbers.fresh();
+        assertEquals("{\"sent\":{\"type\":\"otp\",\"phone\":\"" + phone + "\"}}",
+                send(phone).statusCode(200).extract().asString());
+        assertEquals("{\"sent\":{\"type\":\"otp\",\"phone\":\"" + unlisted + "\"}}",
+                send(unlisted).statusCode(200).extract().asString());
+    }
+
+    @Test
+    void verify_answers_with_the_request_type_and_number() {
+        String phone = listedAndAgreed("house.user");
+        send(phone).statusCode(200);
+        String code = sender.pendingCode(phone).orElseThrow();
+        assertEquals("{\"verified\":{\"type\":\"otp\",\"phone\":\"" + phone + "\"}}",
+                verify(phone, code).statusCode(200).extract().asString());
+    }
+
+    @Test
+    void unlisted_no_pending_expired_and_wrong_codes_get_one_identical_answer() {
+        String phone = TestNumbers.fresh();
+        ExtractableResponse<Response> unlisted = verify(phone, "123456").extract();
+
+        directory.add(new PhoneEntry(phone, "Mom", "house.user", "dashboard", Instant.now()));
+        consents.record(new ConsentRecord(phone, ConsentPurpose.SIGN_IN_CODES, TestNumbers.WORDING,
+                ConsentSource.INVITE_PAGE, Instant.now()));
+        ExtractableResponse<Response> noPending = verify(phone, "123456").extract();
+
+        send(phone).statusCode(200);
+        String expiredCode = sender.pendingCode(phone).orElseThrow();
+        sender.expirePending(phone);
+        ExtractableResponse<Response> expired = verify(phone, expiredCode).extract();
+
+        send(phone).statusCode(200);
+        String code = sender.pendingCode(phone).orElseThrow();
+        ExtractableResponse<Response> wrong = verify(phone, code.equals("000000") ? "111111" : "000000").extract();
+
+        assertEquals(400, unlisted.statusCode());
+        assertEquals("{\"error\":\"invalid-code\"}", unlisted.asString());
+        SameAnswer.assertSameAnswer(unlisted, noPending);
+        SameAnswer.assertSameAnswer(unlisted, expired);
+        SameAnswer.assertSameAnswer(unlisted, wrong);
+    }
+
+    @Test
+    void past_the_send_limit_listed_and_unlisted_numbers_get_the_same_answer() {
+        String listed = listedAndAgreed("house.user");
+        String unlisted = TestNumbers.fresh();
+        for (int i = 0; i < 5; i++) {
+            send(listed).statusCode(200);
+            send(unlisted).statusCode(200);
+        }
+        ExtractableResponse<Response> listedLimited = send(listed).extract();
+        ExtractableResponse<Response> unlistedLimited = send(unlisted).extract();
+
+        assertEquals(429, listedLimited.statusCode());
+        assertEquals("900", listedLimited.header("Retry-After"));
+        assertEquals("{\"error\":\"rate-limited\"}", listedLimited.asString());
+        SameAnswer.assertSameAnswer(listedLimited, unlistedLimited);
+        assertEquals(5, sender.deliveries());
+    }
+
+    @Test
+    void past_the_wrong_code_limit_listed_and_unlisted_numbers_get_the_same_answer() {
+        String listed = listedAndAgreed("house.user");
+        String unlisted = TestNumbers.fresh();
+        send(listed).statusCode(200);
+        String code = sender.pendingCode(listed).orElseThrow();
+        String wrong = code.equals("000000") ? "111111" : "000000";
+        for (int i = 0; i < 5; i++) {
+            verify(listed, wrong).statusCode(400);
+            verify(unlisted, wrong).statusCode(400);
+        }
+        int checks = sender.checks();
+        ExtractableResponse<Response> listedLimited = verify(listed, code).extract();
+        ExtractableResponse<Response> unlistedLimited = verify(unlisted, code).extract();
+
+        assertEquals(429, listedLimited.statusCode());
+        assertEquals("900", listedLimited.header("Retry-After"));
+        SameAnswer.assertSameAnswer(listedLimited, unlistedLimited);
+        assertEquals(checks, sender.checks(), "a locked number reaches no provider check");
     }
 
     @Test
@@ -106,7 +215,7 @@ class OtpResourceTest {
         String phone = TestNumbers.fresh();
         int listSize = directory.list().size();
 
-        send(phone).statusCode(200).body("status", equalTo("sent"));
+        send(phone).statusCode(200).body("sent.type", equalTo("otp"));
 
         assertEquals(0, sender.deliveries());
         assertTrue(consents.history(phone).isEmpty());
@@ -119,7 +228,7 @@ class OtpResourceTest {
     void listed_number_without_an_agreement_is_refused_masked_and_answers_sent() {
         String phone = listed("house.user");
         try (LogCapture logs = LogCapture.open()) {
-            send(phone).statusCode(200).body("status", equalTo("sent"));
+            send(phone).statusCode(200).body("sent.type", equalTo("otp"));
             assertTrue(logs.all().contains("***" + phone.substring(phone.length() - 4)), logs.all());
             assertFalse(logs.all().contains(phone), logs.all());
         }
@@ -130,11 +239,11 @@ class OtpResourceTest {
     void agreed_number_gets_a_code_that_signs_in_once() {
         String phone = listedAndAgreed("house.user");
 
-        send(phone).statusCode(200).body("status", equalTo("sent"));
+        send(phone).statusCode(200).body("sent.type", equalTo("otp"));
         assertEquals(1, sender.deliveries());
         String code = sender.pendingCode(phone).orElseThrow();
 
-        verify(phone, code).statusCode(200).body("username", equalTo("house.user"));
+        verify(phone, code).statusCode(200).body("verified.type", equalTo("otp")).body("verified.phone", equalTo(phone));
         verify(phone, code).statusCode(400).body("error", equalTo("invalid-code"));
     }
 
@@ -181,7 +290,7 @@ class OtpResourceTest {
             verify(phone, wrong).statusCode(400).body("error", equalTo("invalid-code"));
         }
         int checks = sender.checks();
-        verify(phone, code).statusCode(400).body("error", equalTo("invalid-code"));
+        verify(phone, code).statusCode(429).body("error", equalTo("rate-limited"));
         assertEquals(checks, sender.checks(), "a locked number reaches no provider check");
     }
 
@@ -192,7 +301,7 @@ class OtpResourceTest {
 
         assertEquals(1, consents.history(phone).size());
         assertEquals(TestNumbers.WORDING, consents.history(phone).getFirst().wording());
-        send(phone).statusCode(200).body("status", equalTo("sent"));
+        send(phone).statusCode(200).body("sent.type", equalTo("otp"));
         assertEquals(0, sender.deliveries());
     }
 

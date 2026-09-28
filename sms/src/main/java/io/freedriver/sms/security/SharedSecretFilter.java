@@ -1,7 +1,6 @@
 package io.freedriver.sms.security;
 
 import io.freedriver.sms.SmsConfig;
-import io.freedriver.sms.api.ErrorResponse;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -9,8 +8,6 @@ import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.container.PreMatching;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
 
 import java.nio.charset.StandardCharsets;
@@ -20,7 +17,7 @@ import java.util.Optional;
 /**
  * App-wide caller check: every REST request must carry Keycloak's shared secret in
  * {@code X-Freedriver-Sms-Secret}. Fail-closed: an unset, blank or placeholder secret refuses
- * every request. Health endpoints are not REST resources and stay open for the container check.
+ * every request with {@link UnauthorizedCallerException}. Health endpoints are not REST resources and stay open for the container check.
  */
 @Provider
 @ApplicationScoped
@@ -47,10 +44,7 @@ public class SharedSecretFilter implements ContainerRequestFilter {
         String header = request.getHeaderString(HEADER);
         if (secret == null || header == null
                 || !MessageDigest.isEqual(secret, header.getBytes(StandardCharsets.UTF_8))) {
-            request.abortWith(Response.status(Response.Status.UNAUTHORIZED)
-                    .type(MediaType.APPLICATION_JSON_TYPE)
-                    .entity(ErrorResponse.UNAUTHORIZED)
-                    .build());
+            throw new UnauthorizedCallerException();
         }
     }
 }

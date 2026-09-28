@@ -1,6 +1,9 @@
 package io.freedriver.sms.api;
 
-public record SentResponse(String status) {
+/** {@code {"sent":{"type":"otp","phone":"+1XXXXXXXXXX"}}}, the same for every well-formed number. */
+public record SentResponse(SmsTarget sent) {
 
-    public static final SentResponse SENT = new SentResponse("sent");
+    public static SentResponse otp(String phone) {
+        return new SentResponse(SmsTarget.otp(phone));
+    }
 }

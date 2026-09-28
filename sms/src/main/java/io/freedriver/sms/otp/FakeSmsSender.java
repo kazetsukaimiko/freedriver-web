@@ -55,6 +55,11 @@ public class FakeSmsSender extends AgreementGatedSender {
         return Optional.ofNullable(pending.get(phone)).map(Pending::code);
     }
 
+    /** Test hook: makes the pending code for this number expired. */
+    public void expirePending(String phone) {
+        pending.computeIfPresent(phone, (ignored, entry) -> new Pending(entry.code(), clock.instant().minusSeconds(1)));
+    }
+
     /** Test hook: provider sends made since the last reset. */
     public int deliveries() {
         return deliveries.get();

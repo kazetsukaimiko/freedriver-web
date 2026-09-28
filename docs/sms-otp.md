@@ -8,23 +8,35 @@ Follow-ups: kaze replaces the stub with the Quarkus `sms` service and ships the 
 
 Compose service `sms` listens on port 8080 on the compose network. Keycloak calls it at `http://sms:8080` with the shared secret in header `X-Freedriver-Sms-Secret`. A missing or wrong secret gets `401`.
 
+The Quarkus service in `sms/` answers these calls (#107):
+
 | Call | Body | Response |
 | --- | --- | --- |
-| `POST /otp/send` | `{"phone":"+15555550100"}` | `200` `{"status":"sent"}` |
-| `POST /otp/verify` | `{"phone":"+15555550100","code":"123456"}` | `200` `{"username":"<keycloak-username>"}`, or `400` `{"error":"invalid-code"}` |
+| `POST /sms/send` | `{"type":"otp","phone":"+15555550100"}` | `200` `{"sent":{"type":"otp","phone":"+15555550100"}}` |
+| `POST /sms/verify` | `{"phone":"+15555550100","code":"123456"}` | `200` `{"verified":{"type":"otp","phone":"+15555550100"}}`, or `400` `{"error":"invalid-code"}` |
+
+`type` selects the kind of text; `otp` (a sign-in code) is the one kind. The `phone` in each answer is the number from the request. Other answers:
+
+- `400` `{"error":"bad-request"}` for a body that is not valid JSON, has a missing or unknown `type`, or has a number that is not `+1` followed by ten digits.
+- `400` `{"error":"invalid-code"}` for every rejected verify: an unlisted number, no pending code, an expired code or a wrong code all get this same answer.
+- `429` `{"error":"rate-limited"}` with `Retry-After: 900` past a per-number limit, the same for every number.
+- `503` `{"error":"unavailable"}` when Twilio cannot check a code.
 
 The service enforces:
 
-- Provisioned numbers only. It texts a code only to numbers that portal-admin provisioned, each mapped to one Keycloak username. Every well-formed number gets the same `200 {"status":"sent"}`, so the response is identical for unknown numbers.
+- Provisioned numbers only. It texts a code only to numbers that portal-admin provisioned, each mapped to one Keycloak username. Every well-formed number gets the same `sent` answer, so the response is identical for unknown numbers.
 - Code expiry. Codes are 6 digits, valid for 5 minutes, one pending code per number, and a code works once.
-- Attempts per phone. 5 wrong codes per number in 15 minutes drop the pending code, and verify answers `invalid-code` for that number until the window ends. 5 sends per number in 15 minutes, after which send answers `429`. Both limits count every number the same way.
+- Attempts per phone. 5 wrong codes per number in 15 minutes drop the pending code, and verify then answers `429` for that number until the window ends. 5 sends per number in 15 minutes, after which send answers `429`. Both limits count every attempt, listed or unlisted, and answer every number the same way.
 
-The Quarkus service in `sms/` implements this contract (#107). Build and test it with `./mvnw -pl sms verify`, and run it locally with `./mvnw -pl sms quarkus:dev`, which uses an in-memory fake sender. The compose service still builds the fail-closed stub in `sms/stub` until the compose file switches to `sms/src/main/docker/Dockerfile.compose`.
+The fail-closed stub in `sms/stub` serves the earlier `/otp/send` and `/otp/verify` contract that the current Keycloak SPI calls. Keycloak moves to the `/sms` calls in [#175](https://github.com/kazetsukaimiko/freedriver-web/issues/175).
+
+Build and test the Quarkus service with `./mvnw -pl sms verify`, and run it locally with `./mvnw -pl sms quarkus:dev`, which uses an in-memory fake sender. The compose service still builds the fail-closed stub in `sms/stub` until the compose file switches to `sms/src/main/docker/Dockerfile.compose`.
 
 How the Quarkus service works:
 
+- API. `SmsApi` declares the paths, validation and limits; `SmsResource` implements it and returns typed answers. Rejections are domain exceptions that exception mappers turn into the statuses above.
 - Caller check. An app-wide filter requires `X-Freedriver-Sms-Secret` on every REST call and answers `401` when the secret is unset, the placeholder, missing or wrong. `/health/live` answers `200` while the process runs. `/health` and `/health/ready` answer `200` once the sender is configured, and `503` before that.
-- Validation. Request bodies are checked with Jakarta Validation before anything else runs. A number that is not `+1` followed by ten digits gets `400 {"error":"bad-request"}`, with no phone list lookup, agreement check or Twilio call.
+- Validation. Request bodies are checked with Jakarta Validation before anything else runs. A number that is not `+1` followed by ten digits gets `400 {"error":"bad-request"}` and counts toward no limit, with no phone list lookup, agreement check or Twilio call.
 - Limits. App-wide filters apply the per-number limits and a service-wide daily cap. The cap counts only sends that reach Twilio (numbers on the phone list with an agreement on file), and every number gets the same `sent` answer whether or not the cap is reached; once it is, those sends make no Twilio call until 00:00 UTC and the service logs an error. The cap comes from `FREEDRIVER_SMS_DAILY_SEND_CAP` in server config and has no production default, so a production start without it fails.
 - Phone list and agreements. `phones.json` holds the numbers that can get a code, each with its Keycloak username. `consents.jsonl` is an append-only log of sign-in agreements: the number, what it covers (sign-in codes only), the exact wording shown, where it was given (the invite page or the seeded number's first sign-in) and the time. Both live in `freedriver.sms.data-dir` (`/deployments/data` in the image). Removing a number from the list keeps its agreement records. An unlisted number gets the usual `sent` answer, no provider call, and nothing is stored.
 - Sender. Every sender checks for a recorded sign-in agreement right before the provider call and refuses a number without one, logging it masked. The Twilio Verify sender makes two calls only: create a verification (`POST /v2/Services/{sid}/Verifications`, Twilio generates the code) and create a verification check (`POST /v2/Services/{sid}/VerificationCheck`). It authenticates with the API key SID and secret, never sends its own code, and never stores or logs a code. Each call has a timeout (`freedriver.sms.twilio.timeout`, 5 seconds). A refused, failed or timed-out send is logged with the number masked to its last four digits, and the answer stays `sent`. There is no inbound Twilio webhook.

@@ -18,11 +18,11 @@ public final class SmsCalls {
 
     public static ValidatableResponse send(String phone) {
         return given().header(SharedSecretFilter.HEADER, SECRET).contentType(ContentType.JSON)
-                .body(Map.of("phone", phone)).post("/otp/send").then();
+                .body(Map.of("type", "otp", "phone", phone)).post("/sms/send").then();
     }
 
     public static ValidatableResponse verify(String phone, String code) {
         return given().header(SharedSecretFilter.HEADER, SECRET).contentType(ContentType.JSON)
-                .body(Map.of("phone", phone, "code", code)).post("/otp/verify").then();
+                .body(Map.of("phone", phone, "code", code)).post("/sms/verify").then();
     }
 }

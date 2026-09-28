@@ -1,10 +1,11 @@
 package io.freedriver.sms.security;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.freedriver.sms.api.ErrorResponse;
+import io.freedriver.sms.api.OtpSendRequest;
 import io.freedriver.sms.api.SendRequest;
 import io.freedriver.sms.api.SentResponse;
+import io.freedriver.sms.api.VerifyRequest;
 import io.freedriver.sms.phones.ConsentLedger;
 import io.freedriver.sms.phones.ConsentPurpose;
 import io.freedriver.sms.phones.PhoneDirectory;
@@ -28,12 +29,18 @@ import java.io.InputStream;
 import java.lang.reflect.Method;
 
 /**
- * App-wide rate limits keyed on the phone number in the request body of methods marked
- * {@link PhoneRateLimited}. Sends: a per-number window for every number, then the service-wide
- * daily cap, which counts only sends that reach the provider. Once the cap is reached, those sends
- * get the same {@code sent} answer as any other number and no provider call. Code checks:
- * per-number wrong codes, counted from the response. A body without a well-formed US
- * number is left to request validation, which refuses it with 400 and counts nothing.
+ * App-wide rate limits keyed on the phone number in the body of methods marked
+ * {@link PhoneRateLimited}, counted the same for listed and unlisted numbers.
+ * <ul>
+ * <li>Sends: a per-number window, past which the request throws {@link RateLimitedException}. Then the
+ * service-wide daily cap, which counts only sends that reach the provider (listed numbers with an
+ * agreement on file). Once the cap is reached, those sends get the same {@code sent} answer every
+ * other number gets, and no provider call.</li>
+ * <li>Code checks: a per-number count of rejected codes, taken from the response; past it the
+ * request throws {@link RateLimitedException}.</li>
+ * </ul>
+ * A body that is not a valid request is left to request validation, which refuses it with 400 and
+ * counts nothing.
  */
 @Provider
 @Priority(Priorities.AUTHORIZATION + 100)
@@ -69,23 +76,29 @@ public class PhoneRateLimitFilter implements ContainerRequestFilter, ContainerRe
         if (limit == null) {
             return;
         }
-        String phone = phoneFrom(request);
-        if (phone == null) {
-            return;
-        }
+        byte[] body = readBody(request);
         switch (limit.value()) {
             case SEND -> {
+                String phone = sendPhone(body);
+                if (phone == null) {
+                    return;
+                }
                 if (!limiter.tryAcquireSend(phone)) {
-                    request.abortWith(error(429, ErrorResponse.RATE_LIMITED));
-                } else if (reachesProvider(phone) && !dailyCap.tryAcquire()) {
-                    // Same answer an unlisted number gets, and no provider call.
-                    request.abortWith(Response.ok(SentResponse.SENT, MediaType.APPLICATION_JSON_TYPE.withCharset("UTF-8")).build());
+                    throw new RateLimitedException(limiter.window());
+                }
+                if (reachesProvider(phone) && !dailyCap.tryAcquire()) {
+                    // The cap answers exactly like a send to an unlisted number: sent, and no provider call.
+                    request.abortWith(Response.ok(SentResponse.otp(phone),
+                            MediaType.APPLICATION_JSON_TYPE.withCharset("UTF-8")).build());
                 }
             }
             case CODE_CHECK -> {
-                if (limiter.codeChecksLocked(phone)) {
-                    request.abortWith(error(400, ErrorResponse.INVALID_CODE));
+                String phone = verifyPhone(body);
+                if (phone == null) {
                     return;
+                }
+                if (limiter.codeChecksLocked(phone)) {
+                    throw new RateLimitedException(limiter.window());
                 }
                 request.setProperty(PHONE_PROPERTY, phone);
             }
@@ -104,33 +117,6 @@ public class PhoneRateLimitFilter implements ContainerRequestFilter, ContainerRe
         }
     }
 
-    /** Reads the body once, puts it back for the resource, and returns its well-formed US phone or null. */
-    private String phoneFrom(ContainerRequestContext request) throws IOException {
-        if (!request.hasEntity()) {
-            return null;
-        }
-        byte[] body;
-        try (InputStream in = request.getEntityStream()) {
-            body = in.readNBytes(MAX_BODY + 1);
-        }
-        request.setEntityStream(new ByteArrayInputStream(body));
-        if (body.length > MAX_BODY) {
-            return null;
-        }
-        JsonNode phone;
-        try {
-            JsonNode root = json.readTree(body);
-            phone = root == null ? null : root.get("phone");
-        } catch (IOException e) {
-            return null;
-        }
-        if (phone == null || !phone.isTextual()) {
-            return null;
-        }
-        String value = phone.textValue();
-        return validator.validateValue(SendRequest.class, "phone", value).isEmpty() ? value : null;
-    }
-
     /**
      * Whether this send would reach the provider: the number is on the phone list and has a
      * sign-in agreement on file. Only those sends count against the daily cap. This decides
@@ -140,12 +126,63 @@ public class PhoneRateLimitFilter implements ContainerRequestFilter, ContainerRe
         return directory.find(phone).isPresent() && consents.hasAgreed(phone, ConsentPurpose.SIGN_IN_CODES);
     }
 
-    private static PhoneRateLimited limitOf(ResourceInfo info) {
-        Method method = info == null ? null : info.getResourceMethod();
-        return method == null ? null : method.getAnnotation(PhoneRateLimited.class);
+    /** Reads the body once and puts it back for the resource. */
+    private static byte[] readBody(ContainerRequestContext request) throws IOException {
+        if (!request.hasEntity()) {
+            return new byte[0];
+        }
+        byte[] body;
+        try (InputStream in = request.getEntityStream()) {
+            body = in.readNBytes(MAX_BODY + 1);
+        }
+        request.setEntityStream(new ByteArrayInputStream(body));
+        return body;
     }
 
-    private static Response error(int status, ErrorResponse body) {
-        return Response.status(status).type(MediaType.APPLICATION_JSON_TYPE).entity(body).build();
+    /** The phone of a valid send request, or null. */
+    private String sendPhone(byte[] body) {
+        SendRequest parsed = parse(body, SendRequest.class);
+        return parsed instanceof OtpSendRequest otp && validator.validate(otp).isEmpty() ? otp.phone() : null;
+    }
+
+    /** The phone of a valid verify request, or null. */
+    private String verifyPhone(byte[] body) {
+        VerifyRequest parsed = parse(body, VerifyRequest.class);
+        return parsed != null && validator.validate(parsed).isEmpty() ? parsed.phone() : null;
+    }
+
+    private <T> T parse(byte[] body, Class<T> type) {
+        if (body.length == 0 || body.length > MAX_BODY) {
+            return null;
+        }
+        try {
+            return json.readValue(body, type);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** The binding on the resource method, or on the interface method it implements. */
+    private static PhoneRateLimited limitOf(ResourceInfo info) {
+        Method method = info == null ? null : info.getResourceMethod();
+        if (method == null) {
+            return null;
+        }
+        PhoneRateLimited direct = method.getAnnotation(PhoneRateLimited.class);
+        if (direct != null) {
+            return direct;
+        }
+        for (Class<?> api : method.getDeclaringClass().getInterfaces()) {
+            try {
+                PhoneRateLimited declared = api.getMethod(method.getName(), method.getParameterTypes())
+                        .getAnnotation(PhoneRateLimited.class);
+                if (declared != null) {
+                    return declared;
+                }
+            } catch (NoSuchMethodException ignored) {
+                // not declared on this interface
+            }
+        }
+        return null;
     }
 }

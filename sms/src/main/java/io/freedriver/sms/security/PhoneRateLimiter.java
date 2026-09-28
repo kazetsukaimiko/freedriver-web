@@ -70,6 +70,11 @@ public class PhoneRateLimiter {
         wrongCodes.remove(phone);
     }
 
+    /** Length of the per-number window; a limited number is clear once it has passed. */
+    public Duration window() {
+        return window;
+    }
+
     public void reset() {
         sends.clear();
         wrongCodes.clear();

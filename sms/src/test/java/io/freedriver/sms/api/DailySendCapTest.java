@@ -10,6 +10,7 @@ import io.freedriver.sms.phones.PhoneEntry;
 import io.freedriver.sms.security.DailySendCap;
 import io.freedriver.sms.security.PhoneRateLimiter;
 import io.freedriver.sms.support.LogCapture;
+import io.freedriver.sms.support.SameAnswer;
 import io.freedriver.sms.support.SmsCalls;
 import io.freedriver.sms.support.TestNumbers;
 import io.quarkus.test.junit.QuarkusTest;
@@ -25,7 +26,6 @@ import java.time.Instant;
 import java.util.Map;
 
 import static org.hamcrest.Matchers.equalTo;
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -78,35 +78,21 @@ class DailySendCapTest {
         return SmsCalls.send(phone).extract();
     }
 
-    private static void assertSameAnswer(ExtractableResponse<Response> expected, ExtractableResponse<Response> actual) {
-        assertEquals(expected.statusCode(), actual.statusCode());
-        assertArrayEquals(expected.asByteArray(), actual.asByteArray());
-        assertEquals(expected.header("Content-Type"), actual.header("Content-Type"));
-        assertEquals(expected.header("Content-Length"), actual.header("Content-Length"));
-        assertEquals(expected.header("Cache-Control"), actual.header("Cache-Control"));
-        assertEquals(headerNames(expected), headerNames(actual));
-    }
-
-    private static java.util.Set<String> headerNames(ExtractableResponse<Response> response) {
-        return response.headers().asList().stream().map(h -> h.getName().toLowerCase())
-                .filter(n -> !n.equals("date")).collect(java.util.stream.Collectors.toSet());
-    }
-
     @Test
     void unlisted_numbers_beyond_the_cap_do_not_use_it_up() {
         for (int i = 0; i < CAP * 3; i++) {
-            SmsCalls.send(TestNumbers.fresh()).statusCode(200).body("status", equalTo("sent"));
+            SmsCalls.send(TestNumbers.fresh()).statusCode(200).body("sent.type", equalTo("otp"));
         }
         assertEquals(0, sender.deliveries());
 
-        SmsCalls.send(agreed()).statusCode(200).body("status", equalTo("sent"));
+        SmsCalls.send(agreed()).statusCode(200).body("sent.type", equalTo("otp"));
         assertEquals(1, sender.deliveries(), "a listed number with an agreement still gets a real send");
     }
 
     @Test
     void listed_numbers_without_an_agreement_do_not_count() {
         for (int i = 0; i < CAP * 3; i++) {
-            SmsCalls.send(listed()).statusCode(200).body("status", equalTo("sent"));
+            SmsCalls.send(listed()).statusCode(200).body("sent.type", equalTo("otp"));
         }
         assertEquals(0, sender.deliveries());
 
@@ -117,26 +103,40 @@ class DailySendCapTest {
     }
 
     @Test
-    void listed_and_agreed_sends_count_and_the_cap_answers_like_an_unlisted_number() {
+    void listed_and_agreed_sends_count_toward_the_cap() {
         for (int i = 0; i < CAP; i++) {
-            SmsCalls.send(agreed()).statusCode(200).body("status", equalTo("sent"));
+            SmsCalls.send(agreed()).statusCode(200).body("sent.type", equalTo("otp"));
         }
         assertEquals(CAP, sender.deliveries());
+        SmsCalls.send(agreed()).statusCode(200).body("sent.type", equalTo("otp"));
+        assertEquals(CAP, sender.deliveries(), "no provider call once the cap is reached");
+    }
 
-        ExtractableResponse<Response> unlistedBefore = raw(TestNumbers.fresh());
+    @Test
+    void unlisted_unagreed_and_past_cap_sends_get_the_identical_sent_answer() {
+        for (int i = 0; i < CAP; i++) {
+            SmsCalls.send(agreed()).statusCode(200);
+        }
+        String phone = TestNumbers.fresh();
+        ExtractableResponse<Response> unlisted = raw(phone);
+
+        directory.add(new PhoneEntry(phone, "Guest", "guest.user", "dashboard", Instant.now()));
+        ExtractableResponse<Response> noAgreement = raw(phone);
+
+        consents.record(new ConsentRecord(phone, ConsentPurpose.SIGN_IN_CODES, TestNumbers.WORDING,
+                ConsentSource.INVITE_PAGE, Instant.now()));
+        ExtractableResponse<Response> pastCap;
         try (LogCapture logs = LogCapture.open()) {
-            ExtractableResponse<Response> capped = raw(agreed());
-            ExtractableResponse<Response> unlisted = raw(TestNumbers.fresh());
-            ExtractableResponse<Response> listedOnly = raw(listed());
-
-            assertEquals(200, capped.statusCode());
-            assertSameAnswer(unlisted, capped);
-            assertSameAnswer(unlisted, listedOnly);
-            assertSameAnswer(unlistedBefore, capped);
+            pastCap = raw(phone);
             assertTrue(logs.lines().stream()
                             .anyMatch(l -> (l.startsWith("ERROR") || l.startsWith("SEVERE")) && l.contains("daily send cap")),
                     logs.all());
         }
+
+        assertEquals(200, unlisted.statusCode());
+        assertEquals("{\"sent\":{\"type\":\"otp\",\"phone\":\"" + phone + "\"}}", unlisted.asString());
+        SameAnswer.assertSameAnswer(unlisted, noAgreement);
+        SameAnswer.assertSameAnswer(unlisted, pastCap);
         assertEquals(CAP, sender.deliveries(), "no provider call once the cap is reached");
     }
 

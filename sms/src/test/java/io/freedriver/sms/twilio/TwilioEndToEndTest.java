@@ -11,6 +11,7 @@ import io.freedriver.sms.phones.PhoneDirectory;
 import io.freedriver.sms.phones.PhoneEntry;
 import io.freedriver.sms.security.DailySendCap;
 import io.freedriver.sms.security.PhoneRateLimiter;
+import io.freedriver.sms.support.SameAnswer;
 import io.freedriver.sms.support.SmsCalls;
 import io.freedriver.sms.support.TestNumbers;
 import io.freedriver.sms.support.TwilioStubResource;
@@ -31,7 +32,6 @@ import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -112,8 +112,8 @@ class TwilioEndToEndTest {
     @Test
     void sign_in_uses_only_create_verification_and_create_check() {
         String phone = agreed();
-        SmsCalls.send(phone).statusCode(200).body("status", equalTo("sent"));
-        SmsCalls.verify(phone, "123456").statusCode(200).body("username", equalTo("house.user"));
+        SmsCalls.send(phone).statusCode(200).body("sent.type", equalTo("otp"));
+        SmsCalls.verify(phone, "123456").statusCode(200).body("verified.type", equalTo("otp")).body("verified.phone", equalTo(phone));
 
         assertEquals(2, twilio.getAllServeEvents().size());
         for (ServeEvent event : twilio.getAllServeEvents()) {
@@ -124,10 +124,10 @@ class TwilioEndToEndTest {
 
     @Test
     void unlisted_and_unagreed_numbers_never_reach_twilio() {
-        SmsCalls.send(TestNumbers.fresh()).statusCode(200).body("status", equalTo("sent"));
+        SmsCalls.send(TestNumbers.fresh()).statusCode(200).body("sent.type", equalTo("otp"));
         String listedOnly = TestNumbers.fresh();
         directory.add(new PhoneEntry(listedOnly, "Dad", "dad.user", "dashboard", Instant.now()));
-        SmsCalls.send(listedOnly).statusCode(200).body("status", equalTo("sent"));
+        SmsCalls.send(listedOnly).statusCode(200).body("sent.type", equalTo("otp"));
         assertEquals(0, twilio.getAllServeEvents().size());
     }
 
@@ -140,18 +140,21 @@ class TwilioEndToEndTest {
         SmsCalls.send(agreed()).statusCode(200);
         assertEquals(2, twilio.getAllServeEvents().size());
 
-        var capped = SmsCalls.send(agreed()).extract();
-        var unlisted = SmsCalls.send(TestNumbers.fresh()).extract();
-        assertEquals(unlisted.statusCode(), capped.statusCode());
+        String phone = TestNumbers.fresh();
+        var unlisted = SmsCalls.send(phone).extract();
+        directory.add(new PhoneEntry(phone, "Mom", "house.user", "dashboard", Instant.now()));
+        consents.record(new ConsentRecord(phone, ConsentPurpose.SIGN_IN_CODES, TestNumbers.WORDING,
+                ConsentSource.INVITE_PAGE, Instant.now()));
+        var capped = SmsCalls.send(phone).extract();
+
         assertEquals(200, capped.statusCode());
-        assertArrayEquals(unlisted.asByteArray(), capped.asByteArray());
-        assertEquals(unlisted.header("Content-Type"), capped.header("Content-Type"));
+        SameAnswer.assertSameAnswer(unlisted, capped);
         assertEquals(2, twilio.getAllServeEvents().size(), "no Twilio call once the cap is reached");
     }
 
     @Test
     void twilio_failure_still_answers_sent() {
         twilio.stubFor(post(urlEqualTo(VERIFICATIONS)).willReturn(aResponse().withStatus(503).withBody("{\"code\":20503}")));
-        SmsCalls.send(agreed()).statusCode(200).body("status", equalTo("sent"));
+        SmsCalls.send(agreed()).statusCode(200).body("sent.type", equalTo("otp"));
     }
 }
