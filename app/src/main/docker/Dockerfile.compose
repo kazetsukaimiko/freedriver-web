@@ -10,6 +10,7 @@ COPY mqtt-contract/pom.xml mqtt-contract/pom.xml
 COPY mqtt/pom.xml mqtt/pom.xml
 COPY mqtt-paho/pom.xml mqtt-paho/pom.xml
 COPY app/pom.xml app/pom.xml
+COPY sms/pom.xml sms/pom.xml
 COPY mqtt-contract/src mqtt-contract/src
 COPY mqtt/src mqtt/src
 COPY mqtt-paho/src mqtt-paho/src
