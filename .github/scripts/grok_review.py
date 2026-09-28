@@ -2,8 +2,10 @@
 """Advisory xAI PR reviewer: full files + one-level-out neighbors, not hunk-only.
 
 The marketplace action tarmojussila/xai-code-review is hunk-only and must not be used.
-This script expects a checkout of the PR head plus enough git history to diff against
-the base. Findings are posted as a COMMENT review and never fail the job.
+Run it from a checkout of the PR head with enough git history to diff against the base.
+The workflow runs main's copy of this script and prompt; GROK_REVIEW_PROMPT holds the
+prompt path, and files are read only when they resolve inside the working directory.
+Findings are posted as a COMMENT review and never fail the job.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-PROMPT_PATH = Path(".github/grok-review-prompt.md")
+PROMPT_PATH = Path(os.environ.get("GROK_REVIEW_PROMPT") or ".github/grok-review-prompt.md")
 XAI_URL = "https://api.x.ai/v1/chat/completions"
 GITHUB_API = "https://api.github.com"
 DEFAULT_MODEL = "grok-4"
@@ -109,8 +111,12 @@ def unified_diff(base_sha: str, head_sha: str) -> str:
     return diff
 
 
+def inside_cwd(path: Path) -> bool:
+    return not path.is_symlink() and path.resolve().is_relative_to(Path.cwd().resolve())
+
+
 def read_text_file(path: Path) -> str | None:
-    if not path.is_file() or skipped(path):
+    if not path.is_file() or skipped(path) or not inside_cwd(path):
         return None
     data = path.read_bytes()
     if len(data) > MAX_FILE_BYTES:
