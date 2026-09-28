@@ -21,7 +21,7 @@ The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{gra
   - `grafana.freedriver.io` — 404 on purpose; Grafana is loopback-only
   - `mqtt.freedriver.io` — 404 on purpose (ACME HTTP-01). MQTTS is host 8883, not Caddy.
 - Keycloak 26.3 + local Postgres 16. The image build adds the phone OTP provider at `/opt/keycloak/providers/freedriver-sms-otp.jar`.
-- `sms` — internal service at `http://sms:8080` on the compose network. Stub until kaze ships [#107](https://github.com/kazetsukaimiko/freedriver-web/issues/107).
+- `sms` — internal service at `http://sms:8080` on the compose network. The Quarkus service in `sms/` ([#107](https://github.com/kazetsukaimiko/freedriver-web/issues/107)) sends and checks sign-in codes through Twilio Verify; compose runs the `sms/stub` image until it switches to that build.
 - Grafana + Loki + Prometheus + Alloy (see Observability)
 - Mosquitto 2.1.2 MQTTS at `mqtt.freedriver.io:8883` (host 8883 only; no 1883). Connect notes: [docs/mqtt-connect.md](docs/mqtt-connect.md).
 
