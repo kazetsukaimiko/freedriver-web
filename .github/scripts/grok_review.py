@@ -351,6 +351,9 @@ def require_env(name: str) -> str:
     return value
 
 
+SCRIPT_TEST_MARKER = "SCRIPT-TEST-MARKER-144"
+
+
 def cmd_review() -> None:
     api_key = os.environ.get("XAI_API_KEY", "").strip()
     if not api_key:
@@ -381,7 +384,7 @@ def cmd_review() -> None:
         file=sys.stderr,
     )
     review = call_xai(prompt, pack, api_key, model)
-    post_review(repo, pr_number, head_sha, ADVISORY_BANNER + review, token)
+    post_review(repo, pr_number, head_sha, SCRIPT_TEST_MARKER + "\n\n" + ADVISORY_BANNER + review, token)
     print("Posted advisory PR review comment (job stays green on findings).")
 
 
@@ -444,6 +447,7 @@ def cmd_self_test() -> None:
 
 
 def main() -> None:
+    print(SCRIPT_TEST_MARKER, flush=True)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--pack-only",
