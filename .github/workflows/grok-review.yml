@@ -1,8 +1,9 @@
 name: Grok review
 
-# Runs main's reviewer script and prompt under pull_request_target in the main-only
-# grok-review environment. The PR head is fetched into pr/ as data: symlinks check out
-# as plain files, and no code from the PR runs in this job.
+# Reviews PRs from branches in this repository. Runs main's reviewer script and prompt
+# under pull_request_target in the main-only grok-review environment. The PR head is
+# fetched into pr/ as data: symlinks check out as plain files, and no code from the PR
+# runs in this job.
 on:
   pull_request_target:
     branches: [main]
@@ -20,7 +21,7 @@ jobs:
   review:
     name: Review
     runs-on: ubuntu-latest
-    if: github.repository == 'kazetsukaimiko/freedriver-web'
+    if: github.repository == 'kazetsukaimiko/freedriver-web' && github.event.pull_request.head.repo.full_name == github.repository
     environment: grok-review
     permissions:
       contents: read
