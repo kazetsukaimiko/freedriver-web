@@ -43,6 +43,11 @@ Exceptions
 - HTTP 200 with a flag (timeout: true) is not an exception. Do not invent one.
 - Distinct failures stay distinct: validation 400, unknown appliance 404 no publish, stale POST 409, rate-limit 429, never-received GET 200 stale. Collapsing blank name + missing instanceId + unknown appliance into one 404 is a finding.
 
+REST resource shape (quality bar)
+- Every JAX-RS resource is an `XxxApi` interface and an `XxxResource` class that implements it. The interface carries every JAX-RS annotation (`@Path`, `@GET`/`@POST`/`@PUT`/`@PATCH`/`@DELETE`, `@Consumes`, `@Produces`, `@PathParam`, `@QueryParam`, `@HeaderParam`, `@FormParam`, `@BeanParam`) and every Jakarta Validation annotation on parameters and return values (`@Valid`, `@NotNull`, `@NotBlank`, `@Size`, `@Pattern`, and custom constraints). The `XxxResource` class, its methods and its parameters carry none of them. A JAX-RS or Jakarta Validation annotation on the implementing class is a block finding; so is a resource class with no `XxxApi` interface. Cite each annotated line. CDI scope annotations and custom binding annotations (for example a rate-limit binding) on the implementing class are a judgment call: raise them when they duplicate or contradict the interface.
+- Resource methods return typed DTOs. An error case throws a domain exception, and an `ExceptionMapper` turns it into a status and entity. A resource method that returns `jakarta.ws.rs.core.Response` is a block finding unless the PR body states why that method needs it (for example streaming or a redirect). A `switch` or `if` in the resource that maps a result to `Response.status(...)` is the smoking gun: each failure case becomes a domain exception with a mapper, and the success case returns its DTO.
+- A response body says what happened and names the request's type and target, for example `{"sent": {"type": "otp", "phone": "..."}}`. Open every DTO a resource method returns on success (records such as `XxxResponse`). A DTO whose only content is a status or outcome word (`{"status": "sent"}`, `{"ok": true}`, `{"result": "done"}`), or a method that returns an empty success body, is a should-fix finding of its own. Cite the DTO's file and line and the resource method that returns it, and give the target body.
+
 Scope
 - Consume/pin/mock/rename PRs do not grow auth, rate-limit, or exception strategy. File a ticket; do not “just add a check.”
 - live-commands is an MQTT-adapter guard, not auth, not a service if (flag) throw.
@@ -54,6 +59,7 @@ HUNT LIST (CLASSES OF PROBLEM — GENERALIZE, DO NOT ONLY GREP THESE STRINGS)
 ============================================================
 
 - Framework types from the wrong layer: JAX-RS in services; SecurityIdentity in domain; servlet/Vert.x request in backends.
+- Resource shape: JAX-RS or Validation annotations on an `XxxResource` class instead of its `XxxApi` interface; resource methods returning `Response`; success bodies that are a bare status string.
 - Policy implemented twice, or once in the wrong place.
 - Path-string branching for what should be an annotation (or the reverse: annotations for a URL-tree kill switch).
 - Sentinel objects (never(), empty instance with all nulls) where absence should be Optional / missing.
@@ -92,6 +98,7 @@ PROCESS
 4. Do not inflate. A bug is correctness, security, or breakage. Mixed concerns in a service that commands physical hardware is not “style.”
 5. Check the other surfaces that read or write the same state (other resources, filters, default vs %dev vs %test properties).
 6. Do not implement fixes. Review only.
+7. For each resource class in the touched files and neighbors, check the three REST resource shape rules one at a time: annotations on `XxxApi` versus `XxxResource`, `Response` return types, and success response bodies. Each violation is its own finding; a block finding on a method leaves the should-fix finding on the DTO it returns standing.
 
 ============================================================
 OUTPUT (GitHub review)
@@ -111,7 +118,7 @@ Verdict: approve-as-is | approve-with-tickets | comment | request-changes
 - approve-as-is: no findings, or every adjacent item is already ticketed and this PR did not make it worse. **No new tickets required.** Do not write `approve-with-tickets (no new tickets required)`.
 - approve-with-tickets: adjacent smells that need a **new** ticket. Name the ticket to file.
 - comment: discussion, questions, or adjacent smells you are not ready to classify
-- request-changes: in-diff correctness/security/layering the PR introduced or spread
+- request-changes: in-diff correctness/security/layering the PR introduced or spread, or any block finding. A block finding under REST resource shape makes the verdict request-changes.
 - Do not approve while adjacent JAX-RS-in-service (or equivalent) sits in a file this PR edited, unless you explicitly listed it and said “already ticketed, don’t balloon” AND the PR did not make it worse
 
 If there are no findings, say so in one paragraph and verdict `approve-as-is`. Do not invent nits to look busy.
