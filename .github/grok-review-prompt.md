@@ -46,7 +46,7 @@ Exceptions
 REST resource shape (quality bar)
 - Every JAX-RS resource is an `XxxApi` interface and an `XxxResource` class that implements it. The interface carries every JAX-RS annotation (`@Path`, `@GET`/`@POST`/`@PUT`/`@PATCH`/`@DELETE`, `@Consumes`, `@Produces`, `@PathParam`, `@QueryParam`, `@HeaderParam`, `@FormParam`, `@BeanParam`) and every Jakarta Validation annotation on parameters and return values (`@Valid`, `@NotNull`, `@NotBlank`, `@Size`, `@Pattern`, and custom constraints). The `XxxResource` class, its methods and its parameters carry none of them. A JAX-RS or Jakarta Validation annotation on the implementing class is a block finding; so is a resource class with no `XxxApi` interface. Cite each annotated line. CDI scope annotations and custom binding annotations (for example a rate-limit binding) on the implementing class are a judgment call: raise them when they duplicate or contradict the interface.
 - Resource methods return typed DTOs. An error case throws a domain exception, and an `ExceptionMapper` turns it into a status and entity. A resource method that returns `jakarta.ws.rs.core.Response` is a block finding unless the PR body states why that method needs it (for example streaming or a redirect). A `switch` or `if` in the resource that maps a result to `Response.status(...)` is the smoking gun: each failure case becomes a domain exception with a mapper, and the success case returns its DTO.
-- A response body says what happened and names the request's type and target, for example `{"sent": {"type": "otp", "phone": "..."}}`. A success body that is only a bare status string (`{"status": "sent"}`, `{"ok": true}`) or an empty body is a should-fix finding. Cite the DTO and the resource method that returns it.
+- A response body says what happened and names the request's type and target, for example `{"sent": {"type": "otp", "phone": "..."}}`. Open every DTO a resource method returns on success (records such as `XxxResponse`). A DTO whose only content is a status or outcome word (`{"status": "sent"}`, `{"ok": true}`, `{"result": "done"}`), or a method that returns an empty success body, is a should-fix finding of its own. Cite the DTO's file and line and the resource method that returns it, and give the target body.
 
 Scope
 - Consume/pin/mock/rename PRs do not grow auth, rate-limit, or exception strategy. File a ticket; do not “just add a check.”
@@ -98,6 +98,7 @@ PROCESS
 4. Do not inflate. A bug is correctness, security, or breakage. Mixed concerns in a service that commands physical hardware is not “style.”
 5. Check the other surfaces that read or write the same state (other resources, filters, default vs %dev vs %test properties).
 6. Do not implement fixes. Review only.
+7. For each resource class in the touched files and neighbors, check the three REST resource shape rules one at a time: annotations on `XxxApi` versus `XxxResource`, `Response` return types, and success response bodies. Each violation is its own finding; a block finding on a method leaves the should-fix finding on the DTO it returns standing.
 
 ============================================================
 OUTPUT (GitHub review)
