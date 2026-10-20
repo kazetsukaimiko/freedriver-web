@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -30,6 +31,8 @@ public class JobStore {
     private final ConcurrentHashMap<String, Device> devices = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Job> jobs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Assignment> assignments = new ConcurrentHashMap<>();
+    /** One in-flight submit per subject. REST and /mcp share this set. */
+    private final Set<String> inFlightSubmits = new HashSet<>();
 
     public JobStore() {
         this(Clock.systemUTC());
@@ -102,7 +105,6 @@ public class JobStore {
             throw badRequest("duplicate device");
         }
         Duration budget = wait == null ? Duration.ZERO : wait;
-        Job job;
         synchronized (monitor) {
             for (String deviceId : deviceIds) {
                 requireText(deviceId, "deviceId");
@@ -114,17 +116,30 @@ public class JobStore {
                     throw badRequest("unknown agent " + request.agentName() + " on " + deviceId);
                 }
             }
-            job = new Job(UUID.randomUUID(), dispatcherSubject, request.channel(), request.prompt());
-            for (String deviceId : deviceIds) {
-                Assignment assignment = new Assignment(
-                        UUID.randomUUID(), job.id, deviceId, request.agentName());
-                job.assignmentIds.add(assignment.id);
-                assignments.put(assignment.id, assignment);
+            if (!inFlightSubmits.add(dispatcherSubject)) {
+                throw conflict("submit already in flight");
             }
-            jobs.put(job.id, job);
-            monitor.notifyAll();
-            awaitTerminal(job, budget);
-            return view(job);
+            try {
+                Job job = new Job(UUID.randomUUID(), dispatcherSubject, request.channel(), request.prompt());
+                for (String deviceId : deviceIds) {
+                    Assignment assignment = new Assignment(
+                            UUID.randomUUID(), job.id, deviceId, request.agentName());
+                    job.assignmentIds.add(assignment.id);
+                    assignments.put(assignment.id, assignment);
+                }
+                jobs.put(job.id, job);
+                monitor.notifyAll();
+                awaitTerminal(job, budget);
+                return view(job);
+            } finally {
+                inFlightSubmits.remove(dispatcherSubject);
+            }
+        }
+    }
+
+    int jobCount() {
+        synchronized (monitor) {
+            return jobs.size();
         }
     }
 
@@ -235,6 +250,8 @@ public class JobStore {
         while (!allTerminal(job)) {
             long remaining = deadline - System.nanoTime();
             if (remaining <= 0) {
+                // The caller is done waiting. A later claim must not run the prompt.
+                expireNonTerminal(job);
                 return;
             }
             try {
@@ -244,6 +261,16 @@ public class JobStore {
                 throw new DispatcherException(DispatcherException.Kind.CONFLICT, "wait interrupted");
             }
         }
+    }
+
+    private void expireNonTerminal(Job job) {
+        for (UUID id : job.assignmentIds) {
+            Assignment assignment = assignments.get(id);
+            if (!isTerminal(assignment.state)) {
+                assignment.state = AssignmentState.EXPIRED;
+            }
+        }
+        monitor.notifyAll();
     }
 
     private static long millisAtLeastOne(long nanos) {

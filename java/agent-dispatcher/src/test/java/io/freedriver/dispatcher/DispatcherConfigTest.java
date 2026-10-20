@@ -21,5 +21,8 @@ class DispatcherConfigTest {
         assertTrue(properties.contains("freedriver.dispatcher.submit-timeout=75s"));
         assertTrue(properties.contains("freedriver.dispatcher.poll-timeout=25s"));
         assertTrue(properties.contains("%test.freedriver.dispatcher.submit-timeout=300ms"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.authenticated.paths=/*"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.public.paths=/q/*"));
+        assertFalse(properties.contains("paths=/mcp"));
     }
 }

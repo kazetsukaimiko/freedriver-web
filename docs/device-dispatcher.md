@@ -21,15 +21,15 @@ The device id is the token subject. When the access token carries `device_id`, t
 {"deviceIds":["pc-luna"],"agentName":"yuni","prompt":"say hello","channel":"TEXT"}
 ```
 
-`channel` is `TEXT` or `SPEECH`. One assignment is queued per device. `agentName` must be one that device registered, or the call fails immediately and nothing is queued. The call stays open until every assignment is `succeeded`, `failed`, or `expired`, or 75 seconds pass. If nobody claims, the assignment is still `queued`.
+`channel` is `TEXT` or `SPEECH`. One assignment is queued per device. `agentName` must be one that device registered, or the call fails immediately and nothing is queued. The call stays open until every assignment is `succeeded`, `failed`, or `expired`, or 75 seconds pass. At that deadline, non-terminal assignments for the job move to `expired`, and a later claim is rejected. A second submit for the same dispatcher subject is rejected while one submit is still in flight.
 
-Assignment states: `queued` → `claimed` → `running` → `succeeded` | `failed`. `expired` is allowed from any non-terminal state. `running` requires `grokSessionId`. `failed` is also allowed from `claimed` when the device refuses the assignment before a session starts. `succeeded` is only from `running`. A device only sees and updates its own assignments. `AssignmentView` carries `channel` and `prompt` for the owning device's assignment. A read by any other device is forbidden. `GET /api/device/assignments` long-polls for about 25 seconds. The 75 second queue deadline stays in `JobStore`.
+Assignment states: `queued` → `claimed` → `running` → `succeeded` | `failed`. `expired` is set at the submit deadline, and a device may also set it from any non-terminal state. `running` requires `grokSessionId`. `failed` is also allowed from `claimed` when the device refuses the assignment before a session starts. `succeeded` is only from `running`. A device only sees and updates its own assignments. `AssignmentView` carries `channel` and `prompt` for the owning device's assignment. A read by any other device is forbidden. `GET /api/device/assignments` long-polls for about 25 seconds.
 
 ## Deploy
 
 Compose service `agent-dispatcher` has no host port. On `app.freedriver.io`, Caddy sends `/mcp`, `/mcp/*`, `/api/dispatcher`, `/api/dispatcher/*`, `/api/device`, and `/api/device/*` to `agent-dispatcher:8080`. Every other path stays on `dashboard:8080`.
 
-`/mcp` is routed and requires a caller. Streamable HTTP MCP tools are a later slice. The JAX-RS interfaces in `agent-dispatcher-api` are the contract a RestEasy proxy client can call.
+`/mcp` is Streamable HTTP MCP for the `dispatcher` role. The tools are `list_devices`, `submit_job`, and `get_job`. They call this same queue. Legacy HTTP+SSE under `/mcp/` is not served. A session id is bound to the bearer token subject and is not itself a credential. Anonymous callers receive 401. A token without the dispatcher role receives 403. `McpApi` in `agent-dispatcher-api` is the `/mcp` contract, beside the REST interfaces a RestEasy proxy client can call.
 
 The device daemon in `java/device-daemon/` runs on the PC. It registers, heartbeats, long-polls, claims, and starts one headless `grok` process per winning text claim. The tool allowlist is local configuration and defaults to no tools. The prompt is written to a mode `0600` file and passed with `--prompt-file`. The client calls `https://app.freedriver.io/api/device/*` with TLS verification on, using its device client credentials. A user systemd unit in the module is what #213 installs on the PC. The local session timeout kills that child process. The 75 second queue deadline stays in `JobStore`.
 
