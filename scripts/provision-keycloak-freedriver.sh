@@ -12,14 +12,14 @@
 # member of phone-sign-in with the realm role dashboard. Group and role checks
 # run before that write. Effective realm roles must be inside dashboard,
 # default-roles-freedriver, offline_access, and uma_authorization. Any client
-# role stops the script. The number is never printed. A +1 number is ten digits
-# whose first digit is 2-9. Run scripts/provision-keycloak-sms-otp.sh first; it
-# creates the group and the attribute.
+# role stops the script. A +1 number is ten digits whose first digit is 2-9.
+# Run scripts/provision-keycloak-sms-otp.sh first; it creates the group and
+# the attribute.
 #
 # The invite service account (#172) is the confidential client freedriver-invite.
-# Its secret is written once to the dashboard env file and is not printed.
-# Fine-grained admin permissions let that account manage membership of
-# phone-sign-in. It does not receive realm-management roles.
+# The script writes its secret once to the dashboard env file. Fine-grained
+# admin permissions let that account manage membership of phone-sign-in.
+# Realm-management roles remain on the realm admin.
 #
 # Run as root/sudo on the VPS. Idempotent. New password users get the
 # UPDATE_PASSWORD required action and choose their own password.
@@ -486,8 +486,8 @@ PY
   fi
   admin_client="$(kcadm get clients -r "$REALM" -q clientId=admin-permissions --fields id --format csv --noquotes | csv_id)"
   policy_path="clients/${admin_client}/authz/resource-server"
-  # A service-account token is evaluated as the client, not the service-account user.
-  # KeycloakIdentity.getId() is the client UUID in that case, so the policy is a client policy.
+  # Keycloak evaluates a service-account token as the client. The identity id is
+  # the client UUID, so the permission policy is a client policy.
   if ! authz_has_name "${policy_path}/policy" freedriver-invite-sa; then
     python3 - "$client_uuid" > "$work/policy.json" <<'PY'
 import json, sys

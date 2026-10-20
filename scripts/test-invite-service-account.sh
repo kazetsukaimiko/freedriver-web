@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Throwaway Keycloak 26.3 realm. Proves the invite service account is refused
-# for role grants, outside-user edits, impersonation, and client reads.
-# Does not touch production. Prints status codes, not secrets.
+# Throwaway Keycloak 26.3 realm in container freedriver-invite-kc-test.
+# Expects 403 for role grants, outside-user edits, impersonation, and client
+# reads, and 204/201 for phone-sign-in membership. Prints status codes.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -282,7 +282,7 @@ expect() {
 import sys
 raw = open(sys.argv[1], encoding="utf-8", errors="replace").read(500)
 if "access_token" in raw or "client_secret" in raw or "FREEDRIVER_INVITE" in raw:
-    print("response body suppressed")
+    print("body omitted")
 else:
     print(raw)
 PY
@@ -350,7 +350,7 @@ if [[ "$join_code" != "204" ]]; then
 import sys
 raw = open(sys.argv[1], encoding="utf-8", errors="replace").read(500)
 if "access_token" in raw or "client_secret" in raw or "FREEDRIVER_INVITE" in raw:
-    print("response body suppressed")
+    print("body omitted")
 else:
     print(raw)
 PY
@@ -365,7 +365,7 @@ if [[ "$create_code" != "201" ]]; then
   python3 - "$work/http.out" <<'PY' >&2 || true
 import sys
 raw = open(sys.argv[1], encoding="utf-8", errors="replace").read(500)
-print("response body suppressed" if "access_token" in raw else raw)
+print("body omitted" if "access_token" in raw else raw)
 PY
   failed=1
 else

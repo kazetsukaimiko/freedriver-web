@@ -375,8 +375,8 @@ PY
 if [[ "$(grep -v '^#' secrets/keycloak-freedriver-invite.env.example | grep -v '^$')" != "FREEDRIVER_INVITE_CLIENT_SECRET=" ]]; then
   fail "invite example file holds one empty assignment"
 fi
-if ! grep -q 'NOT A LIVE SECRET' secrets/keycloak-freedriver-invite.env.example; then
-  fail "invite example file must say it is not live"
+if ! grep -q 'Placeholder for the dashboard invite client' secrets/keycloak-freedriver-invite.env.example; then
+  fail "invite example file must mark the assignment as a placeholder"
 fi
 
 chmod +x scripts/test-invite-service-account.sh
