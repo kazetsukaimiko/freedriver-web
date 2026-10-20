@@ -222,6 +222,29 @@ jobs:
             -DprocessAllModules=true
           ./mvnw -B --no-transfer-progress -pl mqtt-contract -am deploy -DskipTests
 
+  webui:
+    runs-on: ubuntu-latest
+    if: github.repository == 'kazetsukaimiko/freedriver-web'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # quarkus.quinoa.package-manager-install.node-version
+          node-version: "22.14.0"
+          cache: npm
+          cache-dependency-path: java/dashboard/src/main/webui/package-lock.json
+
+      - name: Frontend tests
+        working-directory: java/dashboard/src/main/webui
+        run: |
+          npm ci
+          npm test
+
   # Same Maven package the VPS runs in `docker compose --build` (Deploy), so
   # prod-build failures such as ArC validation are caught before merge (#116).
   prod-image:
