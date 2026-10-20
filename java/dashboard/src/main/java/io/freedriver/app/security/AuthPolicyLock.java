@@ -38,8 +38,8 @@ final class AuthPolicyLock {
     }
 
     /**
-     * Names already in the file, every HTTP permission key, and the OIDC switches that
-     * turn a tenant off. A production launch ignores any other source for these names.
+     * Names already in the file, every HTTP permission key, and every OIDC
+     * {@code tenant-enabled} name. A production launch ignores any other source for these.
      */
     static boolean locksBare(String bare, Set<String> owned) {
         if (owned.contains(bare) || bare.startsWith("quarkus.http.auth.permission.")) {
@@ -47,6 +47,69 @@ final class AuthPolicyLock {
         }
         return "quarkus.oidc.tenant-enabled".equals(bare)
                 || (bare.startsWith("quarkus.oidc.") && bare.endsWith(".tenant-enabled"));
+    }
+
+    /**
+     * Quarkus {@code @WithDefault} for a locked name that is not a line in
+     * {@code auth-policy.properties}. This lock supplies the value.
+     */
+    ConfigValue builtInValue(String name) {
+        String raw = builtInRaw(bareKey(name));
+        if (raw == null) {
+            return null;
+        }
+        return ConfigValue.builder()
+                .withName(name)
+                .withValue(raw)
+                .withRawValue(raw)
+                .withConfigSourceName(AuthPolicyConfigSource.RESOURCE)
+                .withConfigSourceOrdinal(AuthPolicyConfigSource.ORDINAL)
+                .build();
+    }
+
+    /**
+     * Known Quarkus defaults for locked names that are not lines in the file.
+     * {@code shared=false} and {@code applies-to=ALL} for a permission already in the file
+     * and for the {@code *} lookup. {@code tenant-enabled=true} only for the default tenant
+     * and the literal {@code quarkus.oidc.*.tenant-enabled} lookup. A named tenant stays absent.
+     */
+    private String builtInRaw(String bare) {
+        if ("quarkus.oidc.tenant-enabled".equals(bare) || "quarkus.oidc.*.tenant-enabled".equals(bare)) {
+            return "true";
+        }
+        if (!bare.startsWith("quarkus.http.auth.permission.")) {
+            return null;
+        }
+        String suffix;
+        String value;
+        if (bare.endsWith(".shared")) {
+            suffix = ".shared";
+            value = "false";
+        } else if (bare.endsWith(".applies-to")) {
+            suffix = ".applies-to";
+            value = "ALL";
+        } else {
+            return null;
+        }
+        String key = bare.substring("quarkus.http.auth.permission.".length(), bare.length() - suffix.length());
+        if ("*".equals(key) || permissionInFile(key)) {
+            return value;
+        }
+        return null;
+    }
+
+    /** True when {@code auth-policy.properties} already has a line for this permission name. */
+    private boolean permissionInFile(String key) {
+        if (key.isEmpty() || key.indexOf('.') >= 0 || key.indexOf('*') >= 0) {
+            return false;
+        }
+        String marker = "quarkus.http.auth.permission." + key + ".";
+        for (String owned : bareKeys) {
+            if (owned.startsWith(marker)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Value for the exact name the profile interceptor asks for. */

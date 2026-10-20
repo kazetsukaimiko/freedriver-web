@@ -9,6 +9,7 @@ import jakarta.annotation.Priority;
 
 /**
  * In production, auth-policy keys come from {@code auth-policy.properties}.
+ * A locked name that is not in that file keeps a known Quarkus default, or stays absent.
  * Test and dev launch modes pass the value through so a Quarkus test can boot.
  */
 @Priority(AuthPolicyLockInterceptor.PRIORITY)
@@ -24,6 +25,10 @@ public final class AuthPolicyLockInterceptor implements ConfigSourceInterceptor 
         if (!lock.locks(name) || LaunchMode.current().isDevOrTest()) {
             return context.proceed(name);
         }
-        return lock.fileValue(name);
+        ConfigValue fromFile = lock.fileValue(name);
+        if (fromFile != null) {
+            return fromFile;
+        }
+        return lock.builtInValue(name);
     }
 }
