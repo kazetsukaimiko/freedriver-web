@@ -1,0 +1,21 @@
+.phone-sign-in-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.phone-sign-in .danger {
+  color: #9f1d1d;
+}
+
+.phone-sign-in table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.phone-sign-in td,
+.phone-sign-in th {
+  text-align: left;
+  padding: 0.4rem 0.6rem 0.4rem 0;
+}

@@ -39,6 +39,20 @@ class BffSessionLockTest {
         assertTrue(properties.contains("quarkus.oidc.logout.post-logout-path=/"));
         assertTrue(properties.contains("quarkus.http.auth.permission.logout.paths=/logout"));
         assertTrue(properties.contains("quarkus.http.auth.permission.logout.policy=authenticated"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.invites.paths=/api/invites,/api/invites/*"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.invites.policy=authenticated"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.invite-use.paths=/api/invites/use"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.invite-use.policy=permit"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.phones.paths=/api/phones,/api/phones/*"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.phones.policy=authenticated"));
+        assertTrue(properties.contains("freedriver.invite.client-secret=${FREEDRIVER_INVITE_CLIENT_SECRET:}"));
+        assertTrue(properties.contains(
+                "\n%prod.freedriver.invite.client-secret=${FREEDRIVER_INVITE_CLIENT_SECRET}\n"));
+        String compose = Files.readString(Path.of("../../docker-compose.yml"));
+        assertTrue(compose.contains("path: /opt/freedriver-secrets/keycloak-freedriver-invite.env"));
+        assertTrue(compose.contains("required: false"));
+        assertFalse(compose.contains("${FREEDRIVER_INVITE_CLIENT_SECRET:-}"));
+        assertFalse(compose.contains("FREEDRIVER_INVITE_CLIENT_SECRET: ${"));
         assertTrue(properties.contains("quarkus.oidc.enabled=false"));
         assertFalse(properties.matches("(?s).*\\nquarkus\\.oidc\\.enabled=true.*"));
         assertTrue(properties.contains("quarkus.oidc.auth-server-url=https://auth.freedriver.io/realms/freedriver"));

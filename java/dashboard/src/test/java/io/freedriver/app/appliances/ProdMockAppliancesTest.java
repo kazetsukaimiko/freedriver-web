@@ -37,6 +37,7 @@ class ProdMockAppliancesTest {
         public Map<String, String> getConfigOverrides() {
             return Map.of(
                     "quarkus.oidc.enabled", "false",
+                    "freedriver.invite.client-secret", "unused-by-this-test",
                     "quarkus.http.test-port", "0");
         }
     }

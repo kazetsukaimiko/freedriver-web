@@ -38,6 +38,12 @@ class AuthPolicyConfigTest {
         assertTrue(auth.contains("quarkus.http.auth.permission.login.policy=authenticated"));
         assertTrue(auth.contains("quarkus.http.auth.permission.logout.paths=/logout"));
         assertTrue(auth.contains("quarkus.http.auth.permission.logout.policy=authenticated"));
+        assertTrue(auth.contains("quarkus.http.auth.permission.invites.paths=/api/invites,/api/invites/*"));
+        assertTrue(auth.contains("quarkus.http.auth.permission.invites.policy=authenticated"));
+        assertTrue(auth.contains("quarkus.http.auth.permission.invite-use.paths=/api/invites/use"));
+        assertTrue(auth.contains("quarkus.http.auth.permission.invite-use.policy=permit"));
+        assertTrue(auth.contains("quarkus.http.auth.permission.phones.paths=/api/phones,/api/phones/*"));
+        assertTrue(auth.contains("quarkus.http.auth.permission.phones.policy=authenticated"));
         assertTrue(auth.contains("freedriver.appliances.rate-limit.permits=30"));
         assertTrue(auth.contains("freedriver.appliances.rate-limit.window=60s"));
         assertTrue(auth.contains("%test.freedriver.appliances.rate-limit.permits=8"));
@@ -58,6 +64,16 @@ class AuthPolicyConfigTest {
         assertEquals("authenticated", config.getValue("quarkus.http.auth.permission.login.policy", String.class));
         assertEquals("/logout", config.getValue("quarkus.http.auth.permission.logout.paths", String.class));
         assertEquals("authenticated", config.getValue("quarkus.http.auth.permission.logout.policy", String.class));
+        assertEquals(
+                "/api/invites,/api/invites/*",
+                config.getValue("quarkus.http.auth.permission.invites.paths", String.class));
+        assertEquals("authenticated", config.getValue("quarkus.http.auth.permission.invites.policy", String.class));
+        assertEquals("/api/invites/use", config.getValue("quarkus.http.auth.permission.invite-use.paths", String.class));
+        assertEquals("permit", config.getValue("quarkus.http.auth.permission.invite-use.policy", String.class));
+        assertEquals(
+                "/api/phones,/api/phones/*",
+                config.getValue("quarkus.http.auth.permission.phones.paths", String.class));
+        assertEquals("authenticated", config.getValue("quarkus.http.auth.permission.phones.policy", String.class));
         assertEquals(8, appliances.rateLimit().permits());
         assertEquals(Duration.ofSeconds(60), appliances.rateLimit().window());
         assertFalse(config.getValue("quarkus.oidc.enabled", Boolean.class));
