@@ -1,1 +1,3 @@
 io.freedriver.app.security.AuthPolicyLockInterceptor
+io.freedriver.app.security.AuthPolicyLockRecord
+io.freedriver.app.security.AuthPolicyLockGuard
