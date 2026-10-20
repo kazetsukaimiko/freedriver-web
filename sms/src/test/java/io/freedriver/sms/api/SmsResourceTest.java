@@ -26,7 +26,13 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static io.restassured.RestAssured.given;
 import static io.freedriver.sms.support.SmsCalls.send;
@@ -35,6 +41,7 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /** The HTTP contract of {@code /sms/send} and {@code /sms/verify}, with the fake sender. */
 @QuarkusTest
@@ -278,6 +285,41 @@ class SmsResourceTest {
         }
         send(unlisted).statusCode(429);
         send(listedAndAgreed("other.user")).statusCode(200);
+    }
+
+    @Test
+    void parallel_wrong_guesses_for_one_number_stop_at_five_checks() throws Exception {
+        String phone = listedAndAgreed("house.user");
+        send(phone).statusCode(200);
+        String code = sender.pendingCode(phone).orElseThrow();
+        String wrong = code.equals("000000") ? "111111" : "000000";
+        int guesses = 16;
+        ExecutorService pool = Executors.newFixedThreadPool(guesses);
+        try {
+            List<Future<Integer>> futures = new ArrayList<>();
+            for (int i = 0; i < guesses; i++) {
+                futures.add(pool.submit(() -> verify(phone, wrong).extract().statusCode()));
+            }
+            int rejected = 0;
+            int limited = 0;
+            for (Future<Integer> future : futures) {
+                int status = future.get(30, TimeUnit.SECONDS);
+                if (status == 400) {
+                    rejected++;
+                } else if (status == 429) {
+                    limited++;
+                } else {
+                    fail("unexpected status " + status);
+                }
+            }
+            assertEquals(5, rejected);
+            assertEquals(guesses - 5, limited);
+            assertEquals(5, sender.checks(), "exactly five guesses are checked");
+            verify(phone, code).statusCode(429);
+            assertEquals(5, sender.checks());
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test

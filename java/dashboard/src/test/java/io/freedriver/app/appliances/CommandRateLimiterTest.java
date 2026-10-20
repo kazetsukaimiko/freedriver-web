@@ -16,9 +16,9 @@ class CommandRateLimiterTest {
         config.rateLimitWindow = Duration.ofSeconds(60);
         CommandRateLimiter limiter = new CommandRateLimiter(config);
 
-        assertTrue(limiter.tryAcquire("scott"));
-        assertTrue(limiter.tryAcquire("scott"));
-        assertFalse(limiter.tryAcquire("scott"));
+        assertTrue(limiter.tryAcquire("ada"));
+        assertTrue(limiter.tryAcquire("ada"));
+        assertFalse(limiter.tryAcquire("ada"));
         assertTrue(limiter.tryAcquire("yuni"));
     }
 }
