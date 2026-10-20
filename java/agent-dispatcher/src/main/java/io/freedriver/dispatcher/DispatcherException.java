@@ -3,20 +3,10 @@ package io.freedriver.dispatcher;
 public final class DispatcherException extends RuntimeException {
 
     public enum Kind {
-        BAD_REQUEST(400),
-        FORBIDDEN(403),
-        NOT_FOUND(404),
-        CONFLICT(409);
-
-        private final int status;
-
-        Kind(int status) {
-            this.status = status;
-        }
-
-        public int status() {
-            return status;
-        }
+        BAD_REQUEST,
+        FORBIDDEN,
+        NOT_FOUND,
+        CONFLICT
     }
 
     private final Kind kind;

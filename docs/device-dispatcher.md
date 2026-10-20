@@ -1,10 +1,10 @@
 # Device dispatcher
 
-Home PCs run a headless Grok session when a dispatcher (the Grok app, the car, or the CLI) submits a job. This service is the queue. It does not mint tokens and it does not start Grok.
+Home PCs run a headless Grok session when a dispatcher (the Grok app, the car, or the CLI) submits a job. This service is that in-memory queue. Keycloak issues the tokens. The device daemon on each PC starts Grok.
 
-Keycloak at `https://auth.freedriver.io/realms/freedriver` stays the only issuer. `quarkus.oidc.enabled` is false until that client setup is applied. Anonymous callers get 401. A device token cannot call dispatcher routes, and a dispatcher token cannot call device routes.
+Keycloak at `https://auth.freedriver.io/realms/freedriver` is the issuer. `quarkus.oidc.enabled` stays false until that client setup is applied. Anonymous callers receive 401. A device token calls the device routes. A dispatcher token calls the dispatcher routes.
 
-The queue is in memory. A restart drops it. Postgres waits until bearer auth is on.
+The queue lives in memory for the life of the process. Postgres is the persistence step once bearer auth is on.
 
 ## Actors
 
@@ -29,12 +29,12 @@ Assignment states: `queued` → `claimed` → `running` → `succeeded` | `faile
 
 Compose service `agent-dispatcher` has no host port. On `app.freedriver.io`, Caddy sends `/mcp`, `/mcp/*`, `/api/dispatcher`, `/api/dispatcher/*`, `/api/device`, and `/api/device/*` to `agent-dispatcher:8080`. Every other path stays on `dashboard:8080`.
 
-`/mcp` is routed and still requires a caller. The Streamable HTTP MCP tools are not in this service yet. The JAX-RS interfaces in `agent-dispatcher-api` are the contract a RestEasy proxy client can call.
+`/mcp` is routed and requires a caller. Streamable HTTP MCP tools are a later slice. The JAX-RS interfaces in `agent-dispatcher-api` are the contract a RestEasy proxy client can call.
 
-The device daemon is not a Compose service. It will register, heartbeat, poll, claim, and run `grok` on the PC. No `--yolo`.
+The device daemon runs on the PC, outside Compose. It will register, heartbeat, poll, claim, and run `grok` with an explicit tool allowlist.
 
 ## Keycloak
 
-`scripts/provision-keycloak-freedriver.sh` can create the public client `freedriver-dispatcher` (authorization code + PKCE, claim `actor=dispatcher`, realm role `dispatcher`). Device clients are created only when `FREEDRIVER_DEVICE_CLIENTS` lists their ids. Secrets go to `/opt/freedriver-secrets/` and are not printed. Do not run the script against production as part of shipping this change.
+`scripts/provision-keycloak-freedriver.sh` can create the public client `freedriver-dispatcher` (authorization code + PKCE, claim `actor=dispatcher`, realm role `dispatcher`). Device clients are created only when `FREEDRIVER_DEVICE_CLIENTS` lists their ids. Secrets go to `/opt/freedriver-secrets/` and stay out of the script output. Run that script on production as its own ops step.
 
-Token issuance on the dashboard stays unimplemented while dashboard OIDC is off.
+Dashboard sign-in is the OIDC BFF against that same realm. Dispatcher and device clients get their tokens from Keycloak.

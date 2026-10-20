@@ -4,10 +4,10 @@ import io.freedriver.dispatcher.api.DispatcherApi;
 import io.freedriver.dispatcher.model.DeviceView;
 import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
+import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.common.annotation.Blocking;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.Path;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.time.Duration;
@@ -15,20 +15,19 @@ import java.util.List;
 import java.util.UUID;
 
 @ApplicationScoped
-@Path("/api/dispatcher")
 public class DispatcherResource implements DispatcherApi {
 
     private final JobStore jobs;
-    private final CallerIdentity caller;
+    private final SecurityIdentity identity;
     private final Duration submitTimeout;
 
     @Inject
     public DispatcherResource(
             JobStore jobs,
-            CallerIdentity caller,
+            SecurityIdentity identity,
             @ConfigProperty(name = "freedriver.dispatcher.submit-timeout", defaultValue = "75s") Duration submitTimeout) {
         this.jobs = jobs;
-        this.caller = caller;
+        this.identity = identity;
         this.submitTimeout = submitTimeout;
     }
 
@@ -40,11 +39,11 @@ public class DispatcherResource implements DispatcherApi {
     @Override
     @Blocking
     public JobView submit(SubmitJobRequest body) {
-        return jobs.submit(caller.subject(), body, submitTimeout);
+        return jobs.submit(CallerIds.subject(identity), body, submitTimeout);
     }
 
     @Override
     public JobView getJob(UUID jobId) {
-        return jobs.getJob(caller.subject(), jobId);
+        return jobs.getJob(CallerIds.subject(identity), jobId);
     }
 }

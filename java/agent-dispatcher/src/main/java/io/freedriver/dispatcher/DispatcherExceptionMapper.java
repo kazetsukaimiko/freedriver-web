@@ -11,9 +11,18 @@ public class DispatcherExceptionMapper implements ExceptionMapper<DispatcherExce
 
     @Override
     public Response toResponse(DispatcherException exception) {
-        return Response.status(exception.kind().status())
+        return Response.status(status(exception.kind()))
                 .type(MediaType.APPLICATION_JSON)
                 .entity(new ErrorResponse(exception.getMessage()))
                 .build();
+    }
+
+    private static int status(DispatcherException.Kind kind) {
+        return switch (kind) {
+            case BAD_REQUEST -> 400;
+            case FORBIDDEN -> 403;
+            case NOT_FOUND -> 404;
+            case CONFLICT -> 409;
+        };
     }
 }
