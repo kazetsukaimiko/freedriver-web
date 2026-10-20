@@ -87,16 +87,10 @@ class AuthPolicyProdLockTest {
         LaunchMode previous = LaunchMode.current();
         LaunchMode.set(LaunchMode.NORMAL);
         try {
-            SmallRyeConfig prod = prodConfig(builtInDefaults());
-            assertEquals("true", prod.getConfigValue("quarkus.oidc.tenant-enabled").getValue());
-            assertEquals("false", prod.getConfigValue("quarkus.http.auth.permission.appliances.shared").getValue());
-            assertEquals("ALL", prod.getConfigValue("quarkus.http.auth.permission.appliances.applies-to").getValue());
-            assertEquals("true", prod.getConfigValue("quarkus.oidc.*.tenant-enabled").getValue());
-            assertEquals("true", prod.getConfigValue("quarkus.oidc.enabled").getValue());
-            assertEquals(
-                    "authenticated",
-                    prod.getConfigValue("quarkus.http.auth.permission.appliances.policy").getValue());
-            assertEquals("30", prod.getConfigValue("freedriver.appliances.rate-limit.permits").getValue());
+            assertProdPolicy(prodConfig());
+            assertProdPolicy(prodConfig(spoofedDefaults("DefaultValuesConfigSource", Integer.MIN_VALUE)));
+            assertProdPolicy(prodConfig(spoofedDefaults(
+                    "io.smallrye.config.DefaultValuesConfigSource", Integer.MAX_VALUE - 500)));
         } finally {
             LaunchMode.set(previous);
         }
@@ -236,15 +230,17 @@ class AuthPolicyProdLockTest {
         values.put("freedriver.appliances.rate-limit.permits", "100000");
         values.put("freedriver.appliances.rate-limit.window", "1s");
         values.put("quarkus.oidc.credentials.secret", "secret");
+        hostileDefaults(values);
         return new PropertiesConfigSource(values, "application-prod.properties", 251);
     }
 
     private static ConfigSource jarAboveThePolicy() {
-        Map<String, String> values = Map.of(
-                "quarkus.oidc.enabled", "false",
-                "%prod.quarkus.oidc.enabled", "false",
-                "quarkus.http.auth.permission.appliances.policy", "permit",
-                "freedriver.appliances.rate-limit.permits", "100000");
+        Map<String, String> values = new HashMap<>();
+        values.put("quarkus.oidc.enabled", "false");
+        values.put("%prod.quarkus.oidc.enabled", "false");
+        values.put("quarkus.http.auth.permission.appliances.policy", "permit");
+        values.put("freedriver.appliances.rate-limit.permits", "100000");
+        hostileDefaults(values);
         return new ConfigSource() {
             @Override
             public Set<String> getPropertyNames() {
@@ -268,14 +264,13 @@ class AuthPolicyProdLockTest {
         };
     }
 
-    private static ConfigSource builtInDefaults() {
-        Map<String, String> values = Map.of(
-                "quarkus.oidc.tenant-enabled", "true",
-                "quarkus.oidc.*.tenant-enabled", "true",
-                "quarkus.http.auth.permission.appliances.shared", "false",
-                "quarkus.http.auth.permission.appliances.applies-to", "ALL",
-                "quarkus.http.auth.permission.public.shared", "false",
-                "quarkus.http.auth.permission.public.applies-to", "ALL");
+    private static ConfigSource spoofedDefaults(String sourceName, int ordinal) {
+        Map<String, String> values = new HashMap<>();
+        values.put("quarkus.oidc.enabled", "false");
+        values.put("%prod.quarkus.oidc.enabled", "false");
+        values.put("quarkus.http.auth.permission.appliances.policy", "permit");
+        values.put("freedriver.appliances.rate-limit.permits", "100000");
+        hostileDefaults(values);
         return new ConfigSource() {
             @Override
             public Set<String> getPropertyNames() {
@@ -289,14 +284,28 @@ class AuthPolicyProdLockTest {
 
             @Override
             public String getName() {
-                return "DefaultValuesConfigSource";
+                return sourceName;
             }
 
             @Override
             public int getOrdinal() {
-                return Integer.MIN_VALUE;
+                return ordinal;
             }
         };
+    }
+
+    /** Values a hostile source would use to turn OIDC off or permit appliance routes. */
+    private static void hostileDefaults(Map<String, String> values) {
+        values.put("quarkus.oidc.tenant-enabled", "false");
+        values.put("quarkus.oidc.*.tenant-enabled", "false");
+        values.put("quarkus.oidc.backdoor.tenant-enabled", "false");
+        values.put("quarkus.http.auth.permission.appliances.shared", "true");
+        values.put("quarkus.http.auth.permission.public.shared", "true");
+        values.put("quarkus.http.auth.permission.*.shared", "true");
+        values.put("quarkus.http.auth.permission.appliances.applies-to", "JAXRS");
+        values.put("quarkus.http.auth.permission.*.applies-to", "JAXRS");
+        values.put("quarkus.http.auth.permission.*.policy", "permit");
+        values.put("quarkus.http.auth.permission.*.paths", "/*");
     }
 
     private static ConfigSource namedOverride(String sourceName) {
@@ -315,8 +324,7 @@ class AuthPolicyProdLockTest {
         values.put("quarkus.http.auth.permission.open-post.paths", "/api/appliances/*");
         values.put("quarkus.http.auth.permission.open-post.methods", "POST");
         values.put("quarkus.http.auth.permission.open-post.policy", "permit");
-        values.put("quarkus.oidc.tenant-enabled", "false");
-        values.put("quarkus.oidc.backdoor.tenant-enabled", "false");
+        hostileDefaults(values);
         return new PropertiesConfigSource(values, sourceName, 100);
     }
 
@@ -343,9 +351,24 @@ class AuthPolicyProdLockTest {
         assertAbsent(prod, "quarkus.http.auth.permission.open-post.paths");
         assertAbsent(prod, "quarkus.http.auth.permission.open-post.methods");
         assertAbsent(prod, "quarkus.http.auth.permission.open-post.policy");
-        assertAbsent(prod, "quarkus.oidc.tenant-enabled");
-        assertAbsent(prod, "quarkus.oidc.backdoor.tenant-enabled");
+        assertBuiltInDefaults(prod);
         assertSecret(prod);
+    }
+
+    private static void assertBuiltInDefaults(SmallRyeConfig prod) {
+        assertEquals("true", prod.getConfigValue("quarkus.oidc.tenant-enabled").getValue());
+        assertEquals(
+                AuthPolicyConfigSource.RESOURCE,
+                prod.getConfigValue("quarkus.oidc.tenant-enabled").getConfigSourceName());
+        assertEquals("true", prod.getConfigValue("quarkus.oidc.*.tenant-enabled").getValue());
+        assertEquals("true", prod.getConfigValue("quarkus.oidc.backdoor.tenant-enabled").getValue());
+        assertEquals("false", prod.getConfigValue("quarkus.http.auth.permission.appliances.shared").getValue());
+        assertEquals("false", prod.getConfigValue("quarkus.http.auth.permission.public.shared").getValue());
+        assertEquals("false", prod.getConfigValue("quarkus.http.auth.permission.*.shared").getValue());
+        assertEquals("ALL", prod.getConfigValue("quarkus.http.auth.permission.appliances.applies-to").getValue());
+        assertEquals("ALL", prod.getConfigValue("quarkus.http.auth.permission.*.applies-to").getValue());
+        assertAbsent(prod, "quarkus.http.auth.permission.*.policy");
+        assertAbsent(prod, "quarkus.http.auth.permission.*.paths");
     }
 
     private static void assertAbsent(SmallRyeConfig prod, String name) {
@@ -422,6 +445,13 @@ class AuthPolicyProdLockTest {
             if ("quarkus.oidc.enabled".equals(name)
                     || "quarkus.http.auth.permission.appliances.policy".equals(name)
                     || "quarkus.http.auth.permission.appliances.enabled".equals(name)
+                    || "quarkus.http.auth.permission.appliances.shared".equals(name)
+                    || "quarkus.http.auth.permission.appliances.applies-to".equals(name)
+                    || "quarkus.http.auth.permission.public.shared".equals(name)
+                    || "quarkus.http.auth.permission.*.shared".equals(name)
+                    || "quarkus.http.auth.permission.*.applies-to".equals(name)
+                    || "quarkus.http.auth.permission.*.policy".equals(name)
+                    || "quarkus.http.auth.permission.*.paths".equals(name)
                     || "quarkus.http.auth.permission.changelog.policy".equals(name)
                     || "quarkus.http.auth.permission.login.policy".equals(name)
                     || "quarkus.http.auth.permission.logout.policy".equals(name)
@@ -429,6 +459,7 @@ class AuthPolicyProdLockTest {
                     || "quarkus.http.auth.permission.open-post.paths".equals(name)
                     || "quarkus.http.auth.permission.open-post.methods".equals(name)
                     || "quarkus.oidc.tenant-enabled".equals(name)
+                    || "quarkus.oidc.*.tenant-enabled".equals(name)
                     || "quarkus.oidc.backdoor.tenant-enabled".equals(name)
                     || "quarkus.oidc.credentials.secret".equals(name)
                     || "freedriver.appliances.rate-limit.permits".equals(name)
@@ -440,6 +471,8 @@ class AuthPolicyProdLockTest {
                         : name.endsWith(".secret") ? "secret"
                         : name.endsWith(".paths") ? "/api/appliances/*"
                         : name.endsWith(".methods") ? "POST"
+                        : name.endsWith(".shared") ? "true"
+                        : name.endsWith(".applies-to") ? "JAXRS"
                         : "permit";
                 return ConfigValue.builder()
                         .withName(name)

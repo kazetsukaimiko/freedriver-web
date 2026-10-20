@@ -42,9 +42,6 @@ final class AuthPolicyLock {
      * turn a tenant off. A production launch ignores any other source for these names.
      */
     static boolean locksBare(String bare, Set<String> owned) {
-        if (bare.indexOf('*') >= 0) {
-            return false;
-        }
         if (owned.contains(bare) || bare.startsWith("quarkus.http.auth.permission.")) {
             return true;
         }
@@ -52,16 +49,43 @@ final class AuthPolicyLock {
                 || (bare.startsWith("quarkus.oidc.") && bare.endsWith(".tenant-enabled"));
     }
 
-    /** Quarkus {@code @WithDefault} values. A production launch keeps these and drops other sources. */
-    static boolean builtInDefault(ConfigValue value) {
-        if (value == null || value.getValue() == null) {
-            return true;
+    /**
+     * Quarkus {@code @WithDefault} for a locked name that is not a line in
+     * {@code auth-policy.properties}. This lock supplies the value.
+     */
+    ConfigValue builtInValue(String name) {
+        String raw = builtInRaw(bareKey(name));
+        if (raw == null) {
+            return null;
         }
-        if (value.getConfigSourceOrdinal() == Integer.MIN_VALUE) {
-            return true;
+        return ConfigValue.builder()
+                .withName(name)
+                .withValue(raw)
+                .withRawValue(raw)
+                .withConfigSourceName(AuthPolicyConfigSource.RESOURCE)
+                .withConfigSourceOrdinal(AuthPolicyConfigSource.ORDINAL)
+                .build();
+    }
+
+    /**
+     * {@code shared} and {@code applies-to} on an HTTP permission, and {@code tenant-enabled}
+     * on an OIDC tenant. Other locked names have no built-in default.
+     */
+    private static String builtInRaw(String bare) {
+        if (bare.startsWith("quarkus.http.auth.permission.")) {
+            if (bare.endsWith(".shared")) {
+                return "false";
+            }
+            if (bare.endsWith(".applies-to")) {
+                return "ALL";
+            }
+            return null;
         }
-        String source = value.getConfigSourceName();
-        return source != null && source.contains("DefaultValuesConfigSource");
+        if ("quarkus.oidc.tenant-enabled".equals(bare)
+                || (bare.startsWith("quarkus.oidc.") && bare.endsWith(".tenant-enabled"))) {
+            return "true";
+        }
+        return null;
     }
 
     /** Value for the exact name the profile interceptor asks for. */
