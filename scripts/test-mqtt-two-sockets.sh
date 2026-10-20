@@ -228,7 +228,11 @@ probe() {
 import socket, ssl, sys
 host, port, ca, hostname = sys.argv[1:5]
 ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-ctx.load_verify_locations(ca)
+try:
+    ctx.load_verify_locations(ca)
+except OSError as exc:
+    print(f"cannot read trust anchor: {exc}", file=sys.stderr)
+    sys.exit(1)
 ctx.check_hostname = True
 ctx.verify_mode = ssl.CERT_REQUIRED
 raw = socket.create_connection((host, int(port)), timeout=3)
@@ -369,12 +373,14 @@ run_broker_handshake() {
     echo "broker 8883 SAN must be mosquitto only, got ${broker_internal}" >&2
     exit 1
   fi
-  probe "127.0.0.1:${pub_port}" mqtt.freedriver.io "${SECRETS}/server.crt" >/dev/null
+  # server.crt in the secrets dir is owned by 1883 after the fixture
+  # chown. The host probe reads this copy, taken before that chown.
+  probe "127.0.0.1:${pub_port}" mqtt.freedriver.io "${WORKDIR}/server.crt.probe" >/dev/null
   if probe "127.0.0.1:${pub_port}" mqtt.freedriver.io "${CA_DIR}/ca.crt" >/dev/null; then
     echo "published host port must not verify against the internal CA" >&2
     exit 1
   fi
-  broker_public="$(probe "127.0.0.1:${pub_port}" mqtt.freedriver.io "${SECRETS}/server.crt")"
+  broker_public="$(probe "127.0.0.1:${pub_port}" mqtt.freedriver.io "${WORKDIR}/server.crt.probe")"
   if [[ "$broker_public" != "mqtt.freedriver.io" ]]; then
     echo "published port SAN must be mqtt.freedriver.io only, got ${broker_public}" >&2
     exit 1
@@ -418,6 +424,11 @@ if docker info >/dev/null 2>&1; then
     eclipse-mosquitto:2.1.2-alpine \
     mosquitto_passwd -c -b /mosquitto/config/secrets/passwd api fixture-not-printed >/dev/null
   printf '%s\n' 'user api' 'topic read probe' > "${SECRETS}/acl"
+  # Host-side probes cannot read a 0640 file owned by 1883. Keep a copy
+  # of the public certificate for those probes. The broker still reads
+  # the secrets-dir file.
+  cp "${SECRETS}/server.crt" "${WORKDIR}/server.crt.probe"
+  chmod 644 "${WORKDIR}/server.crt.probe"
   docker run --rm --user 0 --entrypoint /bin/sh \
     -v "${SECRETS}:/mosquitto/config/secrets" \
     eclipse-mosquitto:2.1.2-alpine \
