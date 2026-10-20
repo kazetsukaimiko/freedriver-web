@@ -36,10 +36,21 @@ SECRET = "SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}"
 env = re.search(r"^    environment:\n((?:      .*\n)+)", block, re.M)
 keys = [] if env is None else re.findall(r"^      ([A-Z0-9_]+):", env.group(1), re.M)
 SEED = "FREEDRIVER_SEED_PHONE: ${FREEDRIVER_SEED_PHONE:-}"
-if keys != ["SMS_OTP_SHARED_SECRET", "FREEDRIVER_SEED_PHONE"] or SECRET not in block or SEED not in block:
-    raise SystemExit("sms environment is exactly SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-} and FREEDRIVER_SEED_PHONE: ${FREEDRIVER_SEED_PHONE:-}")
+CAP = "FREEDRIVER_SMS_DAILY_SEND_CAP: ${FREEDRIVER_SMS_DAILY_SEND_CAP:?FREEDRIVER_SMS_DAILY_SEND_CAP is required}"
+if keys != ["SMS_OTP_SHARED_SECRET", "FREEDRIVER_SEED_PHONE", "FREEDRIVER_SMS_DAILY_SEND_CAP"] or SECRET not in block or SEED not in block or CAP not in block:
+    raise SystemExit("sms environment is SMS_OTP_SHARED_SECRET, FREEDRIVER_SEED_PHONE, and a required FREEDRIVER_SMS_DAILY_SEND_CAP")
 if compose.count("FREEDRIVER_SEED_PHONE") != 2:
     raise SystemExit("only sms receives FREEDRIVER_SEED_PHONE")
+if compose.count("FREEDRIVER_SMS_DAILY_SEND_CAP") != 3 or compose.replace(block, "").count("FREEDRIVER_SMS_DAILY_SEND_CAP") != 0:
+    raise SystemExit("only sms receives FREEDRIVER_SMS_DAILY_SEND_CAP")
+if "sms/src/main/docker/Dockerfile.compose" not in block or "\n      context: .\n" not in block:
+    raise SystemExit("sms builds from sms/src/main/docker/Dockerfile.compose with context .")
+if "python3" in block:
+    raise SystemExit("sms healthcheck must not use python3")
+if "/usr/local/bin/health-live.sh" not in block or "/health/live" not in Path("sms/src/main/docker/health-live.sh").read_text():
+    raise SystemExit("sms healthcheck must call /health/live")
+if "/opt/freedriver-storage/sms:/deployments/data" not in block:
+    raise SystemExit("sms mounts a persistent volume at /deployments/data")
 TWILIO_ENV = (
     "    env_file:\n"
     "      - path: /opt/freedriver-secrets/twilio-verify.env\n"
@@ -82,6 +93,18 @@ fi
 if [[ "$(grep '^FREEDRIVER_SEED_PHONE=' .env.example)" != "FREEDRIVER_SEED_PHONE=" ]]; then
   fail ".env.example holds FREEDRIVER_SEED_PHONE with an empty value"
 fi
+if [[ "$(grep '^FREEDRIVER_SMS_DAILY_SEND_CAP=' .env.example)" != "FREEDRIVER_SMS_DAILY_SEND_CAP=20" ]]; then
+  fail ".env.example holds FREEDRIVER_SMS_DAILY_SEND_CAP as the placeholder 20"
+fi
+if ! grep -B2 '^FREEDRIVER_SMS_DAILY_SEND_CAP=20$' .env.example | grep -q 'placeholder'; then
+  fail ".env.example comments the daily send cap placeholder"
+fi
+if grep -RInE '^FREEDRIVER_SMS_DAILY_SEND_CAP=.+' \
+  --exclude-dir .git --exclude-dir target \
+  --exclude '.env.example' \
+  sms keycloak secrets scripts docs README.md docker-compose.yml Caddyfile; then
+  fail "do not commit a live daily send cap"
+fi
 if grep -RInE '^\s*(export\s+)?FREEDRIVER_SEED_PHONE=.+' \
   --exclude-dir .git --exclude-dir target \
   sms keycloak secrets scripts docs README.md docker-compose.yml Caddyfile .env.example; then
@@ -121,7 +144,6 @@ grep -qx 'io.freedriver.keycloak.sms.SmsOtpAuthenticatorFactory' \
   keycloak/sms-otp-spi/src/main/resources/META-INF/services/org.keycloak.authentication.AuthenticatorFactory
 
 for needle in placeholder-not-a-live-secret X-Freedriver-Sms-Secret; do
-  grep -q "$needle" sms/stub/server.py
   grep -q "$needle" keycloak/sms-otp-spi/src/main/java/io/freedriver/keycloak/sms/SmsOtpConfig.java
 done
 grep -q 'http://sms:8080' keycloak/sms-otp-spi/src/main/java/io/freedriver/keycloak/sms/SmsOtpConfig.java
@@ -204,6 +226,64 @@ for bad in password-disabled sms-required password-missing forms-disabled sms-fi
   fi
 done
 
-python3 sms/stub/test_stub.py
+if grep -q 'app/pom.xml' sms/src/main/docker/Dockerfile.compose; then
+  fail "sms image build must not copy a missing app module"
+fi
+if ! grep -q 'java/pom.xml' sms/src/main/docker/Dockerfile.compose; then
+  fail "sms image build must see the reactor poms"
+fi
+if ! grep -q 'mkdir -p /opt/freedriver-storage/grafana /opt/freedriver-storage/loki /opt/freedriver-storage/prometheus /opt/freedriver-storage/mosquitto /opt/freedriver-storage/sms' .github/workflows/deploy.yml; then
+  fail "deploy must mkdir the sms data directory"
+fi
+if ! grep -q 'chown 185:0 /opt/freedriver-storage/sms' .github/workflows/deploy.yml; then
+  fail "deploy must give the sms data directory to uid 185"
+fi
+if ! grep -q -- '--build' .github/workflows/deploy.yml; then
+  fail "deploy must rebuild images, including keycloak and sms"
+fi
+
+python3 - <<'PY'
+import re
+from pathlib import Path
+
+def java_string(source, marker):
+    chunk = source.split(marker, 1)[1].split(";", 1)[0]
+    parts = re.findall(r'"((?:\\.|[^"\\])*)"', chunk)
+    return "".join(bytes(p, "utf-8").decode("unicode_escape") for p in parts)
+
+spi = Path("keycloak/sms-otp-spi/src/main/java/io/freedriver/keycloak/sms/SignInAgreement.java").read_text()
+sms = Path("sms/src/main/java/io/freedriver/sms/validation/SignInAgreementWording.java").read_text()
+spi_text = java_string(spi, "WORDING =")
+sms_text = java_string(sms, "String TEXT =")
+if not spi_text or spi_text != sms_text:
+    raise SystemExit("sign-in agreement wording drifted between the SPI and sms")
+
+phone = Path("keycloak/themes/freedriver/login/freedriver-sms-phone.ftl").read_text()
+if "By tapping Send code" in phone:
+    raise SystemExit("agreement wording must not be copied into the theme")
+if "${freedriverSmsAgreement}" not in phone or 'id="freedriver-sms-agreement"' not in phone:
+    raise SystemExit("phone page shows the shared agreement wording")
+if not (phone.index('name="phone"') < phone.index('id="freedriver-sms-agreement"') < phone.index('id="freedriver-sms-send"')):
+    raise SystemExit("agreement wording sits directly above the Send code button")
+
+code = Path("keycloak/themes/freedriver/login/freedriver-sms-code.ftl").read_text()
+if "disabled" in code.lower():
+    raise SystemExit("verify stays enabled")
+if "freedriverSmsCode" not in code or "loginButton" not in code:
+    raise SystemExit("the code page can keep the typed code and still submits Verify")
+
+messages = Path("keycloak/themes/freedriver/login/messages/messages_en.properties").read_text().splitlines()
+expected = [
+    "freedriverSmsSend=Send code",
+    "freedriverSmsWrongCode=That code didn''t work. Try again or send a new code.",
+    "freedriverSmsRateLimited=Too many tries. Try again in {0} minutes.",
+    "freedriverSmsRateLimitedOne=Too many tries. Try again in 1 minute.",
+    "freedriverSmsCheckUnavailable=We couldn''t check your code right now. Try again in a minute.",
+]
+missing = [line for line in expected if line not in messages]
+if missing:
+    raise SystemExit("sign-in page text missing: " + "; ".join(missing))
+print("sign-in agreement and page text share one wording")
+PY
 
 echo "sms otp scaffold locks ok"

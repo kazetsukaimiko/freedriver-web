@@ -8,6 +8,7 @@
     <#elseif section = "form">
         <form id="freedriver-sms-phone-form" class="${properties.kcFormClass!}" action="${url.loginAction}" method="post" novalidate="novalidate">
             <@field.input name="phone" label=msg("freedriverSmsPhoneLabel") autocomplete="tel" autofocus=true />
+            <p id="freedriver-sms-agreement">${freedriverSmsAgreement}</p>
             <@buttons.actionGroup>
                 <@buttons.button id="freedriver-sms-send" name="send" label="freedriverSmsSend" class=["kcButtonPrimaryClass", "kcButtonBlockClass"] />
             </@buttons.actionGroup>

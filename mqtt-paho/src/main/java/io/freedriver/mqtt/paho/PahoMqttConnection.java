@@ -12,7 +12,7 @@ import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 
-import javax.net.ssl.SSLContext;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -26,12 +26,14 @@ import java.util.function.Consumer;
 
 /**
  * Eclipse Paho {@link MqttConnection} for a {@link MqttEndpoint}.
- * TLS checks the broker hostname. The client id is {@code freedriver-api-} plus a random UUID.
+ * TLS uses the configured CA certificate for this connection and checks the broker hostname.
+ * The client id is {@code freedriver-api-} plus a random UUID.
  */
 public final class PahoMqttConnection implements MqttConnection {
 
     private final MqttEndpoint endpoint;
     private final String password;
+    private final Path trustCertificate;
     private final Map<String, Subscription> handlers = new ConcurrentHashMap<>();
     private final ExecutorService resubscribeExecutor = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "mqtt-resubscribe");
@@ -41,9 +43,10 @@ public final class PahoMqttConnection implements MqttConnection {
     private volatile MqttClient client;
     private volatile boolean closing;
 
-    public PahoMqttConnection(MqttEndpoint endpoint, String password) {
+    public PahoMqttConnection(MqttEndpoint endpoint, String password, Path trustCertificate) {
         this.endpoint = endpoint;
         this.password = password == null ? "" : password;
+        this.trustCertificate = trustCertificate;
     }
 
     @Override
@@ -51,6 +54,7 @@ public final class PahoMqttConnection implements MqttConnection {
         announceConnecting();
         String uri = (endpoint.tls() ? "ssl://" : "tcp://") + endpoint.host() + ":" + endpoint.port();
         try {
+            MqttConnectOptions options = clientOptions();
             client = new MqttClient(uri, "freedriver-api-" + UUID.randomUUID(), new MemoryPersistence());
             client.setCallback(new Callbacks(
                     endpoint.host(),
@@ -59,17 +63,6 @@ public final class PahoMqttConnection implements MqttConnection {
                     this::subscribeTopic,
                     resubscribeExecutor::execute,
                     () -> !closing));
-            MqttConnectOptions options = new MqttConnectOptions();
-            options.setCleanSession(true);
-            options.setAutomaticReconnect(true);
-            options.setUserName(endpoint.username());
-            if (!password.isEmpty()) {
-                options.setPassword(password.toCharArray());
-            }
-            if (endpoint.tls()) {
-                options.setSocketFactory(SSLContext.getDefault().getSocketFactory());
-                options.setHttpsHostnameVerificationEnabled(true);
-            }
             client.connect(options);
         } catch (Exception e) {
             close();
@@ -79,6 +72,22 @@ public final class PahoMqttConnection implements MqttConnection {
 
     void announceConnecting() {
         MqttLog.connecting(endpoint.host(), endpoint.port());
+    }
+
+    /** Opens the trust certificate when the connection starts. Hostname verification stays on. */
+    MqttConnectOptions clientOptions() {
+        MqttConnectOptions options = new MqttConnectOptions();
+        options.setCleanSession(true);
+        options.setAutomaticReconnect(true);
+        options.setUserName(endpoint.username());
+        if (endpoint.tls()) {
+            options.setSocketFactory(MqttTrust.socketFactory(trustCertificate));
+            options.setHttpsHostnameVerificationEnabled(true);
+        }
+        if (!password.isEmpty()) {
+            options.setPassword(password.toCharArray());
+        }
+        return options;
     }
 
     @Override

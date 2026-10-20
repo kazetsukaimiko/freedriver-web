@@ -118,7 +118,7 @@ Authorization stays **on** in `%dev` (`quarkus.security.auth.enabled-in-dev-mode
 
 `%test` uses `@TestSecurity`.
 
-Live MQTT is `io.freedriver:freedriver-mqtt` plus `freedriver-mqtt-paho`. The app CDI adapter (`MqttLiveClient`) talks to the same `ApplianceControl` bus, connects when `live-commands=true`, and fails startup when `live-commands` and `mock` are both true. `MqttBrokers` requires a docker-network host (`freedriver.io` names throw), port 8883, TLS, and exact topics. `freedriver.mqtt` is a mapped object (host, port, tls, username). Host and env vars: [mqtt-connect.md](mqtt-connect.md#quarkus).
+Live MQTT is `io.freedriver:freedriver-mqtt` plus `freedriver-mqtt-paho`. The app CDI adapter (`MqttLiveClient`) talks to the same `ApplianceControl` bus, connects when `live-commands=true`, and fails startup when `live-commands` and `mock` are both true. `MqttBrokers` requires a docker-network host (`freedriver.io` names throw), port 8883, TLS, and exact topics. `freedriver.mqtt` is a mapped object (host, port, tls, username, trust-certificate). Host and env vars: [mqtt-connect.md](mqtt-connect.md#quarkus).
 
 App MQTT logs use the logger `io.freedriver.mqtt`. No line includes a password, a payload, or an exception message. `live-commands` stays false, so the lines appear only after that flag is on.
 
