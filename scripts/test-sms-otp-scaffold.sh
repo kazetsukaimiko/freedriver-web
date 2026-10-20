@@ -150,7 +150,7 @@ if grep -RInE 'AKIA[0-9A-Z]{16}|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|aws_secr
 fi
 
 grep -qx 'freedriver.appliances.live-commands=false' java/dashboard/src/main/resources/application.properties
-grep -qx 'quarkus.oidc.enabled=false' java/dashboard/src/main/resources/application.properties
+grep -qx 'quarkus.oidc.enabled=false' java/dashboard/src/main/resources/auth-policy.properties
 
 grep -qx 'io.freedriver.keycloak.sms.SmsOtpAuthenticatorFactory' \
   keycloak/sms-otp-spi/src/main/resources/META-INF/services/org.keycloak.authentication.AuthenticatorFactory

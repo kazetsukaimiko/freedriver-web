@@ -14,14 +14,15 @@ class CsrfCookieSecureLockTest {
     @Test
     void secure_is_a_prod_profile_flag() throws IOException {
         String properties = Files.readString(Path.of("src/main/resources/application.properties"));
+        String auth = Files.readString(Path.of("src/main/resources/auth-policy.properties"));
         assertTrue(properties.contains("\nfreedriver.csrf.cookie-secure=false\n"));
         assertTrue(properties.contains("\n%dev.freedriver.csrf.cookie-secure=false\n"));
         assertTrue(properties.contains("\n%prod.freedriver.csrf.cookie-secure=true\n"));
         assertFalse(properties.contains("%dev.freedriver.csrf.cookie-secure=true"));
         assertFalse(properties.contains("%test.freedriver.csrf.cookie-secure=true"));
         assertFalse(properties.contains("proxy-address-forwarding"));
-        assertTrue(properties.contains("quarkus.oidc.authentication.cookie-force-secure=true"));
-        assertFalse(properties.contains("quarkus.oidc.authentication.cookie-force-secure=false"));
+        assertTrue(auth.contains("quarkus.oidc.authentication.cookie-force-secure=true"));
+        assertFalse(auth.contains("quarkus.oidc.authentication.cookie-force-secure=false"));
     }
 
     @Test
