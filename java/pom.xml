@@ -17,6 +17,9 @@
         <module>dashboard-model</module>
         <module>dashboard-api</module>
         <module>dashboard</module>
+        <module>agent-dispatcher-model</module>
+        <module>agent-dispatcher-api</module>
+        <module>agent-dispatcher</module>
     </modules>
 
     <properties>

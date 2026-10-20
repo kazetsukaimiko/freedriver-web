@@ -15,7 +15,13 @@ auth.freedriver.io {
 
 app.freedriver.io {
 	encode gzip
-	reverse_proxy dashboard:8080
+	@dispatcher path /mcp /mcp/* /api/dispatcher /api/dispatcher/* /api/device /api/device/*
+	handle @dispatcher {
+		reverse_proxy agent-dispatcher:8080
+	}
+	handle {
+		reverse_proxy dashboard:8080
+	}
 }
 
 # Public hostname kept so TLS/DNS stay put. Console is loopback-only.

@@ -175,6 +175,10 @@ jobs:
             echo "do not flip OIDC on in the default profile"
             exit 1
           fi
+          if grep -E '^quarkus\.oidc\.enabled=true' java/agent-dispatcher/src/main/resources/application.properties; then
+            echo "do not flip dispatcher OIDC on in the default profile"
+            exit 1
+          fi
 
       - name: VPS image must not bake a Packages token
         run: |

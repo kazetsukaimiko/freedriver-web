@@ -1,0 +1,47 @@
+# Multi-stage image for docker compose `build:` from the repo root.
+#   docker build -f java/agent-dispatcher/src/main/docker/Dockerfile.compose -t freedriver-agent-dispatcher .
+
+FROM maven:3.9-eclipse-temurin-23 AS build
+WORKDIR /workspace
+
+COPY pom.xml ./
+COPY mqtt-contract/pom.xml mqtt-contract/pom.xml
+COPY mqtt/pom.xml mqtt/pom.xml
+COPY mqtt-paho/pom.xml mqtt-paho/pom.xml
+COPY java/pom.xml java/pom.xml
+COPY java/bom/pom.xml java/bom/pom.xml
+COPY java/dashboard-model/pom.xml java/dashboard-model/pom.xml
+COPY java/dashboard-api/pom.xml java/dashboard-api/pom.xml
+COPY java/dashboard/pom.xml java/dashboard/pom.xml
+COPY java/agent-dispatcher-model/pom.xml java/agent-dispatcher-model/pom.xml
+COPY java/agent-dispatcher-api/pom.xml java/agent-dispatcher-api/pom.xml
+COPY java/agent-dispatcher/pom.xml java/agent-dispatcher/pom.xml
+COPY java/agent-dispatcher-model/src java/agent-dispatcher-model/src
+COPY java/agent-dispatcher-api/src java/agent-dispatcher-api/src
+COPY java/agent-dispatcher/src java/agent-dispatcher/src
+
+ARG BUILD_NUMBER=1.0.0-SNAPSHOT
+RUN set -eu; \
+    mvn -B \
+      org.codehaus.mojo:versions-maven-plugin:2.21.0:set \
+      -DnewVersion="${BUILD_NUMBER}" \
+      -DgenerateBackupPoms=false \
+      -DprocessAllModules=true \
+ && mvn -B -pl java/bom,java/agent-dispatcher -am -DskipTests \
+      -Dquarkus.application.version="${BUILD_NUMBER}" \
+      package
+
+FROM registry.access.redhat.com/ubi9/openjdk-25-runtime:1.24
+ENV LANGUAGE='en_US:en'
+
+COPY --from=build --chown=185 /workspace/java/agent-dispatcher/target/quarkus-app/lib/ /deployments/lib/
+COPY --from=build --chown=185 /workspace/java/agent-dispatcher/target/quarkus-app/*.jar /deployments/
+COPY --from=build --chown=185 /workspace/java/agent-dispatcher/target/quarkus-app/app/ /deployments/app/
+COPY --from=build --chown=185 /workspace/java/agent-dispatcher/target/quarkus-app/quarkus/ /deployments/quarkus/
+
+EXPOSE 8080
+USER 185
+ENV JAVA_OPTS_APPEND="-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager"
+ENV JAVA_APP_JAR="/deployments/quarkus-run.jar"
+
+ENTRYPOINT [ "/opt/jboss/container/java/run/run-java.sh" ]

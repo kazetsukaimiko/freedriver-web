@@ -152,3 +152,149 @@ ensure_user second
 kcadm add-roles -r "$REALM" --uusername kazetsukai --rolename dashboard --rolename portal-admin >/dev/null
 kcadm add-roles -r "$REALM" --uusername second --rolename dashboard >/dev/null
 echo "Assigned kazetsukai → dashboard + portal-admin; second → dashboard."
+
+# Dispatcher actors. The public client is for Grok and Tesla (authorization code + PKCE).
+# Confidential device clients are opt-in: set FREEDRIVER_DEVICE_CLIENTS to a space-separated
+# list of client ids. Secrets are written once and never printed. Do not export that list
+# on a casual re-run.
+ensure_role dispatcher
+ensure_role device
+
+ensure_mapper() {
+  local client_uuid="$1"
+  local name="$2"
+  shift 2
+  if kcadm get "clients/${client_uuid}/protocol-mappers/models" -r "$REALM" --fields name --format csv --noquotes \
+      | sed '/^name$/d' | grep -qx "$name"; then
+    echo "Mapper ${name} already exists."
+    return
+  fi
+  kcadm create "clients/${client_uuid}/protocol-mappers/models" -r "$REALM" \
+    -s "name=${name}" \
+    -s protocol=openid-connect \
+    "$@" >/dev/null
+  echo "Created mapper ${name}."
+}
+
+DISPATCHER_CLIENT=freedriver-dispatcher
+DISPATCHER_UUID="$(kcadm get clients -r "$REALM" -q "clientId=${DISPATCHER_CLIENT}" --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
+if [[ -n "${DISPATCHER_UUID}" ]]; then
+  echo "Client ${DISPATCHER_CLIENT} already exists."
+else
+  kcadm create clients -r "$REALM" \
+    -s "clientId=${DISPATCHER_CLIENT}" \
+    -s name='Freedriver dispatcher' \
+    -s enabled=true \
+    -s publicClient=true \
+    -s standardFlowEnabled=true \
+    -s implicitFlowEnabled=false \
+    -s directAccessGrantsEnabled=false \
+    -s serviceAccountsEnabled=false \
+    -s protocol=openid-connect \
+    -s 'description=Public authorization-code + PKCE client for dispatcher actors. Does not mint tokens itself.' \
+    -s 'redirectUris=["https://app.freedriver.io/*","http://127.0.0.1/*","http://localhost/*"]' \
+    -s 'webOrigins=["https://app.freedriver.io","http://127.0.0.1","http://localhost"]' \
+    -s 'attributes."pkce.code.challenge.method"=S256' >/dev/null
+  DISPATCHER_UUID="$(kcadm get clients -r "$REALM" -q "clientId=${DISPATCHER_CLIENT}" --fields id --format csv --noquotes | csv_id)"
+  echo "Created public client ${DISPATCHER_CLIENT}."
+fi
+
+kcadm update "clients/${DISPATCHER_UUID}" -r "$REALM" \
+  -s publicClient=true \
+  -s standardFlowEnabled=true \
+  -s directAccessGrantsEnabled=false \
+  -s serviceAccountsEnabled=false \
+  -s 'redirectUris=["https://app.freedriver.io/*","http://127.0.0.1/*","http://localhost/*"]' \
+  -s 'webOrigins=["https://app.freedriver.io","http://127.0.0.1","http://localhost"]' \
+  -s 'attributes."pkce.code.challenge.method"=S256' >/dev/null
+
+ensure_mapper "$DISPATCHER_UUID" actor-dispatcher \
+  -s protocolMapper=oidc-hardcoded-claim-mapper \
+  -s 'config."claim.name"=actor' \
+  -s 'config."claim.value"=dispatcher' \
+  -s 'config."jsonType.label"=String' \
+  -s 'config."id.token.claim"=true' \
+  -s 'config."access.token.claim"=true' \
+  -s 'config."userinfo.token.claim"=false'
+ensure_mapper "$DISPATCHER_UUID" role-dispatcher \
+  -s protocolMapper=oidc-hardcoded-role-mapper \
+  -s 'config."role"=dispatcher'
+
+ensure_device_client() {
+  local id="$1"
+  local uuid secret_file tmp
+  if [[ ! "$id" =~ ^[A-Za-z0-9._-]{1,64}$ ]]; then
+    echo "Refusing device client id ${id}" >&2
+    exit 1
+  fi
+  uuid="$(kcadm get clients -r "$REALM" -q "clientId=${id}" --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
+  if [[ -n "$uuid" ]]; then
+    echo "Device client ${id} already exists."
+  else
+    kcadm create clients -r "$REALM" \
+      -s "clientId=${id}" \
+      -s "name=Freedriver device ${id}" \
+      -s enabled=true \
+      -s publicClient=false \
+      -s clientAuthenticatorType=client-secret \
+      -s standardFlowEnabled=false \
+      -s implicitFlowEnabled=false \
+      -s directAccessGrantsEnabled=false \
+      -s serviceAccountsEnabled=true \
+      -s protocol=openid-connect \
+      -s "description=Confidential client-credentials client for device ${id}." >/dev/null
+    uuid="$(kcadm get clients -r "$REALM" -q "clientId=${id}" --fields id --format csv --noquotes | csv_id)"
+    echo "Created device client ${id}."
+  fi
+  kcadm update "clients/${uuid}" -r "$REALM" \
+    -s publicClient=false \
+    -s serviceAccountsEnabled=true \
+    -s standardFlowEnabled=false \
+    -s directAccessGrantsEnabled=false >/dev/null
+  kcadm add-roles -r "$REALM" --uusername "service-account-${id}" --rolename device >/dev/null
+  ensure_mapper "$uuid" actor-device \
+    -s protocolMapper=oidc-hardcoded-claim-mapper \
+    -s 'config."claim.name"=actor' \
+    -s 'config."claim.value"=device' \
+    -s 'config."jsonType.label"=String' \
+    -s 'config."access.token.claim"=true' \
+    -s 'config."id.token.claim"=false' \
+    -s 'config."userinfo.token.claim"=false'
+  ensure_mapper "$uuid" device-id \
+    -s protocolMapper=oidc-hardcoded-claim-mapper \
+    -s 'config."claim.name"=device_id' \
+    -s "config.\"claim.value\"=${id}" \
+    -s 'config."jsonType.label"=String' \
+    -s 'config."access.token.claim"=true' \
+    -s 'config."id.token.claim"=false' \
+    -s 'config."userinfo.token.claim"=false'
+  ensure_mapper "$uuid" role-device \
+    -s protocolMapper=oidc-hardcoded-role-mapper \
+    -s 'config."role"=device'
+  secret_file="/opt/freedriver-secrets/keycloak-device-${id}.secret"
+  if [[ -e "$secret_file" ]]; then
+    echo "Device secret file for ${id} already exists; not rotating or rewriting it."
+    return
+  fi
+  tmp="$(mktemp)"
+  chmod 600 "$tmp"
+  kcadm get "clients/${uuid}/client-secret" -r "$REALM" --fields value --format csv --noquotes \
+    | sed '/^value$/d' | tr -d '\r' | awk 'NF { print; exit }' > "$tmp"
+  if [[ ! -s "$tmp" ]]; then
+    rm -f "$tmp"
+    echo "Failed to read device client secret for ${id}." >&2
+    exit 1
+  fi
+  chown "root:${GROUP}" "$tmp"
+  chmod 640 "$tmp"
+  mv "$tmp" "$secret_file"
+  echo "Wrote device client secret for ${id} (not printed)."
+}
+
+if [[ -n "${FREEDRIVER_DEVICE_CLIENTS:-}" ]]; then
+  for device_id in ${FREEDRIVER_DEVICE_CLIENTS}; do
+    ensure_device_client "$device_id"
+  done
+else
+  echo "FREEDRIVER_DEVICE_CLIENTS is unset; no device clients created."
+fi
