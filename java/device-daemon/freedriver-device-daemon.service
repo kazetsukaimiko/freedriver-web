@@ -1,0 +1,18 @@
+# User unit for the PC. #213 installs it: copy the secret to the config's
+# secretFile (mode 0600) and enable this unit as the PC user. The secret
+# stays in that file.
+[Unit]
+Description=Freedriver device daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/java -jar %h/.local/share/freedriver/device-daemon.jar --config %h/.config/freedriver/device-daemon.json
+Restart=on-failure
+RestartSec=2s
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

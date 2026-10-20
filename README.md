@@ -46,6 +46,8 @@ The product app lives in `java/dashboard/`: Quarkus 3.38 (Java 23) with Quinoa s
 
 `java/agent-dispatcher/` is the device queue on the same host. Caddy sends `/api/dispatcher`, `/api/device`, and `/mcp` to that Compose service. OIDC is off there too. Contract: [`docs/device-dispatcher.md`](docs/device-dispatcher.md).
 
+`java/device-daemon/` is the PC client of that device API. The jar runs on the PC. The base URL is fixed at `https://app.freedriver.io`.
+
 ```shell
 ./mvnw -pl java/dashboard -am quarkus:dev
 ```

@@ -17,6 +17,7 @@ COPY java/dashboard/pom.xml java/dashboard/pom.xml
 COPY java/agent-dispatcher-model/pom.xml java/agent-dispatcher-model/pom.xml
 COPY java/agent-dispatcher-api/pom.xml java/agent-dispatcher-api/pom.xml
 COPY java/agent-dispatcher/pom.xml java/agent-dispatcher/pom.xml
+COPY java/device-daemon/pom.xml java/device-daemon/pom.xml
 COPY java/agent-dispatcher-model/src java/agent-dispatcher-model/src
 COPY java/agent-dispatcher-api/src java/agent-dispatcher-api/src
 COPY java/agent-dispatcher/src java/agent-dispatcher/src

@@ -38,6 +38,11 @@ public interface DeviceApi {
     @RolesAllowed(Actors.DEVICE)
     List<AssignmentView> pollAssignments();
 
+    @GET
+    @Path("/assignments/{assignmentId}")
+    @RolesAllowed(Actors.DEVICE)
+    AssignmentView assignment(@PathParam("assignmentId") UUID assignmentId);
+
     @POST
     @Path("/assignments/{assignmentId}/claim")
     @RolesAllowed(Actors.DEVICE)
