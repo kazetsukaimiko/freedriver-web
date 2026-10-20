@@ -9,11 +9,17 @@
 #
 # User kaze signs in by phone (#169). The script sets its "phone" attribute to
 # FREEDRIVER_SEED_PHONE from /opt/freedriver-secrets/.env and makes it a direct
-# member of phone-sign-in with the realm role dashboard. It checks that kaze has
-# no other group and no role beyond dashboard and default-roles-freedriver, and
-# stops if it finds one. The number is
-# never printed. Run scripts/provision-keycloak-sms-otp.sh first; it creates
-# the group and the attribute.
+# member of phone-sign-in with the realm role dashboard. Group and role checks
+# run before that write. Effective realm roles must be inside dashboard,
+# default-roles-freedriver, offline_access, and uma_authorization. Any client
+# role stops the script. The number is never printed. A +1 number is ten digits
+# whose first digit is 2-9. Run scripts/provision-keycloak-sms-otp.sh first; it
+# creates the group and the attribute.
+#
+# The invite service account (#172) is the confidential client freedriver-invite.
+# Its secret is written once to the dashboard env file and is not printed.
+# Fine-grained admin permissions let that account manage membership of
+# phone-sign-in. It does not receive realm-management roles.
 #
 # Run as root/sudo on the VPS. Idempotent. New password users get the
 # UPDATE_PASSWORD required action and choose their own password.
@@ -22,7 +28,9 @@ set -euo pipefail
 CONTAINER="${KEYCLOAK_CONTAINER:-freedriver-web-keycloak-1}"
 TECHOPS_PASS_FILE="${TECHOPS_PASS_FILE:-/opt/freedriver-secrets/keycloak-techops.pass}"
 SECRET_FILE="${SECRET_FILE:-/opt/freedriver-secrets/keycloak-freedriver-api.secret}"
+INVITE_ENV_FILE="${INVITE_ENV_FILE:-/opt/freedriver-secrets/keycloak-freedriver-invite.env}"
 SECRETS_ENV="${SECRETS_ENV:-/opt/freedriver-secrets/.env}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KCADM=/opt/keycloak/bin/kcadm.sh
 KCADM_CONFIG=/tmp/kcadm-freedriver-techops.config
 GROUP=lonewatt-techops
@@ -35,12 +43,19 @@ PHONE_ATTRIBUTE=phone
 DEFAULT_ROLES="default-roles-${REALM}"
 PHONE_ROLE=dashboard
 
-if [[ "$(id -u)" -ne 0 ]]; then
+if [[ "${PROVISION_ALLOW_NON_ROOT:-}" == "1" && "$CONTAINER" == "freedriver-web-keycloak-1" ]]; then
+  echo "PROVISION_ALLOW_NON_ROOT cannot target the production Keycloak container." >&2
+  exit 1
+fi
+if [[ "$(id -u)" -ne 0 && "${PROVISION_ALLOW_NON_ROOT:-}" != "1" ]]; then
   echo "Run as root (sudo)." >&2
   exit 1
 fi
+if [[ "${PROVISION_ALLOW_NON_ROOT:-}" == "1" ]]; then
+  echo "PROVISION_ALLOW_NON_ROOT is set for a throwaway realm (container ${CONTAINER})."
+fi
 
-if ! getent group "$GROUP" >/dev/null; then
+if [[ "$(id -u)" -eq 0 ]] && ! getent group "$GROUP" >/dev/null; then
   echo "Group ${GROUP} is missing; create it before re-running." >&2
   exit 1
 fi
@@ -75,6 +90,17 @@ kcadm_stdin() {
   local verb="$1"
   shift
   docker exec -i "$CONTAINER" "$KCADM" "$verb" --config "$KCADM_CONFIG" "$@"
+}
+
+# root:lonewatt-techops mode 640 on the server. The throwaway test is not root.
+own_secret() {
+  local file="$1"
+  if [[ "$(id -u)" -eq 0 ]]; then
+    chown "root:${GROUP}" "$file"
+    chmod 640 "$file"
+  else
+    chmod 600 "$file"
+  fi
 }
 
 # Log in as master-realm techops. docker exec copies TECHOPS_PASS from this
@@ -133,6 +159,21 @@ kcadm update "clients/${CLIENT_UUID}" -r "$REALM" \
   -s "attributes.\"post.logout.redirect.uris\"=${POST_LOGOUT_REDIRECT_URI}" \
   -s 'webOrigins=["https://app.freedriver.io","http://localhost:8080"]' >/dev/null
 
+# offline_access as a default scope would be requested on every login.
+# Optional scope is left as Keycloak created it; the app does not ask for it.
+kcadm get "clients/${CLIENT_UUID}/default-client-scopes" -r "$REALM" > "$work/scopes.json"
+if ! python3 - "$work/scopes.json" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+names = {s.get("name") for s in scopes}
+sys.exit(0 if "offline_access" not in names else 1)
+PY
+then
+  echo "freedriver-api has offline_access as a default client scope, so it requests offline tokens." >&2
+  exit 1
+fi
+echo "freedriver-api does not request offline tokens."
+
 if [[ -e "$SECRET_FILE" ]]; then
   echo "Client secret file already exists; not rotating or rewriting it."
 else
@@ -146,8 +187,7 @@ else
     echo "Failed to read freedriver-api client secret." >&2
     exit 1
   fi
-  chown "root:${GROUP}" "$tmp"
-  chmod 640 "$tmp"
+  own_secret "$tmp"
   mv "$tmp" "$SECRET_FILE"
   if [[ "$CREATED_CLIENT" -eq 1 ]]; then
     echo "Wrote freedriver-api client secret (not printed)."
@@ -323,8 +363,7 @@ ensure_device_client() {
     echo "Failed to read device client secret for ${id}." >&2
     exit 1
   fi
-  chown "root:${GROUP}" "$tmp"
-  chmod 640 "$tmp"
+  own_secret "$tmp"
   mv "$tmp" "$secret_file"
   echo "Wrote device client secret for ${id} (not printed)."
 }
@@ -337,30 +376,176 @@ else
   echo "FREEDRIVER_DEVICE_CLIENTS is unset; no device clients created."
 fi
 
-# Phone sign-in user kaze (#169).
+lookup_phone_group() {
+  kcadm get groups -r "$REALM" -q "search=${PHONE_GROUP}" -q exact=true > "$work/groups.json"
+  python3 - "$work/groups.json" "$PHONE_GROUP" <<'PY'
+import json, sys
+groups = json.load(open(sys.argv[1], encoding="utf-8"))
+ids = [g["id"] for g in groups if g.get("name") == sys.argv[2] and not g.get("parentId")]
+print(ids[0] if len(ids) == 1 else "")
+PY
+}
+
+require_phone_group() {
+  group_id="$(lookup_phone_group)"
+  if [[ -z "$group_id" ]]; then
+    echo "Top-level group ${PHONE_GROUP} is missing. Run scripts/provision-keycloak-sms-otp.sh first." >&2
+    exit 1
+  fi
+}
+
+# Names only. A missing name is not an error; an extra name is.
+phone_roles_allowed() {
+  local user_id="$1"
+  kcadm get "users/${user_id}/role-mappings/realm/composite" -r "$REALM" > "$work/realm-composite.json"
+  kcadm get "users/${user_id}/role-mappings" -r "$REALM" > "$work/roles.json"
+  python3 "$SCRIPT_DIR/check-phone-user-roles.py" "$work/realm-composite.json" "$work/roles.json" "$REALM"
+}
+
+authz_has_name() {
+  local path="$1" wanted="$2"
+  if ! kcadm get "$path" -r "$REALM" > "$work/authz-list.json" 2>/dev/null; then
+    return 1
+  fi
+  python3 - "$work/authz-list.json" "$wanted" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+if isinstance(data, dict):
+    data = data.get("policies") or data.get("permissions") or data.get("results") or []
+names = {item.get("name") for item in data if isinstance(item, dict)}
+sys.exit(0 if sys.argv[2] in names else 1)
+PY
+}
+
+# Invite service account (#172). Secret file is dashboard-only. No realm-management roles.
+ensure_invite_service_account() {
+  local client_uuid sa_user policy_path perm_names admin_client secret tmp
+  require_phone_group
+  kcadm update "realms/${REALM}" -s adminPermissionsEnabled=true >/dev/null
+  client_uuid="$(kcadm get clients -r "$REALM" -q clientId=freedriver-invite --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
+  if [[ -z "$client_uuid" ]]; then
+    kcadm create clients -r "$REALM" \
+      -s clientId=freedriver-invite \
+      -s name='Freedriver invite' \
+      -s enabled=true \
+      -s publicClient=false \
+      -s clientAuthenticatorType=client-secret \
+      -s standardFlowEnabled=false \
+      -s implicitFlowEnabled=false \
+      -s directAccessGrantsEnabled=false \
+      -s serviceAccountsEnabled=true \
+      -s protocol=openid-connect \
+      -s 'description=Service account for invite user create and phone-sign-in membership. Secret stays on the dashboard container.' >/dev/null
+    client_uuid="$(kcadm get clients -r "$REALM" -q clientId=freedriver-invite --fields id --format csv --noquotes | csv_id)"
+    echo "Created confidential client freedriver-invite."
+  else
+    echo "Client freedriver-invite already exists."
+  fi
+  kcadm update "clients/${client_uuid}" -r "$REALM" \
+    -s publicClient=false \
+    -s standardFlowEnabled=false \
+    -s implicitFlowEnabled=false \
+    -s directAccessGrantsEnabled=false \
+    -s serviceAccountsEnabled=true \
+    -s fullScopeAllowed=false >/dev/null
+  sa_user="$(kcadm get "clients/${client_uuid}/service-account-user" -r "$REALM" --fields id --format csv --noquotes | csv_id)"
+  kcadm get "users/${sa_user}/role-mappings" -r "$REALM" > "$work/invite-roles.json"
+  python3 - "$work/invite-roles.json" <<'PY' > "$work/invite-drop-roles"
+import json, sys
+mappings = json.load(open(sys.argv[1], encoding="utf-8"))
+client = (mappings.get("clientMappings") or {}).get("realm-management") or {}
+for role in client.get("mappings") or []:
+    name = role.get("name")
+    if name:
+        print(name)
+PY
+  if [[ -s "$work/invite-drop-roles" ]]; then
+    while IFS= read -r role_name; do
+      kcadm remove-roles -r "$REALM" --uid "$sa_user" --cclientid realm-management --rolename "$role_name" >/dev/null
+      echo "Removed realm-management role ${role_name} from the invite service account."
+    done < "$work/invite-drop-roles"
+  fi
+  if [[ -e "$INVITE_ENV_FILE" ]]; then
+    echo "Invite client env file already exists; not rotating or rewriting it."
+  else
+    tmp="$(mktemp)"
+    chmod 600 "$tmp"
+    secret="$(kcadm get "clients/${client_uuid}/client-secret" -r "$REALM" --fields value --format csv --noquotes \
+      | sed '/^value$/d' | tr -d '\r' | awk 'NF { print; exit }')"
+    if [[ -z "$secret" || "$secret" == *" "* || "$secret" == *$'\n'* ]]; then
+      rm -f "$tmp"
+      unset secret
+      echo "Failed to read freedriver-invite client secret." >&2
+      exit 1
+    fi
+    printf 'FREEDRIVER_INVITE_CLIENT_SECRET=%s\n' "$secret" > "$tmp"
+    unset secret
+    own_secret "$tmp"
+    mv "$tmp" "$INVITE_ENV_FILE"
+    echo "Wrote invite client secret for the dashboard container (not printed)."
+  fi
+  admin_client="$(kcadm get clients -r "$REALM" -q clientId=admin-permissions --fields id --format csv --noquotes | csv_id)"
+  policy_path="clients/${admin_client}/authz/resource-server"
+  # A service-account token is evaluated as the client, not the service-account user.
+  # KeycloakIdentity.getId() is the client UUID in that case, so the policy is a client policy.
+  if ! authz_has_name "${policy_path}/policy" freedriver-invite-sa; then
+    python3 - "$client_uuid" > "$work/policy.json" <<'PY'
+import json, sys
+json.dump({"name": "freedriver-invite-sa", "type": "client", "logic": "POSITIVE",
+           "decisionStrategy": "UNANIMOUS", "clients": [sys.argv[1]]}, sys.stdout)
+PY
+    kcadm_stdin create "${policy_path}/policy/client" -r "$REALM" -f - < "$work/policy.json" >/dev/null
+    echo "Created invite service-account policy."
+  fi
+  if ! authz_has_name "${policy_path}/permission/scope" invite-phone-sign-in-membership; then
+    python3 - "$group_id" > "$work/perm-group.json" <<'PY'
+import json, sys
+json.dump({
+    "name": "invite-phone-sign-in-membership",
+    "type": "scope",
+    "logic": "POSITIVE",
+    "decisionStrategy": "UNANIMOUS",
+    "resourceType": "Groups",
+    "resources": [sys.argv[1]],
+    "scopes": ["view", "view-members", "manage-members", "manage-membership"],
+    "policies": ["freedriver-invite-sa"],
+}, sys.stdout)
+PY
+    kcadm_stdin create "${policy_path}/permission/scope" -r "$REALM" -f - < "$work/perm-group.json" >/dev/null
+  fi
+  if ! authz_has_name "${policy_path}/permission/scope" invite-user-group-membership; then
+    python3 > "$work/perm-users.json" <<'PY'
+import json, sys
+json.dump({
+    "name": "invite-user-group-membership",
+    "type": "scope",
+    "logic": "POSITIVE",
+    "decisionStrategy": "UNANIMOUS",
+    "resourceType": "Users",
+    "scopes": ["manage-group-membership"],
+    "policies": ["freedriver-invite-sa"],
+}, sys.stdout)
+PY
+    kcadm_stdin create "${policy_path}/permission/scope" -r "$REALM" -f - < "$work/perm-users.json" >/dev/null
+  fi
+  echo "Invite service account can manage phone-sign-in membership only."
+}
+
+ensure_invite_service_account
+
+# Phone sign-in user kaze (#169). Checks run before the phone attribute is written.
 seed_phone="$(sed -n 's/^FREEDRIVER_SEED_PHONE=//p' "$SECRETS_ENV" 2>/dev/null | tail -n 1 \
   | tr -d '\r' | sed "s/^[[:space:]]*//;s/[[:space:]]*\$//;s/^[\"']//;s/[\"']\$//" | tr -d ' ().-')"
 if [[ -z "$seed_phone" ]]; then
   echo "FREEDRIVER_SEED_PHONE is empty in ${SECRETS_ENV}; user ${PHONE_USER} is unchanged."
   exit 0
 fi
-if ! [[ "$seed_phone" =~ ^\+[1-9][0-9]{7,14}$ ]]; then
-  echo "FREEDRIVER_SEED_PHONE in ${SECRETS_ENV} is not an international number like +15555550100." >&2
+if ! [[ "$seed_phone" =~ ^\+1[2-9][0-9]{9}$ ]]; then
+  echo "FREEDRIVER_SEED_PHONE in ${SECRETS_ENV} is not a +1 number like +15555550100." >&2
   exit 1
 fi
 
-kcadm get groups -r "$REALM" -q "search=${PHONE_GROUP}" -q exact=true > "$work/groups.json"
-group_id="$(python3 - "$work/groups.json" "$PHONE_GROUP" <<'PY'
-import json, sys
-groups = json.load(open(sys.argv[1], encoding="utf-8"))
-ids = [g["id"] for g in groups if g.get("name") == sys.argv[2] and not g.get("parentId")]
-print(ids[0] if len(ids) == 1 else "")
-PY
-)"
-if [[ -z "$group_id" ]]; then
-  echo "Top-level group ${PHONE_GROUP} is missing. Run scripts/provision-keycloak-sms-otp.sh first." >&2
-  exit 1
-fi
+require_phone_group
 
 kcadm get users/profile -r "$REALM" > "$work/profile.json"
 if ! python3 - "$work/profile.json" "$PHONE_ATTRIBUTE" <<'PY'
@@ -402,28 +587,17 @@ case "$phone_state" in
     exit 1
     ;;
   missing)
-    python3 - "$PHONE_USER" "$PHONE_ATTRIBUTE" > "$work/body.json" <<'PY'
-import json, os, sys
-json.dump({"username": sys.argv[1], "enabled": True,
-           "attributes": {sys.argv[2]: [os.environ["SEED_PHONE"]]}}, sys.stdout)
+    # No phone attribute yet, so a failed group or role check leaves no number.
+    python3 - "$PHONE_USER" > "$work/body.json" <<'PY'
+import json, sys
+json.dump({"username": sys.argv[1], "enabled": True}, sys.stdout)
 PY
     kcadm_stdin create users -r "$REALM" -f - < "$work/body.json" >/dev/null
-    echo "Created user ${PHONE_USER} with ${PHONE_ATTRIBUTE} set (number not printed)."
+    user_id="$(kcadm get users -r "$REALM" -q "username=${PHONE_USER}" -q exact=true --fields id --format csv --noquotes | csv_id)"
+    echo "Created user ${PHONE_USER} without ${PHONE_ATTRIBUTE}."
     ;;
-  differs\ *)
-    user_id="${phone_state#differs }"
-    kcadm get "users/${user_id}" -r "$REALM" > "$work/user.json"
-    python3 - "$work/user.json" "$PHONE_ATTRIBUTE" > "$work/body.json" <<'PY'
-import json, os, sys
-user = json.load(open(sys.argv[1], encoding="utf-8"))
-user.setdefault("attributes", {})[sys.argv[2]] = [os.environ["SEED_PHONE"]]
-json.dump(user, sys.stdout)
-PY
-    kcadm_stdin update "users/${user_id}" -r "$REALM" -f - < "$work/body.json" >/dev/null
-    echo "Updated ${PHONE_ATTRIBUTE} on user ${PHONE_USER} (number not printed)."
-    ;;
-  same\ *)
-    echo "User ${PHONE_USER} already has this ${PHONE_ATTRIBUTE}."
+  differs\ *|same\ *)
+    user_id="${phone_state#* }"
     ;;
   *)
     unset SEED_PHONE
@@ -431,10 +605,6 @@ PY
     exit 1
     ;;
 esac
-unset SEED_PHONE
-rm -f "$work/users.json" "$work/body.json" "$work/user.json"
-
-user_id="$(kcadm get users -r "$REALM" -q "username=${PHONE_USER}" -q exact=true --fields id --format csv --noquotes | csv_id)"
 
 kcadm get "users/${user_id}/groups" -r "$REALM" > "$work/member.json"
 member_state="$(python3 - "$work/member.json" "$group_id" <<'PY'
@@ -449,33 +619,57 @@ else:
     print("none")
 PY
 )"
-case "$member_state" in
-  other)
-    echo "User ${PHONE_USER} belongs to a group other than ${PHONE_GROUP}. Remove it and re-run." >&2
-    exit 1
-    ;;
-  none)
-    kcadm update "users/${user_id}/groups/${group_id}" -r "$REALM" \
-      -s "realm=${REALM}" -s "userId=${user_id}" -s "groupId=${group_id}" -n >/dev/null
-    echo "Added user ${PHONE_USER} to ${PHONE_GROUP}."
-    ;;
-  member)
-    echo "User ${PHONE_USER} is already in ${PHONE_GROUP}."
-    ;;
-esac
+if [[ "$member_state" == "other" ]]; then
+  unset SEED_PHONE
+  echo "User ${PHONE_USER} belongs to a group other than ${PHONE_GROUP}. Remove it and re-run." >&2
+  exit 1
+fi
+
+# phone roles allow-list before the phone attribute
+if ! phone_roles_allowed "$user_id"; then
+  unset SEED_PHONE
+  echo "User ${PHONE_USER} has a realm role outside the allow-list or a client role. The phone attribute was not changed." >&2
+  exit 1
+fi
+
+if [[ "$phone_state" == missing || "$phone_state" == differs\ * ]]; then
+  kcadm get "users/${user_id}" -r "$REALM" > "$work/user.json"
+  python3 - "$work/user.json" "$PHONE_ATTRIBUTE" > "$work/body.json" <<'PY'
+import json, os, sys
+user = json.load(open(sys.argv[1], encoding="utf-8"))
+user.setdefault("attributes", {})[sys.argv[2]] = [os.environ["SEED_PHONE"]]
+json.dump(user, sys.stdout)
+PY
+  kcadm_stdin update "users/${user_id}" -r "$REALM" -f - < "$work/body.json" >/dev/null
+  echo "Set ${PHONE_ATTRIBUTE} on user ${PHONE_USER} (number not printed)."
+else
+  echo "User ${PHONE_USER} already has this ${PHONE_ATTRIBUTE}."
+fi
+unset SEED_PHONE
+rm -f "$work/users.json" "$work/body.json" "$work/user.json"
+
+if [[ "$member_state" == "none" ]]; then
+  kcadm update "users/${user_id}/groups/${group_id}" -r "$REALM" \
+    -s "realm=${REALM}" -s "userId=${user_id}" -s "groupId=${group_id}" -n >/dev/null
+  echo "Added user ${PHONE_USER} to ${PHONE_GROUP}."
+else
+  echo "User ${PHONE_USER} is already in ${PHONE_GROUP}."
+fi
 
 kcadm add-roles -r "$REALM" --uid "$user_id" --rolename "$PHONE_ROLE" >/dev/null
 
-kcadm get "users/${user_id}/role-mappings" -r "$REALM" > "$work/roles.json"
-if ! python3 - "$work/roles.json" "$PHONE_ROLE" "$DEFAULT_ROLES" <<'PY'
+if ! phone_roles_allowed "$user_id"; then
+  kcadm get "users/${user_id}" -r "$REALM" > "$work/user.json"
+  python3 - "$work/user.json" "$PHONE_ATTRIBUTE" > "$work/body.json" <<'PY'
 import json, sys
-mappings = json.load(open(sys.argv[1], encoding="utf-8"))
-realm = {r.get("name") for r in mappings.get("realmMappings", [])}
-sys.exit(0 if sys.argv[2] in realm and realm <= {sys.argv[2], sys.argv[3]}
-         and not mappings.get("clientMappings") else 1)
+user = json.load(open(sys.argv[1], encoding="utf-8"))
+attrs = user.get("attributes") or {}
+attrs.pop(sys.argv[2], None)
+user["attributes"] = attrs
+json.dump(user, sys.stdout)
 PY
-then
-  echo "User ${PHONE_USER} has a role beyond ${PHONE_ROLE} and ${DEFAULT_ROLES}. Remove it and re-run." >&2
+  kcadm_stdin update "users/${user_id}" -r "$REALM" -f - < "$work/body.json" >/dev/null
+  echo "User ${PHONE_USER} has a realm role outside the allow-list or a client role. The phone attribute was removed." >&2
   exit 1
 fi
-echo "User ${PHONE_USER} has ${PHONE_GROUP}, ${PHONE_ROLE}, and no other role beyond ${DEFAULT_ROLES}."
+echo "User ${PHONE_USER} has ${PHONE_GROUP}, ${PHONE_ROLE}, and no realm role outside the allow-list."
