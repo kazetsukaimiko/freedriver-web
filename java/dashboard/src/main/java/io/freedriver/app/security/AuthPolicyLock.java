@@ -38,8 +38,8 @@ final class AuthPolicyLock {
     }
 
     /**
-     * Names already in the file, every HTTP permission key, and the OIDC switches that
-     * turn a tenant off. A production launch ignores any other source for these names.
+     * Names already in the file, every HTTP permission key, and every OIDC
+     * {@code tenant-enabled} name. A production launch ignores any other source for these.
      */
     static boolean locksBare(String bare, Set<String> owned) {
         if (owned.contains(bare) || bare.startsWith("quarkus.http.auth.permission.")) {
@@ -68,9 +68,10 @@ final class AuthPolicyLock {
     }
 
     /**
+     * Known Quarkus defaults for locked names that are not lines in the file.
      * {@code shared=false} and {@code applies-to=ALL} for a permission already in the file
-     * and for the {@code *} lookup. {@code tenant-enabled=true} for the default tenant and
-     * the literal {@code quarkus.oidc.*.tenant-enabled} lookup. Every other locked name is absent.
+     * and for the {@code *} lookup. {@code tenant-enabled=true} only for the default tenant
+     * and the literal {@code quarkus.oidc.*.tenant-enabled} lookup. A named tenant stays absent.
      */
     private String builtInRaw(String bare) {
         if ("quarkus.oidc.tenant-enabled".equals(bare) || "quarkus.oidc.*.tenant-enabled".equals(bare)) {

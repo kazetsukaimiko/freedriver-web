@@ -9,7 +9,7 @@ import jakarta.annotation.Priority;
 /**
  * In a production launch, auth-policy keys stay on {@code auth-policy.properties}
  * after every other interceptor. A locked name missing from that file keeps the
- * Quarkus {@code @WithDefault} this lock supplies.
+ * known Quarkus default this lock supplies, or stays absent.
  */
 @Priority(AuthPolicyLockGuard.PRIORITY)
 public final class AuthPolicyLockGuard implements ConfigSourceInterceptor {
