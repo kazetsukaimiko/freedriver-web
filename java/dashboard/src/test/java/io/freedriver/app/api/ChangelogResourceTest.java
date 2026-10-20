@@ -24,7 +24,7 @@ class ChangelogResourceTest {
             """;
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void dashboard_role_reads_the_changelog() {
         given().header("X-Requested-With", "JavaScript")
                 .when().get("/api/changelog")

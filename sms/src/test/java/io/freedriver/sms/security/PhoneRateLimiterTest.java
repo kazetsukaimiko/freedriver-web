@@ -7,9 +7,18 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PhoneRateLimiterTest {
@@ -83,6 +92,80 @@ class PhoneRateLimiterTest {
         assertFalse(limiter.codeChecksLocked(phone(early)));
         assertEquals(1, limiter.sendEntries());
         assertEquals(0, limiter.wrongCodeEntries());
+    }
+
+    @Test
+    void parallel_code_checks_reserve_only_the_limit() throws Exception {
+        PhoneRateLimiter limiter = new PhoneRateLimiter(Clock.systemUTC(), Duration.ofMinutes(15), 5, 5);
+        String phone = "+15555550100";
+        int guesses = 32;
+        ExecutorService pool = Executors.newFixedThreadPool(guesses);
+        CyclicBarrier barrier = new CyclicBarrier(guesses);
+        try {
+            List<Future<PhoneRateLimiter.CodeCheck>> futures = new ArrayList<>();
+            for (int i = 0; i < guesses; i++) {
+                futures.add(pool.submit(() -> {
+                    barrier.await();
+                    return limiter.tryAcquireCodeCheck(phone);
+                }));
+            }
+            List<PhoneRateLimiter.CodeCheck> held = new ArrayList<>();
+            for (Future<PhoneRateLimiter.CodeCheck> future : futures) {
+                PhoneRateLimiter.CodeCheck check = future.get(30, TimeUnit.SECONDS);
+                if (check != null) {
+                    held.add(check);
+                }
+            }
+            assertEquals(5, held.size());
+            assertTrue(limiter.codeChecksLocked(phone));
+            assertEquals(1, limiter.wrongCodeEntries());
+
+            held.getFirst().release();
+            assertFalse(limiter.codeChecksLocked(phone));
+            PhoneRateLimiter.CodeCheck again = limiter.tryAcquireCodeCheck(phone);
+            assertNotNull(again);
+            assertTrue(limiter.codeChecksLocked(phone));
+
+            again.release();
+            for (PhoneRateLimiter.CodeCheck check : held) {
+                check.release();
+            }
+            assertFalse(limiter.codeChecksLocked(phone));
+            assertEquals(0, limiter.wrongCodeEntries());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void a_reserved_code_check_expires_with_the_window_and_a_success_clears_it() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-09-27T12:00:00Z"));
+        PhoneRateLimiter limiter = new PhoneRateLimiter(clock, Duration.ofMinutes(15), 5, 2);
+        String phone = "+15555550100";
+
+        PhoneRateLimiter.CodeCheck first = limiter.tryAcquireCodeCheck(phone);
+        PhoneRateLimiter.CodeCheck second = limiter.tryAcquireCodeCheck(phone);
+        assertNotNull(first);
+        assertNotNull(second);
+        first.keep();
+        second.keep();
+        assertTrue(limiter.codeChecksLocked(phone));
+        assertNull(limiter.tryAcquireCodeCheck(phone));
+        assertEquals(1, limiter.wrongCodeEntries());
+
+        // Same boundary as the send counters: the window has passed, so the number is gone.
+        clock.now = Instant.parse("2026-09-27T12:15:00Z");
+        assertFalse(limiter.codeChecksLocked(phone));
+        assertEquals(0, limiter.wrongCodeEntries());
+        PhoneRateLimiter.CodeCheck later = limiter.tryAcquireCodeCheck(phone);
+        assertNotNull(later);
+        assertEquals(1, limiter.wrongCodeEntries());
+
+        limiter.clearWrongCodes(phone);
+        later.keep();
+        assertFalse(limiter.codeChecksLocked(phone));
+        assertEquals(0, limiter.wrongCodeEntries());
+        assertNotNull(limiter.tryAcquireCodeCheck(phone));
     }
 
     private static String phone(int n) {

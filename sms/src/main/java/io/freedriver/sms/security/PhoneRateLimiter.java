@@ -81,6 +81,32 @@ public class PhoneRateLimiter {
         }
     }
 
+    /**
+     * Reserves one wrong-code slot for this check, or null when the number is already at its limit.
+     * The slot counts immediately, so parallel checks stop at the limit.
+     */
+    public CodeCheck tryAcquireCodeCheck(String phone) {
+        evictExpired();
+        while (true) {
+            Deque<Long> hits = wrongCodes.computeIfAbsent(phone, ignored -> new ArrayDeque<>());
+            synchronized (hits) {
+                // A sweep may have removed this deque once it was empty.
+                if (wrongCodes.get(phone) != hits) {
+                    continue;
+                }
+                long now = prune(hits);
+                if (hits.size() >= wrongCodesPerNumber) {
+                    if (hits.isEmpty()) {
+                        wrongCodes.remove(phone, hits);
+                    }
+                    return null;
+                }
+                hits.addLast(now);
+                return new CodeCheck(this, phone, hits, now);
+            }
+        }
+    }
+
     public void recordWrongCode(String phone) {
         evictExpired();
         while (true) {
@@ -147,5 +173,60 @@ public class PhoneRateLimiter {
             hits.pollFirst();
         }
         return now;
+    }
+
+    /** Removes one reserved timestamp from the live deque for that check. */
+    private void dropCodeCheck(String phone, Deque<Long> hits, long stamp) {
+        synchronized (hits) {
+            if (wrongCodes.get(phone) != hits) {
+                return;
+            }
+            hits.removeLastOccurrence(stamp);
+            if (hits.isEmpty()) {
+                wrongCodes.remove(phone, hits);
+            }
+        }
+        evictExpired();
+    }
+
+    /**
+     * One code check that already counts toward the number's wrong-code limit.
+     * {@link #keep()} leaves the slot counted. {@link #release()} gives it back.
+     */
+    public static final class CodeCheck {
+        private final PhoneRateLimiter limiter;
+        private final String phone;
+        private final Deque<Long> hits;
+        private final long stamp;
+        private boolean settled;
+
+        CodeCheck(PhoneRateLimiter limiter, String phone, Deque<Long> hits, long stamp) {
+            this.limiter = limiter;
+            this.phone = phone;
+            this.hits = hits;
+            this.stamp = stamp;
+        }
+
+        public String phone() {
+            return phone;
+        }
+
+        /** Leaves this slot counted. A wrong code uses this. */
+        public void keep() {
+            synchronized (this) {
+                settled = true;
+            }
+        }
+
+        /** Gives this slot back. */
+        public void release() {
+            synchronized (this) {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+            }
+            limiter.dropCodeCheck(phone, hits, stamp);
+        }
     }
 }

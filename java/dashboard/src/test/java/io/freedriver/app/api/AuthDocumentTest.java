@@ -29,7 +29,7 @@ class AuthDocumentTest {
         assertFalse(body.toLowerCase().contains("<html"), body);
         assertFalse(body.contains("hallway"), body);
         assertFalse(body.contains("Cabin"), body);
-        assertFalse(body.contains("Scott"), body);
+        assertFalse(body.contains("Ada"), body);
         assertFalse(body.contains("Not Authenticated"), body);
     }
 
@@ -59,7 +59,7 @@ class AuthDocumentTest {
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void login_authenticated_goes_home() {
         given().redirects().follow(false)
                 .when().get("/login")
