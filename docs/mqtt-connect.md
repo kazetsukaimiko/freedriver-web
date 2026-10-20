@@ -97,6 +97,7 @@ The BFF (web-app, HTTP-only cookie, `freedriver-api` confidential client) is wir
 - Realm: `freedriver` (display name Freedriver)
 - Confidential client: `freedriver-api` — **Quarkus BFF only.**
 - Redirect URIs: `https://app.freedriver.io/*`, `http://localhost:8080/*` (Yuni local BFF)
+- Post-logout redirect URI: `https://app.freedriver.io/` exactly, not a wildcard. `scripts/provision-keycloak-freedriver.sh` writes that as `post.logout.redirect.uris`. Techops applies it on production.
 - Web origins: `https://app.freedriver.io`, `http://localhost:8080`
 - Client secret file: `/opt/freedriver-secrets/keycloak-freedriver-api.secret` (mode 640, `root:lonewatt-techops`)
 - Realm roles: `dashboard`, `portal-admin`

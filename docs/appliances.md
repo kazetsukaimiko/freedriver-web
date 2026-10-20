@@ -83,6 +83,8 @@ Quarkus owns the OIDC code flow (`application-type=web-app`). The browser gets a
 
 Dashboard API requests send `X-Requested-With: JavaScript` (one shared fetch helper, `webui/src/api.ts`). With `java-script-auto-redirect=false`, a request without a session gets 499. The dashboard then stops polling and sends the whole page to `/login`; a switch command still waiting shows "Couldn't confirm. Check it after you sign in." for two seconds first. Sign-in returns to `/login`, which sends the browser to `/`, the dashboard. A browser opening an API path directly gets the redirect to sign-in.
 
+Sign-out is a full page load of `GET /logout` (`quarkus.oidc.logout.path`). Quarkus clears `q_session` and redirects to Keycloak's end-session endpoint with `id_token_hint`. Keycloak returns the browser to `https://app.freedriver.io/`. An anonymous `GET /` then goes to `/login`, which shows the Keycloak sign-in form.
+
 Map and command are fail-closed (status table above). CSRF protection is the `X-CSRF-Token` check. Sign-in is on in the prod profile (`%prod.quarkus.oidc.enabled=true`, #154).
 
 ## lastUpdated / stale / timeout
