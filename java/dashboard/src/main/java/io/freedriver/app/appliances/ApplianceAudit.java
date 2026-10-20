@@ -13,14 +13,20 @@ public class ApplianceAudit {
     private static final Logger log = LoggerFactory.getLogger(ApplianceAudit.class);
 
     public void record(Event event) {
-        log.info(
-                "audit appliance when={} instance={} appliance={} on={} commandId={} result={}",
-                event.when(),
-                event.instanceId(),
-                event.applianceName(),
-                event.on(),
-                event.commandId(),
-                event.result());
+        log.info(line(event));
+    }
+
+    static String line(Event event) {
+        String subject = event.subject() == null ? "" : event.subject();
+        return "audit appliance when=%s instance=%s appliance=%s on=%s commandId=%s result=%s subject=%s"
+                .formatted(
+                        event.when(),
+                        event.instanceId(),
+                        event.applianceName(),
+                        event.on(),
+                        event.commandId(),
+                        event.result(),
+                        subject);
     }
 
     public record Event(
@@ -29,6 +35,13 @@ public class ApplianceAudit {
             String applianceName,
             boolean on,
             String commandId,
-            String result) {
+            String result,
+            String subject) {
+
+        public Event {
+            if (subject != null && subject.isBlank()) {
+                subject = null;
+            }
+        }
     }
 }

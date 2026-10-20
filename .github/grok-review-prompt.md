@@ -51,7 +51,7 @@ REST resource shape (quality bar)
 Scope
 - Consume/pin/mock/rename PRs do not grow auth, rate-limit, or exception strategy. File a ticket; do not “just add a check.”
 - live-commands is an MQTT-adapter guard, not auth, not a service if (flag) throw.
-- Browser never speaks MQTT. Default/prod: appliances.enabled false, live-commands false, mock event source off, OIDC off until locked. There is one ApplianceControl; mock is not a second backend.
+- Browser never speaks MQTT. Default profile: appliances.enabled false, live-commands false, mock off. The prod profile serves the mock practice list and keeps live-commands false, so that path does not open a broker. OIDC stays off outside the prod profile. There is one ApplianceControl; mock is not a second backend.
 - Do not recommend ceremony that does not pay (extra modules, interceptors on interceptors, defense-in-depth @RolesAllowed on the service).
 
 ============================================================

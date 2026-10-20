@@ -53,15 +53,30 @@ class McpResourceTest {
         jobs.register("pc-anon", "anon.local", List.of("yuni"));
         int before = jobs.jobCount();
 
-        given()
+        String posted = given()
                 .contentType("application/json")
                 .body(submitBody("pc-anon", PROMPT))
                 .post("/mcp")
                 .then()
-                .statusCode(401);
+                .statusCode(401)
+                .header("WWW-Authenticate", is(McpProtectedResource.CHALLENGE))
+                .extract()
+                .asString();
 
-        given().get("/mcp").then().statusCode(401);
+        String got = given()
+                .get("/mcp")
+                .then()
+                .statusCode(401)
+                .header("WWW-Authenticate", is(McpProtectedResource.CHALLENGE))
+                .extract()
+                .asString();
+
+        assertFalse(posted.contains(PROMPT));
+        assertFalse(got.contains(PROMPT));
+        assertFalse(posted.contains("authorization_servers"));
         assertEquals(before, jobs.jobCount());
+        given().get("/mcp/sse").then().statusCode(401);
+        given().post("/mcp/oauth-protected-resource").then().statusCode(401);
     }
 
     @Test

@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -14,7 +15,16 @@ class BffSessionLockTest {
 
     @Test
     void bff_is_web_app_cookie_session_and_off_by_default() throws IOException {
-        String properties = Files.readString(Path.of("src/main/resources/application.properties"));
+        String properties = Files.readString(Path.of("src/main/resources/auth-policy.properties"));
+        String application = Files.readString(Path.of("src/main/resources/application.properties"));
+        String loader = Files.readString(Path.of(
+                "src/main/resources/META-INF/services/org.eclipse.microprofile.config.spi.ConfigSource"));
+        assertEquals("io.freedriver.app.security.AuthPolicyConfigSource", loader.trim());
+        assertFalse(application.contains("quarkus.config.locations"));
+        assertTrue(application.contains("quarkus.quinoa.ignored-path-prefixes=/api,/q,/login,/logout"));
+        assertFalse(application.contains("quarkus.oidc."));
+        assertFalse(application.contains("quarkus.http.auth.permission."));
+        assertFalse(application.contains("freedriver.appliances.rate-limit."));
         assertTrue(properties.contains("quarkus.oidc.application-type=web-app"));
         assertTrue(properties.contains("quarkus.oidc.authentication.cookie-same-site=lax"));
         assertTrue(properties.contains("quarkus.oidc.authentication.cookie-force-secure=true"));
@@ -25,7 +35,10 @@ class BffSessionLockTest {
         assertTrue(properties.contains("quarkus.http.auth.permission.changelog.policy=authenticated"));
         assertTrue(properties.contains("quarkus.http.auth.permission.login.paths=/login"));
         assertTrue(properties.contains("quarkus.http.auth.permission.login.policy=authenticated"));
-        assertTrue(properties.contains("quarkus.quinoa.ignored-path-prefixes=/api,/q,/login"));
+        assertTrue(properties.contains("quarkus.oidc.logout.path=/logout"));
+        assertTrue(properties.contains("quarkus.oidc.logout.post-logout-path=/"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.logout.paths=/logout"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.logout.policy=authenticated"));
         assertTrue(properties.contains("quarkus.oidc.enabled=false"));
         assertFalse(properties.matches("(?s).*\\nquarkus\\.oidc\\.enabled=true.*"));
         assertTrue(properties.contains("quarkus.oidc.auth-server-url=https://auth.freedriver.io/realms/freedriver"));
@@ -35,6 +48,26 @@ class BffSessionLockTest {
         assertTrue(properties.contains("\n%prod.quarkus.oidc.credentials.secret=${QUARKUS_OIDC_CREDENTIALS_SECRET}\n"));
         assertTrue(properties.contains("\n%prod.quarkus.oidc.authentication.force-redirect-https-scheme=true\n"));
         assertFalse(properties.contains("quarkus.oidc.credentials.secret=secret"));
+    }
+
+    @Test
+    void post_logout_redirect_is_one_exact_address() throws IOException {
+        String script = Files.readString(Path.of("../../scripts/provision-keycloak-freedriver.sh"));
+        assertTrue(script.contains("POST_LOGOUT_REDIRECT_URI='https://app.freedriver.io/'"));
+        assertFalse(script.contains("POST_LOGOUT_REDIRECT_URI='https://app.freedriver.io/*'"));
+        assertFalse(script.contains("post.logout.redirect.uris\"=*"));
+        assertFalse(script.contains("post.logout.redirect.uris\"=+"));
+        int uses = 0;
+        int from = 0;
+        while (true) {
+            int at = script.indexOf("POST_LOGOUT_REDIRECT_URI", from);
+            if (at < 0) {
+                break;
+            }
+            uses++;
+            from = at + "POST_LOGOUT_REDIRECT_URI".length();
+        }
+        assertTrue(uses >= 3, "definition plus create and update, was " + uses);
     }
 
     @Test

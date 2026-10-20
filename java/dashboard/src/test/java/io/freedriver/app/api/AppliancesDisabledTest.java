@@ -28,13 +28,13 @@ class AppliancesDisabledTest {
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void get_is_404_when_disabled() {
         given().when().get("/api/appliances").then().statusCode(404);
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void post_is_404_when_disabled() {
         given().contentType(ContentType.JSON)
                 .body("{\"on\":true}")

@@ -15,7 +15,7 @@ class RateLimitedFilterTest {
     @Test
     void callerKey_prefers_oidc_sub_attribute() {
         var identity = QuarkusSecurityIdentity.builder()
-                .setPrincipal(new QuarkusPrincipal("scott"))
+                .setPrincipal(new QuarkusPrincipal("ada"))
                 .addAttribute("sub", "oidc-sub-1")
                 .addRole("dashboard")
                 .build();
@@ -25,7 +25,7 @@ class RateLimitedFilterTest {
     @Test
     void callerKey_uses_jwt_subject_when_attribute_absent() {
         var identity = QuarkusSecurityIdentity.builder()
-                .setPrincipal(new TokenPrincipal("scott", "jwt-sub-9"))
+                .setPrincipal(new TokenPrincipal("ada", "jwt-sub-9"))
                 .addRole("dashboard")
                 .build();
         assertEquals("jwt-sub-9", RateLimitedFilter.callerKey(identity));
@@ -34,10 +34,34 @@ class RateLimitedFilterTest {
     @Test
     void callerKey_falls_back_to_principal_name() {
         var identity = QuarkusSecurityIdentity.builder()
-                .setPrincipal(new QuarkusPrincipal("scott"))
+                .setPrincipal(new QuarkusPrincipal("ada"))
                 .addRole("dashboard")
                 .build();
-        assertEquals("scott", RateLimitedFilter.callerKey(identity));
+        assertEquals("ada", RateLimitedFilter.callerKey(identity));
+    }
+
+    @Test
+    void oidcSubject_is_attribute_or_jwt_subject_not_the_principal_name() {
+        var namedOnly = QuarkusSecurityIdentity.builder()
+                .setPrincipal(new QuarkusPrincipal("ada"))
+                .addRole("dashboard")
+                .build();
+        assertNull(OidcSubjects.subject(namedOnly));
+
+        var attribute = QuarkusSecurityIdentity.builder()
+                .setPrincipal(new TokenPrincipal("ada", "jwt-sub-9"))
+                .addAttribute("sub", "oidc-sub-1")
+                .addRole("dashboard")
+                .build();
+        assertEquals("oidc-sub-1", OidcSubjects.subject(attribute));
+
+        var jwt = QuarkusSecurityIdentity.builder()
+                .setPrincipal(new TokenPrincipal("ada", "jwt-sub-9"))
+                .addRole("dashboard")
+                .build();
+        assertEquals("jwt-sub-9", OidcSubjects.subject(jwt));
+        assertNull(OidcSubjects.subject(null));
+        assertNull(OidcSubjects.subject(QuarkusSecurityIdentity.builder().setAnonymous(true).build()));
     }
 
     @Test

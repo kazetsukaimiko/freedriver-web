@@ -10,6 +10,7 @@
 }
 
 .app {
+  position: relative;
   min-height: 100vh;
   display: grid;
   grid-template-columns: var(--nav-width) 1fr;
@@ -78,14 +79,49 @@
   color: #f4f4f4;
 }
 
+.sign-out {
+  position: absolute;
+  z-index: 6;
+  top: var(--nav-pad-y);
+  right: 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.15rem;
+  border: 0;
+  background: transparent;
+  color: #c8c8c8;
+  font: inherit;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.sign-out:hover {
+  color: #f4f4f4;
+}
+
+.sign-out:focus-visible {
+  outline: 2px solid #e8efe8;
+  outline-offset: 2px;
+}
+
+.sign-out-loader {
+  display: block;
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
 .workspace {
   min-width: 0;
+  padding-top: 3.75rem;
   background: #141414;
 }
 
 .content {
   width: min(42rem, calc(100% - 2rem));
-  margin: 2rem auto;
+  margin: 0 auto 2rem;
 }
 
 .status-page {
@@ -445,8 +481,8 @@ dd {
   .nav {
     flex-direction: row;
     align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
+    justify-content: flex-start;
+    gap: 0.75rem;
     border-right: 0;
     border-bottom: 1px solid #2a2a2a;
   }
@@ -457,5 +493,19 @@ dd {
 
   .nav nav {
     flex-direction: row;
+    margin-left: auto;
+  }
+
+  .workspace {
+    padding-top: 0;
+  }
+
+  .content {
+    margin-top: 2rem;
+  }
+
+  .sign-out {
+    position: static;
+    margin-left: 0.35rem;
   }
 }

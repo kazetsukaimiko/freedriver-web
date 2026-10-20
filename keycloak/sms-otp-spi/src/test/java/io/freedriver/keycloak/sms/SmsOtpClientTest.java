@@ -16,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SmsOtpClientTest {
 
+    private static final String PHONE = "+15555550100";
+
     @Test
     void composeUrlIsTheOnlyProductionTarget() {
         URI base = SmsOtpConfig.BASE_URL;
@@ -35,12 +37,12 @@ class SmsOtpClientTest {
         AtomicInteger hits = new AtomicInteger();
         SmsOtpClient client = new SmsOtpClient((uri, secret, json) -> {
             hits.incrementAndGet();
-            return new SmsOtpClient.Wire(200, "{\"status\":\"sent\"}");
+            return new SmsOtpClient.Wire(200, sent(PHONE));
         });
         assertEquals(SmsOtpClient.Outcome.REJECTED,
-                client.send(SmsOtpConfig.PLACEHOLDER, "+15555550100").outcome());
-        assertEquals(SmsOtpClient.Outcome.REJECTED, client.send("  ", "+15555550100").outcome());
-        assertEquals(SmsOtpClient.Outcome.REJECTED, client.send(null, "+15555550100").outcome());
+                client.send(SmsOtpConfig.PLACEHOLDER, PHONE).outcome());
+        assertEquals(SmsOtpClient.Outcome.REJECTED, client.send("  ", PHONE).outcome());
+        assertEquals(SmsOtpClient.Outcome.REJECTED, client.send(null, PHONE).outcome());
         assertEquals(0, hits.get());
     }
 
@@ -49,11 +51,11 @@ class SmsOtpClientTest {
         AtomicInteger hits = new AtomicInteger();
         SmsOtpClient client = new SmsOtpClient((uri, secret, json) -> {
             hits.incrementAndGet();
-            return new SmsOtpClient.Wire(200, "{\"status\":\"sent\"}");
+            return new SmsOtpClient.Wire(200, sent(PHONE));
         });
         SmsOtpClient.Result result = client.call(
                 URI.create("http://sms.freedriver.io:8080"),
-                "/otp/send",
+                "/sms/send",
                 "real-secret",
                 "{}",
                 false);
@@ -71,7 +73,7 @@ class SmsOtpClientTest {
             seenPath.set(exchange.getRequestURI().getPath());
             seenHeader.set(exchange.getRequestHeaders().getFirst(SmsOtpConfig.HEADER));
             seenBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            byte[] body = "{\"status\":\"sent\"}".getBytes(StandardCharsets.UTF_8);
+            byte[] body = sent(PHONE).getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, body.length);
             exchange.getResponseBody().write(body);
             exchange.close();
@@ -82,59 +84,101 @@ class SmsOtpClientTest {
             SmsOtpClient client = new SmsOtpClient();
             SmsOtpClient.Result result = client.call(
                     URI.create("http://127.0.0.1:" + port),
-                    "/otp/send",
+                    "/sms/send",
                     "real-secret",
-                    SmsOtpClient.jsonPhone("+15555550100"),
+                    SmsOtpClient.jsonSend(PHONE, SignInAgreement.WORDING),
                     false);
             assertEquals(SmsOtpClient.Outcome.SENT, result.outcome());
-            assertEquals("/otp/send", seenPath.get());
+            assertEquals(PHONE, result.phone());
+            assertEquals("/sms/send", seenPath.get());
             assertEquals("real-secret", seenHeader.get());
             assertFalse(seenBody.get().contains("real-secret"));
-            assertTrue(seenBody.get().contains("+15555550100"));
+            assertTrue(seenBody.get().contains(PHONE));
+            assertTrue(seenBody.get().contains("\"type\":\"otp\""));
+            assertTrue(seenBody.get().contains(SignInAgreement.WORDING));
         } finally {
             server.stop(0);
         }
     }
 
     @Test
-    void nonSuccessStatusesDoNotVerify() {
-        assertEquals(SmsOtpClient.Outcome.REJECTED,
-                SmsOtpClient.interpret(401, "{\"error\":\"unauthorized\"}", true).outcome());
-        assertEquals(SmsOtpClient.Outcome.REJECTED,
-                SmsOtpClient.interpret(403, "{\"error\":\"no\"}", true).outcome());
-        assertEquals(SmsOtpClient.Outcome.UNAVAILABLE,
-                SmsOtpClient.interpret(503, "{\"error\":\"stub\"}", true).outcome());
-        assertEquals(SmsOtpClient.Outcome.UNAVAILABLE,
-                SmsOtpClient.interpret(200, "{\"status\":\"sent\"}", true).outcome());
-        SmsOtpClient.Result ok = SmsOtpClient.interpret(200, "{\"username\":\"house.user\"}", true);
+    void sendAndVerifyUseTheSmsContract() {
+        SmsOtpClient.Result send = SmsOtpClient.interpret(200, sent(PHONE), null, false);
+        assertEquals(SmsOtpClient.Outcome.SENT, send.outcome());
+        assertEquals(PHONE, send.phone());
+
+        SmsOtpClient.Result ok = SmsOtpClient.interpret(200, verified(PHONE), null, true);
         assertEquals(SmsOtpClient.Outcome.VERIFIED, ok.outcome());
-        assertEquals("house.user", ok.username());
-        assertNull(SmsOtpClient.interpret(200, "{\"username\":\"has space\"}", true).username());
+        assertEquals(PHONE, ok.phone());
+
         assertEquals(SmsOtpClient.Outcome.UNAVAILABLE,
-                SmsOtpClient.interpret(200, "{\"status\":\"nope\"}", false).outcome());
+                SmsOtpClient.interpret(200, verified(PHONE), null, false).outcome());
+        assertEquals(SmsOtpClient.Outcome.UNAVAILABLE,
+                SmsOtpClient.interpret(200, sent(PHONE), null, true).outcome());
+        assertEquals(SmsOtpClient.Outcome.UNAVAILABLE,
+                SmsOtpClient.interpret(200, "{\"username\":\"house.user\"}", null, true).outcome());
+        assertEquals(SmsOtpClient.Outcome.REJECTED,
+                SmsOtpClient.interpret(401, "{\"error\":\"unauthorized\"}", null, true).outcome());
+        assertEquals(SmsOtpClient.Outcome.REJECTED,
+                SmsOtpClient.interpret(403, "{\"error\":\"no\"}", null, true).outcome());
+        assertEquals(SmsOtpClient.Outcome.CHECK_UNAVAILABLE,
+                SmsOtpClient.interpret(503, "{\"error\":\"unavailable\"}", null, true).outcome());
+        assertEquals(SmsOtpClient.Outcome.UNAVAILABLE,
+                SmsOtpClient.interpret(503, "{\"error\":\"unavailable\"}", null, false).outcome());
+        assertEquals(SmsOtpClient.Outcome.UNAVAILABLE,
+                SmsOtpClient.interpret(503, "{\"error\":\"stub\"}", null, true).outcome());
     }
 
     @Test
     void wrongCodeIsItsOwnOutcome() {
         assertEquals(SmsOtpClient.Outcome.INVALID_CODE,
-                SmsOtpClient.interpret(400, "{\"error\":\"invalid-code\"}", true).outcome());
+                SmsOtpClient.interpret(400, "{\"error\":\"invalid-code\"}", null, true).outcome());
         assertEquals(SmsOtpClient.Outcome.UNAVAILABLE,
-                SmsOtpClient.interpret(400, "{\"error\":\"bad-request\"}", true).outcome());
+                SmsOtpClient.interpret(400, "{\"error\":\"bad-request\"}", null, true).outcome());
         assertEquals(SmsOtpClient.Outcome.UNAVAILABLE,
-                SmsOtpClient.interpret(400, "{\"error\":\"invalid-code\"}", false).outcome());
+                SmsOtpClient.interpret(400, "{\"error\":\"invalid-code\"}", null, false).outcome());
+    }
+
+    @Test
+    void retryAfterUsesAWholeNumberOfSecondsOrTheDefault() {
+        assertEquals(900, SmsOtpClient.interpret(429, "{\"error\":\"rate-limited\"}", "900", false).retryAfterSeconds());
+        assertEquals(1, SmsOtpClient.interpret(429, "{}", "1", true).retryAfterSeconds());
+        assertEquals(3600, SmsOtpClient.interpret(429, "{}", "3600", false).retryAfterSeconds());
+        assertEquals(60, SmsOtpClient.interpret(429, "{}", " 60 ", false).retryAfterSeconds());
+        assertEquals(SmsOtpClient.Outcome.RATE_LIMITED,
+                SmsOtpClient.interpret(429, "{\"error\":\"rate-limited\"}", "900", true).outcome());
+        for (String bad : new String[] {null, "", "0", "3601", "900.0", "+60",
+                "Wed, 21 Oct 2015 07:28:00 GMT", "60s", "1 2"}) {
+            assertEquals(SmsOtpClient.DEFAULT_RETRY_AFTER_SECONDS,
+                    SmsOtpClient.interpret(429, "{}", bad, false).retryAfterSeconds(), bad);
+        }
     }
 
     @Test
     void jsonGoesThroughJackson() {
-        String body = SmsOtpClient.jsonVerify("+15555550100", "123456");
+        String send = SmsOtpClient.jsonSend(PHONE, SignInAgreement.WORDING);
+        assertEquals("{\"type\":\"otp\",\"phone\":\"" + PHONE + "\",\"agreement\":{\"wording\":\""
+                + SignInAgreement.WORDING + "\"}}", send);
+        assertTrue(SmsOtpClient.jsonSend("a\"b", "x\"y").contains("\"phone\":\"a\\\"b\""));
+        String body = SmsOtpClient.jsonVerify(PHONE, "123456");
         assertEquals("{\"phone\":\"+15555550100\",\"code\":\"123456\"}", body);
-        assertEquals("{\"phone\":\"a\\\"b\"}", SmsOtpClient.jsonPhone("a\"b"));
-        assertEquals("+15555550100", SmsOtpClient.textField(body, "phone"));
+        assertEquals(PHONE, SmsOtpClient.textField(body, "phone"));
         assertEquals("A", SmsOtpClient.textField("{\"username\":\"\\u0041\"}", "username"));
         assertEquals("real", SmsOtpClient.textField("{\"note\":\"\\\"username\\\":\\\"fake\\\"\",\"username\":\"real\"}", "username"));
         assertNull(SmsOtpClient.textField("{\"username\":42}", "username"));
         assertNull(SmsOtpClient.textField("[\"username\"]", "username"));
         assertNull(SmsOtpClient.textField("{\"username\":", "username"));
         assertNull(SmsOtpClient.textField(null, "username"));
+        assertNull(SmsOtpClient.objectText(send, "sent", "phone"));
+        assertEquals(PHONE, SmsOtpClient.objectText(sent(PHONE), "sent", "phone"));
+        assertEquals("otp", SmsOtpClient.objectText(verified(PHONE), "verified", "type"));
+    }
+
+    private static String sent(String phone) {
+        return "{\"sent\":{\"type\":\"otp\",\"phone\":\"" + phone + "\"}}";
+    }
+
+    private static String verified(String phone) {
+        return "{\"verified\":{\"type\":\"otp\",\"phone\":\"" + phone + "\"}}";
     }
 }
