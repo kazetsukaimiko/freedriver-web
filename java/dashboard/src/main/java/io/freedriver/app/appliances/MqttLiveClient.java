@@ -26,11 +26,14 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Live MQTT adapter on the same CDI bus as {@link MockAutonomy}.
- * Always compiled; connects only when {@code live-commands=true}.
- * Logs on {@code io.freedriver.mqtt}.
+ * Connects and subscribes to appliance state when {@code freedriver.mqtt.instance-ids} is set.
+ * Command publishing stays behind {@code live-commands}. Logs on {@code io.freedriver.mqtt}.
  */
 @ApplicationScoped
 public class MqttLiveClient {
+
+    /** State payloads larger than this are dropped before they are parsed. */
+    static final int MAX_STATE_BYTES = 64 * 1024;
 
     private final AppliancesConfig appliances;
     private final MqttSettings mqtt;
@@ -54,15 +57,15 @@ public class MqttLiveClient {
     }
 
     void start(@Observes StartupEvent event) {
-        if (!appliances.liveCommands()) {
-            return;
-        }
-        if (appliances.mock()) {
+        if (appliances.liveCommands() && appliances.mock()) {
             throw new IllegalStateException("live MQTT must not run with mock=true");
         }
         List<UUID> instances = mqtt.instances();
         if (instances.isEmpty()) {
-            throw new IllegalStateException("live-commands requires freedriver.mqtt.instance-ids");
+            if (appliances.liveCommands()) {
+                throw new IllegalStateException("live-commands requires freedriver.mqtt.instance-ids");
+            }
+            return;
         }
         scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread thread = new Thread(r, "mqtt-live");
@@ -84,11 +87,11 @@ public class MqttLiveClient {
     }
 
     public boolean acceptsCommands() {
-        return connection != null;
+        return appliances.liveCommands() && connection != null;
     }
 
     public void onCommand(ApplianceCommandRouted routed, String actor) {
-        if (connection == null) {
+        if (!appliances.liveCommands() || connection == null) {
             return;
         }
         String commandId = routed.command().commandId();
@@ -127,6 +130,10 @@ public class MqttLiveClient {
         UUID instanceId = MqttAcl.instanceIdFrom(topic, "appliances");
         if (instanceId == null || !mqtt.instances().contains(instanceId)) {
             MqttLog.stateRejected(topic, "unknown-instance");
+            return;
+        }
+        if (payload != null && payload.length > MAX_STATE_BYTES) {
+            MqttLog.stateRejected(topic, "size");
             return;
         }
         final ApplianceStateMessage state;
