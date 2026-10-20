@@ -64,13 +64,23 @@ export function demoModeFromSearch(search: string): DemoMode | null {
   return null
 }
 
+/** Practice-list names end with this. The banner stays up while every switch on the list does. */
+export const TEST_APPLIANCE_SUFFIX = ' (test)'
+
+export const TEST_APPLIANCE_BANNER =
+  'Test appliances. These switches control a practice list, separate from your home.'
+
+export function practiceList(names: readonly string[]): boolean {
+  return names.length > 0 && names.every((name) => name.endsWith(TEST_APPLIANCE_SUFFIX))
+}
+
 export const DEMO_APPLIANCES: Appliance[] = [
-  { id: 'hallway', name: 'Hallway', on: true },
-  { id: 'kitchen', name: 'Kitchen', on: false },
-  { id: 'living-room', name: 'Living room', on: true },
-  { id: 'bedroom', name: 'Bedroom', on: false },
-  { id: 'garage', name: 'Garage', on: false },
-  { id: 'porch', name: 'Porch', on: true },
+  { id: 'Hallway (test)', name: 'Hallway (test)', on: true },
+  { id: 'Kitchen (test)', name: 'Kitchen (test)', on: false },
+  { id: 'Living room (test)', name: 'Living room (test)', on: true },
+  { id: 'Bedroom (test)', name: 'Bedroom (test)', on: false },
+  { id: 'Garage (test)', name: 'Garage (test)', on: false },
+  { id: 'Porch (test)', name: 'Porch (test)', on: true },
 ]
 
 export function demoInstance(stale: boolean, appliances = DEMO_APPLIANCES): Instance {

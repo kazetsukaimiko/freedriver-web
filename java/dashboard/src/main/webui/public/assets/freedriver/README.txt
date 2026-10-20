@@ -24,8 +24,7 @@ Suggested site swap (Freedriver assets replace Lonewatt)
 --------------------------------------------------------
 site/index.html
   /assets/lonewatt/logos/lonewatt-lockup.png
-    -> /assets/freedriver/logos/freedriver-lockup.png
-  alt: Freedriver
+    -> brand row: freedriver-icon.svg beside the word Freedriver
 
 site/404.html
   /assets/lonewatt/sprites/solo-404.png
@@ -42,7 +41,7 @@ site/favicon.png  and  app favicon
 
 app (Quinoa webui)
   lonewatt-icon / lonewatt-lockup / lonewatt-w
-    -> freedriver-icon / freedriver-lockup / freedriver-icon
+    -> freedriver-icon.svg beside the word Freedriver
   solo-run loader -> freedriver-loader.png (CSS rotate or pulse)
   solo-404 / solo-500 -> freedriver-404 / freedriver-500
   Remove /assets/lonewatt/ from the repo once swapped.

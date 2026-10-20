@@ -1,10 +1,10 @@
 package io.freedriver.app.appliances;
 
 import io.freedriver.mqtt.MqttConnection;
+import io.freedriver.mqtt.MqttLog;
 import io.freedriver.mqtt.contract.ApplianceJson;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
 import io.freedriver.mqtt.contract.ApplianceStateMessage;
-import io.quarkus.logging.Log;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -14,12 +14,20 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Live MQTT adapter on the same CDI bus as {@link MockAutonomy}.
  * Always compiled; connects only when {@code live-commands=true}.
+ * Logs on {@code io.freedriver.mqtt}.
  */
 @ApplicationScoped
 public class MqttLiveClient {
@@ -28,7 +36,10 @@ public class MqttLiveClient {
     private final MqttSettings mqtt;
     private final Instance<MqttConnection> connections;
     private final Event<ApplianceStateRouted> states;
+    private final ConcurrentHashMap<UUID, Traffic> traffic = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Pending> pending = new ConcurrentHashMap<>();
     private MqttConnection connection;
+    private ScheduledExecutorService scheduler;
 
     @Inject
     public MqttLiveClient(
@@ -53,19 +64,42 @@ public class MqttLiveClient {
         if (instances.isEmpty()) {
             throw new IllegalStateException("live-commands requires freedriver.mqtt.instance-ids");
         }
-        connection = connections.get();
-        connection.connect();
-        for (UUID instanceId : instances) {
-            String topic = ApplianceSchemas.appliancesTopic(instanceId);
-            connection.subscribe(topic, ApplianceSchemas.QOS, this::onBrokerMessage);
+        scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread thread = new Thread(r, "mqtt-live");
+            thread.setDaemon(true);
+            return thread;
+        });
+        scheduler.scheduleAtFixedRate(this::logStateSummary, 1, 1, TimeUnit.MINUTES);
+        try {
+            connection = connections.get();
+            connection.connect();
+            for (UUID instanceId : instances) {
+                String topic = ApplianceSchemas.appliancesTopic(instanceId);
+                connection.subscribe(topic, ApplianceSchemas.QOS, this::onBrokerMessage);
+            }
+        } catch (RuntimeException e) {
+            stop();
+            throw e;
         }
     }
 
-    void onCommand(@Observes ApplianceCommandRouted routed) {
+    public boolean acceptsCommands() {
+        return connection != null;
+    }
+
+    public void onCommand(ApplianceCommandRouted routed, String actor) {
         if (connection == null) {
             return;
         }
-        String topic = ApplianceSchemas.commandsTopic(routed.instanceId());
+        String commandId = routed.command().commandId();
+        UUID instanceId = routed.instanceId();
+        String appliance = routed.command().applianceName();
+        boolean state = routed.command().state();
+        String user = actor == null || actor.isBlank() ? "unknown" : actor;
+        long timeoutMs = appliances.boundedCommandTimeout().toMillis();
+        Pending tracked = new Pending(commandId, instanceId, appliance, state, user, timeoutMs);
+        pending.put(commandId, tracked);
+        String topic = ApplianceSchemas.commandsTopic(instanceId);
         try {
             connection.publish(
                     topic,
@@ -73,27 +107,106 @@ public class MqttLiveClient {
                     ApplianceSchemas.QOS,
                     ApplianceSchemas.RETAIN);
         } catch (RuntimeException e) {
-            Log.warn("live MQTT command publish failed", e);
+            pending.remove(commandId, tracked);
+            MqttLog.commandFailed(commandId, instanceId);
+            return;
         }
+        MqttLog.commandSent(commandId, instanceId, appliance, state, user);
+        ScheduledExecutorService exec = scheduler;
+        if (exec == null) {
+            return;
+        }
+        exec.schedule(() -> {
+            if (pending.remove(commandId, tracked)) {
+                MqttLog.commandUnacknowledged(commandId, instanceId, appliance, state, user, timeoutMs);
+            }
+        }, timeoutMs, TimeUnit.MILLISECONDS);
     }
 
     void onBrokerMessage(String topic, byte[] payload) {
         UUID instanceId = MqttAcl.instanceIdFrom(topic, "appliances");
-        if (instanceId == null) {
+        if (instanceId == null || !mqtt.instances().contains(instanceId)) {
+            MqttLog.stateRejected(topic, "unknown-instance");
             return;
         }
+        final ApplianceStateMessage state;
         try {
-            ApplianceStateMessage state = ApplianceJson.readState(new String(payload, StandardCharsets.UTF_8));
-            states.fire(new ApplianceStateRouted(instanceId, state));
+            String json = payload == null ? "" : new String(payload, StandardCharsets.UTF_8);
+            state = ApplianceJson.readState(json);
         } catch (RuntimeException e) {
-            Log.warn("live MQTT state rejected", e);
+            MqttLog.stateRejected(topic, "schema");
+            return;
         }
+        traffic.computeIfAbsent(instanceId, id -> new Traffic()).mark();
+        MqttLog.stateReceived(instanceId, state.appliances().size());
+        if (state.appliedCommandId() != null) {
+            pending.remove(state.appliedCommandId());
+        }
+        states.fire(new ApplianceStateRouted(instanceId, state));
+    }
+
+    /** Once a minute. A failed pass must not cancel the next one. */
+    void logStateSummary() {
+        try {
+            logStateSummary(Instant.now());
+        } catch (RuntimeException ignored) {
+            // The next minute still runs.
+        }
+    }
+
+    void logStateSummary(Instant now) {
+        for (UUID instanceId : mqtt.instances()) {
+            Traffic heard = traffic.get(instanceId);
+            long messages = heard == null ? 0 : heard.messages.get();
+            long last = heard == null ? -1 : heard.lastHeardEpochMs.get();
+            MqttLog.stateSummary(instanceId, messages, lastHeardAgo(now, last));
+        }
+    }
+
+    static String lastHeardAgo(Instant now, long epochMs) {
+        if (epochMs < 0) {
+            return "never";
+        }
+        long seconds = Duration.between(Instant.ofEpochMilli(epochMs), now).toSeconds();
+        if (seconds < 0) {
+            seconds = 0;
+        }
+        return seconds + "s";
+    }
+
+    void resetTracking() {
+        pending.clear();
+        traffic.clear();
     }
 
     @PreDestroy
     void stop() {
+        if (scheduler != null) {
+            scheduler.shutdownNow();
+            scheduler = null;
+        }
         if (connection != null) {
             connection.close();
+            connection = null;
+        }
+    }
+
+    private record Pending(
+            String commandId,
+            UUID instanceId,
+            String appliance,
+            boolean state,
+            String user,
+            long timeoutMs) {
+    }
+
+    private static final class Traffic {
+        private final AtomicLong messages = new AtomicLong();
+        private final AtomicLong lastHeardEpochMs = new AtomicLong(-1);
+
+        void mark() {
+            messages.incrementAndGet();
+            lastHeardEpochMs.set(System.currentTimeMillis());
         }
     }
 }
