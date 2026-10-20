@@ -46,13 +46,15 @@ class MockAutonomyTest {
         List<String> names = snapshot.appliances().stream().map(a -> a.applianceName()).toList();
         assertEquals(MockAutonomy.FIXTURE_NAMES, names);
         assertEquals("Cabin", control.instanceName(MockAutonomy.INSTANCE_ID).orElseThrow());
+        assertTrue(names.stream().allMatch(name -> name.endsWith(MockAutonomy.TEST_SUFFIX)));
     }
 
     @Test
     void command_on_the_bus_flips_state() {
+        String kitchen = MockAutonomy.FIXTURE_NAMES.get(1);
         commands.fire(new ApplianceCommandRouted(
-                MockAutonomy.INSTANCE_ID, new ApplianceCommandMessage("cmd-1", "kitchen", true)));
-        assertTrue(control.instanceSnapshot(MockAutonomy.INSTANCE_ID).orElseThrow().find("kitchen").orElseThrow().state());
+                MockAutonomy.INSTANCE_ID, new ApplianceCommandMessage("cmd-1", kitchen, true)));
+        assertTrue(control.instanceSnapshot(MockAutonomy.INSTANCE_ID).orElseThrow().find(kitchen).orElseThrow().state());
     }
 
     @Test
@@ -66,10 +68,11 @@ class MockAutonomyTest {
     @Test
     void other_instance_commands_are_ignored() {
         UUID other = UUID.fromString("11111111-1111-4111-8111-111111111111");
-        commands.fire(new ApplianceCommandRouted(other, new ApplianceCommandMessage("cmd-3", "hallway", true)));
+        String hallway = MockAutonomy.FIXTURE_NAMES.getFirst();
+        commands.fire(new ApplianceCommandRouted(other, new ApplianceCommandMessage("cmd-3", hallway, true)));
         assertEquals(
                 false,
-                control.instanceSnapshot(MockAutonomy.INSTANCE_ID).orElseThrow().find("hallway").orElseThrow().state());
+                control.instanceSnapshot(MockAutonomy.INSTANCE_ID).orElseThrow().find(hallway).orElseThrow().state());
         assertTrue(control.instanceSnapshot(other).isEmpty());
         assertFalse(control.allKnownInstances().containsKey(other));
     }
@@ -89,16 +92,18 @@ class MockAutonomyTest {
     void command_to_one_instance_does_not_flip_the_other() {
         mock.seedInstance(SHOP_ID, "Shop", MockAutonomy.FIXTURE_NAMES);
 
+        String kitchen = MockAutonomy.FIXTURE_NAMES.get(1);
+        String porch = MockAutonomy.FIXTURE_NAMES.get(5);
         assertTrue(control.publishCommand(
-                MockAutonomy.INSTANCE_ID, new ApplianceCommandMessage("cmd-a", "kitchen", true)));
-        assertTrue(applianceOn(MockAutonomy.INSTANCE_ID, "kitchen"));
-        assertFalse(applianceOn(SHOP_ID, "kitchen"));
+                MockAutonomy.INSTANCE_ID, new ApplianceCommandMessage("cmd-a", kitchen, true)));
+        assertTrue(applianceOn(MockAutonomy.INSTANCE_ID, kitchen));
+        assertFalse(applianceOn(SHOP_ID, kitchen));
 
         assertTrue(control.publishCommand(
-                SHOP_ID, new ApplianceCommandMessage("cmd-b", "porch", true)));
-        assertTrue(applianceOn(SHOP_ID, "porch"));
-        assertFalse(applianceOn(MockAutonomy.INSTANCE_ID, "porch"));
-        assertTrue(applianceOn(MockAutonomy.INSTANCE_ID, "kitchen"));
+                SHOP_ID, new ApplianceCommandMessage("cmd-b", porch, true)));
+        assertTrue(applianceOn(SHOP_ID, porch));
+        assertFalse(applianceOn(MockAutonomy.INSTANCE_ID, porch));
+        assertTrue(applianceOn(MockAutonomy.INSTANCE_ID, kitchen));
     }
 
     private List<String> names(UUID instanceId) {

@@ -25,6 +25,9 @@ import java.util.regex.Pattern;
  * With the texts used up, both pages show the code-limit message and the phone form skips the send.
  * A verified code signs in only when exactly one user with that {@code phone} attribute
  * passes {@link PhoneSignInPolicy}. Any other outcome is a wrong code.
+ * When auth note {@code freedriver.sms.route} is {@code phone}, the number in
+ * {@code freedriver.sms.number} uses this same send path, including the send cap.
+ * An empty or placeholder secret still marks the execution attempted before any send.
  */
 public final class SmsOtpAuthenticator implements Authenticator {
 
@@ -66,12 +69,17 @@ public final class SmsOtpAuthenticator implements Authenticator {
 
     @Override
     public void authenticate(AuthenticationFlowContext context) {
-        if (secret.get().isEmpty()) {
+        Optional<String> key = secret.get();
+        if (key.isEmpty()) {
             context.attempted();
             return;
         }
         if (session(context).getAuthNote(NOTE_PHONE) != null) {
             context.challenge(codePage(context, null, null));
+            return;
+        }
+        if (PhoneUsernameRouter.ROUTE_PHONE.equals(session(context).getAuthNote(PhoneUsernameRouter.NOTE_ROUTE))) {
+            sendFirst(context, key.get(), session(context).getAuthNote(PhoneUsernameRouter.NOTE_NUMBER));
             return;
         }
         context.challenge(phonePage(context, sendAllowed(context) ? null : MSG_CODE_LIMIT));

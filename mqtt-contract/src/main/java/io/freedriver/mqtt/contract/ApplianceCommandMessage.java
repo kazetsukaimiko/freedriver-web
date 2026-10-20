@@ -6,8 +6,9 @@ import jakarta.validation.constraints.Size;
 import lombok.NonNull;
 
 /**
- * Topic B body: {@code freedriver/v1/{instanceId}/commands} (retain=false, QoS 1).
- * {@code instanceId} is the topic segment, not a JSON field.
+ * Command body carried on {@link ApplianceSchemas#commandsTopic(java.util.UUID)}.
+ * {@code commandId} identifies the command, {@code applianceName} names the appliance,
+ * and {@code state} is the requested on/off value.
  */
 public record ApplianceCommandMessage(
         @JsonProperty(required = true) @NonNull @NotBlank String commandId,

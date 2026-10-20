@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.logging.Handler;
 import java.util.logging.Level;
@@ -46,6 +47,9 @@ class AppliancesResourceTest {
 
     @Inject
     CommandRateLimiter rateLimiter;
+
+    private static final String HALLWAY = MockAutonomy.FIXTURE_NAMES.get(0);
+    private static final String KITCHEN = MockAutonomy.FIXTURE_NAMES.get(1);
 
     @BeforeEach
     void reset() {
@@ -74,7 +78,7 @@ class AppliancesResourceTest {
     void post_unauthenticated_401() {
         given().contentType(ContentType.JSON)
                 .body("{\"on\":true}")
-                .when().post(commandPath("hallway"))
+                .when().post(commandPath(HALLWAY))
                 .then().statusCode(401);
         assertTrue(mock.publishedCommands().isEmpty());
     }
@@ -90,7 +94,7 @@ class AppliancesResourceTest {
     void post_user_role_403() {
         given().contentType(ContentType.JSON)
                 .body("{\"on\":true}")
-                .when().post(commandPath("hallway"))
+                .when().post(commandPath(HALLWAY))
                 .then().statusCode(403);
         assertTrue(mock.publishedCommands().isEmpty());
     }
@@ -108,8 +112,7 @@ class AppliancesResourceTest {
                 .body("instances[0].timeout", is(false))
                 .body("instances[0].lastUpdated", notNullValue())
                 .body("instances[0].appliances.size()", is(6))
-                .body("instances[0].appliances.applianceName", hasItems(
-                        "hallway", "kitchen", "living-room", "bedroom", "garage", "porch"))
+                .body("instances[0].appliances.applianceName", hasItems(MockAutonomy.FIXTURE_NAMES.toArray(String[]::new)))
                 .body("csrfToken", notNullValue())
                 .cookie(CsrfFilter.COOKIE, notNullValue());
     }
@@ -138,7 +141,7 @@ class AppliancesResourceTest {
     void post_without_csrf_400_no_command() {
         given().contentType(ContentType.JSON)
                 .body("{\"on\":true}")
-                .when().post(commandPath("hallway"))
+                .when().post(commandPath(HALLWAY))
                 .then()
                 .statusCode(400)
                 .body(is("{}"));
@@ -153,7 +156,7 @@ class AppliancesResourceTest {
                 .cookie(CsrfFilter.COOKIE, get.cookie(CsrfFilter.COOKIE))
                 .header(CsrfFilter.HEADER, "nope")
                 .body("{\"on\":true}")
-                .when().post(commandPath("hallway"))
+                .when().post(commandPath(HALLWAY))
                 .then()
                 .statusCode(400)
                 .body(is("{}"));
@@ -165,7 +168,7 @@ class AppliancesResourceTest {
     void extra_json_fields_400() {
         commandSpec()
                 .body("{\"on\":true,\"extra\":1}")
-                .when().post(commandPath("hallway"))
+                .when().post(commandPath(HALLWAY))
                 .then().statusCode(400);
         assertTrue(mock.publishedCommands().isEmpty());
     }
@@ -175,7 +178,7 @@ class AppliancesResourceTest {
     void missing_on_400_from_constraint() {
         commandSpec()
                 .body("{}")
-                .when().post(commandPath("hallway"))
+                .when().post(commandPath(HALLWAY))
                 .then().statusCode(400);
         assertTrue(mock.publishedCommands().isEmpty());
     }
@@ -197,7 +200,7 @@ class AppliancesResourceTest {
         UUID missing = UUID.fromString("00000000-0000-4000-8000-000000000000");
         commandSpec()
                 .body("{\"on\":true}")
-                .when().post("/api/appliances/" + missing + "/hallway")
+                .when().post("/api/appliances/" + missing + "/" + HALLWAY)
                 .then().statusCode(404);
         assertTrue(mock.publishedCommands().isEmpty());
     }
@@ -226,7 +229,7 @@ class AppliancesResourceTest {
 
         commandSpec()
                 .body("{\"on\":false}")
-                .when().post(commandPath("hallway"))
+                .when().post(commandPath(HALLWAY))
                 .then()
                 .statusCode(409)
                 .body("stale", is(true))
@@ -242,19 +245,19 @@ class AppliancesResourceTest {
 
         commandSpec()
                 .body("{\"on\":true}")
-                .when().post(commandPath("hallway"))
+                .when().post(commandPath(HALLWAY))
                 .then()
                 .statusCode(200)
                 .body("timeout", is(false))
                 .body("stale", is(false))
                 .body("instanceName", is("Cabin"))
-                .body("appliances.find { it.applianceName == 'hallway' }.on", is(true))
+                .body("appliances.find { it.applianceName == '" + HALLWAY + "' }.on", is(true))
                 .body("lastUpdated", notNullValue());
 
         assertEquals(1, mock.publishedCommands().size());
         ApplianceCommandRouted routed = mock.publishedCommands().getFirst();
         assertEquals(MockAutonomy.INSTANCE_ID, routed.instanceId());
-        assertEquals("hallway", routed.command().applianceName());
+        assertEquals(HALLWAY, routed.command().applianceName());
         assertTrue(routed.command().state());
         assertFalse(routed.command().commandId().isBlank());
     }
@@ -266,12 +269,12 @@ class AppliancesResourceTest {
 
         commandSpec()
                 .body("{\"on\":true}")
-                .when().post(commandPath("hallway"))
+                .when().post(commandPath(HALLWAY))
                 .then()
                 .statusCode(200)
                 .body("timeout", is(true))
                 .body("stale", is(false))
-                .body("appliances.find { it.applianceName == 'hallway' }.on", is(false));
+                .body("appliances.find { it.applianceName == '" + HALLWAY + "' }.on", is(false));
 
         assertEquals(1, mock.publishedCommands().size());
     }
@@ -285,7 +288,7 @@ class AppliancesResourceTest {
         for (int i = 0; i < 12; i++) {
             int status = spec
                     .body("{\"on\":true}")
-                    .when().post(commandPath("hallway"))
+                    .when().post(commandPath(HALLWAY))
                     .then()
                     .extract().statusCode();
             if (status == 429) {
@@ -306,7 +309,7 @@ class AppliancesResourceTest {
         RequestSpecification spec = commandSpec();
         for (int i = 0; i < 12; i++) {
             spec.body("{\"on\":false}")
-                    .when().post(commandPath("hallway"));
+                    .when().post(commandPath(HALLWAY));
         }
         given().when().get("/api/appliances").then().statusCode(200);
     }
@@ -332,7 +335,7 @@ class AppliancesResourceTest {
                 .header(CsrfFilter.HEADER, csrfToken)
                 .header("Authorization", "Bearer " + accessToken)
                 .body("{\"on\":true}")
-                .when().post(commandPath("hallway"))
+                .when().post(commandPath(HALLWAY))
                 .then()
                 .statusCode(200)
                 .body("timeout", is(false)));
@@ -342,7 +345,7 @@ class AppliancesResourceTest {
         assertTrue(line.matches(
                 "audit appliance when=\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z"
                         + " instance=" + MockAutonomy.INSTANCE_ID
-                        + " appliance=hallway on=true commandId=[0-9a-fA-F-]{36}"
+                        + " appliance=" + Pattern.quote(HALLWAY) + " on=true commandId=[0-9a-fA-F-]{36}"
                         + " result=confirmed subject=caller-sub-219"));
         assertFalse(line.contains("principal-name-not-subject"), line);
         assertFalse(line.contains(csrfCookie), line);
@@ -365,7 +368,7 @@ class AppliancesResourceTest {
         mock.setConfirmCommands(true);
         List<String> lines = auditLines(() -> commandSpec()
                 .body("{\"on\":true}")
-                .when().post(commandPath("kitchen"))
+                .when().post(commandPath(KITCHEN))
                 .then()
                 .statusCode(200));
 

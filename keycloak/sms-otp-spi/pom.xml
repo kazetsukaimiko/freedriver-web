@@ -41,6 +41,20 @@
             <version>${keycloak.version}</version>
             <scope>provided</scope>
         </dependency>
+        <!-- ConditionalAuthenticator is in keycloak-services. The server provides it.
+             Transitives stay off this build; server-spi already supplies the types it uses. -->
+        <dependency>
+            <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-services</artifactId>
+            <version>${keycloak.version}</version>
+            <scope>provided</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <dependency>
             <groupId>jakarta.ws.rs</groupId>
             <artifactId>jakarta.ws.rs-api</artifactId>

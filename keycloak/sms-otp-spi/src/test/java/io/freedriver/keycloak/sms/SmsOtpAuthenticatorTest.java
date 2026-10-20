@@ -223,6 +223,67 @@ class SmsOtpAuthenticatorTest {
     }
 
     @Test
+    void phoneRouteSendsTheStoredNumberAndShowsTheCodePage() {
+        notes.put(PhoneUsernameRouter.NOTE_ROUTE, PhoneUsernameRouter.ROUTE_PHONE);
+        notes.put(PhoneUsernameRouter.NOTE_NUMBER, "+19876543210");
+        sendReply = new SmsOtpClient.Wire(200, sent("+19876543210"));
+        authenticator.authenticate(context);
+        assertEquals(List.of("+19876543210"), sends);
+        assertPage(SmsOtpAuthenticator.CODE_TEMPLATE, null);
+        assertEquals("+19876543210", notes.get(SmsOtpAuthenticator.NOTE_PHONE));
+        assertEquals("1", notes.get(SmsOtpAuthenticator.NOTE_SENDS));
+
+        authenticator.authenticate(context);
+        assertEquals(1, sends.size());
+        assertPage(SmsOtpAuthenticator.CODE_TEMPLATE, null);
+    }
+
+    @Test
+    void phoneRouteStopsAtTheExistingSendCap() {
+        notes.put(PhoneUsernameRouter.NOTE_ROUTE, PhoneUsernameRouter.ROUTE_PHONE);
+        notes.put(PhoneUsernameRouter.NOTE_NUMBER, "+11234567890");
+        notes.put(SmsOtpAuthenticator.NOTE_SENDS, Integer.toString(1 + SmsOtpAuthenticator.MAX_RESENDS));
+        authenticator.authenticate(context);
+        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_CODE_LIMIT);
+        assertTrue(sends.isEmpty());
+        assertNull(notes.get(SmsOtpAuthenticator.NOTE_PHONE));
+    }
+
+    @Test
+    void usernameRouteDoesNotSend() {
+        notes.put(PhoneUsernameRouter.NOTE_ROUTE, PhoneUsernameRouter.ROUTE_USERNAME);
+        notes.put(PhoneUsernameRouter.NOTE_NUMBER, "+11234567890");
+        authenticator.authenticate(context);
+        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, null);
+        assertTrue(sends.isEmpty());
+        assertNull(notes.get(SmsOtpAuthenticator.NOTE_PHONE));
+    }
+
+    @Test
+    void emptySecretAttemptsBeforeARoutedSend() {
+        notes.put(PhoneUsernameRouter.NOTE_ROUTE, PhoneUsernameRouter.ROUTE_PHONE);
+        notes.put(PhoneUsernameRouter.NOTE_NUMBER, "+11234567890");
+        List<String> leaked = new ArrayList<>();
+        SmsOtpClient client = new SmsOtpClient((uri, secret, json) -> {
+            leaked.add(json);
+            return new SmsOtpClient.Wire(200, "{\"status\":\"sent\"}");
+        });
+        for (String raw : new String[] {null, "", "   ", SmsOtpConfig.PLACEHOLDER}) {
+            leaked.clear();
+            SmsOtpAuthenticator off = new SmsOtpAuthenticator(client, () -> SmsOtpConfig.normalize(raw));
+            outcome = null;
+            off.authenticate(context);
+            assertEquals("attempted", outcome);
+            params = new MultivaluedHashMap<>();
+            params.add("phone", "+11234567890");
+            off.action(context);
+            assertEquals("attempted", outcome);
+            assertTrue(leaked.isEmpty());
+        }
+        assertTrue(sends.isEmpty());
+    }
+
+    @Test
     void correctCodeForAllowedUserSignsIn() {
         enterPhone();
         assertEquals(List.of(PHONE), sends);
