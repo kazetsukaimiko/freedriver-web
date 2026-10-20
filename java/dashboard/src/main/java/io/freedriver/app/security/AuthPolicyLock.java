@@ -42,11 +42,26 @@ final class AuthPolicyLock {
      * turn a tenant off. A production launch ignores any other source for these names.
      */
     static boolean locksBare(String bare, Set<String> owned) {
+        if (bare.indexOf('*') >= 0) {
+            return false;
+        }
         if (owned.contains(bare) || bare.startsWith("quarkus.http.auth.permission.")) {
             return true;
         }
         return "quarkus.oidc.tenant-enabled".equals(bare)
                 || (bare.startsWith("quarkus.oidc.") && bare.endsWith(".tenant-enabled"));
+    }
+
+    /** Quarkus {@code @WithDefault} values. A production launch keeps these and drops other sources. */
+    static boolean builtInDefault(ConfigValue value) {
+        if (value == null || value.getValue() == null) {
+            return true;
+        }
+        if (value.getConfigSourceOrdinal() == Integer.MIN_VALUE) {
+            return true;
+        }
+        String source = value.getConfigSourceName();
+        return source != null && source.contains("DefaultValuesConfigSource");
     }
 
     /** Value for the exact name the profile interceptor asks for. */

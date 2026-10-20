@@ -83,6 +83,26 @@ class AuthPolicyProdLockTest {
     }
 
     @Test
+    void prod_keeps_built_in_defaults_for_permissions_and_tenants() {
+        LaunchMode previous = LaunchMode.current();
+        LaunchMode.set(LaunchMode.NORMAL);
+        try {
+            SmallRyeConfig prod = prodConfig(builtInDefaults());
+            assertEquals("true", prod.getConfigValue("quarkus.oidc.tenant-enabled").getValue());
+            assertEquals("false", prod.getConfigValue("quarkus.http.auth.permission.appliances.shared").getValue());
+            assertEquals("ALL", prod.getConfigValue("quarkus.http.auth.permission.appliances.applies-to").getValue());
+            assertEquals("true", prod.getConfigValue("quarkus.oidc.*.tenant-enabled").getValue());
+            assertEquals("true", prod.getConfigValue("quarkus.oidc.enabled").getValue());
+            assertEquals(
+                    "authenticated",
+                    prod.getConfigValue("quarkus.http.auth.permission.appliances.policy").getValue());
+            assertEquals("30", prod.getConfigValue("freedriver.appliances.rate-limit.permits").getValue());
+        } finally {
+            LaunchMode.set(previous);
+        }
+    }
+
+    @Test
     void prod_ignores_an_interceptor_above_the_profile_chain() {
         LaunchMode previous = LaunchMode.current();
         LaunchMode.set(LaunchMode.NORMAL);
@@ -244,6 +264,37 @@ class AuthPolicyProdLockTest {
             @Override
             public int getOrdinal() {
                 return 9000;
+            }
+        };
+    }
+
+    private static ConfigSource builtInDefaults() {
+        Map<String, String> values = Map.of(
+                "quarkus.oidc.tenant-enabled", "true",
+                "quarkus.oidc.*.tenant-enabled", "true",
+                "quarkus.http.auth.permission.appliances.shared", "false",
+                "quarkus.http.auth.permission.appliances.applies-to", "ALL",
+                "quarkus.http.auth.permission.public.shared", "false",
+                "quarkus.http.auth.permission.public.applies-to", "ALL");
+        return new ConfigSource() {
+            @Override
+            public Set<String> getPropertyNames() {
+                return values.keySet();
+            }
+
+            @Override
+            public String getValue(String propertyName) {
+                return values.get(propertyName);
+            }
+
+            @Override
+            public String getName() {
+                return "DefaultValuesConfigSource";
+            }
+
+            @Override
+            public int getOrdinal() {
+                return Integer.MIN_VALUE;
             }
         };
     }

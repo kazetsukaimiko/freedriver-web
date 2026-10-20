@@ -24,6 +24,10 @@ public final class AuthPolicyLockInterceptor implements ConfigSourceInterceptor 
         if (!lock.locks(name) || LaunchMode.current().isDevOrTest()) {
             return context.proceed(name);
         }
-        return lock.fileValue(name);
+        ConfigValue fromFile = lock.fileValue(name);
+        if (fromFile != null) {
+            return fromFile;
+        }
+        return context.proceed(name);
     }
 }
