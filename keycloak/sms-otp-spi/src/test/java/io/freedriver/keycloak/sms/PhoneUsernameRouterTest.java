@@ -312,9 +312,9 @@ class PhoneUsernameRouterTest {
         assertTrue(messages.contains("freedriverPhoneUsernameLabel=Phone number or username"));
         assertTrue(messages.contains("freedriverPhoneUsernameContinue=Continue"));
         assertTrue(messages.contains(
-                "freedriverSmsCodeHint=If this number can sign in, we''ve texted you a code."));
+                "freedriverSmsCodeHint=Enter the 6-digit code we texted to your phone."));
         assertTrue(messages.contains(
-                "freedriverSmsWrongCode=That code didn''t work. Request a new one."));
+                "freedriverSmsWrongCode=That code didn''t work. Try again or send a new code."));
         assertTrue(messages.contains(
                 "freedriverSmsDenied=That code didn''t work. Request a new one."));
         assertTrue(messages.contains(

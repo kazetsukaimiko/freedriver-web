@@ -17,7 +17,7 @@ The Quarkus service in `sms/` answers these calls (#107):
 
 `type` selects the kind of text; `otp` (a sign-in code) is the one kind. The `phone` in each answer is the number from the request.
 
-On the seeded number's first sign-in, the send body also carries the agreement wording the sign-in page showed under the number field: `{"type":"otp","phone":"+15555550100","agreement":{"wording":"By tapping Send code, you agree to receive a one-time sign-in code by text from Freedriver. Message and data rates may apply. Reply STOP to opt out."}}`. The wording must match that text exactly. Other answers:
+On the seeded number's first sign-in, the send body also carries the agreement wording the sign-in page showed in normal body text directly above the Send code button: `{"type":"otp","phone":"+15555550100","agreement":{"wording":"By tapping Send code, you agree to receive a one-time sign-in code by text from Freedriver. Message and data rates may apply. Reply STOP to opt out."}}`. The page and `agreement.wording` are that same text. Other answers:
 
 - `400` `{"error":"bad-request"}` for a body that is not valid JSON, has a missing or unknown `type`, has a number that is not `+1` followed by ten digits, or carries other agreement wording.
 - `400` `{"error":"invalid-code"}` for every rejected verify: an unlisted number, no pending code, an expired code or a wrong code all get this same answer.
@@ -30,9 +30,9 @@ The service enforces:
 - Code expiry. Codes are 6 digits, valid for 5 minutes, one pending code per number, and a code works once.
 - Attempts per phone. 5 wrong codes per number in 15 minutes drop the pending code, and verify then answers `429` for that number until the window ends. 5 sends per number in 15 minutes, after which send answers `429`. Both limits count every attempt, listed or unlisted, and answer every number the same way.
 
-The fail-closed stub in `sms/stub` serves the earlier `/otp/send` and `/otp/verify` contract that the current Keycloak SPI calls. Keycloak moves to the `/sms` calls in [#175](https://github.com/kazetsukaimiko/freedriver-web/issues/175).
+Compose builds this service from `sms/src/main/docker/Dockerfile.compose` with the repository root as the build context. Its healthcheck runs `health-live.sh`, which requests `GET /health/live`. `sms/stub` remains the old fail-closed stand-in.
 
-Build and test the Quarkus service with `./mvnw -pl sms verify`, and run it locally with `./mvnw -pl sms quarkus:dev`, which uses an in-memory fake sender. The compose service still builds the fail-closed stub in `sms/stub` until the compose file switches to `sms/src/main/docker/Dockerfile.compose`.
+Build and test the Quarkus service with `./mvnw -pl sms verify`, and run it locally with `./mvnw -pl sms quarkus:dev`, which uses an in-memory fake sender.
 
 How the Quarkus service works:
 
@@ -46,7 +46,11 @@ How the Quarkus service works:
 - Sender. Every sender checks for a recorded sign-in agreement right before the provider call and refuses a number without one, logging it masked. The Twilio Verify sender makes two calls only: create a verification (`POST /v2/Services/{sid}/Verifications`, Twilio generates the code) and create a verification check (`POST /v2/Services/{sid}/VerificationCheck`). It authenticates with the API key SID and secret, never sends its own code, and never stores or logs a code. Each call has a timeout (`freedriver.sms.twilio.timeout`, 5 seconds). A refused, failed or timed-out send is logged with the number masked to its last two digits, and the answer stays `sent`. There is no inbound Twilio webhook.
 - Twilio settings. `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET` and `TWILIO_VERIFY_SERVICE_SID` are read from the environment at startup. A missing or malformed one stops startup, and the startup check makes no Twilio call. On success the service logs `Twilio credentials loaded` with no values. The base URL is `https://verify.twilio.com`; only the test profile can change it, and any other host or plain http stops startup. HTTP client request and response logging is off in every profile.
 
-Compose passes `SMS_OTP_SHARED_SECRET` from `/opt/freedriver-secrets/.env` to `sms` and `keycloak` through each service's `environment` as `${SMS_OTP_SHARED_SECRET:-}`. When the secret is empty or the placeholder, phone sign-in is off: the Keycloak step skips itself, the stub answers `401`, and the provisioning script leaves the realm flow unchanged.
+Compose passes `SMS_OTP_SHARED_SECRET` from `/opt/freedriver-secrets/.env` to `sms` and `keycloak` through each service's `environment` as `${SMS_OTP_SHARED_SECRET:-}`. When the secret is empty or the placeholder, phone sign-in is off: the Keycloak step skips itself, sms answers `401`, and the provisioning script leaves the realm flow unchanged.
+
+Compose also requires `FREEDRIVER_SMS_DAILY_SEND_CAP` from that file and passes it only to `sms`. There is no production default. `.env.example` holds the placeholder `20` and a comment. A missing cap stops sms at startup.
+
+The sms service mounts `/opt/freedriver-storage/sms` at `/deployments/data`. Deploy creates that directory and gives it to uid 185, the image user, so agreement records survive restarts. Deploy's `docker compose up -d --build` rebuilds the Keycloak image (the SPI jar and the login theme) along with sms.
 
 The Twilio Verify credentials reach `sms` only, from `/opt/freedriver-secrets/twilio-verify.env` through a required `env_file` ([#170](https://github.com/kazetsukaimiko/freedriver-web/issues/170)). The variables are `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET` and `TWILIO_VERIFY_SERVICE_SID`. Sysadmin writes the file, `root:lonewatt-techops` mode 640. Placeholders: `secrets/twilio-verify.env.example`.
 
@@ -68,22 +72,23 @@ Pages render through `context.form()` with `freedriver-sms-phone.ftl` and `freed
 
 Per auth session, kept in auth session notes:
 
-- The code page reads "If this number can sign in, we've texted you a code." for every number.
-- A wrong or expired code keeps the code form with "That code didn't work. Request a new one." A number the policy does not allow uses that same sentence, so the page does not say whether the number is on the allowlist. The 5th wrong code clears the pending code and returns to the phone form with "Too many tries. Enter your phone number to get a new code." while texts remain.
+- The code page reads "Enter the 6-digit code we texted to your phone." for every number.
+- A wrong code keeps the code form with "That code didn't work. Try again or send a new code." A number the policy does not allow uses that same sentence, so the page does not say whether the number is on the allowlist. The 5th wrong code clears the pending code and returns to the phone form with "Too many tries. Enter your phone number to get a new code." while texts remain.
+- On 429 the page shows "Too many tries. Try again in N minutes.", with N taken from `Retry-After` and rounded up to whole minutes. A whole number of seconds from 1 to 3600 is used. Anything else, including a missing header, uses 900 seconds (15 minutes). When N is 1 the line is "Too many tries. Try again in 1 minute."
+- On 503 `unavailable` from verify the page shows "We couldn't check your code right now. Try again in a minute." for every number, keeps the typed code, and leaves Verify enabled.
 - 4 texts per auth session: the first code and 3 resends. Entering the number again draws on the same budget. Once the 4 texts are used, the code page shows "Code limit reached. Try again in 15 minutes." with "Sign in with password" as its only link. The phone form, including after a 5th wrong code, shows the same message and skips the send.
 
-After sms verifies a code, the SPI signs in the Keycloak user named by `username` when both of these hold:
+The send step saves the normalized E.164 phone as a server-side auth note. Verify sends that note, not a phone from the form, and compares it exactly with `verified.phone`.
 
-- the user is enabled and its `phone` attribute, normalized like the typed number (whitespace, dots, dashes and parentheses removed), equals the verified number;
-- the user is a direct member of the top-level group `phone-sign-in`.
+After that match, the SPI finds users by the `phone` attribute and signs in only when exactly one of them passes `PhoneSignInPolicy`: enabled, the attribute normalized like the typed number equals the verified number, and a direct member of the top-level group `phone-sign-in`. No match, more than one match, a policy refusal, or a lookup error is a wrong code.
 
-The SPI denies a user whose effective roles (direct, group and composite) include a realm or client role named `portal-admin` or any `realm-management` client role, and denies on any lookup error. Those privileged accounts sign in with the password flow and its MFA ([#27](https://github.com/kazetsukaimiko/freedriver-web/issues/27)).
+`PhoneSignInPolicy` still refuses a user whose effective roles (direct, group and composite) include a realm or client role named `portal-admin` or any `realm-management` client role, and refuses on any lookup error. Those privileged accounts sign in with the password flow and its MFA ([#27](https://github.com/kazetsukaimiko/freedriver-web/issues/27)). The sign-in page shows that outcome as a wrong code.
 
 ## Techops steps
 
 As root on the VPS:
 
-1. Add `SMS_OTP_SHARED_SECRET` to `/opt/freedriver-secrets/.env`. Generate the value with `openssl rand -base64 32`.
+1. Add `SMS_OTP_SHARED_SECRET` to `/opt/freedriver-secrets/.env`. Generate the value with `openssl rand -base64 32`. Add `FREEDRIVER_SMS_DAILY_SEND_CAP` as a positive integer. A missing cap stops sms at startup.
 2. Recreate both services so they pick it up:
 
 ```shell
@@ -91,7 +96,7 @@ cd /opt/freedriver-web
 docker compose --env-file /opt/freedriver-secrets/.env up -d --build keycloak sms
 ```
 
-3. Run `./scripts/provision-keycloak-sms-otp.sh`.
+3. Run `./scripts/provision-keycloak-sms-otp.sh` again until it exits 0. That sets the realm browser flow to `browser-freedriver`.
 
 The script copies the built-in `browser` flow to `browser-freedriver` and adds `freedriver-sms-otp` as the last top-level ALTERNATIVE on the copy. It checks that `auth-username-password-form` stays REQUIRED inside the forms Alternative. It creates the `phone-sign-in` group, adds the user profile attribute `phone` with admin-only view and edit, and sets the realm login theme to `freedriver`. Once the Keycloak container has a real secret, it sets `browser-freedriver` as the realm browser flow.
 

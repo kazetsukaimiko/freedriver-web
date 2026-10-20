@@ -21,7 +21,7 @@ public final class SmsCalls {
                 .body(Map.of("type", "otp", "phone", phone)).post("/sms/send").then();
     }
 
-    /** A send from the sign-in page that showed the agreement wording under the number field. */
+    /** A send from the sign-in page that showed the agreement wording above Send code. */
     public static ValidatableResponse sendAgreeing(String phone, String wording) {
         return given().header(SharedSecretFilter.HEADER, SECRET).contentType(ContentType.JSON)
                 .body(Map.of("type", "otp", "phone", phone, "agreement", Map.of("wording", wording)))

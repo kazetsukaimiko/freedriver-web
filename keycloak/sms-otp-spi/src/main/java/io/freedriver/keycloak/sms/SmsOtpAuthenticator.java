@@ -11,6 +11,7 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
@@ -22,7 +23,8 @@ import java.util.regex.Pattern;
  * Per auth session, stored in auth notes: 4 texts (the first code and 3 resends) and
  * 5 wrong codes, after which the pending code is cleared and the phone form returns.
  * With the texts used up, both pages show the code-limit message and the phone form skips the send.
- * A verified code signs in the user only when {@link PhoneSignInPolicy} allows it.
+ * A verified code signs in only when exactly one user with that {@code phone} attribute
+ * passes {@link PhoneSignInPolicy}. Any other outcome is a wrong code.
  * When auth note {@code freedriver.sms.route} is {@code phone}, the number in
  * {@code freedriver.sms.number} uses this same send path, including the send cap.
  * An empty or placeholder secret still marks the execution attempted before any send.
@@ -39,13 +41,17 @@ public final class SmsOtpAuthenticator implements Authenticator {
     static final String PHONE_TEMPLATE = "freedriver-sms-phone.ftl";
     static final String CODE_TEMPLATE = "freedriver-sms-code.ftl";
     static final String ATTR_RESEND_ALLOWED = "freedriverSmsResendAllowed";
+    static final String ATTR_AGREEMENT = "freedriverSmsAgreement";
+    static final String ATTR_CODE = "freedriverSmsCode";
 
     static final String MSG_PHONE_INVALID = "freedriverSmsPhoneInvalid";
     static final String MSG_UNAVAILABLE = "freedriverSmsUnavailable";
     static final String MSG_WRONG_CODE = "freedriverSmsWrongCode";
     static final String MSG_TOO_MANY_TRIES = "freedriverSmsTooManyTries";
     static final String MSG_CODE_LIMIT = "freedriverSmsCodeLimit";
-    static final String MSG_DENIED = "freedriverSmsDenied";
+    static final String MSG_RATE_LIMITED = "freedriverSmsRateLimited";
+    static final String MSG_RATE_LIMITED_ONE = "freedriverSmsRateLimitedOne";
+    static final String MSG_CHECK_UNAVAILABLE = "freedriverSmsCheckUnavailable";
 
     private static final Pattern CODE = Pattern.compile("^[0-9]{6}$");
 
@@ -69,7 +75,7 @@ public final class SmsOtpAuthenticator implements Authenticator {
             return;
         }
         if (session(context).getAuthNote(NOTE_PHONE) != null) {
-            context.challenge(codePage(context, null));
+            context.challenge(codePage(context, null, null));
             return;
         }
         if (PhoneUsernameRouter.ROUTE_PHONE.equals(session(context).getAuthNote(PhoneUsernameRouter.NOTE_ROUTE))) {
@@ -114,31 +120,41 @@ public final class SmsOtpAuthenticator implements Authenticator {
             context.challenge(phonePage(context, MSG_PHONE_INVALID));
             return;
         }
-        if (text(context, key, phone) != SmsOtpClient.Outcome.SENT) {
+        SmsOtpClient.Result result = text(context, key, phone);
+        if (result.outcome() == SmsOtpClient.Outcome.RATE_LIMITED) {
+            context.challenge(rateLimited(context, true, result.retryAfterSeconds()));
+            return;
+        }
+        if (result.outcome() != SmsOtpClient.Outcome.SENT || !phone.equals(result.phone())) {
             context.challenge(phonePage(context, MSG_UNAVAILABLE));
             return;
         }
         session(context).setAuthNote(NOTE_PHONE, phone);
         session(context).removeAuthNote(NOTE_WRONG_CODES);
-        context.challenge(codePage(context, null));
+        context.challenge(codePage(context, null, null));
     }
 
     private void resend(AuthenticationFlowContext context, String key, String phone) {
         if (!sendAllowed(context)) {
-            context.challenge(codePage(context, null));
+            context.challenge(codePage(context, null, null));
             return;
         }
-        if (text(context, key, phone) != SmsOtpClient.Outcome.SENT) {
-            context.challenge(codePage(context, MSG_UNAVAILABLE));
+        SmsOtpClient.Result result = text(context, key, phone);
+        if (result.outcome() == SmsOtpClient.Outcome.RATE_LIMITED) {
+            context.challenge(rateLimited(context, false, result.retryAfterSeconds()));
             return;
         }
-        context.challenge(codePage(context, null));
+        if (result.outcome() != SmsOtpClient.Outcome.SENT || !phone.equals(result.phone())) {
+            context.challenge(codePage(context, MSG_UNAVAILABLE, null));
+            return;
+        }
+        context.challenge(codePage(context, null, null));
     }
 
     /** Counts the send in the auth session, then asks sms to text the code. */
-    private SmsOtpClient.Outcome text(AuthenticationFlowContext context, String key, String phone) {
+    private SmsOtpClient.Result text(AuthenticationFlowContext context, String key, String phone) {
         session(context).setAuthNote(NOTE_SENDS, Integer.toString(count(context, NOTE_SENDS) + 1));
-        return client.send(key, phone).outcome();
+        return client.send(key, phone);
     }
 
     private void verify(AuthenticationFlowContext context, String key, String phone, String raw) {
@@ -147,11 +163,20 @@ public final class SmsOtpAuthenticator implements Authenticator {
             wrongCode(context);
             return;
         }
+        // The saved note is the only phone this step will check. The form is not read.
         SmsOtpClient.Result result = client.verify(key, phone, code);
         switch (result.outcome()) {
-            case VERIFIED -> signIn(context, phone, result.username());
+            case VERIFIED -> {
+                if (result.phone() == null || !result.phone().equals(phone)) {
+                    wrongCode(context);
+                    return;
+                }
+                signIn(context, phone);
+            }
             case INVALID_CODE -> wrongCode(context);
-            default -> context.challenge(codePage(context, MSG_UNAVAILABLE));
+            case RATE_LIMITED -> context.challenge(rateLimited(context, false, result.retryAfterSeconds()));
+            case CHECK_UNAVAILABLE -> context.challenge(codePage(context, MSG_CHECK_UNAVAILABLE, code));
+            default -> context.challenge(codePage(context, MSG_UNAVAILABLE, null));
         }
     }
 
@@ -164,22 +189,31 @@ public final class SmsOtpAuthenticator implements Authenticator {
             return;
         }
         session(context).setAuthNote(NOTE_WRONG_CODES, Integer.toString(wrong));
-        context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS, codePage(context, MSG_WRONG_CODE));
+        context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS, codePage(context, MSG_WRONG_CODE, null));
     }
 
-    private void signIn(AuthenticationFlowContext context, String phone, String username) {
-        UserModel user;
+    /**
+     * Signs in when exactly one user with this phone attribute passes the policy.
+     * Every other outcome, including a lookup error, is a wrong code.
+     */
+    private void signIn(AuthenticationFlowContext context, String phone) {
+        List<UserModel> matches;
         try {
-            user = context.getSession().users().getUserByUsername(context.getRealm(), username);
+            matches = context.getSession().users()
+                    .searchForUserByUserAttributeStream(context.getRealm(), PhoneSignInPolicy.PHONE_ATTRIBUTE, phone)
+                    .filter(candidate -> PhoneSignInPolicy.allows(candidate, phone))
+                    .limit(2)
+                    .toList();
         } catch (RuntimeException ex) {
-            user = null;
-        }
-        clearPending(context);
-        if (!PhoneSignInPolicy.allows(user, phone)) {
-            context.failureChallenge(AuthenticationFlowError.ACCESS_DENIED, phonePage(context, MSG_DENIED));
+            wrongCode(context);
             return;
         }
-        context.setUser(user);
+        if (matches.size() != 1) {
+            wrongCode(context);
+            return;
+        }
+        clearPending(context);
+        context.setUser(matches.get(0));
         context.success();
     }
 
@@ -200,6 +234,17 @@ public final class SmsOtpAuthenticator implements Authenticator {
         }
     }
 
+    /** Whole minutes, rounded up. One second is one minute. */
+    static int retryMinutes(Integer retryAfterSeconds) {
+        int seconds = retryAfterSeconds == null
+                ? SmsOtpClient.DEFAULT_RETRY_AFTER_SECONDS
+                : retryAfterSeconds;
+        if (seconds < 1) {
+            seconds = SmsOtpClient.DEFAULT_RETRY_AFTER_SECONDS;
+        }
+        return (seconds + 59) / 60;
+    }
+
     /** Clears the pending phone and its wrong-code count. The send count stays for the auth session. */
     private static void clearPending(AuthenticationFlowContext context) {
         session(context).removeAuthNote(NOTE_PHONE);
@@ -211,19 +256,38 @@ public final class SmsOtpAuthenticator implements Authenticator {
     }
 
     private static Response phonePage(AuthenticationFlowContext context, String error) {
-        LoginFormsProvider form = context.form();
+        LoginFormsProvider form = context.form().setAttribute(ATTR_AGREEMENT, SignInAgreement.WORDING);
         if (error != null) {
             form.setError(error);
         }
         return form.createForm(PHONE_TEMPLATE);
     }
 
-    private static Response codePage(AuthenticationFlowContext context, String error) {
+    private static Response codePage(AuthenticationFlowContext context, String error, String keptCode) {
         LoginFormsProvider form = context.form().setAttribute(ATTR_RESEND_ALLOWED, sendAllowed(context));
+        if (keptCode != null) {
+            form.setAttribute(ATTR_CODE, keptCode);
+        }
         if (error != null) {
             form.setError(error);
         }
         return form.createForm(CODE_TEMPLATE);
+    }
+
+    private static Response rateLimited(AuthenticationFlowContext context, boolean phoneForm, Integer retryAfterSeconds) {
+        int minutes = retryMinutes(retryAfterSeconds);
+        LoginFormsProvider form = context.form();
+        if (phoneForm) {
+            form.setAttribute(ATTR_AGREEMENT, SignInAgreement.WORDING);
+        } else {
+            form.setAttribute(ATTR_RESEND_ALLOWED, sendAllowed(context));
+        }
+        if (minutes == 1) {
+            form.setError(MSG_RATE_LIMITED_ONE);
+        } else {
+            form.setError(MSG_RATE_LIMITED, minutes);
+        }
+        return form.createForm(phoneForm ? PHONE_TEMPLATE : CODE_TEMPLATE);
     }
 
     @Override
