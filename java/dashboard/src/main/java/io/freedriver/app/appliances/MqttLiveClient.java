@@ -6,7 +6,6 @@ import io.freedriver.mqtt.contract.ApplianceJson;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
 import io.freedriver.mqtt.contract.ApplianceStateMessage;
 import io.quarkus.runtime.StartupEvent;
-import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
@@ -15,7 +14,6 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 
 import java.nio.charset.StandardCharsets;
-import java.security.Principal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -38,7 +36,6 @@ public class MqttLiveClient {
     private final MqttSettings mqtt;
     private final Instance<MqttConnection> connections;
     private final Event<ApplianceStateRouted> states;
-    private final SecurityIdentity identity;
     private final ConcurrentHashMap<UUID, Traffic> traffic = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Pending> pending = new ConcurrentHashMap<>();
     private MqttConnection connection;
@@ -49,13 +46,11 @@ public class MqttLiveClient {
             AppliancesConfig appliances,
             MqttSettings mqtt,
             Instance<MqttConnection> connections,
-            Event<ApplianceStateRouted> states,
-            SecurityIdentity identity) {
+            Event<ApplianceStateRouted> states) {
         this.appliances = appliances;
         this.mqtt = mqtt;
         this.connections = connections;
         this.states = states;
-        this.identity = identity;
     }
 
     void start(@Observes StartupEvent event) {
@@ -88,7 +83,11 @@ public class MqttLiveClient {
         }
     }
 
-    void onCommand(@Observes ApplianceCommandRouted routed) {
+    public boolean acceptsCommands() {
+        return connection != null;
+    }
+
+    public void onCommand(ApplianceCommandRouted routed, String actor) {
         if (connection == null) {
             return;
         }
@@ -96,7 +95,7 @@ public class MqttLiveClient {
         UUID instanceId = routed.instanceId();
         String appliance = routed.command().applianceName();
         boolean state = routed.command().state();
-        String user = askedBy();
+        String user = actor == null || actor.isBlank() ? "unknown" : actor;
         long timeoutMs = appliances.boundedCommandTimeout().toMillis();
         Pending tracked = new Pending(commandId, instanceId, appliance, state, user, timeoutMs);
         pending.put(commandId, tracked);
@@ -178,21 +177,6 @@ public class MqttLiveClient {
     void resetTracking() {
         pending.clear();
         traffic.clear();
-    }
-
-    private String askedBy() {
-        try {
-            if (identity == null || identity.isAnonymous()) {
-                return "unknown";
-            }
-            Principal principal = identity.getPrincipal();
-            if (principal == null || principal.getName() == null || principal.getName().isBlank()) {
-                return "unknown";
-            }
-            return principal.getName();
-        } catch (RuntimeException e) {
-            return "unknown";
-        }
     }
 
     @PreDestroy
