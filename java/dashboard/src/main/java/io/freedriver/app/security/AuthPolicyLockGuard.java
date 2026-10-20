@@ -26,6 +26,9 @@ public final class AuthPolicyLockGuard implements ConfigSourceInterceptor {
         ConfigValue resolved = context.proceed(name);
         String raw = lock.productionRaw(name);
         if (raw == null) {
+            if (AuthPolicyLock.isFrameworkDefault(resolved)) {
+                return resolved;
+            }
             return null;
         }
         if (lock.sameAsFile(resolved, raw)) {

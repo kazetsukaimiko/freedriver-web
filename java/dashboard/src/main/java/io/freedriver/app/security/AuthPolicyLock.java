@@ -4,6 +4,7 @@ import io.quarkus.runtime.LaunchMode;
 import io.smallrye.common.expression.Expression;
 import io.smallrye.config.ConfigValidationException;
 import io.smallrye.config.ConfigValue;
+import io.smallrye.config.DefaultValuesConfigSource;
 
 import java.lang.reflect.Constructor;
 import java.util.HashSet;
@@ -35,6 +36,11 @@ final class AuthPolicyLock {
 
     boolean locks(String name) {
         return locksBare(bareKey(name), bareKeys);
+    }
+
+    /** Quarkus {@code @WithDefault} values. A prod lock must not drop these when the file omits the name. */
+    static boolean isFrameworkDefault(ConfigValue value) {
+        return value != null && DefaultValuesConfigSource.NAME.equals(value.getConfigSourceName());
     }
 
     /**

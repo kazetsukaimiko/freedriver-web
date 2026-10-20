@@ -2,6 +2,7 @@ package io.freedriver.app.security;
 
 import io.quarkus.runtime.LaunchMode;
 import io.smallrye.config.ConfigSourceInterceptor;
+import io.smallrye.config.DefaultValuesConfigSource;
 import io.smallrye.config.ConfigSourceInterceptorContext;
 import io.smallrye.config.ConfigSourceInterceptorFactory;
 import io.smallrye.config.ConfigValue;
@@ -43,6 +44,31 @@ class AuthPolicyProdLockTest {
         LaunchMode.set(LaunchMode.NORMAL);
         try {
             prodKeepsThePolicy();
+        } finally {
+            LaunchMode.set(previous);
+        }
+    }
+
+    @Test
+    void prod_keeps_framework_defaults_and_drops_a_hostile_override() {
+        LaunchMode previous = LaunchMode.current();
+        LaunchMode.set(LaunchMode.NORMAL);
+        try {
+            SmallRyeConfig prod = prodConfig(frameworkDefaults());
+            ConfigValue shared = prod.getConfigValue("quarkus.http.auth.permission.public.shared");
+            assertEquals("false", shared.getValue());
+            assertEquals(DefaultValuesConfigSource.NAME, shared.getConfigSourceName());
+            assertEquals("ALL", prod.getConfigValue("quarkus.http.auth.permission.public.applies-to").getValue());
+            assertEquals("false", prod.getConfigValue("quarkus.http.auth.permission.invites.shared").getValue());
+            assertEquals("true", prod.getConfigValue("quarkus.oidc.tenant-enabled").getValue());
+            assertEquals("true", prod.getConfigValue("quarkus.oidc.*.tenant-enabled").getValue());
+            assertEquals(
+                    "authenticated",
+                    prod.getConfigValue("quarkus.http.auth.permission.appliances.policy").getValue());
+
+            SmallRyeConfig hostile = prodConfig(frameworkDefaults(), hostileShared());
+            assertAbsent(hostile, "quarkus.http.auth.permission.public.shared");
+            assertAbsent(hostile, "quarkus.http.auth.permission.open-post.policy");
         } finally {
             LaunchMode.set(previous);
         }
@@ -202,6 +228,45 @@ class AuthPolicyProdLockTest {
                 .addDiscoveredInterceptors()
                 .withCustomizers(new AuthPolicyLockCustomizer())
                 .withProfile("prod");
+    }
+
+    private static ConfigSource frameworkDefaults() {
+        Map<String, String> values = new HashMap<>();
+        values.put("quarkus.http.auth.permission.public.shared", "false");
+        values.put("quarkus.http.auth.permission.public.applies-to", "ALL");
+        values.put("quarkus.http.auth.permission.invites.shared", "false");
+        values.put("quarkus.oidc.tenant-enabled", "true");
+        values.put("quarkus.oidc.*.tenant-enabled", "true");
+        return new ConfigSource() {
+            @Override
+            public Set<String> getPropertyNames() {
+                return values.keySet();
+            }
+
+            @Override
+            public String getValue(String propertyName) {
+                return values.get(propertyName);
+            }
+
+            @Override
+            public String getName() {
+                return DefaultValuesConfigSource.NAME;
+            }
+
+            @Override
+            public int getOrdinal() {
+                return DefaultValuesConfigSource.ORDINAL;
+            }
+        };
+    }
+
+    /** A higher-ordinal source must not turn a default shared permission on. */
+    private static ConfigSource hostileShared() {
+        Map<String, String> values = new HashMap<>();
+        values.put("config_ordinal", "8000");
+        values.put("quarkus.http.auth.permission.public.shared", "true");
+        values.put("quarkus.http.auth.permission.open-post.policy", "permit");
+        return new PropertiesConfigSource(values, "hostile-shared.properties", 8000);
     }
 
     private static ConfigSource propertiesFileAboveThePolicy() {
