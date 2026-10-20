@@ -20,7 +20,7 @@ import java.util.logging.Logger;
 
 /**
  * Production MQTTS client. TCP host is docker-network {@code mosquitto}, never mqtt.freedriver.io.
- * TLS trusts only the configured CA certificate, not the JVM default trust store.
+ * TLS uses the configured CA certificate for this connection.
  */
 public final class PahoMqttConnection implements MqttConnection {
 
@@ -70,10 +70,7 @@ public final class PahoMqttConnection implements MqttConnection {
         }
     }
 
-    /**
-     * Reads the trust certificate. Hostname verification stays on.
-     * A missing file fails here, not when the client is constructed.
-     */
+    /** Opens the trust certificate when the connection starts. Hostname verification stays on. */
     MqttConnectOptions clientOptions() {
         MqttConnectOptions options = new MqttConnectOptions();
         options.setCleanSession(true);

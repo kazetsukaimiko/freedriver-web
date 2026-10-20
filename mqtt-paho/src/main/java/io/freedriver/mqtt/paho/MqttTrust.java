@@ -14,8 +14,7 @@ import java.security.cert.X509Certificate;
 import java.util.Collection;
 
 /**
- * Trust store for this MQTT connection only.
- * The file is a CA certificate. The private key is rejected and never logged.
+ * Loads the CA certificate into a trust store for this MQTT connection.
  */
 final class MqttTrust {
 
