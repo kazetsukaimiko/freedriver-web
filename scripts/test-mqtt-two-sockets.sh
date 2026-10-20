@@ -405,7 +405,10 @@ run_broker_handshake() {
 
 mkdir -p "${WORKDIR}/data"
 chmod 777 "${WORKDIR}/data" "$SECRETS"
-# The broker image runs as root and can read the 0600 leaf key.
+# The image starts as root. Mosquitto then setuid()s to uid 1883, so a
+# root-owned password file and a runner-owned 0600 leaf key are unreadable.
+# The host cannot chown them. A root container can, matching production
+# (leaf key mode 0600, owner 1883). This does not change the issuer.
 if docker info >/dev/null 2>&1; then
   docker pull eclipse-mosquitto:2.1.2-alpine >/dev/null
   # Password file so allow_anonymous false has a password source. The
@@ -415,7 +418,24 @@ if docker info >/dev/null 2>&1; then
     eclipse-mosquitto:2.1.2-alpine \
     mosquitto_passwd -c -b /mosquitto/config/secrets/passwd api fixture-not-printed >/dev/null
   printf '%s\n' 'user api' 'topic read probe' > "${SECRETS}/acl"
-  chmod 644 "${SECRETS}/acl" "${SECRETS}/passwd" || true
+  docker run --rm --user 0 --entrypoint /bin/sh \
+    -v "${SECRETS}:/mosquitto/config/secrets" \
+    eclipse-mosquitto:2.1.2-alpine \
+    -c 'chown 1883:1883 \
+      /mosquitto/config/secrets/passwd \
+      /mosquitto/config/secrets/acl \
+      /mosquitto/config/secrets/server.crt \
+      /mosquitto/config/secrets/server.key \
+      /mosquitto/config/secrets/internal.crt \
+      /mosquitto/config/secrets/internal.key \
+      && chmod 0600 \
+      /mosquitto/config/secrets/passwd \
+      /mosquitto/config/secrets/server.key \
+      /mosquitto/config/secrets/internal.key \
+      && chmod 0640 \
+      /mosquitto/config/secrets/acl \
+      /mosquitto/config/secrets/server.crt \
+      /mosquitto/config/secrets/internal.crt'
   run_broker_handshake
 elif [[ "${CI:-}" == "true" ]]; then
   echo "docker is required in CI for the Mosquitto handshake" >&2
