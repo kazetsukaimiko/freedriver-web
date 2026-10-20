@@ -62,7 +62,7 @@ class ProdMockAppliancesTest {
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void switch_changes_mock_state_and_does_not_publish() {
         String name = MockAutonomy.FIXTURE_NAMES.getFirst();
         var map = given().when().get("/api/appliances");
