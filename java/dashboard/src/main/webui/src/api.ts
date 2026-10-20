@@ -12,6 +12,9 @@ export const SIGN_IN_REQUIRED = 499
 /** Sign-in start. After sign-in, /login sends the browser to /, which is the dashboard. */
 export const SIGN_IN_PATH = '/login'
 
+/** Quarkus OIDC logout. A full page load clears the session and ends the Keycloak session. */
+export const SIGN_OUT_PATH = '/logout'
+
 export function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers)
   headers.set('X-Requested-With', REQUESTED_WITH)

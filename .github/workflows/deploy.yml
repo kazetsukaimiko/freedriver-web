@@ -71,13 +71,17 @@ jobs:
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
             'bash -s' <<'REMOTE'
           set -euo pipefail
-          sudo mkdir -p /opt/freedriver-storage/grafana /opt/freedriver-storage/loki /opt/freedriver-storage/prometheus /opt/freedriver-storage/mosquitto
+          sudo mkdir -p /opt/freedriver-storage/grafana /opt/freedriver-storage/loki /opt/freedriver-storage/prometheus /opt/freedriver-storage/mosquitto /opt/freedriver-storage/sms
           sudo chown 472:472 /opt/freedriver-storage/grafana
           sudo chown 10001:10001 /opt/freedriver-storage/loki
           sudo chown 65534:65534 /opt/freedriver-storage/prometheus
           sudo chown 1883:1883 /opt/freedriver-storage/mosquitto
+          # sms image user. Agreement files under /deployments/data must survive restarts.
+          sudo chown 185:0 /opt/freedriver-storage/sms
+          sudo chmod 700 /opt/freedriver-storage/sms
           cd /opt/freedriver-web
           export BUILD_NUMBER="$(cat BUILD_NUMBER)"
+          # --build rebuilds every image, including keycloak (SPI jar and theme) and sms.
           docker compose --env-file /opt/freedriver-secrets/.env up -d --pull always --build
           docker compose --env-file /opt/freedriver-secrets/.env up -d --force-recreate --no-deps caddy
           REMOTE

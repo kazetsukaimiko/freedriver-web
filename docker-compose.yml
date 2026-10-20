@@ -66,6 +66,7 @@ services:
       KC_PROXY_HEADERS: xforwarded
       KC_HEALTH_ENABLED: "true"
       KC_CACHE: local
+      KC_SPI_EVENTS_LISTENER_JBOSS_LOGGING_SUCCESS_LEVEL: info
       # Shared secret the phone OTP SPI sends to http://sms:8080.
       SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
@@ -93,7 +94,10 @@ services:
   # network. HTTP contract and limits: docs/sms-otp.md.
   sms:
     build:
-      context: ./sms/stub
+      context: .
+      dockerfile: sms/src/main/docker/Dockerfile.compose
+      args:
+        BUILD_NUMBER: ${BUILD_NUMBER:-1.0.0-SNAPSHOT}
     pull_policy: build
     restart: unless-stopped
     # Twilio Verify credentials (#170), see docs/sms-otp.md.
@@ -104,22 +108,21 @@ services:
       SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
       # Number seeded into the sms phone list (#168, #169).
       FREEDRIVER_SEED_PHONE: ${FREEDRIVER_SEED_PHONE:-}
+      # Daily cap on texts that reach Twilio. Required. sms only (#175).
+      FREEDRIVER_SMS_DAILY_SEND_CAP: ${FREEDRIVER_SMS_DAILY_SEND_CAP:?FREEDRIVER_SMS_DAILY_SEND_CAP is required}
     expose:
       - "8080"
-    # /health/live answers 200 while the process serves HTTP. /health is
-    # readiness and answers 503 until an SMS sender is connected (#107).
+    # Agreement records. The deploy workflow creates this directory for uid 185.
+    volumes:
+      - /opt/freedriver-storage/sms:/deployments/data
+    # /health/live answers 200 while the process serves HTTP. The Java image
+    # has no Python, so this runs health-live.sh.
     healthcheck:
-      test:
-        [
-          "CMD",
-          "python3",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/live')",
-        ]
+      test: ["CMD", "bash", "/usr/local/bin/health-live.sh"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 5s
+      start_period: 90s
 
   grafana:
     image: grafana/grafana:13.1.3
@@ -176,6 +179,34 @@ services:
       - "9090"
     mem_limit: 256m
 
+  docker-logs-proxy:
+    # Forwards container list, log streams, and a redacted inspect (running
+    # state and TTY). Alloy mounts docker-logs-sock, not the daemon socket.
+    # A read-only socket mount does not stop API calls.
+    build:
+      context: ./observability/docker-logs-proxy
+    restart: unless-stopped
+    user: "0"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      LISTEN_SOCK: /run/docker-logs/docker.sock
+      UPSTREAM_SOCK: /var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - docker-logs-sock:/run/docker-logs
+    healthcheck:
+      test: ["CMD", "python3", "/usr/local/bin/docker_logs_proxy.py", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    mem_limit: 64m
+
   alloy:
     image: grafana/alloy:v1.18.1
     restart: unless-stopped
@@ -187,14 +218,17 @@ services:
       - --storage.path=/var/lib/alloy/data
     volumes:
       - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - docker-logs-sock:/run/docker-logs:ro
     expose:
       - "12345"
     mem_limit: 192m
     environment:
       GOMEMLIMIT: 150MiB
     depends_on:
-      - loki
+      loki:
+        condition: service_started
+      docker-logs-proxy:
+        condition: service_healthy
 
   mosquitto:
     image: eclipse-mosquitto:2.1.2-alpine
@@ -231,3 +265,6 @@ services:
       - caddy
       - mosquitto
     mem_limit: 64m
+
+volumes:
+  docker-logs-sock:

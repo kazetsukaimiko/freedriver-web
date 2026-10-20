@@ -7,10 +7,10 @@ Public site for [freedriver.io](https://freedriver.io). Caddy terminates TLS and
 ```
 /opt/freedriver-web/       this repo (rsync on deploy)
 /opt/freedriver-secrets/   .env and other secrets (not in git)
-/opt/freedriver-storage/   Docker bind mounts (Caddy certs, Postgres, Grafana, Loki, Prometheus, Mosquitto)
+/opt/freedriver-storage/   Docker bind mounts (Caddy certs, Postgres, Grafana, Loki, Prometheus, Mosquitto, sms)
 ```
 
-The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{grafana,loki,prometheus,mosquitto}` if they are missing.
+The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{grafana,loki,prometheus,mosquitto,sms}` if they are missing. The sms directory is owned by uid 185.
 
 ## Stack
 
@@ -21,7 +21,7 @@ The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{gra
   - `grafana.freedriver.io` — 404 on purpose; Grafana is loopback-only
   - `mqtt.freedriver.io` — 404 on purpose (ACME HTTP-01). MQTTS is host 8883, not Caddy.
 - Keycloak 26.3 + local Postgres 16. The image build adds the phone OTP provider at `/opt/keycloak/providers/freedriver-sms-otp.jar`.
-- `sms` — internal service at `http://sms:8080` on the compose network. The Quarkus service in `sms/` ([#107](https://github.com/kazetsukaimiko/freedriver-web/issues/107)) sends and checks sign-in codes through Twilio Verify; compose runs the `sms/stub` image until it switches to that build.
+- `sms` — internal service at `http://sms:8080` on the compose network. The Quarkus service in `sms/` ([#107](https://github.com/kazetsukaimiko/freedriver-web/issues/107)) sends and checks sign-in codes through Twilio Verify. Compose builds `sms/src/main/docker/Dockerfile.compose`. Agreement records live on `/opt/freedriver-storage/sms`.
 - Grafana + Loki + Prometheus + Alloy (see Observability)
 - Mosquitto 2.1.2 MQTTS at `mqtt.freedriver.io:8883` (host 8883 only; no 1883). Connect notes: [docs/mqtt-connect.md](docs/mqtt-connect.md).
 
@@ -36,7 +36,7 @@ ssh -L 3000:127.0.0.1:3000 -L 8081:127.0.0.1:8081 -i <key> <ops-user>@<DEPLOY_HO
 Then Grafana is http://127.0.0.1:3000 (user `admin`, password `GF_SECURITY_ADMIN_PASSWORD` in `/opt/freedriver-secrets/.env`). Keycloak admin is http://127.0.0.1:8081/admin. Public `https://auth.freedriver.io/admin` returns 404; user login on that host is unchanged. `https://grafana.freedriver.io` and `https://mqtt.freedriver.io` return 404.
 
 
-Alloy tails Docker container logs into Loki (14 days). Prometheus keeps ~15 days and scrapes itself, Alloy, `dashboard:8080/q/metrics`, and `agent-dispatcher:8080/q/metrics` (those targets stay down until the Quarkus apps export Micrometer metrics). Loki, Prometheus, and Alloy stay on the compose network. Grafana and Keycloak admin bind 127.0.0.1 only.
+Alloy tails Docker container logs into Loki (14 days). It does not mount the Docker socket. `docker-logs-proxy` is the only Compose service with `/var/run/docker.sock`. It forwards container list and log streams, and the inspect fields Alloy needs to tail (running state and TTY), with environment and mounts removed. Prometheus keeps ~15 days and scrapes itself, Alloy, `dashboard:8080/q/metrics`, and `agent-dispatcher:8080/q/metrics` (those targets stay down until the Quarkus apps export Micrometer metrics). Loki, Prometheus, Alloy, and the proxy stay on the compose network. The proxy publishes no port. Grafana and Keycloak admin bind 127.0.0.1 only.
 
 `grafana.freedriver.io` A record is Sysadmin, same as `auth.freedriver.io`.
 

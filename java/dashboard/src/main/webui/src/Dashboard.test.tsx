@@ -6,6 +6,7 @@ import { POLL_MS, SIGN_IN_NOTICE_MS, fetchApplianceMap, postApplianceCommand } f
 
 const OFF_COPY = "Remote control is off for now. Your homes will appear here once it's switched on."
 const SIGN_IN_COPY = "Couldn't confirm. Check it after you sign in."
+const TEST_BANNER = 'Test appliances. These switches control a practice list, separate from your home.'
 
 const CABIN = {
   instanceId: '550e8400-e29b-41d4-a716-446655440000',
@@ -120,6 +121,48 @@ describe('Dashboard', () => {
 
     expect(screen.getByRole('tab', { name: 'Cabin' })).toBeTruthy()
     expect(screen.getByRole('switch', { name: 'hallway' })).toBeTruthy()
+    expect(screen.queryByText(TEST_BANNER)).toBeNull()
+  })
+
+  it('shows the ice-blue practice banner and (test) names, with no dismiss control', async () => {
+    answer(200, {
+      instances: [
+        {
+          ...CABIN,
+          appliances: [
+            { applianceName: 'Fridge (test)', on: false },
+            { applianceName: 'Hallway (test)', on: true },
+          ],
+        },
+      ],
+    })
+    await renderDashboard()
+
+    const banner = screen.getByText(TEST_BANNER)
+    expect(banner.closest('div')).toHaveProperty('className', 'info-banner')
+    expect(banner.closest('.info-banner')?.querySelector('button')).toBeNull()
+    expect(screen.getByRole('switch', { name: 'Fridge (test)' })).toBeTruthy()
+    expect(screen.getByRole('switch', { name: 'Hallway (test)' })).toBeTruthy()
+    expect(banner.compareDocumentPosition(screen.getByRole('list')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('keeps the practice banner above an unreachable list', async () => {
+    render(<Dashboard search="?demo=unreachable" />)
+    await advance(0)
+
+    expect(screen.getByText(TEST_BANNER).closest('div')).toHaveProperty('className', 'info-banner')
+    expect(screen.getByText('Cabin is unreachable')).toBeTruthy()
+    expect(screen.getByRole('switch', { name: 'Hallway (test)' })).toHaveProperty('disabled', true)
+  })
+
+  it('still marks a practice switch pending until it confirms', async () => {
+    render(<Dashboard search="?demo=live" />)
+    await advance(0)
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Hallway (test)' }))
+    await advance(0)
+    expect(screen.getByRole('switch', { name: 'Hallway (test)' }).getAttribute('aria-checked')).toBe('mixed')
+    expect(screen.getByText(TEST_BANNER)).toBeTruthy()
   })
 
   it('shows Access denied with the dashboard role line on 403', async () => {

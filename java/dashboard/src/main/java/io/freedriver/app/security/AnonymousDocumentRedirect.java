@@ -76,6 +76,7 @@ public class AnonymousDocumentRedirect {
                 || "/q".equals(path) || path.startsWith("/q/")
                 || path.startsWith("/assets/")
                 || "/login".equals(path)
+                || "/logout".equals(path)
                 || "/favicon.png".equals(path)
                 || "/favicon.svg".equals(path)
                 || "/favicon.ico".equals(path)) {

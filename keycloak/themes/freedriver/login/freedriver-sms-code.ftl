@@ -8,7 +8,7 @@
     <#elseif section = "form">
         <p id="freedriver-sms-code-hint">${msg("freedriverSmsCodeHint")}</p>
         <form id="freedriver-sms-code-form" class="${properties.kcFormClass!}" action="${url.loginAction}" method="post" novalidate="novalidate">
-            <@field.input name="code" label=msg("freedriverSmsCodeLabel") autocomplete="one-time-code" autofocus=true />
+            <@field.input name="code" label=msg("freedriverSmsCodeLabel") value=(freedriverSmsCode!'') autocomplete="one-time-code" autofocus=true />
             <@buttons.loginButton />
         </form>
         <#if freedriverSmsResendAllowed!false>
@@ -21,5 +21,8 @@
         <div id="freedriver-sms-password" class="${properties.kcFormGroupClass!}">
             <a class="${properties.kcButtonLinkClass!}" href="${url.loginRestartFlowUrl}">${msg("freedriverSmsUsePassword")}</a>
         </div>
+        <#-- keycloak.v2 prints Try another way after this form when auth is present.
+             This page's only alternate path is the password link. -->
+        <#global auth="">
     </#if>
 </@layout.registrationLayout>

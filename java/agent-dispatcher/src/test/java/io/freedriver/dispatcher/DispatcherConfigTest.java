@@ -23,6 +23,19 @@ class DispatcherConfigTest {
         assertTrue(properties.contains("%test.freedriver.dispatcher.submit-timeout=300ms"));
         assertTrue(properties.contains("quarkus.http.auth.permission.authenticated.paths=/*"));
         assertTrue(properties.contains("quarkus.http.auth.permission.public.paths=/q/*"));
+        assertTrue(properties.contains(
+                "quarkus.http.auth.permission.metadata.paths=/api/dispatcher/oauth-protected-resource"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.metadata.policy=mcp-metadata"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.metadata.methods=GET"));
         assertFalse(properties.contains("paths=/mcp"));
+        assertFalse(properties.contains("paths=/mcp/*"));
+        assertFalse(properties.contains("paths=/api/dispatcher/*"));
+        assertFalse(properties.contains("paths=/api/device"));
+
+        String caddy = Files.readString(Path.of("../../Caddyfile"));
+        assertTrue(caddy.contains(
+                "@dispatcher path /mcp /mcp/* /api/dispatcher /api/dispatcher/* /api/device /api/device/*"));
+        assertFalse(caddy.contains("oauth-protected-resource"));
+        assertFalse(caddy.contains(".well-known"));
     }
 }

@@ -40,6 +40,7 @@ class AnonymousDocumentRedirectTest {
         assertFalse(AnonymousDocumentRedirect.isSpaDocument("/q/health"));
         assertFalse(AnonymousDocumentRedirect.isSpaDocument("/assets/freedriver/pages/freedriver-denied.png"));
         assertFalse(AnonymousDocumentRedirect.isSpaDocument("/login"));
+        assertFalse(AnonymousDocumentRedirect.isSpaDocument("/logout"));
         assertFalse(AnonymousDocumentRedirect.isSpaDocument("/favicon.png"));
         assertFalse(AnonymousDocumentRedirect.isSpaDocument("/index.js"));
         assertTrue(AnonymousDocumentRedirect.isSpaDocument("/"));

@@ -8,12 +8,11 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import lombok.NonNull;
 
 /**
- * Shared MQTT appliance JSON. Isolation is {@code instanceId} on the topic, not
- * in the body and not the MQTT protocol client-id. {@code instanceName} is UX
- * only: never a topic segment and never in an ACL.
- *
- * Topic methods interpolate {@code UUID.toString()} (hex + hyphens; cannot contain
- * {@code /}, {@code +}, or {@code #}). Version nibbles are not checked.
+ * Topic paths, QoS, retain, and the strict JSON mapper for appliance messages.
+ * {@code instanceId} is the topic segment for one autonomy instance.
+ * {@link #appliancesTopic(UUID)} and {@link #commandsTopic(UUID)} format that id
+ * with {@code UUID.toString()} (hex digits and hyphens) as one topic level.
+ * Publications use {@link #QOS} and {@link #RETAIN}.
  */
 public final class ApplianceSchemas {
 
