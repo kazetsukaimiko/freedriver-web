@@ -54,14 +54,22 @@ The Twilio Verify credentials reach `sms` only, from `/opt/freedriver-secrets/tw
 
 Source: `keycloak/sms-otp-spi`. Provider id: `freedriver-sms-otp`. The Keycloak image build copies the JAR to `/opt/keycloak/providers/freedriver-sms-otp.jar`, copies the `freedriver` login theme to `/opt/keycloak/themes/freedriver`, and runs `kc.sh build`. Requirement choices: ALTERNATIVE and DISABLED.
 
+The same JAR also contains `freedriver-phone-username-router` and `freedriver-sms-route-condition`.
+
+The router shows one field, labeled "Phone number or username", and a Continue button. The form posts to the Keycloak login action, which carries the authenticity token. On submit it sets auth note `freedriver.sms.route` to `phone` or `username` and calls `success()` without `setUser`, so it does not open a session. It does not call the SMS client and it does not set `freedriver.sms.phone`. A phone is the whole entry and only these shapes, plus the canonical `+1` and ten digits: `123-456-7890`, `1234567890`, `(123) 456-7890`, `123.456.7890`, `123 456 7890`, `1-123-456-7890`, `+1 123 456 7890`, and `+11234567890`. Those shapes match any US ten-digit number. The router stores `+1` and those ten digits in `freedriver.sms.number`. Anything else, including a longer string that merely contains those digits, stays a username and is not rewritten. The router does not look the username up. When `SMS_OTP_SHARED_SECRET` is empty or `placeholder-not-a-live-secret`, the note is `username` and no text is sent. A log line shows at most the last four digits of a phone, never the one-time code, the full number, or the shared secret.
+
+`freedriver-sms-route-condition` is a conditional authenticator. Its config property `route` is `phone` or `username`. It matches only that value of `freedriver.sms.route`.
+
+When `freedriver.sms.route` is `phone`, `freedriver-sms-otp` reads `freedriver.sms.number` and runs its existing send path, which still counts against the existing send cap, then shows the code page. The router does not send. The empty-secret `attempted()` still returns before any send. The send cap, the wrong-code cap, and `PhoneSignInPolicy.normalizePhone` are unchanged. `freedriver-sms-otp` still calls `success` only after the policy allows the user.
+
 On the signed browser flow, `auth-cookie` is the first top-level Alternative. The next top-level Alternative is one subflow. Inside it, `freedriver-phone-username-router` is Required, then a phone Conditional subflow and a username Conditional subflow. The phone subflow's condition is `freedriver-sms-route-condition` configured `phone`, then `freedriver-sms-otp` as Alternative. The username subflow's condition is configured `username`, then `auth-username-password-form` as Required. A username does not enter the phone subflow. `freedriver-sms-otp` is not Required, and it still calls success only after policy allows the user.
 
-Pages render through `context.form()` with `freedriver-sms-phone.ftl` and `freedriver-sms-code.ftl` from `keycloak/themes/freedriver/login`, which extends `keycloak.v2`, so the phone pages share the password page's look and Keycloak's security headers. Strings live in the theme's `messages_en.properties`. Both pages carry a "Sign in with password" link that restarts the login on the password form.
+Pages render through `context.form()` with `freedriver-sms-phone.ftl` and `freedriver-sms-code.ftl` from `keycloak/themes/freedriver/login`, which extends `keycloak.v2`, so the phone pages share the password page's look and Keycloak's security headers. Strings live in the theme's `messages_en.properties`. Both pages carry a "Sign in with password" link that restarts the login on the password form. That link is the only alternate path on those two pages. The password page keeps Keycloak's layout, including "Try another way".
 
 Per auth session, kept in auth session notes:
 
-- The code page reads "Enter the 6-digit code we texted to your phone." for every number.
-- A wrong code keeps the code form with "That code didn't match. Try again." The 5th wrong code clears the pending code and returns to the phone form with "Too many tries. Enter your phone number to get a new code." while texts remain.
+- The code page reads "If this number can sign in, we've texted you a code." for every number.
+- A wrong or expired code keeps the code form with "That code didn't work. Request a new one." A number the policy does not allow uses that same sentence, so the page does not say whether the number is on the allowlist. The 5th wrong code clears the pending code and returns to the phone form with "Too many tries. Enter your phone number to get a new code." while texts remain.
 - 4 texts per auth session: the first code and 3 resends. Entering the number again draws on the same budget. Once the 4 texts are used, the code page shows "Code limit reached. Try again in 15 minutes." with "Sign in with password" as its only link. The phone form, including after a 5th wrong code, shows the same message and skips the send.
 
 After sms verifies a code, the SPI signs in the Keycloak user named by `username` when both of these hold:

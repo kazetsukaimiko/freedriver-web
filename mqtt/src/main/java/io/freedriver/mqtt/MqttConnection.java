@@ -1,7 +1,7 @@
 package io.freedriver.mqtt;
 
 /**
- * Tiny MQTT session. Payloads are raw bytes; JSON codecs live in mqtt-contract.
+ * One MQTT session. {@link #subscribe} and {@link #publish} carry raw payload bytes.
  */
 public interface MqttConnection {
 

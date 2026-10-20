@@ -10,7 +10,25 @@ body {
   color: #f4f4f4;
 }
 main { text-align: center; padding: 2rem 1.25rem; max-width: 36rem; }
-.mark { width: min(28rem, 90vw); height: auto; display: block; margin: 0 auto 1.25rem; }
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  width: max-content;
+  margin: 0 auto 1.25rem;
+  color: #ffffff;
+  font-size: min(4rem, 11vw);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.brand.is-light { color: #0f2a47; }
+.brand-icon {
+  display: block;
+  flex: none;
+  width: auto;
+  height: 1.2em;
+}
 .page-art { width: min(16rem, 70vw); height: auto; display: block; margin: 0 auto 1rem; }
 h1 { font-weight: 600; letter-spacing: 0.06em; margin: 0 0 0.4rem; }
 p { margin: 0; color: #9a9a9a; }

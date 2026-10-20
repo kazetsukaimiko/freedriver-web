@@ -22,19 +22,27 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Dev/test event source that talks to {@link ApplianceControl} over the same CDI bus as
- * production. Disable with {@code freedriver.appliances.mock=false}.
+ * Event source that talks to {@link ApplianceControl} over the same CDI bus as the MQTT adapter.
+ * Disable with {@code freedriver.appliances.mock=false}. That one setting turns the practice list off.
+ * Startup refuses to run when {@code live-commands} is also true, so this path never opens a broker.
  * <p>
  * Holds a map of autonomy instance id to instance name and appliance on/off.
  * Startup seeds the Cabin fixture only. A command for an unknown instance id is ignored.
+ * Each fixture name ends with {@code (test)}, for example {@code Hallway (test)}.
  */
 @ApplicationScoped
 public class MockAutonomy {
 
     public static final UUID INSTANCE_ID = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
     public static final String INSTANCE_NAME = "Cabin";
+    public static final String TEST_SUFFIX = " (test)";
     public static final List<String> FIXTURE_NAMES = List.of(
-            "hallway", "kitchen", "living-room", "bedroom", "garage", "porch");
+            "Hallway" + TEST_SUFFIX,
+            "Kitchen" + TEST_SUFFIX,
+            "Living room" + TEST_SUFFIX,
+            "Bedroom" + TEST_SUFFIX,
+            "Garage" + TEST_SUFFIX,
+            "Porch" + TEST_SUFFIX);
 
     @Inject
     AppliancesConfig config;
