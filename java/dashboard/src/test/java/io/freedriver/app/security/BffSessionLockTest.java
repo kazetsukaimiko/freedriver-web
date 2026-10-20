@@ -25,7 +25,11 @@ class BffSessionLockTest {
         assertTrue(properties.contains("quarkus.http.auth.permission.changelog.policy=authenticated"));
         assertTrue(properties.contains("quarkus.http.auth.permission.login.paths=/login"));
         assertTrue(properties.contains("quarkus.http.auth.permission.login.policy=authenticated"));
-        assertTrue(properties.contains("quarkus.quinoa.ignored-path-prefixes=/api,/q,/login"));
+        assertTrue(properties.contains("quarkus.oidc.logout.path=/logout"));
+        assertTrue(properties.contains("quarkus.oidc.logout.post-logout-path=/"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.logout.paths=/logout"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.logout.policy=authenticated"));
+        assertTrue(properties.contains("quarkus.quinoa.ignored-path-prefixes=/api,/q,/login,/logout"));
         assertTrue(properties.contains("quarkus.oidc.enabled=false"));
         assertFalse(properties.matches("(?s).*\\nquarkus\\.oidc\\.enabled=true.*"));
         assertTrue(properties.contains("quarkus.oidc.auth-server-url=https://auth.freedriver.io/realms/freedriver"));
@@ -35,6 +39,26 @@ class BffSessionLockTest {
         assertTrue(properties.contains("\n%prod.quarkus.oidc.credentials.secret=${QUARKUS_OIDC_CREDENTIALS_SECRET}\n"));
         assertTrue(properties.contains("\n%prod.quarkus.oidc.authentication.force-redirect-https-scheme=true\n"));
         assertFalse(properties.contains("quarkus.oidc.credentials.secret=secret"));
+    }
+
+    @Test
+    void post_logout_redirect_is_one_exact_address() throws IOException {
+        String script = Files.readString(Path.of("../../scripts/provision-keycloak-freedriver.sh"));
+        assertTrue(script.contains("POST_LOGOUT_REDIRECT_URI='https://app.freedriver.io/'"));
+        assertFalse(script.contains("POST_LOGOUT_REDIRECT_URI='https://app.freedriver.io/*'"));
+        assertFalse(script.contains("post.logout.redirect.uris\"=*"));
+        assertFalse(script.contains("post.logout.redirect.uris\"=+"));
+        int uses = 0;
+        int from = 0;
+        while (true) {
+            int at = script.indexOf("POST_LOGOUT_REDIRECT_URI", from);
+            if (at < 0) {
+                break;
+            }
+            uses++;
+            from = at + "POST_LOGOUT_REDIRECT_URI".length();
+        }
+        assertTrue(uses >= 3, "definition plus create and update, was " + uses);
     }
 
     @Test
