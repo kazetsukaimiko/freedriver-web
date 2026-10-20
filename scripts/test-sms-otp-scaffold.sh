@@ -299,7 +299,7 @@ print("sign-in agreement and page text share one wording")
 PY
 
 python3 - <<'PY'
-import json, subprocess, tempfile, os
+import json, re, subprocess, tempfile, os
 from pathlib import Path
 
 def run(composite, mappings, expect):
@@ -352,6 +352,10 @@ if "add-roles" in invite_body:
     raise SystemExit("invite setup must not grant roles with add-roles")
 if "map-roles" in invite_body or "impersonate" in invite_body:
     raise SystemExit("invite permissions must not include map-roles or impersonate")
+if 'update "${path}/${perm_id}"' not in script:
+    raise SystemExit("existing invite permission must be updated")
+if re.search(r'"(view|view-members|manage-members)"', script):
+    raise SystemExit("invite scopes must be manage-membership and manage-group-membership")
 print("phone role allow-list and invite permission scope")
 PY
 

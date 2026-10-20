@@ -18,8 +18,8 @@
 #
 # The invite service account (#172) is the confidential client freedriver-invite.
 # The script writes its secret once to the dashboard env file. Fine-grained
-# admin permissions let that account manage membership of phone-sign-in.
-# Realm-management roles remain on the realm admin.
+# admin permissions let that account add and remove phone-sign-in members.
+# The realm admin creates users. Realm-management roles remain on the realm admin.
 #
 # Run as root/sudo on the VPS. Idempotent. New password users get the
 # UPDATE_PASSWORD required action and choose their own password.
@@ -417,7 +417,45 @@ sys.exit(0 if sys.argv[2] in names else 1)
 PY
 }
 
-# Invite service account (#172). Secret file is dashboard-only. No realm-management roles.
+# Id of a scope permission with this name, or empty when it is missing.
+scope_permission_id() {
+  local path="$1" wanted="$2"
+  if ! kcadm get "$path" -r "$REALM" -q max=1000 > "$work/scope-perms.json" 2>/dev/null; then
+    return 0
+  fi
+  python3 - "$work/scope-perms.json" "$wanted" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+if isinstance(data, dict):
+    data = data.get("permissions") or data.get("results") or []
+for item in data:
+    if isinstance(item, dict) and item.get("name") == sys.argv[2] and item.get("id"):
+        print(item["id"])
+        break
+PY
+}
+
+# Create the scope permission, or replace its scopes, resources, and policies.
+apply_scope_permission() {
+  local path="$1" name="$2" body="$3" perm_id
+  perm_id="$(scope_permission_id "$path" "$name" | tr -d '\r')"
+  if [[ -z "$perm_id" ]]; then
+    kcadm_stdin create "$path" -r "$REALM" -f - < "$body" >/dev/null
+    echo "Created permission ${name}."
+    return 0
+  fi
+  python3 - "$body" "$perm_id" > "$work/perm-update.json" <<'PY'
+import json, sys
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+doc["id"] = sys.argv[2]
+json.dump(doc, sys.stdout)
+PY
+  kcadm_stdin update "${path}/${perm_id}" -r "$REALM" -f - < "$work/perm-update.json" >/dev/null
+  echo "Updated permission ${name}."
+}
+
+# Invite service account (#172). The secret file is for the dashboard container.
+# Realm-management roles remain on the realm admin.
 ensure_invite_service_account() {
   local client_uuid sa_user policy_path perm_names admin_client secret tmp
   require_phone_group
@@ -435,7 +473,7 @@ ensure_invite_service_account() {
       -s directAccessGrantsEnabled=false \
       -s serviceAccountsEnabled=true \
       -s protocol=openid-connect \
-      -s 'description=Service account for invite user create and phone-sign-in membership. Secret stays on the dashboard container.' >/dev/null
+      -s 'description=Service account for phone-sign-in membership. Secret stays on the dashboard container.' >/dev/null
     client_uuid="$(kcadm get clients -r "$REALM" -q clientId=freedriver-invite --fields id --format csv --noquotes | csv_id)"
     echo "Created confidential client freedriver-invite."
   else
@@ -447,7 +485,8 @@ ensure_invite_service_account() {
     -s implicitFlowEnabled=false \
     -s directAccessGrantsEnabled=false \
     -s serviceAccountsEnabled=true \
-    -s fullScopeAllowed=false >/dev/null
+    -s fullScopeAllowed=false \
+    -s 'description=Service account for phone-sign-in membership. Secret stays on the dashboard container.' >/dev/null
   sa_user="$(kcadm get "clients/${client_uuid}/service-account-user" -r "$REALM" --fields id --format csv --noquotes | csv_id)"
   kcadm get "users/${sa_user}/role-mappings" -r "$REALM" > "$work/invite-roles.json"
   python3 - "$work/invite-roles.json" <<'PY' > "$work/invite-drop-roles"
@@ -497,8 +536,7 @@ PY
     kcadm_stdin create "${policy_path}/policy/client" -r "$REALM" -f - < "$work/policy.json" >/dev/null
     echo "Created invite service-account policy."
   fi
-  if ! authz_has_name "${policy_path}/permission/scope" invite-phone-sign-in-membership; then
-    python3 - "$group_id" > "$work/perm-group.json" <<'PY'
+  python3 - "$group_id" > "$work/perm-group.json" <<'PY'
 import json, sys
 json.dump({
     "name": "invite-phone-sign-in-membership",
@@ -507,14 +545,12 @@ json.dump({
     "decisionStrategy": "UNANIMOUS",
     "resourceType": "Groups",
     "resources": [sys.argv[1]],
-    "scopes": ["view", "view-members", "manage-members", "manage-membership"],
+    "scopes": ["manage-membership"],
     "policies": ["freedriver-invite-sa"],
 }, sys.stdout)
 PY
-    kcadm_stdin create "${policy_path}/permission/scope" -r "$REALM" -f - < "$work/perm-group.json" >/dev/null
-  fi
-  if ! authz_has_name "${policy_path}/permission/scope" invite-user-group-membership; then
-    python3 > "$work/perm-users.json" <<'PY'
+  apply_scope_permission "${policy_path}/permission/scope" invite-phone-sign-in-membership "$work/perm-group.json"
+  python3 > "$work/perm-users.json" <<'PY'
 import json, sys
 json.dump({
     "name": "invite-user-group-membership",
@@ -526,9 +562,8 @@ json.dump({
     "policies": ["freedriver-invite-sa"],
 }, sys.stdout)
 PY
-    kcadm_stdin create "${policy_path}/permission/scope" -r "$REALM" -f - < "$work/perm-users.json" >/dev/null
-  fi
-  echo "Invite service account can manage phone-sign-in membership only."
+  apply_scope_permission "${policy_path}/permission/scope" invite-user-group-membership "$work/perm-users.json"
+  echo "Invite service account manages phone-sign-in membership."
 }
 
 ensure_invite_service_account

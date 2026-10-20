@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Throwaway Keycloak 26.3 realm in container freedriver-invite-kc-test.
-# Expects 403 for role grants, outside-user edits, impersonation, and client
-# reads, and 204/201 for phone-sign-in membership. Prints status codes.
+# Expects 403 for role grants, user create, member password and profile edits,
+# impersonation, and client reads, and 204 when adding phone-sign-in membership.
+# Prints status codes.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -68,6 +69,130 @@ admin_stdin() {
   shift
   docker exec -i "$CONTAINER" /opt/keycloak/bin/kcadm.sh "$verb" \
     --config /tmp/kcadm-admin.config "$@"
+}
+
+csv_id() {
+  sed '/^id$/d' | tr -d '\r' | awk 'NF { print; exit }'
+}
+
+# Group permission scopes after a repair run are manage-membership only.
+assert_invite_scopes() {
+  local admin_client perm_id perm_name
+  admin_client="$(admin get clients -r freedriver -q clientId=admin-permissions --fields id --format csv --noquotes | csv_id)"
+  admin get "clients/${admin_client}/authz/resource-server/permission/scope" -r freedriver > "$work/perms.json"
+  python3 - "$work/perms.json" "$work/perm-ids" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+if isinstance(data, dict):
+    data = data.get("permissions") or data.get("results") or []
+wanted = (
+    "invite-phone-sign-in-membership",
+    "invite-user-group-membership",
+)
+found = {}
+for item in data:
+    if isinstance(item, dict) and item.get("name") in wanted and item.get("id"):
+        found[item["name"]] = item["id"]
+missing = [name for name in wanted if name not in found]
+if missing:
+    sys.exit("missing permissions: " + ", ".join(missing))
+lines = [found[name] + "\t" + name for name in wanted]
+open(sys.argv[2], "w", encoding="utf-8").write("\n".join(lines) + "\n")
+PY
+  while IFS=$'\t' read -r perm_id perm_name; do
+    admin get "clients/${admin_client}/authz/resource-server/permission/scope/${perm_id}?fields=*" -r freedriver > "$work/perm-one.json"
+    python3 - "$work/perm-one.json" "$perm_name" <<'PY' || exit 1
+import json, sys
+item = json.load(open(sys.argv[1], encoding="utf-8"))
+scopes = []
+for entry in list(item.get("scopes") or []) + list(item.get("scopesData") or []):
+    if isinstance(entry, str):
+        scopes.append(entry)
+    elif isinstance(entry, dict) and entry.get("name"):
+        scopes.append(entry["name"])
+got = sorted(set(scopes))
+want = {
+    "invite-phone-sign-in-membership": ["manage-membership"],
+    "invite-user-group-membership": ["manage-group-membership"],
+}[sys.argv[2]]
+if got != sorted(want):
+    sys.exit(f"{sys.argv[2]} scopes {got}, want {sorted(want)}")
+print(sys.argv[2], "scopes", got)
+PY
+  done < "$work/perm-ids"
+}
+
+# Add manage-members to the group permission so the next provision replaces that scope set.
+widen_group_permission() {
+  local admin_client perm_id
+  admin_client="$(admin get clients -r freedriver -q clientId=admin-permissions --fields id --format csv --noquotes | csv_id)"
+  admin get "clients/${admin_client}/authz/resource-server/permission/scope" -r freedriver > "$work/perms.json"
+  perm_id="$(python3 - "$work/perms.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+if isinstance(data, dict):
+    data = data.get("permissions") or data.get("results") or []
+for item in data:
+    if isinstance(item, dict) and item.get("name") == "invite-phone-sign-in-membership" and item.get("id"):
+        print(item["id"])
+        break
+PY
+)"
+  perm_id="$(printf '%s' "$perm_id" | tr -d '\r')"
+  if [[ -z "$perm_id" ]]; then
+    echo "invite group permission is missing before the widen step" >&2
+    exit 1
+  fi
+  admin get "clients/${admin_client}/authz/resource-server/permission/scope/${perm_id}?fields=*" -r freedriver > "$work/perm-one.json"
+  python3 - "$work/perm-one.json" > "$work/wide.json" <<'PY'
+import json, sys
+item = json.load(open(sys.argv[1], encoding="utf-8"))
+names = []
+for entry in list(item.get("scopes") or []) + list(item.get("scopesData") or []):
+    if isinstance(entry, str):
+        names.append(entry)
+    elif isinstance(entry, dict) and entry.get("name"):
+        names.append(entry["name"])
+for extra in ("view", "view-members", "manage-members"):
+    if extra not in names:
+        names.append(extra)
+resources = []
+for entry in list(item.get("resources") or []) + list(item.get("resourcesData") or []):
+    if isinstance(entry, str):
+        resources.append(entry)
+    elif isinstance(entry, dict):
+        resources.append(entry.get("_id") or entry.get("id") or entry.get("name"))
+resources = [resource for resource in resources if resource]
+policies = item.get("policies") or ["freedriver-invite-sa"]
+if policies and isinstance(policies[0], dict):
+    policies = [entry.get("name") or entry.get("id") for entry in policies if entry.get("name") or entry.get("id")]
+json.dump({
+    "id": item.get("id"),
+    "name": item["name"],
+    "type": "scope",
+    "logic": item.get("logic") or "POSITIVE",
+    "decisionStrategy": item.get("decisionStrategy") or "UNANIMOUS",
+    "resourceType": item.get("resourceType") or "Groups",
+    "resources": resources,
+    "scopes": names,
+    "policies": policies,
+}, sys.stdout)
+PY
+  admin_stdin update "clients/${admin_client}/authz/resource-server/permission/scope/${perm_id}" -r freedriver -f - < "$work/wide.json" >/dev/null
+  admin get "clients/${admin_client}/authz/resource-server/permission/scope/${perm_id}?fields=*" -r freedriver > "$work/perm-one.json"
+  python3 - "$work/perm-one.json" <<'PY'
+import json, sys
+item = json.load(open(sys.argv[1], encoding="utf-8"))
+names = []
+for entry in list(item.get("scopes") or []) + list(item.get("scopesData") or []):
+    if isinstance(entry, str):
+        names.append(entry)
+    elif isinstance(entry, dict) and entry.get("name"):
+        names.append(entry["name"])
+if "manage-members" not in names:
+    sys.exit("widen step left manage-members off the group permission: " + " ".join(sorted(set(names))))
+print("widened invite group permission", sorted(set(names)))
+PY
 }
 
 openssl rand -hex 24 > "$work/techops.pass"
@@ -156,11 +281,19 @@ PY
 chmod 600 "$work/token"
 rm -f "$work/token.json"
 
-csv_id() {
-  sed '/^id$/d' | tr -d '\r' | awk 'NF { print; exit }'
-}
+widen_group_permission
+PROVISION_ALLOW_NON_ROOT=1 \
+  KEYCLOAK_CONTAINER="$CONTAINER" \
+  TECHOPS_PASS_FILE="$work/techops.pass" \
+  SECRET_FILE="$work/secrets/api.secret" \
+  INVITE_ENV_FILE="$work/secrets/invite.env" \
+  SECRETS_ENV="$work/secrets.env" \
+  bash scripts/provision-keycloak-freedriver.sh
+assert_invite_scopes
+
 admin create users -r freedriver -s username=outside-invite -s enabled=true >/dev/null
 outside_id="$(admin get users -r freedriver -q username=outside-invite -q exact=true --fields id --format csv --noquotes | csv_id)"
+kaze_id="$(admin get users -r freedriver -q username=kaze -q exact=true --fields id --format csv --noquotes | csv_id)"
 other_group="$(admin get groups -r freedriver -q search=other-group -q exact=true --fields id --format csv --noquotes | csv_id)"
 phone_group="$(admin get groups -r freedriver -q search=phone-sign-in -q exact=true --fields id --format csv --noquotes | csv_id)"
 portal_role="$(admin get roles/portal-admin -r freedriver --fields id --format csv --noquotes | csv_id)"
@@ -312,6 +445,15 @@ python3 > "$work/create.json" <<'PY'
 import json, sys
 json.dump({"username": "invitee-one", "enabled": True, "groups": ["/phone-sign-in"]}, sys.stdout)
 PY
+python3 > "$work/create-cred.json" <<'PY'
+import json, sys
+json.dump({
+    "username": "invitee-cred",
+    "enabled": True,
+    "groups": ["/phone-sign-in"],
+    "credentials": [{"type": "password", "value": "not-a-real-password", "temporary": True}],
+}, sys.stdout)
+PY
 python3 > "$work/create-other.json" <<'PY'
 import json, sys
 json.dump({"username": "invitee-other", "enabled": True, "groups": ["/other-group"]}, sys.stdout)
@@ -341,6 +483,33 @@ expect 403 "$(http POST "${BASE}/admin/realms/freedriver/users" "$work/create-no
   "create a user with no group"
 expect 403 "$(http POST "${BASE}/admin/realms/freedriver/users" "$work/create-other.json")" \
   "create a user in a group other than phone-sign-in"
+expect 403 "$(http POST "${BASE}/admin/realms/freedriver/users" "$work/create.json")" \
+  "create a user in phone-sign-in"
+expect 403 "$(http POST "${BASE}/admin/realms/freedriver/users" "$work/create-cred.json")" \
+  "create a user in phone-sign-in with credentials"
+
+# kaze is a phone-sign-in member the realm admin created.
+admin get "users/${kaze_id}" -r freedriver > "$work/kaze-user.json"
+python3 - "$work/kaze-user.json" > "$work/kaze-attr.json" <<'PY'
+import json, sys
+user = json.load(open(sys.argv[1], encoding="utf-8"))
+user.setdefault("attributes", {})["note"] = ["nope"]
+json.dump(user, sys.stdout)
+PY
+python3 - "$work/kaze-user.json" > "$work/kaze-enabled.json" <<'PY'
+import json, sys
+user = json.load(open(sys.argv[1], encoding="utf-8"))
+user["enabled"] = False
+json.dump(user, sys.stdout)
+PY
+expect 403 "$(http PUT "${BASE}/admin/realms/freedriver/users/${kaze_id}/reset-password" "$work/reset.json")" \
+  "reset password of phone-sign-in member kaze"
+expect 403 "$(http PUT "${BASE}/admin/realms/freedriver/users/${kaze_id}" "$work/kaze-attr.json")" \
+  "change attributes of phone-sign-in member kaze"
+expect 403 "$(http PUT "${BASE}/admin/realms/freedriver/users/${kaze_id}" "$work/kaze-enabled.json")" \
+  "disable phone-sign-in member kaze"
+expect 403 "$(http DELETE "${BASE}/admin/realms/freedriver/users/${kaze_id}")" \
+  "delete phone-sign-in member kaze"
 
 failed=0
 join_code="$(http PUT "${BASE}/admin/realms/freedriver/users/${outside_id}/groups/${phone_group}")"
@@ -358,33 +527,32 @@ PY
 else
   echo "add a user to phone-sign-in: 204"
 fi
-
-create_code="$(http POST "${BASE}/admin/realms/freedriver/users" "$work/create.json")"
-if [[ "$create_code" != "201" ]]; then
-  echo "create user in phone-sign-in: expected 201, got ${create_code}" >&2
-  python3 - "$work/http.out" <<'PY' >&2 || true
-import sys
-raw = open(sys.argv[1], encoding="utf-8", errors="replace").read(500)
-print("body omitted" if "access_token" in raw else raw)
-PY
-  failed=1
-else
-  echo "create user in phone-sign-in: 201"
-fi
 if [[ "$failed" -ne 0 ]]; then
   dump_invite_perms
   exit 1
 fi
-invitee_id="$(admin get users -r freedriver -q username=invitee-one -q exact=true --fields id --format csv --noquotes | csv_id)"
-admin get "users/${invitee_id}/groups" -r freedriver > "$work/invitee-groups.json"
-python3 - "$work/invitee-groups.json" "$phone_group" <<'PY'
+
+admin get "users/${outside_id}" -r freedriver > "$work/joined.json"
+python3 - "$work/joined.json" > "$work/joined-attr.json" <<'PY'
 import json, sys
-groups = json.load(open(sys.argv[1], encoding="utf-8"))
-ids = {g.get("id") for g in groups}
-if sys.argv[2] not in ids or len(ids) != 1:
-    sys.exit("created user is not only in phone-sign-in")
-print("created user is only in phone-sign-in")
+user = json.load(open(sys.argv[1], encoding="utf-8"))
+user.setdefault("attributes", {})["note"] = ["nope"]
+json.dump(user, sys.stdout)
 PY
+python3 - "$work/joined.json" > "$work/joined-enabled.json" <<'PY'
+import json, sys
+user = json.load(open(sys.argv[1], encoding="utf-8"))
+user["enabled"] = False
+json.dump(user, sys.stdout)
+PY
+expect 403 "$(http PUT "${BASE}/admin/realms/freedriver/users/${outside_id}/reset-password" "$work/reset.json")" \
+  "reset password of a user just added to phone-sign-in"
+expect 403 "$(http PUT "${BASE}/admin/realms/freedriver/users/${outside_id}" "$work/joined-attr.json")" \
+  "change attributes of a user just added to phone-sign-in"
+expect 403 "$(http PUT "${BASE}/admin/realms/freedriver/users/${outside_id}" "$work/joined-enabled.json")" \
+  "disable a user just added to phone-sign-in"
+expect 403 "$(http DELETE "${BASE}/admin/realms/freedriver/users/${outside_id}")" \
+  "delete a user just added to phone-sign-in"
 
 # A failed role check must not replace the phone number.
 admin add-roles -r freedriver --uusername kaze --rolename portal-admin >/dev/null
