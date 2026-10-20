@@ -7,8 +7,8 @@ Color: frost white, ice-blue rim, white-hot core, semi-transparent crystal.
 Backgrounds: production files are transparent PNGs. previews/ are on charcoal.
 
 logos/
+  freedriver-icon.svg       icon v2 vector master
   freedriver-icon.png       snowflake mark only (also app icon / favicon source)
-  freedriver-lockup.png     snowflake + FREEDRIVER wordmark
   favicon.png               256px snowflake
   favicon-32.png            32px
 
@@ -23,8 +23,7 @@ Suggested site swap (replace Lonewatt, do not keep both)
 -------------------------------------------------------
 site/index.html
   /assets/lonewatt/logos/lonewatt-lockup.png
-    -> /assets/freedriver/logos/freedriver-lockup.png
-  alt: Freedriver
+    -> brand row: freedriver-icon.svg beside the word Freedriver
 
 site/404.html
   /assets/lonewatt/sprites/solo-404.png
@@ -41,9 +40,9 @@ site/favicon.png  and  app favicon
 
 app (Quinoa webui)
   lonewatt-icon / lonewatt-lockup / lonewatt-w
-    -> freedriver-icon / freedriver-lockup / freedriver-icon
+    -> freedriver-icon.svg beside the word Freedriver
   solo-run loader -> freedriver-loader.png (CSS rotate or pulse)
   solo-404 / solo-500 -> freedriver-404 / freedriver-500
   Remove /assets/lonewatt/ from the repo once swapped.
 
-These are first-pass generated marks, not final vectors.
+Raster marks are first-pass. logos/freedriver-icon.svg is the icon v2 vector master.
