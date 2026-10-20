@@ -25,6 +25,13 @@ public interface MqttSettings {
     @WithDefault("api")
     String username();
 
+    /**
+     * CA certificate the MQTT trust store reads. Not the JVM default store.
+     */
+    @WithName("trust-certificate")
+    @WithDefault("/opt/freedriver-secrets/mqtt-internal/ca.crt")
+    String trustCertificate();
+
     Optional<String> password();
 
     @WithName("instance-ids")

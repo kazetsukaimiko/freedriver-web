@@ -29,8 +29,11 @@ class DefaultProfileSafetyTest {
         assertTrue(properties.contains("freedriver.mqtt.host=mosquitto"));
         assertTrue(properties.contains("freedriver.mqtt.port=8883"));
         assertTrue(properties.contains("freedriver.mqtt.tls=true"));
+        assertTrue(properties.contains(
+                "freedriver.mqtt.trust-certificate=/opt/freedriver-secrets/mqtt-internal/ca.crt"));
         assertFalse(properties.contains("freedriver.mqtt.port=1883"));
         assertFalse(properties.contains("freedriver.mqtt.host=mqtt.freedriver.io"));
+        assertFalse(properties.contains("freedriver.appliances.live-commands=true"));
     }
 
     @Test

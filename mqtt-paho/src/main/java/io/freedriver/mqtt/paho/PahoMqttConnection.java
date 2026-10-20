@@ -11,7 +11,7 @@ import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 
-import javax.net.ssl.SSLContext;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,6 +20,7 @@ import java.util.logging.Logger;
 
 /**
  * Production MQTTS client. TCP host is docker-network {@code mosquitto}, never mqtt.freedriver.io.
+ * TLS trusts only the configured CA certificate, not the JVM default trust store.
  */
 public final class PahoMqttConnection implements MqttConnection {
 
@@ -27,18 +28,21 @@ public final class PahoMqttConnection implements MqttConnection {
 
     private final MqttEndpoint endpoint;
     private final String password;
+    private final Path trustCertificate;
     private final Map<String, MessageHandler> handlers = new ConcurrentHashMap<>();
     private MqttClient client;
 
-    public PahoMqttConnection(MqttEndpoint endpoint, String password) {
+    public PahoMqttConnection(MqttEndpoint endpoint, String password, Path trustCertificate) {
         this.endpoint = endpoint;
         this.password = password == null ? "" : password;
+        this.trustCertificate = trustCertificate;
     }
 
     @Override
     public void connect() {
         String uri = (endpoint.tls() ? "ssl://" : "tcp://") + endpoint.host() + ":" + endpoint.port();
         try {
+            MqttConnectOptions options = clientOptions();
             client = new MqttClient(uri, "freedriver-api-" + UUID.randomUUID(), new MemoryPersistence());
             client.setCallback(new MqttCallback() {
                 @Override
@@ -59,22 +63,30 @@ public final class PahoMqttConnection implements MqttConnection {
                 public void deliveryComplete(IMqttDeliveryToken token) {
                 }
             });
-            MqttConnectOptions options = new MqttConnectOptions();
-            options.setCleanSession(true);
-            options.setAutomaticReconnect(true);
-            options.setUserName(endpoint.username());
-            if (!password.isEmpty()) {
-                options.setPassword(password.toCharArray());
-            }
-            if (endpoint.tls()) {
-                options.setSocketFactory(SSLContext.getDefault().getSocketFactory());
-                options.setHttpsHostnameVerificationEnabled(true);
-            }
             client.connect(options);
         } catch (Exception e) {
             close();
             throw new IllegalStateException("Live MQTT connect failed", e);
         }
+    }
+
+    /**
+     * Reads the trust certificate. Hostname verification stays on.
+     * A missing file fails here, not when the client is constructed.
+     */
+    MqttConnectOptions clientOptions() {
+        MqttConnectOptions options = new MqttConnectOptions();
+        options.setCleanSession(true);
+        options.setAutomaticReconnect(true);
+        options.setUserName(endpoint.username());
+        if (endpoint.tls()) {
+            options.setSocketFactory(MqttTrust.socketFactory(trustCertificate));
+            options.setHttpsHostnameVerificationEnabled(true);
+        }
+        if (!password.isEmpty()) {
+            options.setPassword(password.toCharArray());
+        }
+        return options;
     }
 
     @Override
