@@ -1,1 +1,3 @@
 io.freedriver.keycloak.sms.SmsOtpAuthenticatorFactory
+io.freedriver.keycloak.sms.PhoneUsernameRouterFactory
+io.freedriver.keycloak.sms.SmsRouteConditionFactory

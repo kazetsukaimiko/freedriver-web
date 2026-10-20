@@ -1,7 +1,7 @@
 package io.freedriver.mqtt;
 
 /**
- * Connection target. Password is not a field here — it is supplied at connect time.
+ * Live broker target: host, port, TLS, and username.
  */
 public record MqttEndpoint(String host, int port, boolean tls, String username) {
 

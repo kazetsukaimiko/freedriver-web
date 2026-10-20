@@ -1,4 +1,5 @@
-import { useEffect, useState, type MouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
+import { SIGN_OUT_PATH } from './api'
 import { Brand } from './Brand'
 import { BuildStamp } from './BuildStamp'
 import { Changelog } from './Changelog'
@@ -28,6 +29,19 @@ function shouldPlaySplash() {
   return sessionStorage.getItem(SPLASH_KEY) !== '1'
 }
 
+function placeSplashDock(brand: Element) {
+  const rect = brand.getBoundingClientRect()
+  const root = document.documentElement
+  root.style.setProperty('--brand-left', `${rect.left}px`)
+  root.style.setProperty('--brand-top', `${rect.top}px`)
+}
+
+function clearSplashDock() {
+  const root = document.documentElement
+  root.style.removeProperty('--brand-left')
+  root.style.removeProperty('--brand-top')
+}
+
 function markSplashSeen() {
   sessionStorage.setItem(SPLASH_KEY, '1')
   const params = new URLSearchParams(window.location.search)
@@ -44,6 +58,8 @@ function App() {
   const [splash, setSplash] = useState<Splash>(() => (shouldPlaySplash() ? 'playing' : 'done'))
   const [path, setPath] = useState(() => window.location.pathname)
   const [search, setSearch] = useState(() => window.location.search)
+  const [signingOut, setSigningOut] = useState(false)
+  const navBrand = useRef<HTMLAnchorElement>(null)
 
   useEffect(() => {
     if (splash === 'playing') {
@@ -61,6 +77,30 @@ function App() {
     }
   }, [splash])
 
+  // Mobile nav centers the brand in its row, so the dock target is that box.
+  useLayoutEffect(() => {
+    if (splash === 'done') {
+      clearSplashDock()
+      return
+    }
+    const brand = navBrand.current?.querySelector('.brand')
+    if (!brand) {
+      return
+    }
+    const place = () => placeSplashDock(brand)
+    place()
+    const nav = navBrand.current?.closest('.nav')
+    const observer = new ResizeObserver(place)
+    if (nav) {
+      observer.observe(nav)
+    }
+    window.addEventListener('resize', place)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', place)
+    }
+  }, [splash])
+
   useEffect(() => {
     const onPop = () => {
       setPath(window.location.pathname)
@@ -69,6 +109,16 @@ function App() {
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
+
+  useEffect(() => {
+    if (!signingOut) {
+      return
+    }
+    const id = window.setTimeout(() => {
+      window.location.assign(SIGN_OUT_PATH)
+    }, 0)
+    return () => window.clearTimeout(id)
+  }, [signingOut])
 
   const page: Page = pages.get(path) ?? 'not-found'
   const hrefFor = (to: string) => to + search
@@ -84,6 +134,11 @@ function App() {
     setSearch(window.location.search)
   }
 
+  function signOut(event: MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault()
+    setSigningOut(true)
+  }
+
   return (
     <div className={`app${splash !== 'done' ? ' is-splashing' : ''}`}>
       {splash !== 'done' && (
@@ -93,8 +148,8 @@ function App() {
         </div>
       )}
 
-      <aside className="nav">
-        <a className="nav-brand" href={hrefFor('/')} onClick={(event) => go(event, '/')}>
+      <header className="nav">
+        <a ref={navBrand} className="nav-brand" href={hrefFor('/')} onClick={(event) => go(event, '/')}>
           <Brand />
         </a>
         <nav aria-label="Primary">
@@ -106,7 +161,20 @@ function App() {
             Dashboard
           </a>
         </nav>
-      </aside>
+        <a
+          className="sign-out"
+          href={SIGN_OUT_PATH}
+          aria-label="Sign out"
+          aria-busy={signingOut}
+          onClick={signOut}
+        >
+          {signingOut ? (
+            <img className="sign-out-loader" src="/assets/freedriver/pages/freedriver-loader.svg" alt="" />
+          ) : (
+            'Sign out'
+          )}
+        </a>
+      </header>
 
       <div className="workspace">
         {page === 'dashboard' && <Dashboard search={search} />}

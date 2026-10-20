@@ -8,7 +8,6 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
-import org.eclipse.microprofile.jwt.JsonWebToken;
 
 import java.security.Principal;
 
@@ -40,7 +39,7 @@ public class RateLimitedFilter implements ContainerRequestFilter {
         if (identity == null || identity.isAnonymous()) {
             return null;
         }
-        String sub = oidcSubject(identity);
+        String sub = OidcSubjects.subject(identity);
         if (sub != null) {
             return sub;
         }
@@ -53,20 +52,5 @@ public class RateLimitedFilter implements ContainerRequestFilter {
             return null;
         }
         return name;
-    }
-
-    private static String oidcSubject(SecurityIdentity identity) {
-        Object attribute = identity.getAttribute("sub");
-        if (attribute instanceof String value && !value.isBlank()) {
-            return value;
-        }
-        Principal principal = identity.getPrincipal();
-        if (principal instanceof JsonWebToken jwt) {
-            String subject = jwt.getSubject();
-            if (subject != null && !subject.isBlank()) {
-                return subject;
-            }
-        }
-        return null;
     }
 }

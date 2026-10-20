@@ -27,6 +27,8 @@ KCADM=/opt/keycloak/bin/kcadm.sh
 KCADM_CONFIG=/tmp/kcadm-freedriver-techops.config
 GROUP=lonewatt-techops
 REALM=freedriver
+# One exact post-logout redirect for freedriver-api. Not a wildcard.
+POST_LOGOUT_REDIRECT_URI='https://app.freedriver.io/'
 PHONE_USER=kaze
 PHONE_GROUP=phone-sign-in
 PHONE_ATTRIBUTE=phone
@@ -114,6 +116,7 @@ else
     -s protocol=openid-connect \
     -s 'description=Quarkus BFF only. Client secret must never go in the React SPA.' \
     -s 'redirectUris=["https://app.freedriver.io/*","http://localhost:8080/*"]' \
+    -s "attributes.\"post.logout.redirect.uris\"=${POST_LOGOUT_REDIRECT_URI}" \
     -s 'webOrigins=["https://app.freedriver.io","http://localhost:8080"]' >/dev/null
   CLIENT_UUID="$(kcadm get clients -r "$REALM" -q clientId=freedriver-api --fields id --format csv --noquotes | csv_id)"
   CREATED_CLIENT=1
@@ -127,6 +130,7 @@ kcadm update "clients/${CLIENT_UUID}" -r "$REALM" \
   -s serviceAccountsEnabled=true \
   -s 'description=Quarkus BFF only. Client secret must never go in the React SPA.' \
   -s 'redirectUris=["https://app.freedriver.io/*","http://localhost:8080/*"]' \
+  -s "attributes.\"post.logout.redirect.uris\"=${POST_LOGOUT_REDIRECT_URI}" \
   -s 'webOrigins=["https://app.freedriver.io","http://localhost:8080"]' >/dev/null
 
 if [[ -e "$SECRET_FILE" ]]; then

@@ -9,8 +9,7 @@ import jakarta.validation.Validator;
 import lombok.NonNull;
 
 /**
- * MQTT handler codec. Records have no parse/toJson. Call this from the connector
- * that already knows {@code instanceId} from the topic.
+ * Parses and writes {@link ApplianceStateMessage} and {@link ApplianceCommandMessage}.
  */
 public final class ApplianceJson {
 

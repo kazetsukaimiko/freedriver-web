@@ -9,10 +9,9 @@ import jakarta.validation.constraints.NotNull;
 import lombok.NonNull;
 
 /**
- * Topic A body: {@code freedriver/v1/{instanceId}/appliances} (retain=false, QoS 1).
- * {@code instanceId} is the topic segment, not a JSON field.
- * {@code instanceName} is UX-only. {@code appliedCommandId} is the command
- * handshake for waiters; it is not part of the portal snapshot.
+ * State body carried on {@link ApplianceSchemas#appliancesTopic(java.util.UUID)}.
+ * {@code instanceName} is the display name, and {@code appliedCommandId} echoes the
+ * command being confirmed.
  */
 public record ApplianceStateMessage(
         @JsonProperty(required = true) @NonNull @NotBlank String instanceName,

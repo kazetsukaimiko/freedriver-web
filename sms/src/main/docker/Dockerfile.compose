@@ -8,7 +8,15 @@ COPY pom.xml ./
 COPY mqtt-contract/pom.xml mqtt-contract/pom.xml
 COPY mqtt/pom.xml mqtt/pom.xml
 COPY mqtt-paho/pom.xml mqtt-paho/pom.xml
-COPY app/pom.xml app/pom.xml
+COPY java/pom.xml java/pom.xml
+COPY java/bom/pom.xml java/bom/pom.xml
+COPY java/dashboard-model/pom.xml java/dashboard-model/pom.xml
+COPY java/dashboard-api/pom.xml java/dashboard-api/pom.xml
+COPY java/dashboard/pom.xml java/dashboard/pom.xml
+COPY java/agent-dispatcher-model/pom.xml java/agent-dispatcher-model/pom.xml
+COPY java/agent-dispatcher-api/pom.xml java/agent-dispatcher-api/pom.xml
+COPY java/agent-dispatcher/pom.xml java/agent-dispatcher/pom.xml
+COPY java/device-daemon/pom.xml java/device-daemon/pom.xml
 COPY sms/pom.xml sms/pom.xml
 COPY sms/src sms/src
 
@@ -26,8 +34,13 @@ COPY --from=build --chown=185 /workspace/sms/target/quarkus-app/app/ /deployment
 COPY --from=build --chown=185 /workspace/sms/target/quarkus-app/quarkus/ /deployments/quarkus/
 
 # Phone list and agreement records (freedriver.sms.data-dir). Mount a persistent volume here.
+# health-live.sh is the compose healthcheck. This image has no Python and no curl.
 USER root
-RUN mkdir -p /deployments/data && chown 185:0 /deployments/data && chmod 700 /deployments/data
+COPY sms/src/main/docker/health-live.sh /usr/local/bin/health-live.sh
+RUN mkdir -p /deployments/data \
+ && chown 185:0 /deployments/data \
+ && chmod 700 /deployments/data \
+ && chmod 755 /usr/local/bin/health-live.sh
 USER 185
 
 EXPOSE 8080

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "rest",
+    "displayName": "freedriver-phone-username",
+    "requirement": "ALTERNATIVE",
+    "authenticationFlow": true,
+    "level": 0,
+    "priority": 0
+  },
+  {
+    "id": "router",
+    "providerId": "freedriver-phone-username-router",
+    "requirement": "REQUIRED",
+    "authenticationFlow": false,
+    "level": 1,
+    "priority": 10
+  },
+  {
+    "id": "cookie",
+    "providerId": "auth-cookie",
+    "requirement": "ALTERNATIVE",
+    "authenticationFlow": false,
+    "level": 0,
+    "priority": 10
+  }
+]

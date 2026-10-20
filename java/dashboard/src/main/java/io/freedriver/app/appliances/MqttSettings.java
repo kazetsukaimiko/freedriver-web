@@ -25,6 +25,10 @@ public interface MqttSettings {
     @WithDefault("api")
     String username();
 
+    @WithName("trust-certificate")
+    @WithDefault("/opt/freedriver-secrets/mqtt-internal/ca.crt")
+    String trustCertificate();
+
     Optional<String> password();
 
     @WithName("instance-ids")
