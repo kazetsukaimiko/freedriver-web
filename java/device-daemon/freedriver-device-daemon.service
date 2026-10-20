@@ -1,7 +1,6 @@
-# User unit for the PC. Deploy does not install or start this.
-# Installing it is #213: copy the secret to the config's secretFile, mode 0600,
-# and enable this unit as the PC user. The secret is not an argument and not
-# an environment variable.
+# User unit for the PC. #213 installs it: copy the secret to the config's
+# secretFile (mode 0600) and enable this unit as the PC user. The secret
+# stays in that file.
 [Unit]
 Description=Freedriver device daemon
 After=network-online.target

@@ -11,7 +11,7 @@ import java.util.UUID;
 
 /**
  * One poll cycle claims queued work and starts at most one grok at a time.
- * The session timeout kills that child. It is not the dispatcher's 75 second queue deadline.
+ * The session timeout kills that child. The 75 second queue deadline stays in JobStore.
  */
 final class DeviceDaemon implements AutoCloseable {
 

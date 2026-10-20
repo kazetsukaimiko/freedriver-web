@@ -8,8 +8,8 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Argument array for one headless session. The prompt is not a parameter.
- * An empty allowlist grants no tools. {@code --always-approve} does not widen that list.
+ * Argument array for one headless session. The prompt is a file passed with {@code --prompt-file}.
+ * An empty allowlist grants no tools. {@code --always-approve} applies only to tools named in {@code --tools}.
  */
 final class GrokCommand {
 

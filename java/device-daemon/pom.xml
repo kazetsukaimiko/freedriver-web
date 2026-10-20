@@ -9,7 +9,7 @@
     </parent>
     <artifactId>device-daemon</artifactId>
     <name>freedriver-web-device-daemon</name>
-    <description>PC client for the device API. Not a Compose service and not started by Deploy.</description>
+    <description>PC client for the device API. The jar runs on the PC.</description>
 
     <dependencies>
         <dependency>
