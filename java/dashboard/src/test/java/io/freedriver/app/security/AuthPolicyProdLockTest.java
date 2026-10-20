@@ -3,12 +3,12 @@ package io.freedriver.app.security;
 import io.quarkus.runtime.LaunchMode;
 import io.smallrye.config.ConfigSourceInterceptor;
 import io.smallrye.config.ConfigSourceInterceptorContext;
+import io.smallrye.config.ConfigSourceInterceptorFactory;
 import io.smallrye.config.ConfigValue;
 import io.smallrye.config.Priorities;
 import io.smallrye.config.PropertiesConfigSource;
 import io.smallrye.config.SmallRyeConfig;
 import io.smallrye.config.SmallRyeConfigBuilder;
-import jakarta.annotation.Priority;
 import org.eclipse.microprofile.config.spi.ConfigSource;
 import org.junit.jupiter.api.Test;
 
@@ -19,12 +19,16 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -79,23 +83,25 @@ class AuthPolicyProdLockTest {
     }
 
     @Test
-    void prod_ignores_an_interceptor_at_application_priority() {
+    void prod_ignores_an_interceptor_above_the_profile_chain() {
         LaunchMode previous = LaunchMode.current();
         LaunchMode.set(LaunchMode.NORMAL);
         try {
-            SmallRyeConfig prod = new SmallRyeConfigBuilder()
-                    .addDefaultSources()
-                    .addDiscoveredSources()
-                    .addDefaultInterceptors()
-                    .addDiscoveredInterceptors()
-                    .withInterceptors(new ApplicationPriorityOverride())
-                    .withProfile("prod")
-                    .build();
-            assertEquals("ran", prod.getConfigValue("auth.policy.lock.probe").getValue());
-            assertProdPolicy(prod);
-            assertTrue(AuthPolicyLockGuard.PRIORITY > Priorities.APPLICATION);
-            assertTrue(AuthPolicyLockRecord.PRIORITY < Priorities.APPLICATION);
-            assertTrue(AuthPolicyLockRecord.PRIORITY > Priorities.LIBRARY + 300);
+            assertEquals(Integer.MAX_VALUE, AuthPolicyLockGuard.PRIORITY);
+            for (int priority : List.of(
+                    Priorities.APPLICATION,
+                    Priorities.APPLICATION + 1,
+                    Priorities.LIBRARY + 300,
+                    Integer.MAX_VALUE - 1)) {
+                SmallRyeConfig prod = prodConfig(override(priority, true));
+                assertEquals("ran", prod.getConfigValue("auth.policy.lock.probe").getValue(), Integer.toString(priority));
+                assertProdPolicy(prod);
+                prod = prodConfig(override(priority, false));
+                assertProdPolicy(prod);
+            }
+            SmallRyeConfig atMax = prodConfig(override(Integer.MAX_VALUE, false));
+            assertNull(atMax.getConfigValue("auth.policy.lock.probe").getValue());
+            assertProdPolicy(atMax);
         } finally {
             LaunchMode.set(previous);
         }
@@ -153,17 +159,15 @@ class AuthPolicyProdLockTest {
         assertEquals(
                 Set.of(
                         "io.freedriver.app.security.AuthPolicyLockInterceptor",
-                        "io.freedriver.app.security.AuthPolicyLockRecord",
                         "io.freedriver.app.security.AuthPolicyLockGuard"),
-                Files.readAllLines(services.resolve("io.smallrye.config.ConfigSourceInterceptor")).stream()
-                        .map(String::trim)
-                        .filter(line -> !line.isEmpty())
-                        .collect(Collectors.toSet()));
+                serviceNames(services.resolve("io.smallrye.config.ConfigSourceInterceptor")));
+        assertEquals(
+                Set.of("io.freedriver.app.security.AuthPolicyLockCustomizer"),
+                serviceNames(services.resolve("io.smallrye.config.SmallRyeConfigBuilderCustomizer")));
         for (String forbidden : List.of(
                 "org.eclipse.microprofile.config.spi.ConfigSourceProvider",
                 "io.smallrye.config.ConfigSourceFactory",
-                "io.smallrye.config.ConfigSourceInterceptorFactory",
-                "io.smallrye.config.SmallRyeConfigBuilderCustomizer")) {
+                "io.smallrye.config.ConfigSourceInterceptorFactory")) {
             assertFalse(Files.exists(services.resolve(forbidden)), forbidden);
         }
         String owners = Files.readString(Path.of("../../.github/CODEOWNERS"));
@@ -171,19 +175,28 @@ class AuthPolicyProdLockTest {
                 "/java/dashboard/src/main/resources/META-INF/services/org.eclipse.microprofile.config.spi.ConfigSource @kazetsukaimiko"));
         assertTrue(owners.contains(
                 "/java/dashboard/src/main/resources/META-INF/services/io.smallrye.config.ConfigSourceInterceptor @kazetsukaimiko"));
+        assertTrue(owners.contains(
+                "/java/dashboard/src/main/resources/META-INF/services/io.smallrye.config.SmallRyeConfigBuilderCustomizer @kazetsukaimiko"));
         assertTrue(owners.contains("/java/dashboard/src/main/resources/auth-policy.properties @kazetsukaimiko"));
         assertTrue(owners.contains("/java/dashboard/src/test/java/io/freedriver/app/security/ @kazetsukaimiko"));
     }
 
     private static SmallRyeConfig prodConfig(ConfigSource... extra) {
+        return configBuilder().withSources(extra).build();
+    }
+
+    private static SmallRyeConfig prodConfig(ConfigSourceInterceptorFactory override) {
+        return configBuilder().withInterceptorFactories(override).build();
+    }
+
+    private static SmallRyeConfigBuilder configBuilder() {
         return new SmallRyeConfigBuilder()
                 .addDefaultSources()
                 .addDiscoveredSources()
                 .addDefaultInterceptors()
                 .addDiscoveredInterceptors()
-                .withProfile("prod")
-                .withSources(extra)
-                .build();
+                .withCustomizers(new AuthPolicyLockCustomizer())
+                .withProfile("prod");
     }
 
     private static ConfigSource propertiesFileAboveThePolicy() {
@@ -248,6 +261,9 @@ class AuthPolicyProdLockTest {
     private static void assertProdPolicy(SmallRyeConfig prod) {
         assertEquals("true", prod.getConfigValue("quarkus.oidc.enabled").getValue());
         assertEquals(
+                AuthPolicyConfigSource.RESOURCE,
+                prod.getConfigValue("quarkus.oidc.enabled").getConfigSourceName());
+        assertEquals(
                 "authenticated",
                 prod.getConfigValue("quarkus.http.auth.permission.appliances.policy").getValue());
         assertEquals(
@@ -261,39 +277,109 @@ class AuthPolicyProdLockTest {
                 prod.getConfigValue("quarkus.http.auth.permission.logout.policy").getValue());
         assertEquals("30", prod.getConfigValue("freedriver.appliances.rate-limit.permits").getValue());
         assertEquals("60s", prod.getConfigValue("freedriver.appliances.rate-limit.window").getValue());
-        assertEquals(
-                "${QUARKUS_OIDC_CREDENTIALS_SECRET}",
-                prod.getConfigValue("quarkus.oidc.credentials.secret").getRawValue());
+        assertSecret(prod);
     }
 
-    @Priority(Priorities.APPLICATION)
-    public static final class ApplicationPriorityOverride implements ConfigSourceInterceptor {
+    private static void assertSecret(SmallRyeConfig prod) {
+        String key = "QUARKUS_OIDC_CREDENTIALS_SECRET";
+        String previous = System.getProperty(key);
+        System.setProperty(key, "from-test");
+        try {
+            ConfigValue secret = prod.getConfigValue("quarkus.oidc.credentials.secret");
+            assertEquals("${QUARKUS_OIDC_CREDENTIALS_SECRET}", secret.getRawValue());
+            assertEquals("from-test", secret.getValue());
+            assertFalse(secret.hasProblems());
+        } finally {
+            if (previous == null) {
+                System.clearProperty(key);
+            } else {
+                System.setProperty(key, previous);
+            }
+        }
+    }
+
+    @Test
+    void prod_secret_stays_an_expression_and_fails_closed_when_unset() {
+        String key = "QUARKUS_OIDC_CREDENTIALS_SECRET";
+        if (System.getenv(key) != null || System.getProperty(key) != null) {
+            return;
+        }
+        LaunchMode previous = LaunchMode.current();
+        LaunchMode.set(LaunchMode.NORMAL);
+        try {
+            SmallRyeConfig prod = prodConfig();
+            ConfigValue unset = prod.getConfigValue("quarkus.oidc.credentials.secret");
+            assertEquals("${QUARKUS_OIDC_CREDENTIALS_SECRET}", unset.getRawValue());
+            assertTrue(unset.hasProblems());
+            assertThrows(
+                    NoSuchElementException.class,
+                    () -> prod.getValue("quarkus.oidc.credentials.secret", String.class));
+        } finally {
+            LaunchMode.set(previous);
+        }
+    }
+
+    private static ConfigSourceInterceptorFactory override(int priority, boolean proceed) {
+        return new ConfigSourceInterceptorFactory() {
+            @Override
+            public ConfigSourceInterceptor getInterceptor(ConfigSourceInterceptorContext context) {
+                return new PolicyReplacer(proceed);
+            }
+
+            @Override
+            public OptionalInt getPriority() {
+                return OptionalInt.of(priority);
+            }
+        };
+    }
+
+    private static final class PolicyReplacer implements ConfigSourceInterceptor {
+        private final boolean proceed;
+
+        private PolicyReplacer(boolean proceed) {
+            this.proceed = proceed;
+        }
+
         @Override
         public ConfigValue getValue(ConfigSourceInterceptorContext context, String name) {
             if ("auth.policy.lock.probe".equals(name)) {
                 return ConfigValue.builder().withName(name).withValue("ran").build();
             }
-            ConfigValue resolved = context.proceed(name);
+            ConfigValue resolved = proceed ? context.proceed(name) : null;
             if ("quarkus.oidc.enabled".equals(name)
                     || "quarkus.http.auth.permission.appliances.policy".equals(name)
                     || "quarkus.http.auth.permission.changelog.policy".equals(name)
                     || "quarkus.http.auth.permission.login.policy".equals(name)
                     || "quarkus.http.auth.permission.logout.policy".equals(name)
+                    || "quarkus.oidc.credentials.secret".equals(name)
                     || "freedriver.appliances.rate-limit.permits".equals(name)
                     || "freedriver.appliances.rate-limit.window".equals(name)) {
                 String replacement = "quarkus.oidc.enabled".equals(name) ? "false"
                         : name.endsWith(".permits") ? "100000"
                         : name.endsWith(".window") ? "1s"
+                        : name.endsWith(".secret") ? "secret"
                         : "permit";
                 return ConfigValue.builder()
                         .withName(name)
                         .withValue(replacement)
+                        .withRawValue(replacement)
                         .withConfigSourceName("application-priority")
-                        .withConfigSourceOrdinal(Priorities.APPLICATION)
+                        .withConfigSourceOrdinal(priorityOrdinal())
                         .build();
             }
-            return resolved;
+            return resolved != null ? resolved : context.proceed(name);
         }
+
+        private static int priorityOrdinal() {
+            return Priorities.APPLICATION;
+        }
+    }
+
+    private static Set<String> serviceNames(Path file) throws IOException {
+        return Files.readAllLines(file).stream()
+                .map(String::trim)
+                .filter(line -> !line.isEmpty() && line.charAt(0) != '#')
+                .collect(Collectors.toSet());
     }
 
     private static Set<String> bareKeys(Path file) throws IOException {

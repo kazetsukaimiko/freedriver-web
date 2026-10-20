@@ -13,6 +13,7 @@
 /java/dashboard/src/main/resources/auth-policy.properties @kazetsukaimiko
 /java/dashboard/src/main/resources/META-INF/services/org.eclipse.microprofile.config.spi.ConfigSource @kazetsukaimiko
 /java/dashboard/src/main/resources/META-INF/services/io.smallrye.config.ConfigSourceInterceptor @kazetsukaimiko
+/java/dashboard/src/main/resources/META-INF/services/io.smallrye.config.SmallRyeConfigBuilderCustomizer @kazetsukaimiko
 /mqtt-contract/ @kazetsukaimiko
 /mqtt/ @kazetsukaimiko
 /mqtt-paho/ @kazetsukaimiko

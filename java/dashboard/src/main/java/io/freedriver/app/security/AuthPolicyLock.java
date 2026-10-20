@@ -1,17 +1,23 @@
 package io.freedriver.app.security;
 
+import io.quarkus.runtime.LaunchMode;
+import io.smallrye.common.expression.Expression;
+import io.smallrye.config.ConfigValidationException;
 import io.smallrye.config.ConfigValue;
 
-import java.util.HashMap;
+import java.lang.reflect.Constructor;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Set;
 
-/** Keys and the profile-selected value recorded before application interceptors run. */
-final class AuthPolicyLock {
+import static io.smallrye.common.expression.Expression.Flag.DOUBLE_COLON;
+import static io.smallrye.common.expression.Expression.Flag.LENIENT_SYNTAX;
+import static io.smallrye.common.expression.Expression.Flag.NO_SMART_BRACES;
+import static io.smallrye.common.expression.Expression.Flag.NO_TRIM;
 
-    private static final ThreadLocal<Map<String, ConfigValue>> RECORDED =
-            ThreadLocal.withInitial(HashMap::new);
+/** Auth-policy keys and the prod-profile value from {@code auth-policy.properties}. */
+final class AuthPolicyLock {
 
     private final Map<String, String> properties;
     private final Set<String> bareKeys;
@@ -31,6 +37,7 @@ final class AuthPolicyLock {
         return bareKeys.contains(bareKey(name));
     }
 
+    /** Value for the exact name the profile interceptor asks for. */
     ConfigValue fileValue(String name) {
         String raw = properties.get(name);
         if (raw == null) {
@@ -45,16 +52,44 @@ final class AuthPolicyLock {
                 .build();
     }
 
-    static void record(String name, ConfigValue value) {
-        RECORDED.get().put(name, value);
+    /**
+     * Prod-profile entry for {@code name}. A production launch uses this when a later
+     * interceptor replaces the chain's value.
+     */
+    String productionRaw(String name) {
+        String bare = bareKey(name);
+        String profiled = properties.get("%" + LaunchMode.PROD_PROFILE + "." + bare);
+        if (profiled != null) {
+            return profiled;
+        }
+        return properties.get(bare);
     }
 
-    static boolean has(String name) {
-        return RECORDED.get().containsKey(name);
+    ConfigValue replacement(String name, String raw) {
+        Expansion expansion = expand(raw);
+        ConfigValue.ConfigValueBuilder builder = ConfigValue.builder()
+                .withName(name)
+                .withValue(expansion.value)
+                .withRawValue(raw)
+                .withProfile(LaunchMode.PROD_PROFILE)
+                .withConfigSourceName(AuthPolicyConfigSource.RESOURCE)
+                .withConfigSourceOrdinal(AuthPolicyConfigSource.ORDINAL);
+        if (expansion.unresolved) {
+            builder.addProblem(unresolved(raw, name));
+        }
+        return builder.build();
     }
 
-    static ConfigValue take(String name) {
-        return RECORDED.get().remove(name);
+    /** True when {@code resolved} is still the file entry, after expression expansion. */
+    boolean sameAsFile(ConfigValue resolved, String raw) {
+        if (resolved == null || resolved.getValue() == null || !raw.equals(resolved.getRawValue())) {
+            return false;
+        }
+        if (!AuthPolicyConfigSource.RESOURCE.equals(resolved.getConfigSourceName())) {
+            return false;
+        }
+        Expansion expansion = expand(raw);
+        return expansion.value.equals(resolved.getValue()) && expansion.unresolved == resolved.hasProblems();
     }
 
     static String bareKey(String name) {
@@ -73,5 +108,66 @@ final class AuthPolicyLock {
             bare.add(bareKey(name));
         }
         return Set.copyOf(bare);
+    }
+
+    /**
+     * System property, then environment variable. Matches SmallRye's ordinals for those
+     * two sources. A missing name with no default stays unresolved so prod startup fails closed.
+     */
+    private static Expansion expand(String raw) {
+        if (raw.indexOf('$') < 0) {
+            return new Expansion(raw, false);
+        }
+        boolean[] unresolved = {false};
+        String value = Expression.compile(escapeDollar(raw), LENIENT_SYNTAX, NO_TRIM, NO_SMART_BRACES, DOUBLE_COLON)
+                .evaluate((context, builder) -> {
+                    String key = context.getKey();
+                    String found = System.getProperty(key);
+                    if (found == null) {
+                        found = System.getenv(key);
+                    }
+                    if (found != null) {
+                        builder.append(found);
+                        return;
+                    }
+                    if (context.hasDefault()) {
+                        context.expandDefault();
+                        return;
+                    }
+                    unresolved[0] = true;
+                });
+        return new Expansion(value, unresolved[0]);
+    }
+
+    /** SmallRye turns {@code \$} into the expression escape before compiling. */
+    private static String escapeDollar(String value) {
+        int index = value.indexOf("\\$");
+        if (index < 0) {
+            return value;
+        }
+        int start = 0;
+        StringBuilder builder = new StringBuilder();
+        while (index >= 0) {
+            builder.append(value, start, index).append("$$");
+            start = index + 2;
+            index = value.indexOf("\\$", start);
+        }
+        builder.append(value.substring(start));
+        return builder.toString();
+    }
+
+    private static ConfigValidationException.Problem unresolved(String raw, String name) {
+        NoSuchElementException missing = new NoSuchElementException("Could not expand " + raw + " for " + name);
+        try {
+            Constructor<ConfigValidationException.Problem> ctor = ConfigValidationException.Problem.class
+                    .getDeclaredConstructor(RuntimeException.class);
+            ctor.setAccessible(true);
+            return ctor.newInstance(missing);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(missing.getMessage(), missing);
+        }
+    }
+
+    private record Expansion(String value, boolean unresolved) {
     }
 }
