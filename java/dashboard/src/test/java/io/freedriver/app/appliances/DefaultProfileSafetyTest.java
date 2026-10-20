@@ -16,6 +16,7 @@ class DefaultProfileSafetyTest {
     @Test
     void default_profile_keeps_appliances_dark() throws IOException {
         String properties = Files.readString(Path.of("src/main/resources/application.properties"));
+        String auth = Files.readString(Path.of("src/main/resources/auth-policy.properties"));
         assertTrue(properties.contains("freedriver.appliances.enabled=false"));
         assertTrue(properties.contains("freedriver.appliances.live-commands=false"));
         assertTrue(properties.contains("freedriver.appliances.mock=false"));
@@ -25,8 +26,8 @@ class DefaultProfileSafetyTest {
         assertFalse(Files.exists(Path.of("src/main/java/io/freedriver/app/appliances/ApplianceBackend.java")));
         assertTrue(Files.exists(Path.of("src/main/java/io/freedriver/app/appliances/MockAutonomy.java")));
         assertTrue(Files.exists(Path.of("src/main/java/io/freedriver/app/appliances/ApplianceControl.java")));
-        assertTrue(properties.contains("quarkus.oidc.enabled=false"));
-        assertFalse(properties.matches("(?s).*\\nquarkus\\.oidc\\.enabled=true.*"));
+        assertTrue(auth.contains("quarkus.oidc.enabled=false"));
+        assertFalse(auth.matches("(?s).*\\nquarkus\\.oidc\\.enabled=true.*"));
         assertTrue(properties.contains("freedriver.mqtt.host=mosquitto"));
         assertTrue(properties.contains("freedriver.mqtt.port=8883"));
         assertTrue(properties.contains("freedriver.mqtt.tls=true"));
@@ -42,10 +43,13 @@ class DefaultProfileSafetyTest {
         List<String> lines = Files.readAllLines(Path.of("src/main/resources/application.properties")).stream()
                 .map(String::strip)
                 .toList();
-        assertTrue(lines.contains("quarkus.oidc.enabled=false"));
-        assertTrue(lines.contains("%dev.quarkus.oidc.enabled=false"));
-        assertTrue(lines.contains("%test.quarkus.oidc.enabled=false"));
-        assertTrue(lines.contains("%prod.quarkus.oidc.enabled=true"));
+        List<String> auth = Files.readAllLines(Path.of("src/main/resources/auth-policy.properties")).stream()
+                .map(String::strip)
+                .toList();
+        assertTrue(auth.contains("quarkus.oidc.enabled=false"));
+        assertTrue(auth.contains("%dev.quarkus.oidc.enabled=false"));
+        assertTrue(auth.contains("%test.quarkus.oidc.enabled=false"));
+        assertTrue(auth.contains("%prod.quarkus.oidc.enabled=true"));
         assertTrue(lines.contains("freedriver.appliances.enabled=false"));
         assertTrue(lines.contains("freedriver.appliances.live-commands=false"));
         assertTrue(lines.contains("freedriver.appliances.mock=false"));
