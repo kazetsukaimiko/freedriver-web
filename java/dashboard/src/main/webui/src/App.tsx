@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
 import { SIGN_OUT_PATH } from './api'
 import { Brand } from './Brand'
 import { BuildStamp } from './BuildStamp'
@@ -29,6 +29,19 @@ function shouldPlaySplash() {
   return sessionStorage.getItem(SPLASH_KEY) !== '1'
 }
 
+function placeSplashDock(brand: Element) {
+  const rect = brand.getBoundingClientRect()
+  const root = document.documentElement
+  root.style.setProperty('--brand-left', `${rect.left}px`)
+  root.style.setProperty('--brand-top', `${rect.top}px`)
+}
+
+function clearSplashDock() {
+  const root = document.documentElement
+  root.style.removeProperty('--brand-left')
+  root.style.removeProperty('--brand-top')
+}
+
 function markSplashSeen() {
   sessionStorage.setItem(SPLASH_KEY, '1')
   const params = new URLSearchParams(window.location.search)
@@ -46,6 +59,7 @@ function App() {
   const [path, setPath] = useState(() => window.location.pathname)
   const [search, setSearch] = useState(() => window.location.search)
   const [signingOut, setSigningOut] = useState(false)
+  const navBrand = useRef<HTMLAnchorElement>(null)
 
   useEffect(() => {
     if (splash === 'playing') {
@@ -60,6 +74,30 @@ function App() {
     if (splash === 'revealing') {
       const id = window.setTimeout(() => setSplash('done'), 700)
       return () => window.clearTimeout(id)
+    }
+  }, [splash])
+
+  // Mobile nav centers the brand in its row, so the dock target is that box.
+  useLayoutEffect(() => {
+    if (splash === 'done') {
+      clearSplashDock()
+      return
+    }
+    const brand = navBrand.current?.querySelector('.brand')
+    if (!brand) {
+      return
+    }
+    const place = () => placeSplashDock(brand)
+    place()
+    const nav = navBrand.current?.closest('.nav')
+    const observer = new ResizeObserver(place)
+    if (nav) {
+      observer.observe(nav)
+    }
+    window.addEventListener('resize', place)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', place)
     }
   }, [splash])
 
@@ -111,7 +149,7 @@ function App() {
       )}
 
       <header className="nav">
-        <a className="nav-brand" href={hrefFor('/')} onClick={(event) => go(event, '/')}>
+        <a ref={navBrand} className="nav-brand" href={hrefFor('/')} onClick={(event) => go(event, '/')}>
           <Brand />
         </a>
         <nav aria-label="Primary">
