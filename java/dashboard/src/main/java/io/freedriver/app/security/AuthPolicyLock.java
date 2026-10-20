@@ -34,7 +34,19 @@ final class AuthPolicyLock {
     }
 
     boolean locks(String name) {
-        return bareKeys.contains(bareKey(name));
+        return locksBare(bareKey(name), bareKeys);
+    }
+
+    /**
+     * Names already in the file, every HTTP permission key, and the OIDC switches that
+     * turn a tenant off. A production launch ignores any other source for these names.
+     */
+    static boolean locksBare(String bare, Set<String> owned) {
+        if (owned.contains(bare) || bare.startsWith("quarkus.http.auth.permission.")) {
+            return true;
+        }
+        return "quarkus.oidc.tenant-enabled".equals(bare)
+                || (bare.startsWith("quarkus.oidc.") && bare.endsWith(".tenant-enabled"));
     }
 
     /** Value for the exact name the profile interceptor asks for. */

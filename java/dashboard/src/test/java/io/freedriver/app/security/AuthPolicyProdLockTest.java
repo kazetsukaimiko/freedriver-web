@@ -90,8 +90,9 @@ class AuthPolicyProdLockTest {
             assertEquals(Integer.MAX_VALUE, AuthPolicyLockGuard.PRIORITY);
             for (int priority : List.of(
                     Priorities.APPLICATION,
-                    Priorities.APPLICATION + 1,
+                    Priorities.APPLICATION + 2,
                     Priorities.LIBRARY + 300,
+                    Priorities.LIBRARY + 400,
                     Integer.MAX_VALUE - 1)) {
                 SmallRyeConfig prod = prodConfig(override(priority, true));
                 assertEquals("ran", prod.getConfigValue("auth.policy.lock.probe").getValue(), Integer.toString(priority));
@@ -140,8 +141,9 @@ class AuthPolicyProdLockTest {
                         continue;
                     }
                     String bare = AuthPolicyLock.bareKey(key);
-                    assertFalse("config_ordinal".equals(bare), file + " sets config_ordinal");
-                    assertFalse(owned.contains(bare), file + " sets " + key);
+                    assertFalse(
+                            "config_ordinal".equals(bare) || AuthPolicyLock.locksBare(bare, owned),
+                            file + " sets " + key);
                 }
             }
         }
@@ -166,8 +168,11 @@ class AuthPolicyProdLockTest {
                 serviceNames(services.resolve("io.smallrye.config.SmallRyeConfigBuilderCustomizer")));
         for (String forbidden : List.of(
                 "org.eclipse.microprofile.config.spi.ConfigSourceProvider",
+                "org.eclipse.microprofile.config.spi.Converter",
                 "io.smallrye.config.ConfigSourceFactory",
-                "io.smallrye.config.ConfigSourceInterceptorFactory")) {
+                "io.smallrye.config.ConfigSourceInterceptorFactory",
+                "io.smallrye.config.SecretKeysHandler",
+                "io.smallrye.config.SecretKeysHandlerFactory")) {
             assertFalse(Files.exists(services.resolve(forbidden)), forbidden);
         }
         String owners = Files.readString(Path.of("../../.github/CODEOWNERS"));
@@ -255,6 +260,12 @@ class AuthPolicyProdLockTest {
         values.put("freedriver.appliances.rate-limit.permits", "100000");
         values.put("freedriver.appliances.rate-limit.window", "1s");
         values.put("quarkus.oidc.credentials.secret", "secret");
+        values.put("quarkus.http.auth.permission.appliances.enabled", "false");
+        values.put("quarkus.http.auth.permission.open-post.paths", "/api/appliances/*");
+        values.put("quarkus.http.auth.permission.open-post.methods", "POST");
+        values.put("quarkus.http.auth.permission.open-post.policy", "permit");
+        values.put("quarkus.oidc.tenant-enabled", "false");
+        values.put("quarkus.oidc.backdoor.tenant-enabled", "false");
         return new PropertiesConfigSource(values, sourceName, 100);
     }
 
@@ -277,7 +288,18 @@ class AuthPolicyProdLockTest {
                 prod.getConfigValue("quarkus.http.auth.permission.logout.policy").getValue());
         assertEquals("30", prod.getConfigValue("freedriver.appliances.rate-limit.permits").getValue());
         assertEquals("60s", prod.getConfigValue("freedriver.appliances.rate-limit.window").getValue());
+        assertAbsent(prod, "quarkus.http.auth.permission.appliances.enabled");
+        assertAbsent(prod, "quarkus.http.auth.permission.open-post.paths");
+        assertAbsent(prod, "quarkus.http.auth.permission.open-post.methods");
+        assertAbsent(prod, "quarkus.http.auth.permission.open-post.policy");
+        assertAbsent(prod, "quarkus.oidc.tenant-enabled");
+        assertAbsent(prod, "quarkus.oidc.backdoor.tenant-enabled");
         assertSecret(prod);
+    }
+
+    private static void assertAbsent(SmallRyeConfig prod, String name) {
+        ConfigValue value = prod.getConfigValue(name);
+        assertTrue(value == null || value.getValue() == null, name + "=" + (value == null ? null : value.getValue()));
     }
 
     private static void assertSecret(SmallRyeConfig prod) {
@@ -348,16 +370,25 @@ class AuthPolicyProdLockTest {
             ConfigValue resolved = proceed ? context.proceed(name) : null;
             if ("quarkus.oidc.enabled".equals(name)
                     || "quarkus.http.auth.permission.appliances.policy".equals(name)
+                    || "quarkus.http.auth.permission.appliances.enabled".equals(name)
                     || "quarkus.http.auth.permission.changelog.policy".equals(name)
                     || "quarkus.http.auth.permission.login.policy".equals(name)
                     || "quarkus.http.auth.permission.logout.policy".equals(name)
+                    || "quarkus.http.auth.permission.open-post.policy".equals(name)
+                    || "quarkus.http.auth.permission.open-post.paths".equals(name)
+                    || "quarkus.http.auth.permission.open-post.methods".equals(name)
+                    || "quarkus.oidc.tenant-enabled".equals(name)
+                    || "quarkus.oidc.backdoor.tenant-enabled".equals(name)
                     || "quarkus.oidc.credentials.secret".equals(name)
                     || "freedriver.appliances.rate-limit.permits".equals(name)
                     || "freedriver.appliances.rate-limit.window".equals(name)) {
-                String replacement = "quarkus.oidc.enabled".equals(name) ? "false"
+                String replacement = "quarkus.oidc.enabled".equals(name) || name.endsWith("tenant-enabled")
+                        || name.endsWith(".enabled") ? "false"
                         : name.endsWith(".permits") ? "100000"
                         : name.endsWith(".window") ? "1s"
                         : name.endsWith(".secret") ? "secret"
+                        : name.endsWith(".paths") ? "/api/appliances/*"
+                        : name.endsWith(".methods") ? "POST"
                         : "permit";
                 return ConfigValue.builder()
                         .withName(name)
