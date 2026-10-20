@@ -9,10 +9,10 @@
 /scripts/provision-*.sh @kazetsukaimiko
 /scripts/sync-mosquitto-le-cert.sh @kazetsukaimiko
 /scripts/mosquitto-cert-sync.Dockerfile @kazetsukaimiko
-/app/src/main/java/io/freedriver/app/security/ @kazetsukaimiko
+/java/dashboard/src/main/java/io/freedriver/app/security/ @kazetsukaimiko
 /mqtt-contract/ @kazetsukaimiko
 /mqtt/ @kazetsukaimiko
 /mqtt-paho/ @kazetsukaimiko
-/app/src/main/docker/Dockerfile.compose @kazetsukaimiko
-/app/src/main/java/io/freedriver/app/appliances/Mqtt*.java @kazetsukaimiko
-/app/src/test/java/io/freedriver/app/security/ @kazetsukaimiko
+/java/dashboard/src/main/docker/Dockerfile.compose @kazetsukaimiko
+/java/dashboard/src/main/java/io/freedriver/app/appliances/Mqtt*.java @kazetsukaimiko
+/java/dashboard/src/test/java/io/freedriver/app/security/ @kazetsukaimiko

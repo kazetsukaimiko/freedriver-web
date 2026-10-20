@@ -152,27 +152,31 @@ jobs:
 
       - name: Browser must not speak MQTT
         run: |
-          if grep -RInE 'mqtt|8883|mosquitto' app/src/main/webui; then
+          if grep -RInE 'mqtt|8883|mosquitto' java/dashboard/src/main/webui; then
             echo "webui must not mention MQTT"
             exit 1
           fi
 
       - name: Mock and OIDC stay off in the default profile
         run: |
-          if grep -E '^freedriver\.appliances\.enabled=true' app/src/main/resources/application.properties; then
+          if grep -E '^freedriver\.appliances\.enabled=true' java/dashboard/src/main/resources/application.properties; then
             echo "default profile must not enable the appliances API"
             exit 1
           fi
-          if grep -E '^freedriver\.appliances\.mock=true' app/src/main/resources/application.properties; then
+          if grep -E '^freedriver\.appliances\.mock=true' java/dashboard/src/main/resources/application.properties; then
             echo "mock event source must not ship in the default profile"
             exit 1
           fi
-          if grep -E '^freedriver\.appliances\.live-commands=true' app/src/main/resources/application.properties; then
+          if grep -E '^freedriver\.appliances\.live-commands=true' java/dashboard/src/main/resources/application.properties; then
             echo "live commands must not ship in the default profile"
             exit 1
           fi
-          if grep -E '^quarkus\.oidc\.enabled=true' app/src/main/resources/application.properties; then
+          if grep -E '^quarkus\.oidc\.enabled=true' java/dashboard/src/main/resources/application.properties; then
             echo "do not flip OIDC on in the default profile"
+            exit 1
+          fi
+          if grep -E '^quarkus\.oidc\.enabled=true' java/agent-dispatcher/src/main/resources/application.properties; then
+            echo "do not flip dispatcher OIDC on in the default profile"
             exit 1
           fi
 
@@ -184,13 +188,13 @@ jobs:
 
       - name: VPS image must not bake a Packages token
         run: |
-          if grep -E 'GITHUB_TOKEN|GH_TOKEN|PACKAGES_TOKEN' app/src/main/docker/Dockerfile.compose; then
+          if grep -E 'GITHUB_TOKEN|GH_TOKEN|PACKAGES_TOKEN' java/dashboard/src/main/docker/Dockerfile.compose; then
             echo "do not pass a GitHub Packages token as Docker ARG/ENV"
             exit 1
           fi
           python3 - <<'PY'
           from pathlib import Path
-          text = Path("app/src/main/docker/Dockerfile.compose").read_text()
+          text = Path("java/dashboard/src/main/docker/Dockerfile.compose").read_text()
           runtime = "FROM " + text.rsplit("FROM ", 1)[1]
           if "settings" in runtime.lower():
               raise SystemExit("runtime stage must not mention settings.xml")
@@ -225,4 +229,4 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build prod image path (Dockerfile.compose build stage)
-        run: docker build -f app/src/main/docker/Dockerfile.compose --target build .
+        run: docker build -f java/dashboard/src/main/docker/Dockerfile.compose --target build .

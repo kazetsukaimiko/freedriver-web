@@ -27,9 +27,11 @@ When CI is green, read the automated review. [The Grok review on pull request 20
 
 Take that review seriously. Set a suggestion aside when earlier work already ruled the change out, or when the suggestion clashes with other feedback or a standing mandate.
 
+Reply on the pull request for every comment you act on or set aside, automated or from a person. The reply says what changed, or asks the clarifying question. Post it as the GitHub user for your role.
+
 When CI is green and the automated review is settled, mark the pull request ready for review and request a review from kaze (`kazetsukaimiko`).
 
-Address kaze's feedback with commits on the same branch. When you want to push back or clarify a requirement, reply on the pull request and wait.
+Address kaze's feedback with commits on the same branch, and with that reply. When you want to push back or clarify a requirement, the reply is the place to do it, and then wait.
 
 When kaze approves, merge. Leave the pull request open when kaze's review says to hold the merge.
 

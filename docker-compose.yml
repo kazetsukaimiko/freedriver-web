@@ -13,13 +13,14 @@ services:
       - /opt/freedriver-storage/caddy/config:/config
     depends_on:
       - keycloak
-      - app
+      - dashboard
+      - agent-dispatcher
       - grafana
 
-  app:
+  dashboard:
     build:
       context: .
-      dockerfile: app/src/main/docker/Dockerfile.compose
+      dockerfile: java/dashboard/src/main/docker/Dockerfile.compose
       args:
         BUILD_NUMBER: ${BUILD_NUMBER:-1.0.0-SNAPSHOT}
     restart: unless-stopped
@@ -27,6 +28,21 @@ services:
       QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver
       QUARKUS_OIDC_CLIENT_ID: freedriver-api
       QUARKUS_OIDC_CREDENTIALS_SECRET: ${QUARKUS_OIDC_CREDENTIALS_SECRET:?QUARKUS_OIDC_CREDENTIALS_SECRET is required}
+    expose:
+      - "8080"
+
+  # No host port. Caddy on app.freedriver.io sends /mcp, /api/dispatcher, and /api/device here.
+  agent-dispatcher:
+    build:
+      context: .
+      dockerfile: java/agent-dispatcher/src/main/docker/Dockerfile.compose
+      args:
+        BUILD_NUMBER: ${BUILD_NUMBER:-1.0.0-SNAPSHOT}
+    restart: unless-stopped
+    environment:
+      QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver
+      QUARKUS_OIDC_CLIENT_ID: freedriver-dispatcher
+      QUARKUS_OIDC_CREDENTIALS_SECRET: ${FREEDRIVER_DISPATCHER_OIDC_SECRET:-}
     expose:
       - "8080"
 

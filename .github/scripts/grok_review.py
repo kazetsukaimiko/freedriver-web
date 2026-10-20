@@ -161,9 +161,9 @@ def test_twins(path: Path) -> list[Path]:
 
 def layer_neighbors(changed: list[Path]) -> list[Path]:
     extra: list[Path] = []
-    app_touched = any(repo_rel(path).startswith("app/") for path in changed)
+    app_touched = any(repo_rel(path).startswith("java/dashboard/") for path in changed)
     if app_touched:
-        for root in (Path("app/src/main/resources"), Path("app/src/test/resources")):
+        for root in (Path("java/dashboard/src/main/resources"), Path("java/dashboard/src/test/resources")):
             if not root.is_dir():
                 continue
             for child in sorted(root.iterdir()):
@@ -406,14 +406,14 @@ def cmd_self_test() -> None:
     load_prompt()
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        main_svc = root / "app/src/main/java/io/freedriver/app/appliances/ApplianceService.java"
-        main_res = root / "app/src/main/java/io/freedriver/app/api/AppliancesResource.java"
-        main_filter = root / "app/src/main/java/io/freedriver/app/appliances/AppliancesDisabledFilter.java"
-        main_mapper = root / "app/src/main/java/io/freedriver/app/appliances/GoneMapper.java"
-        props = root / "app/src/main/resources/application.properties"
-        test_svc = root / "app/src/test/java/io/freedriver/app/appliances/ApplianceServiceTest.java"
-        test_http = root / "app/src/test/java/io/freedriver/app/api/AppliancesResourceTest.java"
-        sibling = root / "app/src/main/java/io/freedriver/app/appliances/CommandRateLimiter.java"
+        main_svc = root / "java/dashboard/src/main/java/io/freedriver/app/appliances/ApplianceService.java"
+        main_res = root / "java/dashboard/src/main/java/io/freedriver/app/api/AppliancesResource.java"
+        main_filter = root / "java/dashboard/src/main/java/io/freedriver/app/appliances/AppliancesDisabledFilter.java"
+        main_mapper = root / "java/dashboard/src/main/java/io/freedriver/app/appliances/GoneMapper.java"
+        props = root / "java/dashboard/src/main/resources/application.properties"
+        test_svc = root / "java/dashboard/src/test/java/io/freedriver/app/appliances/ApplianceServiceTest.java"
+        test_http = root / "java/dashboard/src/test/java/io/freedriver/app/api/AppliancesResourceTest.java"
+        sibling = root / "java/dashboard/src/main/java/io/freedriver/app/appliances/CommandRateLimiter.java"
         unrelated = root / "docs/unrelated.md"
         for path in (main_svc, main_res, main_filter, main_mapper, props, test_svc, test_http, sibling, unrelated):
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -422,18 +422,18 @@ def cmd_self_test() -> None:
         old = Path.cwd()
         os.chdir(root)
         try:
-            neighbors = collect_neighbors(["app/src/main/java/io/freedriver/app/appliances/ApplianceService.java"])
+            neighbors = collect_neighbors(["java/dashboard/src/main/java/io/freedriver/app/appliances/ApplianceService.java"])
         finally:
             os.chdir(old)
 
     needed = {
-        "app/src/main/java/io/freedriver/app/api/AppliancesResource.java",
-        "app/src/main/java/io/freedriver/app/appliances/AppliancesDisabledFilter.java",
-        "app/src/main/java/io/freedriver/app/appliances/GoneMapper.java",
-        "app/src/main/resources/application.properties",
-        "app/src/test/java/io/freedriver/app/appliances/ApplianceServiceTest.java",
-        "app/src/test/java/io/freedriver/app/api/AppliancesResourceTest.java",
-        "app/src/main/java/io/freedriver/app/appliances/CommandRateLimiter.java",
+        "java/dashboard/src/main/java/io/freedriver/app/api/AppliancesResource.java",
+        "java/dashboard/src/main/java/io/freedriver/app/appliances/AppliancesDisabledFilter.java",
+        "java/dashboard/src/main/java/io/freedriver/app/appliances/GoneMapper.java",
+        "java/dashboard/src/main/resources/application.properties",
+        "java/dashboard/src/test/java/io/freedriver/app/appliances/ApplianceServiceTest.java",
+        "java/dashboard/src/test/java/io/freedriver/app/api/AppliancesResourceTest.java",
+        "java/dashboard/src/main/java/io/freedriver/app/appliances/CommandRateLimiter.java",
     }
     missing = sorted(needed - set(neighbors))
     if missing:

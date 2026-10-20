@@ -25,7 +25,7 @@ Roles: `portal-admin`, `dashboard` or `changelog` (`@RolesAllowed` in every prof
 
 ## Changelog file
 
-`GET /api/changelog` reads the classpath resource **`changelog/CHANGELOG.md`** from the app jar (`io.freedriver.app.changelog.Changelog`). In the source tree that is `app/src/main/resources/changelog/CHANGELOG.md`. The release job ([#151](https://github.com/kazetsukaimiko/freedriver-web/issues/151)) generates the file and writes it to that path before the image build, so it lands in the jar. The path is outside `META-INF/resources`, so Quarkus never serves the file as a static asset.
+`GET /api/changelog` reads the classpath resource **`changelog/CHANGELOG.md`** from the app jar (`io.freedriver.app.changelog.Changelog`). In the source tree that is `java/dashboard/src/main/resources/changelog/CHANGELOG.md`. The release job ([#151](https://github.com/kazetsukaimiko/freedriver-web/issues/151)) generates the file and writes it to that path before the image build, so it lands in the jar. The path is outside `META-INF/resources`, so Quarkus never serves the file as a static asset.
 
 Until that job writes the file, the endpoint answers 404 and the build stamp stays plain text.
 

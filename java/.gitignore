@@ -1,0 +1,8 @@
+# Maven output for every module under java/. dashboard/ also has its own copy.
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+release.properties
+.flattened-pom.xml
+.quarkus/

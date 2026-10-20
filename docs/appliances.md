@@ -106,7 +106,7 @@ quarkus.oidc.enabled=false
 
 With sign-in on, the appliances API still returns 404 in prod and sends nothing to the house. The two appliance flags change only after #27 closes.
 
-`./mvnw -pl app -am quarkus:dev` runs **mock-autonomy** in-process on the same `ApplianceControl` bus (`%dev`): `/api/hello` and `/api/health` return 200, and `/api/appliances` serves the mock event source (one Cabin instance, six named appliances).
+`./mvnw -pl java/dashboard -am quarkus:dev` runs **mock-autonomy** in-process on the same `ApplianceControl` bus (`%dev`): `/api/hello` and `/api/health` return 200, and `/api/appliances` serves the mock event source (one Cabin instance, six named appliances).
 
 ### One `%dev` auth path
 

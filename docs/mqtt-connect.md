@@ -83,7 +83,7 @@ Let's Encrypt is live on `mqtt.freedriver.io:8883`. Caddy issues the name via th
 
 On the compose network, Quarkus connects to hostname `mosquitto` port 8883; `mqtt.freedriver.io` is the name for public/home clients. Instance ids come from `FREEDRIVER_MQTT_INSTANCE_IDS`. Password is `FREEDRIVER_MQTT_API_PASSWORD`.
 
-Compose injects OIDC on the `app` service only:
+Compose injects OIDC on the `dashboard` service only (not the image, not the SPA):
 
 - `QUARKUS_OIDC_AUTH_SERVER_URL=https://auth.freedriver.io/realms/freedriver`
 - `QUARKUS_OIDC_CLIENT_ID=freedriver-api`

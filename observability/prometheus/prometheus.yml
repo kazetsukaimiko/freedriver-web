@@ -12,7 +12,13 @@ scrape_configs:
       - targets: ["alloy:12345"]
 
   # Quarkus Micrometer path. Target stays down until the app exports metrics.
-  - job_name: app
+  - job_name: dashboard
     metrics_path: /q/metrics
     static_configs:
-      - targets: ["app:8080"]
+      - targets: ["dashboard:8080"]
+
+  # Down until the dispatcher exports Micrometer.
+  - job_name: agent-dispatcher
+    metrics_path: /q/metrics
+    static_configs:
+      - targets: ["agent-dispatcher:8080"]

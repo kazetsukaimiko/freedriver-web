@@ -2,7 +2,7 @@
 
 Coordinates: `io.freedriver:freedriver-mqtt-contract` (reactor module in this repo; published from `main` as `YEAR-MONTH_rBUILD_NUM`).
 
-The portal owns the dialect. Topics are `freedriver/v1/{instanceId}/appliances|commands`. Autonomy is a leaf: it pins this artifact. `app` and autonomy both take the records from this artifact as a Maven dependency.
+The portal owns the dialect. Topics are `freedriver/v1/{instanceId}/appliances|commands`. Autonomy is a leaf: it pins this artifact. `dashboard` and autonomy both take the records from this artifact as a Maven dependency. Do not vendor the records into `java/dashboard/` or into autonomy.
 
 Repository (for out-of-repo consumers): `https://maven.pkg.github.com/kazetsukaimiko/freedriver-web` (Maven repo id `github`).
 
@@ -10,7 +10,7 @@ Repository (for out-of-repo consumers): `https://maven.pkg.github.com/kazetsukai
 
 ## In this repo
 
-`app` depends on `${project.version}` of `freedriver-mqtt-contract`. Change the records and the app in the same PR. JSON parsing lives in `ApplianceJson` (MQTT handler codec); the records are plain data.
+`dashboard` depends on `${project.version}` of `freedriver-mqtt-contract`. Change the records and the app in the same PR. JSON parsing lives in `ApplianceJson` (MQTT handler codec); the records are plain data.
 
 ## Autonomy
 
