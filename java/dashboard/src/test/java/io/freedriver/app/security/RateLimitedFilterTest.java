@@ -41,6 +41,30 @@ class RateLimitedFilterTest {
     }
 
     @Test
+    void oidcSubject_is_attribute_or_jwt_subject_not_the_principal_name() {
+        var namedOnly = QuarkusSecurityIdentity.builder()
+                .setPrincipal(new QuarkusPrincipal("scott"))
+                .addRole("dashboard")
+                .build();
+        assertNull(OidcSubjects.subject(namedOnly));
+
+        var attribute = QuarkusSecurityIdentity.builder()
+                .setPrincipal(new TokenPrincipal("scott", "jwt-sub-9"))
+                .addAttribute("sub", "oidc-sub-1")
+                .addRole("dashboard")
+                .build();
+        assertEquals("oidc-sub-1", OidcSubjects.subject(attribute));
+
+        var jwt = QuarkusSecurityIdentity.builder()
+                .setPrincipal(new TokenPrincipal("scott", "jwt-sub-9"))
+                .addRole("dashboard")
+                .build();
+        assertEquals("jwt-sub-9", OidcSubjects.subject(jwt));
+        assertNull(OidcSubjects.subject(null));
+        assertNull(OidcSubjects.subject(QuarkusSecurityIdentity.builder().setAnonymous(true).build()));
+    }
+
+    @Test
     void callerKey_fail_closed_when_identity_missing_or_blank() {
         assertNull(RateLimitedFilter.callerKey(null));
         assertNull(RateLimitedFilter.callerKey(QuarkusSecurityIdentity.builder().setAnonymous(true).build()));

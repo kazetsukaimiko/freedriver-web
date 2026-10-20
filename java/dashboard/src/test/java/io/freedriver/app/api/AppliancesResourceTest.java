@@ -1,5 +1,6 @@
 package io.freedriver.app.api;
 
+import io.freedriver.app.appliances.ApplianceAudit;
 import io.freedriver.app.appliances.ApplianceControl;
 import io.freedriver.app.appliances.ApplianceCommandRouted;
 import io.freedriver.app.appliances.CommandRateLimiter;
@@ -7,15 +8,22 @@ import io.freedriver.app.appliances.MockAutonomy;
 import io.freedriver.app.security.CsrfFilter;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
 import io.quarkus.test.junit.QuarkusTest;
+import io.quarkus.test.security.SecurityAttribute;
 import io.quarkus.test.security.TestSecurity;
 import io.restassured.http.ContentType;
 import io.restassured.specification.RequestSpecification;
 import jakarta.inject.Inject;
+import org.jboss.logmanager.Logger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.hasItems;
@@ -301,5 +309,99 @@ class AppliancesResourceTest {
                     .when().post(commandPath("hallway"));
         }
         given().when().get("/api/appliances").then().statusCode(200);
+    }
+
+    @Test
+    @TestSecurity(user = "principal-name-not-subject", roles = {"dashboard"}, attributes = {
+            @SecurityAttribute(key = "sub", value = "caller-sub-219")
+    })
+    void command_audit_records_that_oidc_subject() {
+        mock.setConfirmCommands(true);
+        var get = given().when().get("/api/appliances");
+        String csrfCookie = get.cookie(CsrfFilter.COOKIE);
+        String csrfToken = get.path("csrfToken");
+        String sessionId = "session-id-not-for-audit";
+        String accessToken = "access-token-not-for-audit";
+        String mqttPassword = "mqtt-password-not-for-audit";
+
+        List<String> lines = auditLines(() -> given()
+                .contentType(ContentType.JSON)
+                .cookie(CsrfFilter.COOKIE, csrfCookie)
+                .cookie("q_session", sessionId)
+                .cookie("mqtt_password", mqttPassword)
+                .header(CsrfFilter.HEADER, csrfToken)
+                .header("Authorization", "Bearer " + accessToken)
+                .body("{\"on\":true}")
+                .when().post(commandPath("hallway"))
+                .then()
+                .statusCode(200)
+                .body("timeout", is(false)));
+
+        assertEquals(1, lines.size());
+        String line = lines.getFirst();
+        assertTrue(line.matches(
+                "audit appliance when=\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z"
+                        + " instance=" + MockAutonomy.INSTANCE_ID
+                        + " appliance=hallway on=true commandId=[0-9a-fA-F-]{36}"
+                        + " result=confirmed subject=caller-sub-219"));
+        assertFalse(line.contains("principal-name-not-subject"), line);
+        assertFalse(line.contains(csrfCookie), line);
+        assertFalse(line.contains(csrfToken), line);
+        assertFalse(line.contains(sessionId), line);
+        assertFalse(line.contains(accessToken), line);
+        assertFalse(line.contains(mqttPassword), line);
+        assertFalse(line.contains("cookie"), line);
+        assertFalse(line.contains("q_session"), line);
+        assertFalse(line.contains("password"), line);
+        String configuredPassword = System.getenv("FREEDRIVER_MQTT_API_PASSWORD");
+        if (configuredPassword != null && !configuredPassword.isBlank()) {
+            assertFalse(line.contains(configuredPassword), "audit line includes the mqtt password");
+        }
+    }
+
+    @Test
+    @TestSecurity(user = "principal-name-not-subject", roles = {"dashboard"})
+    void command_without_oidc_subject_leaves_subject_empty() {
+        mock.setConfirmCommands(true);
+        List<String> lines = auditLines(() -> commandSpec()
+                .body("{\"on\":true}")
+                .when().post(commandPath("kitchen"))
+                .then()
+                .statusCode(200));
+
+        assertEquals(1, lines.size());
+        String line = lines.getFirst();
+        assertTrue(line.endsWith(" subject="), line);
+        assertFalse(line.contains("principal-name-not-subject"), line);
+    }
+
+    private static List<String> auditLines(Runnable action) {
+        Logger logger = Logger.getLogger(ApplianceAudit.class.getName());
+        List<String> lines = new CopyOnWriteArrayList<>();
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                String message = record.getMessage();
+                if (message != null && message.startsWith("audit appliance ")) {
+                    lines.add(message);
+                }
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        handler.setLevel(Level.ALL);
+        logger.addHandler(handler);
+        try {
+            action.run();
+        } finally {
+            logger.removeHandler(handler);
+        }
+        return lines;
     }
 }

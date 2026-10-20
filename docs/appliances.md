@@ -90,7 +90,7 @@ Map and command are fail-closed (status table above). CSRF protection is the `X-
 - `lastUpdated` is when **Quarkus received** a valid Topic A payload (ISO-8601 UTC).
 - **Stale** = more than 20 seconds since the last valid state, or before the first one.
 - POST waits up to 5 seconds (`FREEDRIVER_COMMAND_TIMEOUT`, default `5s`, hard-capped at 30s) for a state event whose `appliedCommandId` matches the command just issued. Waiters live in `ApplianceControl`.
-- Audit log records who / when / appliance / command / `confirmed` or `timeout`.
+- The audit line is `when`, `instance`, `appliance`, `on`, `commandId`, `result` (`confirmed` or `timeout`), and `subject`. `subject` is the caller's OIDC `sub` (the identity `sub` attribute, otherwise the JWT subject), and it is empty when that subject is missing. The line does not include the principal name, cookies, the session id, or the MQTT password.
 
 ## Production safety
 
