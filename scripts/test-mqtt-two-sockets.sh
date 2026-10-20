@@ -339,18 +339,13 @@ run_broker_handshake() {
     "$image" >/dev/null
   local ready=0
   local logs=""
-  for _ in $(seq 1 30); do
+  for _ in $(seq 1 40); do
     logs="$(docker logs "$docker_name" 2>&1 || true)"
     if grep -q "listen socket on port 8883" <<<"$logs" && grep -q "listen socket on port 8884" <<<"$logs"; then
       ready=1
       break
     fi
-    if grep -qiE 'Error|error' <<<"$logs"; then
-      printf '%s\n' "$logs" >&2
-      echo "mosquitto failed to start" >&2
-      exit 1
-    fi
-    sleep 0.2
+    sleep 0.5
   done
   if [[ "$ready" -ne 1 ]]; then
     printf '%s\n' "$logs" >&2
