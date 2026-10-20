@@ -15,6 +15,24 @@ afterEach(() => {
   window.history.replaceState({}, '', '/')
 })
 
+it('shows Phone sign-in when the invite list allows this account', async () => {
+  window.history.replaceState({}, '', '/?splash=0')
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) =>
+      url === '/api/invites'
+        ? Response.json({ invites: [], csrfToken: 'csrf-1' })
+        : new Response(null, { status: 404 }),
+    ),
+  )
+  render(<App />)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0)
+  })
+
+  expect(screen.getByRole('link', { name: 'Phone sign-in' })).toBeTruthy()
+})
+
 it('shows the dashboard at /, where /login returns the browser after sign-in', async () => {
   window.history.replaceState({}, '', '/?splash=0')
   render(<App />)

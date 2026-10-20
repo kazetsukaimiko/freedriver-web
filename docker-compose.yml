@@ -28,11 +28,17 @@ services:
       QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver
       QUARKUS_OIDC_CLIENT_ID: freedriver-api
       QUARKUS_OIDC_CREDENTIALS_SECRET: ${QUARKUS_OIDC_CREDENTIALS_SECRET:?QUARKUS_OIDC_CREDENTIALS_SECRET is required}
-    # Invite service account (#172). scripts/provision-keycloak-freedriver.sh writes this file.
-    # Dashboard loads it with required: false.
+      SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
+      FREEDRIVER_SMS_BASE_URL: http://sms:8080
+      FREEDRIVER_INVITES_DIR: /deployments/data/invites
+    # Invite service account (#172). The provision script writes this file.
+    # Do not also interpolate FREEDRIVER_INVITE_CLIENT_SECRET here: that would
+    # override the file. Prod startup still fails when the secret is blank.
     env_file:
       - path: /opt/freedriver-secrets/keycloak-freedriver-invite.env
         required: false
+    volumes:
+      - /opt/freedriver-storage/invites:/deployments/data/invites
     expose:
       - "8080"
 

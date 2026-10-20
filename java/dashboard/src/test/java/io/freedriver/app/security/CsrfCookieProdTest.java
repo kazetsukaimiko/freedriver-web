@@ -65,6 +65,7 @@ class CsrfCookieProdTest {
             return Map.of(
                     "quarkus.oidc.enabled", "false",
                     "quarkus.oidc.credentials.secret", "unused-by-this-test",
+                    "freedriver.invite.client-secret", "unused-by-this-test",
                     "freedriver.appliances.enabled", "true",
                     "freedriver.appliances.live-commands", "false",
                     "freedriver.appliances.mock", "true",
