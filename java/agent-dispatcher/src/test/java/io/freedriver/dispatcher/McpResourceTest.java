@@ -2,6 +2,7 @@ package io.freedriver.dispatcher;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.freedriver.dispatcher.api.McpApi;
 import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
@@ -70,7 +71,7 @@ class McpResourceTest {
 
         given()
                 .contentType("application/json")
-                .header(McpResource.SESSION_HEADER, sessionId)
+                .header(McpApi.SESSION_HEADER, sessionId)
                 .body(submitBody("pc-anon", PROMPT))
                 .post("/mcp")
                 .then()
@@ -105,7 +106,7 @@ class McpResourceTest {
 
         String body = given()
                 .contentType("application/json")
-                .header(McpResource.SESSION_HEADER, alice)
+                .header(McpApi.SESSION_HEADER, alice)
                 .body(submitBody("pc-bob-session", PROMPT))
                 .post("/mcp")
                 .then()
@@ -125,7 +126,7 @@ class McpResourceTest {
         String alice = sessions.open("alice-delete");
 
         given()
-                .header(McpResource.SESSION_HEADER, alice)
+                .header(McpApi.SESSION_HEADER, alice)
                 .delete("/mcp")
                 .then()
                 .statusCode(403);
@@ -157,7 +158,7 @@ class McpResourceTest {
 
         given()
                 .contentType("application/json")
-                .header(McpResource.SESSION_HEADER, "not-a-real-session")
+                .header(McpApi.SESSION_HEADER, "not-a-real-session")
                 .body(submitBody("pc-unknown-session", PROMPT))
                 .post("/mcp")
                 .then()
@@ -256,7 +257,7 @@ class McpResourceTest {
                 .statusCode(200);
 
         given()
-                .header(McpResource.SESSION_HEADER, session)
+                .header(McpApi.SESSION_HEADER, session)
                 .header("MCP-Protocol-Version", "2024-11-05")
                 .contentType("application/json")
                 .body(submitBody("pc-mcp-grok", PROMPT))
@@ -266,7 +267,7 @@ class McpResourceTest {
         assertEquals(before, jobs.jobCount());
 
         Response stream = given()
-                .header(McpResource.SESSION_HEADER, session)
+                .header(McpApi.SESSION_HEADER, session)
                 .get("/mcp")
                 .then()
                 .statusCode(405)
@@ -279,13 +280,13 @@ class McpResourceTest {
         given().get("/mcp/messages").then().statusCode(404);
 
         given()
-                .header(McpResource.SESSION_HEADER, session)
+                .header(McpApi.SESSION_HEADER, session)
                 .delete("/mcp")
                 .then()
                 .statusCode(204);
         given()
                 .contentType("application/json")
-                .header(McpResource.SESSION_HEADER, session)
+                .header(McpApi.SESSION_HEADER, session)
                 .body("{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"tools/list\"}")
                 .post("/mcp")
                 .then()
@@ -371,14 +372,14 @@ class McpResourceTest {
                 .body("result.capabilities.prompts", nullValue())
                 .body("result.serverInfo.name", is("freedriver-dispatcher"))
                 .extract()
-                .header(McpResource.SESSION_HEADER);
+                .header(McpApi.SESSION_HEADER);
     }
 
     private static ValidatableResponse call(String sessionId, String body) {
         return given()
                 .contentType("application/json")
                 .accept("application/json, text/event-stream")
-                .header(McpResource.SESSION_HEADER, sessionId)
+                .header(McpApi.SESSION_HEADER, sessionId)
                 .body(body)
                 .post("/mcp")
                 .then();

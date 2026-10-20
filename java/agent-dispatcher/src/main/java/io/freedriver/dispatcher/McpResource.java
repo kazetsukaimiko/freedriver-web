@@ -5,24 +5,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.freedriver.dispatcher.api.Actors;
+import io.freedriver.dispatcher.api.McpApi;
 import io.freedriver.dispatcher.model.JobView;
+import io.freedriver.dispatcher.model.JsonRpcResponse;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.common.annotation.Blocking;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.Validator;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.DELETE;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.HeaderParam;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.time.Duration;
@@ -35,16 +26,9 @@ import java.util.UUID;
  * The bearer token is the credential. {@code MCP-Session-Id} only names a session
  * already bound to that token's subject.
  */
-@Path("/mcp")
 @ApplicationScoped
-public class McpResource {
+public class McpResource implements McpApi {
 
-    public static final String SESSION_HEADER = "MCP-Session-Id";
-
-    private static final int PARSE_ERROR = -32700;
-    private static final int INVALID_REQUEST = -32600;
-    private static final int METHOD_NOT_FOUND = -32601;
-    private static final int INVALID_PARAMS = -32602;
     private static final String LATEST_PROTOCOL = "2025-11-25";
     private static final Set<String> PROTOCOL_VERSIONS = Set.of("2025-03-26", "2025-06-18", LATEST_PROTOCOL);
     private static final Set<String> SUBMIT_FIELDS = Set.of("deviceIds", "agentName", "prompt", "channel");
@@ -52,6 +36,7 @@ public class McpResource {
 
     private final JobStore jobs;
     private final McpSessions sessions;
+    private final McpSessionHeader sessionHeader;
     private final SecurityIdentity identity;
     private final ObjectMapper mapper;
     private final Validator validator;
@@ -61,99 +46,74 @@ public class McpResource {
     public McpResource(
             JobStore jobs,
             McpSessions sessions,
+            McpSessionHeader sessionHeader,
             SecurityIdentity identity,
             ObjectMapper mapper,
             Validator validator,
             @ConfigProperty(name = "freedriver.dispatcher.submit-timeout", defaultValue = "75s") Duration submitTimeout) {
         this.jobs = jobs;
         this.sessions = sessions;
+        this.sessionHeader = sessionHeader;
         this.identity = identity;
         this.mapper = mapper;
         this.validator = validator;
         this.submitTimeout = submitTimeout;
     }
 
-    @POST
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    @RolesAllowed(Actors.DISPATCHER)
+    @Override
     @Blocking
-    public Response post(
-            @HeaderParam(SESSION_HEADER) String sessionId,
-            @HeaderParam("MCP-Protocol-Version") String protocolVersion,
-            String body) {
+    public JsonRpcResponse post(String sessionId, String protocolVersion, String body) {
         String subject = CallerIds.subject(identity);
-        Response rejected = rejectPresentedSession(sessionId, subject);
-        if (rejected != null) {
-            return rejected;
-        }
-        JsonNode message;
-        try {
-            message = parse(body);
-        } catch (IllegalArgumentException ex) {
-            return json(400, error(null, PARSE_ERROR, "parse error"), null);
-        }
+        rejectPresentedSession(sessionId, subject);
+        JsonNode message = parse(body);
         if (!message.isObject()) {
-            return json(400, error(null, INVALID_REQUEST, "invalid request"), null);
+            throw McpProtocolException.invalid(null, "invalid request");
         }
         JsonNode id = message.get("id");
         if (protocolVersion != null && !protocolVersion.isBlank() && !PROTOCOL_VERSIONS.contains(protocolVersion)) {
-            return json(400, error(id, INVALID_REQUEST, "unsupported protocol version"), matchedSession(sessionId, subject));
+            attachMatched(sessionId, subject);
+            throw McpProtocolException.invalid(id, "unsupported protocol version");
         }
         String method = text(message.get("method"));
         if (method == null) {
-            return json(400, error(id, INVALID_REQUEST, "invalid request"), null);
+            throw McpProtocolException.invalid(id, "invalid request");
         }
         if ("initialize".equals(method)) {
             return initialize(subject, id, message.get("params"));
         }
-        if (sessions.check(sessionId, subject) != McpSessions.Status.MATCH) {
-            return sessionFailure(McpSessions.Status.ABSENT, id);
+        McpSessions.Status status = sessions.check(sessionId, subject);
+        if (status != McpSessions.Status.MATCH) {
+            throw sessionFailure(status, id);
         }
+        sessionHeader.set(sessionId);
         if (!message.has("id")) {
-            return Response.accepted().header(SESSION_HEADER, sessionId).build();
+            throw McpProtocolException.accepted();
         }
         return switch (method) {
-            case "ping" -> json(200, result(id, mapper.createObjectNode()), sessionId);
-            case "tools/list" -> json(200, result(id, toolsList()), sessionId);
-            case "tools/call" -> json(200, callTool(subject, id, message.get("params")), sessionId);
-            default -> json(200, error(id, METHOD_NOT_FOUND, "method not found"), sessionId);
+            case "ping" -> envelope(id, mapper.createObjectNode());
+            case "tools/list" -> envelope(id, toolsList());
+            case "tools/call" -> callTool(subject, id, message.get("params"));
+            default -> throw McpProtocolException.methodNotFound(id);
         };
     }
 
-    @GET
-    @RolesAllowed(Actors.DISPATCHER)
-    public Response get(@HeaderParam(SESSION_HEADER) String sessionId) {
-        String subject = CallerIds.subject(identity);
-        Response rejected = rejectPresentedSession(sessionId, subject);
-        if (rejected != null) {
-            return rejected;
-        }
-        if (sessions.check(sessionId, subject) != McpSessions.Status.MATCH) {
-            return sessionFailure(McpSessions.Status.ABSENT, null);
-        }
-        return Response.status(Response.Status.METHOD_NOT_ALLOWED).header("Allow", "POST, DELETE").build();
+    @Override
+    public void get(String sessionId) {
+        requireSession(sessionId, CallerIds.subject(identity));
+        throw McpProtocolException.notAllowed();
     }
 
-    @DELETE
-    @RolesAllowed(Actors.DISPATCHER)
-    public Response delete(@HeaderParam(SESSION_HEADER) String sessionId) {
+    @Override
+    public void delete(String sessionId) {
         String subject = CallerIds.subject(identity);
-        Response rejected = rejectPresentedSession(sessionId, subject);
-        if (rejected != null) {
-            return rejected;
-        }
-        if (sessions.check(sessionId, subject) != McpSessions.Status.MATCH) {
-            return sessionFailure(McpSessions.Status.ABSENT, null);
-        }
+        requireSession(sessionId, subject);
         sessions.close(sessionId, subject);
-        return Response.noContent().build();
     }
 
-    private Response initialize(String subject, JsonNode id, JsonNode params) {
+    private JsonRpcResponse initialize(String subject, JsonNode id, JsonNode params) {
         String requested = params != null && params.isObject() ? text(params.get("protocolVersion")) : null;
         String version = requested != null && PROTOCOL_VERSIONS.contains(requested) ? requested : LATEST_PROTOCOL;
-        String sessionId = sessions.open(subject);
+        sessionHeader.set(sessions.open(subject));
         ObjectNode result = mapper.createObjectNode();
         result.put("protocolVersion", version);
         ObjectNode tools = mapper.createObjectNode();
@@ -165,12 +125,12 @@ public class McpResource {
         serverInfo.put("name", "freedriver-dispatcher");
         serverInfo.put("version", "1.0.0");
         result.set("serverInfo", serverInfo);
-        return json(200, result(id, result), sessionId);
+        return envelope(id, result);
     }
 
-    private ObjectNode callTool(String subject, JsonNode id, JsonNode params) {
+    private JsonRpcResponse callTool(String subject, JsonNode id, JsonNode params) {
         if (params == null || !params.isObject()) {
-            return error(id, INVALID_PARAMS, "invalid params");
+            throw McpProtocolException.invalidParams(id, "invalid params");
         }
         String name = text(params.get("name"));
         JsonNode arguments = params.get("arguments");
@@ -178,58 +138,59 @@ public class McpResource {
             arguments = mapper.createObjectNode();
         }
         if (!arguments.isObject()) {
-            return error(id, INVALID_PARAMS, "invalid params");
+            throw McpProtocolException.invalidParams(id, "invalid params");
         }
         try {
             return switch (name) {
                 case "list_devices" -> listDevices(id, arguments);
                 case "submit_job" -> submitJob(subject, id, arguments);
                 case "get_job" -> getJob(subject, id, arguments);
-                case null -> error(id, INVALID_PARAMS, "invalid params");
-                default -> error(id, INVALID_PARAMS, "unknown tool");
+                case null -> throw McpProtocolException.invalidParams(id, "invalid params");
+                default -> throw McpProtocolException.invalidParams(id, "unknown tool");
             };
         } catch (DispatcherException ex) {
-            return toolError(id, ex.getMessage() == null || ex.getMessage().isBlank() ? "request failed" : ex.getMessage());
+            String message = ex.getMessage();
+            return toolResult(id, message == null || message.isBlank() ? "request failed" : message, true);
         }
     }
 
-    private ObjectNode listDevices(JsonNode id, JsonNode arguments) {
+    private JsonRpcResponse listDevices(JsonNode id, JsonNode arguments) {
         if (arguments.size() != 0) {
-            return error(id, INVALID_PARAMS, "invalid params");
+            throw McpProtocolException.invalidParams(id, "invalid params");
         }
         return toolResult(id, write(jobs.listDevices()), false);
     }
 
-    private ObjectNode submitJob(String subject, JsonNode id, JsonNode arguments) {
+    private JsonRpcResponse submitJob(String subject, JsonNode id, JsonNode arguments) {
         if (!onlyFields(arguments, SUBMIT_FIELDS)
                 || !textual(arguments, "agentName")
                 || !textual(arguments, "prompt")
                 || !textual(arguments, "channel")
                 || !stringArray(arguments.get("deviceIds"))) {
-            return error(id, INVALID_PARAMS, "invalid params");
+            throw McpProtocolException.invalidParams(id, "invalid params");
         }
         SubmitJobRequest request;
         try {
             request = mapper.treeToValue(arguments, SubmitJobRequest.class);
         } catch (JsonProcessingException ex) {
-            return error(id, INVALID_PARAMS, "invalid params");
+            throw McpProtocolException.invalidParams(id, "invalid params");
         }
         if (!validator.validate(request).isEmpty()) {
-            return error(id, INVALID_PARAMS, "invalid params");
+            throw McpProtocolException.invalidParams(id, "invalid params");
         }
         JobView job = jobs.submit(subject, request, submitTimeout);
         return toolResult(id, write(job), false);
     }
 
-    private ObjectNode getJob(String subject, JsonNode id, JsonNode arguments) {
+    private JsonRpcResponse getJob(String subject, JsonNode id, JsonNode arguments) {
         if (!onlyFields(arguments, JOB_FIELDS) || !textual(arguments, "jobId")) {
-            return error(id, INVALID_PARAMS, "invalid params");
+            throw McpProtocolException.invalidParams(id, "invalid params");
         }
         UUID jobId;
         try {
             jobId = UUID.fromString(arguments.get("jobId").asText());
         } catch (IllegalArgumentException ex) {
-            return error(id, INVALID_PARAMS, "invalid params");
+            throw McpProtocolException.invalidParams(id, "invalid params");
         }
         return toolResult(id, write(jobs.getJob(subject, jobId)), false);
     }
@@ -312,33 +273,41 @@ public class McpResource {
 
     /**
      * A presented session that is unknown or bound to someone else is rejected
-     * before the body is read, so the tool does not run and the prompt is not logged.
+     * before the body is parsed, so the tool does not run and the prompt is not logged.
      */
-    private Response rejectPresentedSession(String sessionId, String subject) {
+    private void rejectPresentedSession(String sessionId, String subject) {
         if (sessionId == null || sessionId.isBlank()) {
-            return null;
+            return;
         }
         McpSessions.Status status = sessions.check(sessionId, subject);
-        if (status == McpSessions.Status.MATCH) {
-            return null;
+        if (status != McpSessions.Status.MATCH) {
+            throw sessionFailure(status, null);
         }
-        return sessionFailure(status, null);
     }
 
-    private Response sessionFailure(McpSessions.Status status, JsonNode id) {
+    private void requireSession(String sessionId, String subject) {
+        McpSessions.Status status = sessions.check(sessionId, subject);
+        if (status != McpSessions.Status.MATCH) {
+            throw sessionFailure(status, null);
+        }
+    }
+
+    private McpProtocolException sessionFailure(McpSessions.Status status, JsonNode id) {
         return switch (status) {
-            case ABSENT -> json(400, error(id, INVALID_REQUEST, "session required"), null);
-            case UNKNOWN -> json(404, error(id, INVALID_REQUEST, "session not found"), null);
-            case OTHER_SUBJECT -> json(403, error(id, INVALID_REQUEST, "session belongs to another subject"), null);
+            case ABSENT -> McpProtocolException.invalid(id, "session required");
+            case UNKNOWN -> McpProtocolException.notFound(id);
+            case OTHER_SUBJECT -> McpProtocolException.forbidden(id);
             case MATCH -> throw new IllegalStateException("session matched");
         };
     }
 
-    private String matchedSession(String sessionId, String subject) {
-        return sessions.check(sessionId, subject) == McpSessions.Status.MATCH ? sessionId : null;
+    private void attachMatched(String sessionId, String subject) {
+        if (sessions.check(sessionId, subject) == McpSessions.Status.MATCH) {
+            sessionHeader.set(sessionId);
+        }
     }
 
-    private ObjectNode toolResult(JsonNode id, String text, boolean isError) {
+    private JsonRpcResponse toolResult(JsonNode id, String text, boolean isError) {
         ObjectNode content = mapper.createObjectNode();
         content.put("type", "text");
         content.put("text", text);
@@ -347,48 +316,21 @@ public class McpResource {
         ObjectNode result = mapper.createObjectNode();
         result.set("content", contents);
         result.put("isError", isError);
-        return result(id, result);
+        return envelope(id, result);
     }
 
-    private ObjectNode toolError(JsonNode id, String message) {
-        return toolResult(id, message, true);
-    }
-
-    private ObjectNode result(JsonNode id, ObjectNode value) {
-        ObjectNode root = mapper.createObjectNode();
-        root.put("jsonrpc", "2.0");
-        root.set("id", id == null ? mapper.nullNode() : id);
-        root.set("result", value);
-        return root;
-    }
-
-    private ObjectNode error(JsonNode id, int code, String message) {
-        ObjectNode err = mapper.createObjectNode();
-        err.put("code", code);
-        err.put("message", message);
-        ObjectNode root = mapper.createObjectNode();
-        root.put("jsonrpc", "2.0");
-        root.set("id", id == null || id.isNull() ? mapper.nullNode() : id);
-        root.set("error", err);
-        return root;
-    }
-
-    private Response json(int status, ObjectNode body, String sessionId) {
-        Response.ResponseBuilder builder = Response.status(status).type(MediaType.APPLICATION_JSON).entity(body);
-        if (sessionId != null) {
-            builder.header(SESSION_HEADER, sessionId);
-        }
-        return builder.build();
+    private JsonRpcResponse envelope(JsonNode id, ObjectNode value) {
+        return new JsonRpcResponse("2.0", id == null || id.isNull() ? null : id, value);
     }
 
     private JsonNode parse(String body) {
         if (body == null || body.isBlank()) {
-            throw new IllegalArgumentException("empty");
+            throw McpProtocolException.parse();
         }
         try {
             return mapper.readTree(body);
         } catch (JsonProcessingException ex) {
-            throw new IllegalArgumentException("parse");
+            throw McpProtocolException.parse();
         }
     }
 

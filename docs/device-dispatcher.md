@@ -29,7 +29,7 @@ Assignment states: `queued` → `claimed` → `running` → `succeeded` | `faile
 
 Compose service `agent-dispatcher` has no host port. On `app.freedriver.io`, Caddy sends `/mcp`, `/mcp/*`, `/api/dispatcher`, `/api/dispatcher/*`, `/api/device`, and `/api/device/*` to `agent-dispatcher:8080`. Every other path stays on `dashboard:8080`.
 
-`/mcp` is Streamable HTTP MCP for the `dispatcher` role. The tools are `list_devices`, `submit_job`, and `get_job`. They call this same queue. Legacy HTTP+SSE under `/mcp/` is not served. A session id is bound to the bearer token subject and is not itself a credential. Anonymous callers receive 401. A token without the dispatcher role receives 403. The JAX-RS interfaces in `agent-dispatcher-api` remain the REST contract a RestEasy proxy client can call.
+`/mcp` is Streamable HTTP MCP for the `dispatcher` role. The tools are `list_devices`, `submit_job`, and `get_job`. They call this same queue. Legacy HTTP+SSE under `/mcp/` is not served. A session id is bound to the bearer token subject and is not itself a credential. Anonymous callers receive 401. A token without the dispatcher role receives 403. `McpApi` in `agent-dispatcher-api` is the `/mcp` contract, beside the REST interfaces a RestEasy proxy client can call.
 
 The device daemon runs on the PC, outside Compose. It will register, heartbeat, poll, claim, and run `grok` with an explicit tool allowlist.
 
