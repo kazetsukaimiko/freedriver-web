@@ -28,7 +28,7 @@ The service enforces:
 
 - Provisioned numbers only. It texts a code only to numbers that portal-admin provisioned, each mapped to one Keycloak username. Every well-formed number gets the same `sent` answer, so the response is identical for unknown numbers.
 - Code expiry. Codes are 6 digits, valid for 5 minutes, one pending code per number, and a code works once.
-- Attempts per phone. 5 wrong codes per number in 15 minutes drop the pending code, and verify then answers `429` for that number until the window ends. 5 sends per number in 15 minutes, after which send answers `429`. Both limits count every attempt, listed or unlisted, and answer every number the same way.
+- Attempts per phone. 5 wrong codes per number in 15 minutes drop the pending code, and verify then answers `429` for that number until the window ends. The wrong-code count is taken when the check starts, so guesses that arrive together still stop at 5. A later guess in that window is `429` before the provider check. Twilio's own 5-attempt limit on a verification stays the backstop. 5 sends per number in 15 minutes, after which send answers `429`. Both limits count every attempt, listed or unlisted, and answer every number the same way.
 
 Compose builds this service from `sms/src/main/docker/Dockerfile.compose` with the repository root as the build context. Its healthcheck runs `health-live.sh`, which requests `GET /health/live`. `sms/stub` remains the old fail-closed stand-in.
 
