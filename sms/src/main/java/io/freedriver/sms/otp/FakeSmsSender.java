@@ -23,8 +23,11 @@ public class FakeSmsSender extends AgreementGatedSender {
     private final SecureRandom random = new SecureRandom();
     private final Clock clock;
     private final Map<String, Pending> pending = new ConcurrentHashMap<>();
+    private final Map<String, AtomicInteger> checksByPhone = new ConcurrentHashMap<>();
     private final AtomicInteger deliveries = new AtomicInteger();
     private final AtomicInteger checks = new AtomicInteger();
+    private volatile Duration failureDelay = Duration.ZERO;
+    private volatile boolean failChecks;
 
     public FakeSmsSender(ConsentLedger consents, Clock clock) {
         super(consents);
@@ -39,9 +42,25 @@ public class FakeSmsSender extends AgreementGatedSender {
         return SendOutcome.SENT;
     }
 
+    /** Test hook: the next checks fail after {@code delay}, as a provider error. */
+    public void failChecksAfter(Duration delay) {
+        failureDelay = delay == null ? Duration.ZERO : delay;
+        failChecks = true;
+    }
+
+    /** Test hook: the next checks fail after {@code delay}, as a provider timeout. */
+    public void timeOutChecksAfter(Duration delay) {
+        failChecksAfter(delay);
+    }
+
     @Override
     public CheckOutcome checkCode(String phone, String code) {
         checks.incrementAndGet();
+        checksByPhone.computeIfAbsent(phone, ignored -> new AtomicInteger()).incrementAndGet();
+        if (failChecks) {
+            sleep(failureDelay);
+            return CheckOutcome.FAILED;
+        }
         Pending entry = pending.get(phone);
         if (entry == null || !clock.instant().isBefore(entry.expiresAt()) || !entry.code().equals(code)) {
             return CheckOutcome.WRONG_CODE;
@@ -70,10 +89,30 @@ public class FakeSmsSender extends AgreementGatedSender {
         return checks.get();
     }
 
+    /** Test hook: provider checks for one number since the last reset. */
+    public int checksFor(String phone) {
+        AtomicInteger count = checksByPhone.get(phone);
+        return count == null ? 0 : count.get();
+    }
+
     public void reset() {
         pending.clear();
+        checksByPhone.clear();
         deliveries.set(0);
         checks.set(0);
+        failureDelay = Duration.ZERO;
+        failChecks = false;
+    }
+
+    private static void sleep(Duration delay) {
+        if (delay == null || delay.isZero() || delay.isNegative()) {
+            return;
+        }
+        try {
+            Thread.sleep(delay.toMillis());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private record Pending(String code, Instant expiresAt) {
