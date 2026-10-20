@@ -30,7 +30,7 @@ The service enforces:
 - Code expiry. Codes are 6 digits, valid for 5 minutes, one pending code per number, and a code works once.
 - Attempts per phone. 5 wrong codes per number in 15 minutes drop the pending code, and verify then answers `429` for that number until the window ends. 5 sends per number in 15 minutes, after which send answers `429`. Both limits count every attempt, listed or unlisted, and answer every number the same way.
 
-Compose builds this service from `sms/src/main/docker/Dockerfile.compose` with the repository root as the build context. The runtime image has no Python. Its healthcheck runs `health-live.sh`, which requests `GET /health/live`. `sms/stub` is the old fail-closed stand-in and is not what compose runs.
+Compose builds this service from `sms/src/main/docker/Dockerfile.compose` with the repository root as the build context. Its healthcheck runs `health-live.sh`, which requests `GET /health/live`. `sms/stub` remains the old fail-closed stand-in.
 
 Build and test the Quarkus service with `./mvnw -pl sms verify`, and run it locally with `./mvnw -pl sms quarkus:dev`, which uses an in-memory fake sender.
 
@@ -88,7 +88,7 @@ After that match, the SPI finds users by the `phone` attribute and signs in only
 
 As root on the VPS:
 
-1. Add `SMS_OTP_SHARED_SECRET` to `/opt/freedriver-secrets/.env`. Generate the value with `openssl rand -base64 32`. Add `FREEDRIVER_SMS_DAILY_SEND_CAP` as a positive integer. sms does not start without the cap.
+1. Add `SMS_OTP_SHARED_SECRET` to `/opt/freedriver-secrets/.env`. Generate the value with `openssl rand -base64 32`. Add `FREEDRIVER_SMS_DAILY_SEND_CAP` as a positive integer. A missing cap stops sms at startup.
 2. Recreate both services so they pick it up:
 
 ```shell
