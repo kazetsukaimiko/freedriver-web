@@ -9,7 +9,7 @@ import jakarta.annotation.Priority;
 
 /**
  * In production, auth-policy keys come from {@code auth-policy.properties}.
- * A locked name that is not in that file keeps its Quarkus {@code @WithDefault}.
+ * A locked name that is not in that file keeps a known Quarkus default, or stays absent.
  * Test and dev launch modes pass the value through so a Quarkus test can boot.
  */
 @Priority(AuthPolicyLockInterceptor.PRIORITY)
