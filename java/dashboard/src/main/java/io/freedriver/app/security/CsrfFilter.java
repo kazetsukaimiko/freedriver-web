@@ -1,5 +1,6 @@
 package io.freedriver.app.security;
 
+import io.freedriver.app.invites.InviteList;
 import io.freedriver.dashboard.model.ApplianceMapResponse;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.annotation.Priority;
@@ -68,15 +69,21 @@ public class CsrfFilter implements ContainerRequestFilter, ContainerResponseFilt
 
     @Override
     public void filter(ContainerRequestContext request, ContainerResponseContext response) {
-        if (!"GET".equalsIgnoreCase(request.getMethod()) || !mapPath(path(request))) {
+        if (!"GET".equalsIgnoreCase(request.getMethod())) {
             return;
         }
-        if (!commandCaller()) {
+        if (!commandCaller() || response.getStatus() != 200) {
             return;
         }
-        if (response.getStatus() != 200 || !(response.getEntity() instanceof ApplianceMapResponse map)) {
-            return;
+        String path = path(request);
+        if ("api/appliances".equals(path) && response.getEntity() instanceof ApplianceMapResponse map) {
+            response.setEntity(new ApplianceMapResponse(map.instances(), token(request, response)));
+        } else if ("api/invites".equals(path) && response.getEntity() instanceof InviteList list) {
+            response.setEntity(new InviteList(list.invites(), token(request, response)));
         }
+    }
+
+    private String token(ContainerRequestContext request, ContainerResponseContext response) {
         var existing = request.getCookies().get(COOKIE);
         String token = existing != null && existing.getValue() != null && !existing.getValue().isBlank()
                 ? existing.getValue()
@@ -88,7 +95,7 @@ public class CsrfFilter implements ContainerRequestFilter, ContainerResponseFilt
                 .secure(cookieSecure)
                 .sameSite(NewCookie.SameSite.LAX)
                 .build());
-        response.setEntity(new ApplianceMapResponse(map.instances(), token));
+        return token;
     }
 
     private boolean commandCaller() {
@@ -105,12 +112,11 @@ public class CsrfFilter implements ContainerRequestFilter, ContainerResponseFilt
         return path;
     }
 
-    private static boolean mapPath(String path) {
-        return "api/appliances".equals(path);
-    }
-
     private static boolean commandPath(String path) {
-        return path.startsWith("api/appliances/");
+        return path.startsWith("api/appliances/")
+                || "api/invites".equals(path)
+                || "api/phones/remove".equals(path)
+                || (path.startsWith("api/invites/") && path.endsWith("/cancel"));
     }
 
     static String mint() {

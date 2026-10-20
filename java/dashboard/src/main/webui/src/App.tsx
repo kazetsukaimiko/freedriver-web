@@ -1,20 +1,23 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
-import { SIGN_OUT_PATH } from './api'
+import { SIGN_OUT_PATH, apiFetch } from './api'
 import { Brand } from './Brand'
 import { BuildStamp } from './BuildStamp'
 import { Changelog } from './Changelog'
 import { CHANGELOG_PATH } from './changelog'
 import { Dashboard } from './Dashboard'
+import { PhoneSignIn } from './PhoneSignIn'
+import { PHONES_PATH } from './phones'
 import './App.css'
 
 type Splash = 'playing' | 'docking' | 'revealing' | 'done'
 
-type Page = 'dashboard' | 'changelog' | 'not-found'
+type Page = 'dashboard' | 'changelog' | 'phones' | 'not-found'
 
 const pages = new Map<string, Page>([
   ['/', 'dashboard'],
   ['/dashboard', 'dashboard'],
   [CHANGELOG_PATH, 'changelog'],
+  [PHONES_PATH, 'phones'],
 ])
 const SPLASH_KEY = 'freedriver.splash.seen'
 
@@ -59,6 +62,7 @@ function App() {
   const [path, setPath] = useState(() => window.location.pathname)
   const [search, setSearch] = useState(() => window.location.search)
   const [signingOut, setSigningOut] = useState(false)
+  const [portalAdmin, setPortalAdmin] = useState(false)
   const navBrand = useRef<HTMLAnchorElement>(null)
 
   useEffect(() => {
@@ -100,6 +104,24 @@ function App() {
       window.removeEventListener('resize', place)
     }
   }, [splash])
+
+  useEffect(() => {
+    let cancelled = false
+    apiFetch('/api/invites')
+      .then((response) => {
+        if (!cancelled) {
+          setPortalAdmin(response.ok)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPortalAdmin(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [path])
 
   useEffect(() => {
     const onPop = () => {
@@ -160,6 +182,15 @@ function App() {
           >
             Dashboard
           </a>
+          {portalAdmin && (
+            <a
+              className={page === 'phones' ? 'nav-item is-current' : 'nav-item'}
+              href={hrefFor(PHONES_PATH)}
+              onClick={(event) => go(event, PHONES_PATH)}
+            >
+              Phone sign-in
+            </a>
+          )}
         </nav>
         <a
           className="sign-out"
@@ -179,6 +210,7 @@ function App() {
       <div className="workspace">
         {page === 'dashboard' && <Dashboard search={search} />}
         {page === 'changelog' && <Changelog />}
+        {page === 'phones' && <PhoneSignIn />}
         {page === 'not-found' && <NotFound />}
       </div>
       <BuildStamp changelogHref={hrefFor(CHANGELOG_PATH)} onOpenChangelog={(event) => go(event, CHANGELOG_PATH)} />
