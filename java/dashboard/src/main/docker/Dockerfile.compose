@@ -11,10 +11,14 @@ COPY mqtt/pom.xml mqtt/pom.xml
 COPY mqtt-paho/pom.xml mqtt-paho/pom.xml
 COPY java/pom.xml java/pom.xml
 COPY java/bom/pom.xml java/bom/pom.xml
+COPY java/dashboard-model/pom.xml java/dashboard-model/pom.xml
+COPY java/dashboard-api/pom.xml java/dashboard-api/pom.xml
 COPY java/dashboard/pom.xml java/dashboard/pom.xml
 COPY mqtt-contract/src mqtt-contract/src
 COPY mqtt/src mqtt/src
 COPY mqtt-paho/src mqtt-paho/src
+COPY java/dashboard-model/src java/dashboard-model/src
+COPY java/dashboard-api/src java/dashboard-api/src
 COPY java/dashboard/src java/dashboard/src
 
 ARG BUILD_NUMBER=1.0.0-SNAPSHOT

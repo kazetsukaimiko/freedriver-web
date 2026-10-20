@@ -1,11 +1,14 @@
 package io.freedriver.app.security;
 
+import io.freedriver.dashboard.api.RateLimited;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.container.DynamicFeature;
 import jakarta.ws.rs.container.ResourceInfo;
 import jakarta.ws.rs.core.FeatureContext;
 import jakarta.ws.rs.ext.Provider;
+
+import java.lang.reflect.Method;
 
 @Provider
 public class RateLimitedFeature implements DynamicFeature {
@@ -22,10 +25,26 @@ public class RateLimitedFeature implements DynamicFeature {
     }
 
     private static RateLimited binding(ResourceInfo resourceInfo) {
-        if (resourceInfo.getResourceMethod() != null) {
-            RateLimited method = resourceInfo.getResourceMethod().getAnnotation(RateLimited.class);
-            if (method != null) {
-                return method;
+        Method method = resourceInfo.getResourceMethod();
+        if (method != null) {
+            RateLimited direct = method.getAnnotation(RateLimited.class);
+            if (direct != null) {
+                return direct;
+            }
+            Class<?> clazz = resourceInfo.getResourceClass();
+            if (clazz != null) {
+                for (Class<?> iface : clazz.getInterfaces()) {
+                    try {
+                        RateLimited inherited = iface
+                                .getMethod(method.getName(), method.getParameterTypes())
+                                .getAnnotation(RateLimited.class);
+                        if (inherited != null) {
+                            return inherited;
+                        }
+                    } catch (NoSuchMethodException ignored) {
+                        // This interface does not declare the resource method.
+                    }
+                }
             }
         }
         if (resourceInfo.getResourceClass() != null) {

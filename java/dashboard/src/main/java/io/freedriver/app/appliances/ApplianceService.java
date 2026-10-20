@@ -1,5 +1,8 @@
 package io.freedriver.app.appliances;
 
+import io.freedriver.dashboard.model.ApplianceMapResponse;
+import io.freedriver.dashboard.model.InstanceView;
+import io.freedriver.dashboard.model.ApplianceStatus;
 import io.freedriver.mqtt.contract.ApplianceCommandMessage;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;

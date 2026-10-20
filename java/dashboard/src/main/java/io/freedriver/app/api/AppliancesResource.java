@@ -1,49 +1,30 @@
 package io.freedriver.app.api;
 
-import io.freedriver.app.appliances.ApplianceCommandRequest;
-import io.freedriver.app.appliances.ApplianceMapResponse;
+import io.freedriver.dashboard.api.AppliancesApi;
+import io.freedriver.dashboard.model.ApplianceCommandRequest;
+import io.freedriver.dashboard.model.ApplianceMapResponse;
 import io.freedriver.app.appliances.ApplianceService;
-import io.freedriver.app.appliances.InstanceView;
-import io.freedriver.app.security.RateLimited;
-import io.freedriver.mqtt.contract.ApplianceSchemas;
-import jakarta.annotation.security.RolesAllowed;
+import io.freedriver.dashboard.model.InstanceView;
+import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
 
 import java.util.UUID;
 
+@ApplicationScoped
 @Path("/api/appliances")
-@Produces(MediaType.APPLICATION_JSON)
-public class AppliancesResource {
+public class AppliancesResource implements AppliancesApi {
 
     @Inject
     ApplianceService appliances;
 
-    @GET
-    @RolesAllowed({"dashboard", "portal-admin"})
+    @Override
     public ApplianceMapResponse list() {
         return appliances.currentMap();
     }
 
-    @POST
-    @Path("/{instanceId}/{applianceName}")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @RolesAllowed({"dashboard", "portal-admin"})
-    @RateLimited("appliances.commands")
-    public InstanceView command(
-            @PathParam("instanceId") UUID instanceId,
-            @PathParam("applianceName") @NotBlank @Size(max = ApplianceSchemas.NAME_MAX) String applianceName,
-            @Valid @NotNull ApplianceCommandRequest body) {
+    @Override
+    public InstanceView command(UUID instanceId, String applianceName, ApplianceCommandRequest body) {
         return appliances.issueCommand(instanceId, applianceName, body.getOn());
     }
 }

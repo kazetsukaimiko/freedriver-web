@@ -1,5 +1,7 @@
 package io.freedriver.app.appliances;
 
+import io.freedriver.dashboard.model.ApplianceMapResponse;
+import io.freedriver.dashboard.model.InstanceView;
 import io.freedriver.mqtt.contract.Appliance;
 import io.freedriver.mqtt.contract.ApplianceCommandMessage;
 import jakarta.enterprise.inject.Vetoed;

@@ -1,4 +1,4 @@
-package io.freedriver.app.appliances;
+package io.freedriver.dashboard.model;
 
 import java.util.List;
 import java.util.UUID;

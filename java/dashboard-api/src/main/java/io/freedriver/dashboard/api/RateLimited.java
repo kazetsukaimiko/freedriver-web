@@ -1,4 +1,4 @@
-package io.freedriver.app.security;
+package io.freedriver.dashboard.api;
 
 import jakarta.ws.rs.NameBinding;
 

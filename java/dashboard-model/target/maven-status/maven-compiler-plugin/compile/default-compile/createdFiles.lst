@@ -1,0 +1,7 @@
+io/freedriver/dashboard/model/ApplianceStatus.class
+io/freedriver/dashboard/model/BuildResponse.class
+io/freedriver/dashboard/model/HealthResponse.class
+io/freedriver/dashboard/model/HelloResponse.class
+io/freedriver/dashboard/model/InstanceView.class
+io/freedriver/dashboard/model/ApplianceMapResponse.class
+io/freedriver/dashboard/model/ApplianceCommandRequest.class

@@ -1,20 +1,17 @@
 package io.freedriver.app.api;
 
-import jakarta.ws.rs.GET;
+import io.freedriver.dashboard.api.LoginApi;
+import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.core.Response;
 
 import java.net.URI;
 
-/**
- * After Keycloak, the browser returns to {@code /login}. Quinoa ignores this path,
- * so a JAX-RS resource sends the session home. The HTTP permission on {@code /login}
- * is the challenge ({@code java-script-auto-redirect} stays false).
- */
+@ApplicationScoped
 @Path("/login")
-public class LoginResource {
+public class LoginResource implements LoginApi {
 
-    @GET
+    @Override
     public Response start() {
         return Response.status(Response.Status.FOUND).location(URI.create("/")).build();
     }

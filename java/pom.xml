@@ -14,6 +14,8 @@
 
     <modules>
         <module>bom</module>
+        <module>dashboard-model</module>
+        <module>dashboard-api</module>
         <module>dashboard</module>
     </modules>
 

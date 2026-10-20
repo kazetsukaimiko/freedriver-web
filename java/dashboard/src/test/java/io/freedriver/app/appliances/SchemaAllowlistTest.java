@@ -1,5 +1,6 @@
 package io.freedriver.app.appliances;
 
+import io.freedriver.dashboard.model.ApplianceCommandRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;

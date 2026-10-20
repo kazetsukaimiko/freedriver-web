@@ -1,4 +1,4 @@
-package io.freedriver.app.appliances;
+package io.freedriver.dashboard.model;
 
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonIgnore;

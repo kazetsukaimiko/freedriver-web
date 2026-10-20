@@ -4,7 +4,7 @@ import io.freedriver.app.appliances.ApplianceControl;
 import io.freedriver.app.appliances.ApplianceService;
 import io.freedriver.app.appliances.ApplianceSnapshot;
 import io.freedriver.app.appliances.ApplianceStaleException;
-import io.freedriver.app.appliances.InstanceView;
+import io.freedriver.dashboard.model.InstanceView;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;

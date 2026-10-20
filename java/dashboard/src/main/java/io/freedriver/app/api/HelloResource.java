@@ -1,18 +1,15 @@
 package io.freedriver.app.api;
 
-import jakarta.ws.rs.GET;
+import io.freedriver.dashboard.model.HelloResponse;
+import io.freedriver.dashboard.api.HelloApi;
+import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
 
+@ApplicationScoped
 @Path("/api/hello")
-public class HelloResource {
+public class HelloResource implements HelloApi {
 
-    public record HelloResponse(String message, String service) {
-    }
-
-    @GET
-    @Produces(MediaType.APPLICATION_JSON)
+    @Override
     public HelloResponse hello() {
         return new HelloResponse("Hello from Freedriver", "freedriver-app");
     }

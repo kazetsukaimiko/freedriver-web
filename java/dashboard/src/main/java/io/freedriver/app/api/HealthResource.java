@@ -1,18 +1,15 @@
 package io.freedriver.app.api;
 
-import jakarta.ws.rs.GET;
+import io.freedriver.dashboard.model.HealthResponse;
+import io.freedriver.dashboard.api.HealthApi;
+import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
 
+@ApplicationScoped
 @Path("/api/health")
-public class HealthResource {
+public class HealthResource implements HealthApi {
 
-    public record HealthResponse(String status) {
-    }
-
-    @GET
-    @Produces(MediaType.APPLICATION_JSON)
+    @Override
     public HealthResponse health() {
         return new HealthResponse("UP");
     }
