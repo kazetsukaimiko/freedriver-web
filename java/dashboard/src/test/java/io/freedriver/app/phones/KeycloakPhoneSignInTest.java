@@ -59,6 +59,27 @@ class KeycloakPhoneSignInTest {
             assertTrue(tokenBody.get().contains("client_id=freedriver-invite"));
             assertTrue(tokenBody.get().contains("client_secret=secret-value"));
             assertEquals("/admin/realms/freedriver/users/user-1/groups/group-1", deletePath.get());
+            assertTrue(userQuery.get().contains("exact=true"));
+            assertTrue(userQuery.get().contains("briefRepresentation=false"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void a_group_with_a_parent_is_not_removed() throws Exception {
+        AtomicReference<String> deletePath = new AtomicReference<>();
+        HttpServer server = server(deletePath,
+                "[{\"id\":\"child\",\"name\":\"phone-sign-in\",\"parentId\":\"parent-1\"},"
+                        + "{\"id\":\"other\",\"name\":\"phone-sign-in\",\"parent\":{\"id\":\"p\"}}]",
+                userBody("+15555550123"));
+        server.start();
+        try {
+            KeycloakPhoneSignIn client = client(server);
+            InviteUpstreamException error = assertThrows(InviteUpstreamException.class,
+                    () -> client.removeFromPhoneSignIn("+15555550123"));
+            assertEquals("phone-sign-in group was not found", error.getMessage());
+            assertNull(deletePath.get());
         } finally {
             server.stop(0);
         }
