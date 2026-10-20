@@ -40,29 +40,45 @@ class JobStoreTest {
     }
 
     @Test
-    void other_device_queue_stays_empty() {
+    void other_device_queue_stays_empty() throws Exception {
         JobStore store = store();
         store.register("pc-a", "a.local", List.of("yuni"));
         store.register("pc-b", "b.local", List.of("yuni"));
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<JobView> pending = pool.submit(() -> store.submit(
+                    "grok", job(List.of("pc-a"), "yuni"), Duration.ofSeconds(5)));
+            AssignmentView queued = waitForQueued(store, "pc-a");
 
-        JobView submitted = store.submit("grok", job(List.of("pc-a"), "yuni"), Duration.ZERO);
-
-        assertEquals(AssignmentState.QUEUED, submitted.assignments().get(0).state());
-        assertTrue(store.poll("pc-b", Duration.ZERO).isEmpty());
-        assertEquals(1, store.poll("pc-a", Duration.ZERO).size());
+            assertEquals(AssignmentState.QUEUED, queued.state());
+            assertTrue(store.poll("pc-b", Duration.ZERO).isEmpty());
+            succeed(store, queued);
+            assertEquals(AssignmentState.SUCCEEDED, pending.get(5, TimeUnit.SECONDS).assignments().get(0).state());
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test
-    void device_cannot_claim_another_devices_assignment() {
+    void device_cannot_claim_another_devices_assignment() throws Exception {
         JobStore store = store();
         store.register("pc-a", "a.local", List.of("yuni"));
         store.register("pc-b", "b.local", List.of("yuni"));
-        UUID assignmentId = store.submit("grok", job(List.of("pc-a"), "yuni"), Duration.ZERO)
-                .assignments().get(0).assignmentId();
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<JobView> pending = pool.submit(() -> store.submit(
+                    "grok", job(List.of("pc-a"), "yuni"), Duration.ofSeconds(5)));
+            AssignmentView queued = waitForQueued(store, "pc-a");
 
-        DispatcherException error = assertThrows(DispatcherException.class, () -> store.claim("pc-b", assignmentId));
-        assertEquals(DispatcherException.Kind.FORBIDDEN, error.kind());
-        assertEquals(AssignmentState.QUEUED, store.poll("pc-a", Duration.ZERO).get(0).state());
+            DispatcherException error = assertThrows(
+                    DispatcherException.class, () -> store.claim("pc-b", queued.assignmentId()));
+            assertEquals(DispatcherException.Kind.FORBIDDEN, error.kind());
+            assertEquals(AssignmentState.QUEUED, store.poll("pc-a", Duration.ZERO).get(0).state());
+            succeed(store, queued);
+            pending.get(5, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test
@@ -92,27 +108,119 @@ class JobStoreTest {
     }
 
     @Test
-    void submit_returns_queued_when_nobody_claims() {
+    void submit_expires_when_nobody_claims() {
         JobStore store = store();
         store.register("pc-a", "a.local", List.of("yuni"));
 
         JobView submitted = store.submit("grok", job(List.of("pc-a"), "yuni"), Duration.ofMillis(40));
 
-        assertEquals(AssignmentState.QUEUED, submitted.assignments().get(0).state());
+        assertEquals(AssignmentState.EXPIRED, submitted.assignments().get(0).state());
+        assertTrue(store.poll("pc-a", Duration.ZERO).isEmpty());
+        DispatcherException error = assertThrows(DispatcherException.class,
+                () -> store.claim("pc-a", submitted.assignments().get(0).assignmentId()));
+        assertEquals(DispatcherException.Kind.CONFLICT, error.kind());
+        assertEquals(submitted, store.getJob("grok", submitted.jobId()));
+        assertThrows(DispatcherException.class, () -> store.getJob("someone-else", submitted.jobId()));
     }
 
     @Test
-    void illegal_jump_to_succeeded_conflicts() {
+    void claimed_assignment_expires_at_the_deadline() throws Exception {
         JobStore store = store();
         store.register("pc-a", "a.local", List.of("yuni"));
-        UUID assignmentId = store.submit("grok", job(List.of("pc-a"), "yuni"), Duration.ZERO)
-                .assignments().get(0).assignmentId();
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<JobView> pending = pool.submit(() -> store.submit(
+                    "grok", job(List.of("pc-a"), "yuni"), Duration.ofSeconds(2)));
+            AssignmentView queued = waitForQueued(store, "pc-a");
+            store.claim("pc-a", queued.assignmentId());
 
-        DispatcherException error = assertThrows(DispatcherException.class, () -> store.update(
-                "pc-a",
-                assignmentId,
-                new UpdateAssignmentRequest(AssignmentState.SUCCEEDED, null, null)));
-        assertEquals(DispatcherException.Kind.CONFLICT, error.kind());
+            JobView finished = pending.get(5, TimeUnit.SECONDS);
+            assertEquals(AssignmentState.EXPIRED, finished.assignments().get(0).state());
+            DispatcherException error = assertThrows(DispatcherException.class, () -> store.update(
+                    "pc-a",
+                    queued.assignmentId(),
+                    new UpdateAssignmentRequest(AssignmentState.RUNNING, UUID.randomUUID(), null)));
+            assertEquals(DispatcherException.Kind.CONFLICT, error.kind());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void deadline_leaves_a_finished_assignment_and_expires_the_other() throws Exception {
+        JobStore store = store();
+        store.register("pc-a", "a.local", List.of("yuni"));
+        store.register("pc-b", "b.local", List.of("yuni"));
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<JobView> pending = pool.submit(() -> store.submit(
+                    "grok", job(List.of("pc-a", "pc-b"), "yuni"), Duration.ofSeconds(2)));
+            AssignmentView queued = waitForQueued(store, "pc-a");
+            succeed(store, queued);
+
+            JobView finished = pending.get(5, TimeUnit.SECONDS);
+            assertEquals(AssignmentState.SUCCEEDED, assignment(finished, "pc-a").state());
+            assertEquals(AssignmentState.EXPIRED, assignment(finished, "pc-b").state());
+            DispatcherException error = assertThrows(DispatcherException.class,
+                    () -> store.claim("pc-b", assignment(finished, "pc-b").assignmentId()));
+            assertEquals(DispatcherException.Kind.CONFLICT, error.kind());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void one_in_flight_submit_per_subject() throws Exception {
+        JobStore store = store();
+        store.register("pc-a", "a.local", List.of("yuni"));
+        store.register("pc-b", "b.local", List.of("yuni"));
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<JobView> first = pool.submit(() -> store.submit(
+                    "grok", job(List.of("pc-a"), "yuni"), Duration.ofSeconds(5)));
+            waitForQueued(store, "pc-a");
+            Future<JobView> other = pool.submit(() -> store.submit(
+                    "other", job(List.of("pc-b"), "yuni"), Duration.ofSeconds(5)));
+            waitForQueued(store, "pc-b");
+
+            DispatcherException error = assertThrows(DispatcherException.class, () -> store.submit(
+                    "grok", job(List.of("pc-a"), "yuni"), Duration.ofSeconds(5)));
+            assertEquals(DispatcherException.Kind.CONFLICT, error.kind());
+            assertEquals("submit already in flight", error.getMessage());
+
+            succeed(store, store.poll("pc-a", Duration.ZERO).get(0));
+            succeed(store, store.poll("pc-b", Duration.ZERO).get(0));
+            first.get(5, TimeUnit.SECONDS);
+            other.get(5, TimeUnit.SECONDS);
+
+            JobView again = store.submit("grok", job(List.of("pc-a"), "yuni"), Duration.ofMillis(40));
+            assertEquals(AssignmentState.EXPIRED, again.assignments().get(0).state());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void illegal_jump_to_succeeded_conflicts() throws Exception {
+        JobStore store = store();
+        store.register("pc-a", "a.local", List.of("yuni"));
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<JobView> pending = pool.submit(() -> store.submit(
+                    "grok", job(List.of("pc-a"), "yuni"), Duration.ofSeconds(5)));
+            AssignmentView queued = waitForQueued(store, "pc-a");
+
+            DispatcherException error = assertThrows(DispatcherException.class, () -> store.update(
+                    "pc-a",
+                    queued.assignmentId(),
+                    new UpdateAssignmentRequest(AssignmentState.SUCCEEDED, null, null)));
+            assertEquals(DispatcherException.Kind.CONFLICT, error.kind());
+            assertEquals(AssignmentState.QUEUED, store.poll("pc-a", Duration.ZERO).get(0).state());
+            succeed(store, queued);
+            pending.get(5, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test
@@ -141,6 +249,24 @@ class JobStoreTest {
 
     private static JobStore store() {
         return new JobStore(Clock.systemUTC());
+    }
+
+    private static void succeed(JobStore store, AssignmentView queued) {
+        UUID session = UUID.randomUUID();
+        store.claim(queued.deviceId(), queued.assignmentId());
+        store.update(queued.deviceId(), queued.assignmentId(),
+                new UpdateAssignmentRequest(AssignmentState.RUNNING, session, null));
+        store.update(queued.deviceId(), queued.assignmentId(),
+                new UpdateAssignmentRequest(AssignmentState.SUCCEEDED, session, null));
+    }
+
+    private static AssignmentView assignment(JobView job, String deviceId) {
+        for (AssignmentView assignment : job.assignments()) {
+            if (deviceId.equals(assignment.deviceId())) {
+                return assignment;
+            }
+        }
+        throw new AssertionError(deviceId);
     }
 
     private static SubmitJobRequest job(List<String> deviceIds, String agent) {
