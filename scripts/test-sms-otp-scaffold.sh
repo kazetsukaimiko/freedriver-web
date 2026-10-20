@@ -127,13 +127,22 @@ done
 grep -q 'http://sms:8080' keycloak/sms-otp-spi/src/main/java/io/freedriver/keycloak/sms/SmsOtpConfig.java
 grep -q 'placeholder-not-a-live-secret' scripts/provision-keycloak-sms-otp.sh
 
-# The provision script keeps the password provider REQUIRED and SMS at ALTERNATIVE.
+# The provision script keeps the password provider REQUIRED and SMS off REQUIRED.
 if grep -n 'auth-username-password-form' scripts/provision-keycloak-sms-otp.sh | grep -i 'DISABLED'; then
   fail "provision script must not disable the password authenticator"
 fi
 if grep -E 'requirement.*REQUIRED' scripts/provision-keycloak-sms-otp.sh | grep -i 'sms'; then
   fail "provision script must not set SMS OTP to REQUIRED"
 fi
+if grep -q 'registrationAllowed=true' scripts/provision-keycloak-sms-otp.sh; then
+  fail "provision script must not enable self-registration"
+fi
+grep -q 'registrationAllowed=false' scripts/provision-keycloak-sms-otp.sh
+grep -q 'freedriver-phone-username-router' scripts/provision-keycloak-sms-otp.sh
+grep -q 'freedriver-sms-route-condition' scripts/provision-keycloak-sms-otp.sh
+grep -q -- '--count-usernames' scripts/provision-keycloak-sms-otp.sh
+grep -q -- '--apply-username-rule' scripts/provision-keycloak-sms-otp.sh
+grep -q -- '--plan' scripts/provision-keycloak-sms-otp.sh
 
 # docker exec receives the admin password by variable name.
 grep -q 'docker exec -e TECHOPS_PASS "\$CONTAINER"' scripts/provision-keycloak-sms-otp.sh
@@ -143,15 +152,20 @@ fi
 
 bash -n scripts/provision-keycloak-sms-otp.sh
 
-# The realm browser flow switches only after the in-container secret check passes.
+# Empty or placeholder secret still inserts the flow. browserFlow is not inside that check.
 python3 - <<'PY'
 from pathlib import Path
 script = Path("scripts/provision-keycloak-sms-otp.sh").read_text()
-check = script.index('[ -z "$v" ] || [ "$v" = "$PLACEHOLDER" ]')
-bind = script.index('-s "browserFlow=${FLOW}"')
-if script.count("browserFlow=") != 1 or check > bind:
-    raise SystemExit("bind browserFlow once, after the secret check")
-print("browser flow binds after the secret check")
+if script.count("browserFlow=") != 1:
+    raise SystemExit("bind browserFlow once")
+bind = [line for line in script.splitlines() if "browserFlow=" in line]
+if len(bind) != 1 or bind[0][:1].isspace():
+    raise SystemExit("browserFlow bind must not sit inside the secret check")
+if "placeholder-not-a-live-secret" not in script:
+    raise SystemExit("script must recognize the placeholder secret")
+if "No secret was written." not in script:
+    raise SystemExit("placeholder run must say it wrote no secret")
+print("browser flow binds with or without a real secret")
 PY
 
 # Phone sign-in pages come from the freedriver login theme through context.form().
@@ -166,16 +180,25 @@ if grep -RIn 'Response.ok' keycloak/sms-otp-spi/src/main; then
   fail "render authenticator pages with context.form()"
 fi
 
-python3 scripts/check-sms-otp-flow.py scripts/fixtures/sms-otp-flow-password-only.json >/dev/null
+python3 scripts/check-sms-otp-flow.py --self-test >/dev/null
+python3 scripts/check-sms-otp-flow.py --browser-source scripts/fixtures/sms-otp-flow-password-only.json >/dev/null
 python3 scripts/check-sms-otp-flow.py scripts/fixtures/sms-otp-flow-ok.json >/dev/null
 python3 scripts/check-sms-otp-flow.py --require-sms scripts/fixtures/sms-otp-flow-ok.json >/dev/null
-if python3 scripts/check-sms-otp-flow.py --require-sms scripts/fixtures/sms-otp-flow-password-only.json >/dev/null 2>&1; then
-  fail "checker must reject a flow that has no SMS execution when SMS is required"
+if python3 scripts/check-sms-otp-flow.py scripts/fixtures/sms-otp-flow-password-only.json >/dev/null 2>&1; then
+  fail "checker must reject a flow that is not the signed phone-username shape"
 fi
-if python3 scripts/check-sms-otp-flow.py --require-sms scripts/fixtures/sms-otp-flow-sms-first.json >/dev/null 2>&1; then
-  fail "checker must reject a flow where SMS comes before the forms Alternative"
+cookie_err="$(mktemp)"
+router_err="$(mktemp)"
+if python3 scripts/check-sms-otp-flow.py scripts/fixtures/sms-otp-flow-cookie-missing.json >/dev/null 2>"$cookie_err"; then
+  fail "checker must reject a flow with no auth-cookie"
 fi
-for bad in password-disabled sms-required password-missing forms-disabled; do
+grep -q 'auth-cookie is missing' "$cookie_err" || fail "checker must say auth-cookie is missing"
+if python3 scripts/check-sms-otp-flow.py scripts/fixtures/sms-otp-flow-router-ahead.json >/dev/null 2>"$router_err"; then
+  fail "checker must reject a router ahead of auth-cookie"
+fi
+grep -q 'router is ahead of auth-cookie' "$router_err" || fail "checker must say the router is ahead of auth-cookie"
+rm -f "$cookie_err" "$router_err"
+for bad in password-disabled sms-required password-missing forms-disabled sms-first; do
   if python3 scripts/check-sms-otp-flow.py "scripts/fixtures/sms-otp-flow-${bad}.json" >/dev/null 2>&1; then
     fail "checker must reject scripts/fixtures/sms-otp-flow-${bad}.json"
   fi
