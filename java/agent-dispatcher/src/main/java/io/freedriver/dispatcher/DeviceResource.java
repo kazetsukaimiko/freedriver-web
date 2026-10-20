@@ -49,6 +49,11 @@ public class DeviceResource implements DeviceApi {
     }
 
     @Override
+    public AssignmentView assignment(UUID assignmentId) {
+        return jobs.assignment(CallerIds.deviceId(identity), assignmentId);
+    }
+
+    @Override
     public AssignmentView claim(UUID assignmentId) {
         return jobs.claim(CallerIds.deviceId(identity), assignmentId);
     }

@@ -11,7 +11,7 @@ The queue lives in memory for the life of the process. Postgres is the persisten
 | Actor | Role | Routes |
 |---|---|---|
 | Dispatcher | `dispatcher` | `GET /api/dispatcher/devices`, `POST /api/dispatcher/jobs`, `GET /api/dispatcher/jobs/{jobId}` |
-| Device | `device` | `POST /api/device/register`, `POST /api/device/heartbeat`, `GET /api/device/assignments`, `POST /api/device/assignments/{id}/claim`, `POST /api/device/assignments/{id}` |
+| Device | `device` | `POST /api/device/register`, `POST /api/device/heartbeat`, `GET /api/device/assignments`, `GET /api/device/assignments/{id}`, `POST /api/device/assignments/{id}/claim`, `POST /api/device/assignments/{id}` |
 
 The device id is the token subject. When the access token carries `device_id`, that claim wins. A dispatcher only reads jobs it submitted.
 
@@ -23,7 +23,7 @@ The device id is the token subject. When the access token carries `device_id`, t
 
 `channel` is `TEXT` or `SPEECH`. One assignment is queued per device. `agentName` must be one that device registered, or the call fails immediately and nothing is queued. The call stays open until every assignment is `succeeded`, `failed`, or `expired`, or 75 seconds pass. If nobody claims, the assignment is still `queued`.
 
-Assignment states: `queued` → `claimed` → `running` → `succeeded` | `failed`. `expired` is allowed from any non-terminal state. `running` requires `grokSessionId`. A device only sees and updates its own assignments. `GET /api/device/assignments` long-polls for about 25 seconds.
+Assignment states: `queued` → `claimed` → `running` → `succeeded` | `failed`. `expired` is allowed from any non-terminal state. `running` requires `grokSessionId`. `failed` is also allowed from `claimed` when the device refuses the assignment before a session starts. `succeeded` is only from `running`. A device only sees and updates its own assignments. `AssignmentView` carries `channel` and `prompt` for that assignment. Another device's poll does not include it, and reading the assignment is forbidden. `GET /api/device/assignments` long-polls for about 25 seconds. The 75 second queue deadline stays in `JobStore`.
 
 ## Deploy
 
@@ -31,7 +31,7 @@ Compose service `agent-dispatcher` has no host port. On `app.freedriver.io`, Cad
 
 `/mcp` is routed and requires a caller. Streamable HTTP MCP tools are a later slice. The JAX-RS interfaces in `agent-dispatcher-api` are the contract a RestEasy proxy client can call.
 
-The device daemon runs on the PC, outside Compose. It will register, heartbeat, poll, claim, and run `grok` with an explicit tool allowlist.
+The device daemon in `java/device-daemon/` runs on the PC, outside Compose. It registers, heartbeats, long-polls, claims, and starts one headless `grok` process per winning text claim. The tool allowlist is local configuration and defaults to no tools. The prompt is written to a file mode `0600`, not placed on the command line. The client calls only `https://app.freedriver.io/api/device/*` with TLS verification on, and only with the device client credentials. It does not call `/api/dispatcher/*`. A user systemd unit is in the module. Deploy does not install or start it. The local session timeout kills that child process. It is not a second copy of the 75 second queue deadline.
 
 ## Keycloak
 

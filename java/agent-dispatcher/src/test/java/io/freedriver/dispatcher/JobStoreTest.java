@@ -20,6 +20,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -102,6 +104,93 @@ class JobStoreTest {
     }
 
     @Test
+    void prompt_is_only_on_the_owning_devices_assignment() {
+        JobStore store = store();
+        store.register("pc-a", "a.local", List.of("yuni"));
+        store.register("pc-b", "b.local", List.of("yuni"));
+        String shared = "shared-prompt-for-both";
+        JobView both = store.submit(
+                "grok",
+                new SubmitJobRequest(List.of("pc-a", "pc-b"), "yuni", shared, Channel.TEXT),
+                Duration.ZERO);
+
+        assertEquals(shared, both.prompt());
+        assertEquals(shared, both.assignments().get(0).prompt());
+        assertEquals(Channel.TEXT, both.assignments().get(0).channel());
+
+        AssignmentView onA = store.poll("pc-a", Duration.ZERO).stream()
+                .filter(view -> view.jobId().equals(both.jobId()))
+                .findFirst()
+                .orElseThrow();
+        AssignmentView onB = store.poll("pc-b", Duration.ZERO).stream()
+                .filter(view -> view.jobId().equals(both.jobId()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(shared, onA.prompt());
+        assertEquals(onA.deviceId(), "pc-a");
+        assertFalse(onA.assignmentId().equals(onB.assignmentId()));
+
+        String secretPrompt = "do-not-show-pc-b-this";
+        JobView onlyA = store.submit(
+                "grok",
+                new SubmitJobRequest(List.of("pc-a"), "yuni", secretPrompt, Channel.SPEECH),
+                Duration.ZERO);
+        assertTrue(store.poll("pc-b", Duration.ZERO).stream()
+                .noneMatch(view -> secretPrompt.equals(view.prompt())));
+        assertEquals(secretPrompt, store.assignment("pc-a", onlyA.assignments().get(0).assignmentId()).prompt());
+        assertEquals(Channel.SPEECH, store.assignment("pc-a", onlyA.assignments().get(0).assignmentId()).channel());
+
+        DispatcherException denied = assertThrows(
+                DispatcherException.class,
+                () -> store.assignment("pc-b", onlyA.assignments().get(0).assignmentId()));
+        assertEquals(DispatcherException.Kind.FORBIDDEN, denied.kind());
+        assertFalse(denied.getMessage().contains(secretPrompt));
+
+        DispatcherException otherDispatcher = assertThrows(
+                DispatcherException.class,
+                () -> store.getJob("someone-else", onlyA.jobId()));
+        assertFalse(otherDispatcher.getMessage().contains(secretPrompt));
+    }
+
+    @Test
+    void claimed_can_fail_without_a_session() {
+        JobStore store = store();
+        store.register("pc-a", "a.local", List.of("yuni"));
+        UUID assignmentId = store.submit("grok", job(List.of("pc-a"), "yuni"), Duration.ZERO)
+                .assignments().get(0).assignmentId();
+        store.claim("pc-a", assignmentId);
+
+        AssignmentView failed = store.update(
+                "pc-a",
+                assignmentId,
+                new UpdateAssignmentRequest(AssignmentState.FAILED, null, "refused SPEECH"));
+
+        assertEquals(AssignmentState.FAILED, failed.state());
+        assertNull(failed.grokSessionId());
+        assertEquals("refused SPEECH", failed.note());
+        DispatcherException succeeded = assertThrows(DispatcherException.class, () -> store.update(
+                "pc-a",
+                assignmentId,
+                new UpdateAssignmentRequest(AssignmentState.SUCCEEDED, null, null)));
+        assertEquals(DispatcherException.Kind.CONFLICT, succeeded.kind());
+    }
+
+    @Test
+    void succeeded_from_claimed_conflicts() {
+        JobStore store = store();
+        store.register("pc-a", "a.local", List.of("yuni"));
+        UUID assignmentId = store.submit("grok", job(List.of("pc-a"), "yuni"), Duration.ZERO)
+                .assignments().get(0).assignmentId();
+        store.claim("pc-a", assignmentId);
+
+        DispatcherException error = assertThrows(DispatcherException.class, () -> store.update(
+                "pc-a",
+                assignmentId,
+                new UpdateAssignmentRequest(AssignmentState.SUCCEEDED, null, null)));
+        assertEquals(DispatcherException.Kind.CONFLICT, error.kind());
+    }
+
+    @Test
     void illegal_jump_to_succeeded_conflicts() {
         JobStore store = store();
         store.register("pc-a", "a.local", List.of("yuni"));
@@ -113,6 +202,11 @@ class JobStoreTest {
                 assignmentId,
                 new UpdateAssignmentRequest(AssignmentState.SUCCEEDED, null, null)));
         assertEquals(DispatcherException.Kind.CONFLICT, error.kind());
+        DispatcherException failed = assertThrows(DispatcherException.class, () -> store.update(
+                "pc-a",
+                assignmentId,
+                new UpdateAssignmentRequest(AssignmentState.FAILED, null, null)));
+        assertEquals(DispatcherException.Kind.CONFLICT, failed.kind());
     }
 
     @Test
