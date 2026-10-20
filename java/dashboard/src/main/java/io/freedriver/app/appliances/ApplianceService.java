@@ -46,7 +46,8 @@ public class ApplianceService {
         return new ApplianceMapResponse(instances);
     }
 
-    public InstanceView issueCommand(@NonNull UUID instanceId, @NonNull String applianceName, boolean on) {
+    public InstanceView issueCommand(
+            @NonNull UUID instanceId, @NonNull String applianceName, boolean on, String subject) {
         Instant now = Instant.now();
         Optional<ApplianceSnapshot> maybe = control.instanceSnapshot(instanceId);
         if (maybe.isEmpty()) {
@@ -67,11 +68,13 @@ public class ApplianceService {
         Instant auditedAt = Instant.now();
         String name = control.instanceName(instanceId).orElse(null);
         if (confirmed.isPresent()) {
-            audit.record(new ApplianceAudit.Event(auditedAt, instanceId, applianceName, on, commandId, "confirmed"));
+            audit.record(new ApplianceAudit.Event(
+                    auditedAt, instanceId, applianceName, on, commandId, "confirmed", subject));
             ApplianceSnapshot applied = confirmed.get();
             return toView(instanceId, name, applied, applied.stale(config.staleAfter(), Instant.now()), false);
         }
-        audit.record(new ApplianceAudit.Event(auditedAt, instanceId, applianceName, on, commandId, "timeout"));
+        audit.record(new ApplianceAudit.Event(
+                auditedAt, instanceId, applianceName, on, commandId, "timeout", subject));
         ApplianceSnapshot last = control.instanceSnapshot(instanceId).orElse(snapshot);
         return toView(instanceId, name, last, last.stale(config.staleAfter(), Instant.now()), true);
     }
