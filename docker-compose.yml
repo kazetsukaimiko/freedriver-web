@@ -28,6 +28,11 @@ services:
       QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver
       QUARKUS_OIDC_CLIENT_ID: freedriver-api
       QUARKUS_OIDC_CREDENTIALS_SECRET: ${QUARKUS_OIDC_CREDENTIALS_SECRET:?QUARKUS_OIDC_CREDENTIALS_SECRET is required}
+    # Invite service account (#172). scripts/provision-keycloak-freedriver.sh writes this file.
+    # Dashboard loads it with required: false.
+    env_file:
+      - path: /opt/freedriver-secrets/keycloak-freedriver-invite.env
+        required: false
     expose:
       - "8080"
 

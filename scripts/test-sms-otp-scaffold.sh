@@ -58,8 +58,20 @@ TWILIO_ENV = (
 )
 if TWILIO_ENV not in block:
     raise SystemExit("sms loads /opt/freedriver-secrets/twilio-verify.env as a required env_file")
-if compose.count("env_file") != 1 or compose.count("twilio-verify.env") != 1:
-    raise SystemExit("twilio-verify.env is the only env_file, and only sms loads it")
+if compose.count("twilio-verify.env") != 1:
+    raise SystemExit("twilio-verify.env is loaded once, by sms")
+dash = compose.split("\n  dashboard:\n", 1)[1].split("\n  agent-dispatcher:\n", 1)[0]
+invite_env = (
+    "    env_file:\n"
+    "      - path: /opt/freedriver-secrets/keycloak-freedriver-invite.env\n"
+    "        required: false\n"
+)
+if invite_env not in dash:
+    raise SystemExit("dashboard loads the invite secret env file, and it is not required before provision")
+if "keycloak-freedriver-invite.env" in compose.replace(dash, ""):
+    raise SystemExit("only dashboard loads the invite secret env file")
+if compose.count("\n    env_file:\n") != 2:
+    raise SystemExit("env_file is only the sms twilio file and the dashboard invite file")
 if "TWILIO_" in compose.replace(block, ""):
     raise SystemExit("only sms receives TWILIO_ variables")
 if "sms-otp.env.example" in block or "sms-otp.env.example" in compose:
@@ -285,5 +297,93 @@ if missing:
     raise SystemExit("sign-in page text missing: " + "; ".join(missing))
 print("sign-in agreement and page text share one wording")
 PY
+
+python3 - <<'PY'
+import json, re, subprocess, tempfile, os
+from pathlib import Path
+
+def run(composite, mappings, expect):
+    with tempfile.TemporaryDirectory() as tmp:
+        cpath = Path(tmp) / "c.json"
+        mpath = Path(tmp) / "m.json"
+        cpath.write_text(json.dumps(composite))
+        mpath.write_text(json.dumps(mappings))
+        result = subprocess.run(
+            ["python3", "scripts/check-phone-user-roles.py", str(cpath), str(mpath), "freedriver"],
+            capture_output=True, text=True)
+    if (result.returncode == 0) != expect:
+        raise SystemExit(result.stderr or result.stdout or "phone role check mismatch")
+
+allowed = [
+    {"name": "dashboard"},
+    {"name": "default-roles-freedriver"},
+    {"name": "offline_access"},
+    {"name": "uma_authorization"},
+]
+run(allowed, {}, True)
+run([{"name": "dashboard"}, {"name": "default-roles-freedriver"}], {}, True)
+run([{"name": "portal-admin"}], {}, False)
+run([{"name": "changelog"}], {}, False)
+run(allowed + [{"name": "extra"}], {}, False)
+run(allowed, {"clientMappings": {"account": {"mappings": [{"name": "view-profile"}]}}}, False)
+script = Path("scripts/provision-keycloak-freedriver.sh").read_text()
+phone = script.split("# Phone sign-in user kaze", 1)[1]
+marker = phone.find("phone roles allow-list before the phone attribute")
+write = phone.find("Set ${PHONE_ATTRIBUTE} on user")
+if marker < 0 or write < 0 or marker > write:
+    raise SystemExit("group and role checks must run before the phone attribute is written")
+if r"^\+1[2-9][0-9]{9}$" not in script:
+    raise SystemExit("seed phone check must be +1 and ten digits starting 2-9")
+if "adminPermissionsEnabled=true" not in script or "freedriver-invite" not in script:
+    raise SystemExit("provision script must enable admin permissions and the invite client")
+body = script.split("ensure_invite_service_account() {", 1)[1]
+depth = 1
+kept = []
+for line in body.splitlines():
+    if line.strip() == "{":
+        depth += 1
+    elif line.strip() == "}":
+        depth -= 1
+        if depth == 0:
+            break
+    kept.append(line)
+invite_body = "\n".join(kept)
+if "add-roles" in invite_body:
+    raise SystemExit("invite setup must not grant roles with add-roles")
+if "map-roles" in invite_body or "impersonate" in invite_body:
+    raise SystemExit("invite permissions must not include map-roles or impersonate")
+if 'update "${path}/${perm_id}"' not in script:
+    raise SystemExit("existing invite permission must be updated")
+if re.search(r'"(view|view-members|manage-members)"', script):
+    raise SystemExit("invite scopes must be manage-membership and manage-group-membership")
+print("phone role allow-list and invite permission scope")
+PY
+
+if grep -RIn 'offline_access' java/dashboard keycloak/themes >/dev/null; then
+  fail "the app must not request offline_access"
+fi
+if ! grep -q 'Referrer-Policy "no-referrer"' Caddyfile; then
+  fail "Caddy must set Referrer-Policy no-referrer"
+fi
+python3 - <<'PY'
+from pathlib import Path
+text = Path("Caddyfile").read_text()
+start = text.find("app.freedriver.io {")
+end = text.find("\n}\n", start)
+block = text[start:end]
+invite = block.split("@invite path /invite /invite/*", 1)
+if len(invite) != 2 or 'header Referrer-Policy "no-referrer"' not in invite[1].split("handle {", 1)[0]:
+    raise SystemExit("Referrer-Policy no-referrer applies to /invite/ only")
+print("invite responses set Referrer-Policy")
+PY
+if [[ "$(grep -v '^#' secrets/keycloak-freedriver-invite.env.example | grep -v '^$')" != "FREEDRIVER_INVITE_CLIENT_SECRET=" ]]; then
+  fail "invite example file holds one empty assignment"
+fi
+if ! grep -q 'Placeholder for the dashboard invite client' secrets/keycloak-freedriver-invite.env.example; then
+  fail "invite example file must mark the assignment as a placeholder"
+fi
+
+chmod +x scripts/test-invite-service-account.sh
+./scripts/test-invite-service-account.sh
 
 echo "sms otp scaffold locks ok"
