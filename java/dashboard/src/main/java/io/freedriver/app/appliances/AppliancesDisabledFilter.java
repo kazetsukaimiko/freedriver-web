@@ -9,8 +9,9 @@ import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
 
 /**
- * While {@code freedriver.appliances.enabled} is false (default/prod), every {@code /api/appliances}
- * path returns 404, which keeps the command route closed while OIDC is off.
+ * While {@code freedriver.appliances.enabled} is false, every {@code /api/appliances}
+ * path returns 404. The default profile leaves it false. The prod profile turns it on
+ * for the practice list and still leaves {@code live-commands} false.
  */
 @Provider
 @Priority(Priorities.AUTHENTICATION - 100)

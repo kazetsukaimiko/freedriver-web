@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -34,7 +35,7 @@ class DefaultProfileSafetyTest {
     }
 
     @Test
-    void prod_profile_turns_on_sign_in_and_keeps_appliance_control_off() throws IOException {
+    void prod_profile_serves_the_mock_and_keeps_live_commands_off() throws IOException {
         List<String> lines = Files.readAllLines(Path.of("src/main/resources/application.properties")).stream()
                 .map(String::strip)
                 .toList();
@@ -44,11 +45,27 @@ class DefaultProfileSafetyTest {
         assertTrue(lines.contains("%prod.quarkus.oidc.enabled=true"));
         assertTrue(lines.contains("freedriver.appliances.enabled=false"));
         assertTrue(lines.contains("freedriver.appliances.live-commands=false"));
+        assertTrue(lines.contains("freedriver.appliances.mock=false"));
         for (String line : lines) {
             assertFalse(line.startsWith("%prod.freedriver.appliances.enabled"), line);
             assertFalse(line.startsWith("%prod.freedriver.appliances.live-commands"), line);
+            assertFalse(line.startsWith("%prod.freedriver.appliances.mock"), line);
             assertFalse(line.startsWith("freedriver.appliances.enabled=true"), line);
             assertFalse(line.startsWith("freedriver.appliances.live-commands=true"), line);
+            assertFalse(line.startsWith("freedriver.appliances.mock=true"), line);
         }
+
+        List<String> prod = Files.readAllLines(Path.of("src/main/resources/application-prod.properties")).stream()
+                .map(String::strip)
+                .filter(line -> !line.isEmpty() && !line.startsWith("#"))
+                .toList();
+        assertTrue(prod.contains("freedriver.appliances.enabled=true"));
+        assertTrue(prod.contains("freedriver.appliances.mock=true"));
+        assertTrue(prod.contains("freedriver.appliances.live-commands=false"));
+        assertTrue(prod.contains("freedriver.appliances.mock-refresh=true"));
+        assertEquals(1, prod.stream().filter(line -> line.startsWith("freedriver.appliances.mock=")).count());
+        assertFalse(prod.stream().anyMatch(line -> line.startsWith("freedriver.appliances.live-commands=true")));
+        assertFalse(prod.stream().anyMatch(line -> line.contains("mqtt.freedriver.io") || line.contains("1883")));
+        assertFalse(prod.stream().anyMatch(line -> line.startsWith("freedriver.mqtt.")));
     }
 }
