@@ -15,7 +15,7 @@ auth.freedriver.io {
 
 app.freedriver.io {
 	encode gzip
-	reverse_proxy app:8080
+	reverse_proxy dashboard:8080
 }
 
 # Public hostname kept so TLS/DNS stay put. Console is loopback-only.

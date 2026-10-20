@@ -3,26 +3,19 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>io.freedriver</groupId>
-        <artifactId>freedriver-web</artifactId>
+        <artifactId>freedriver-web-java</artifactId>
         <version>1.0.0-SNAPSHOT</version>
     </parent>
-    <artifactId>app</artifactId>
+    <artifactId>dashboard</artifactId>
     <packaging>quarkus</packaging>
-    <name>freedriver-app</name>
-
-    <properties>
-        <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
-        <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
-        <quarkus.platform.version>3.38.2</quarkus.platform.version>
-        <skipITs>true</skipITs>
-    </properties>
+    <name>freedriver-web-dashboard</name>
 
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>${quarkus.platform.group-id}</groupId>
-                <artifactId>${quarkus.platform.artifact-id}</artifactId>
-                <version>${quarkus.platform.version}</version>
+                <groupId>io.freedriver</groupId>
+                <artifactId>freedriver-web-bom</artifactId>
+                <version>${project.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>

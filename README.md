@@ -35,19 +35,19 @@ ssh -L 3000:127.0.0.1:3000 -L 8081:127.0.0.1:8081 -i <key> lonewatt-techops@138.
 Then Grafana is http://127.0.0.1:3000 (user `admin`, password `GF_SECURITY_ADMIN_PASSWORD` in `/opt/freedriver-secrets/.env`). Keycloak admin is http://127.0.0.1:8081/admin. Public `https://auth.freedriver.io/admin` returns 404; user login on that host is unchanged. `https://grafana.freedriver.io` and `https://mqtt.freedriver.io` return 404.
 
 
-Alloy tails Docker container logs into Loki (14 days). Prometheus keeps ~15 days and scrapes itself, Alloy, and `app:8080/q/metrics` (that target is down until the Quarkus app exports Micrometer metrics). Loki, Prometheus, and Alloy stay on the compose network. Grafana and Keycloak admin bind 127.0.0.1 only.
+Alloy tails Docker container logs into Loki (14 days). Prometheus keeps ~15 days and scrapes itself, Alloy, and `dashboard:8080/q/metrics` (that target is down until the Quarkus app exports Micrometer metrics). Loki, Prometheus, and Alloy stay on the compose network. Grafana and Keycloak admin bind 127.0.0.1 only.
 
 `grafana.freedriver.io` A record is Sysadmin, same as `auth.freedriver.io`.
 
 ## App
 
-The product app lives in `app/`: Quarkus 3.38 (Java 21) with Quinoa serving a React TypeScript SPA. It talks normal REST under `/api`. Keycloak at `https://auth.freedriver.io` will handle auth later; OIDC is present as a dependency with commented config so the app starts without secrets.
+The product app lives in `java/dashboard/`: Quarkus 3.38 (Java 21) with Quinoa serving a React TypeScript SPA. Shared Quarkus and Jackson versions live in `java/bom/`. It talks normal REST under `/api`. Keycloak at `https://auth.freedriver.io` will handle auth later; OIDC is present as a dependency with commented config so the app starts without secrets.
 
 ```shell
-./mvnw -pl app -am quarkus:dev
+./mvnw -pl java/dashboard -am quarkus:dev
 ```
 
-Requires Java 23. Quinoa can install Node for the UI build. Open http://localhost:8080 for the dashboard (`GET /api/hello` and `GET /api/build` are public). Production is `https://app.freedriver.io` via Caddy → the Compose `app` service.
+Requires Java 23. Quinoa can install Node for the UI build. Open http://localhost:8080 for the dashboard (`GET /api/hello` and `GET /api/build` are public). Production is `https://app.freedriver.io` via Caddy → the Compose `dashboard` service.
 
 `mqtt-contract/`, `mqtt/`, and `mqtt-paho/` are reactor siblings (`io.freedriver:freedriver-mqtt-contract`, `freedriver-mqtt`, `freedriver-mqtt-paho`). The app does not pin autonomy's GitHub Packages jar.
 
@@ -69,7 +69,7 @@ A successful `main` deploy stamps `YEAR-MONTH_rBUILD_NUM` (UTC year-month + `git
 
 That string is:
 
-1. Written to `BUILD_NUMBER` (rsynced; not committed) and passed as the Compose `app` build arg
+1. Written to `BUILD_NUMBER` (rsynced; not committed) and passed as the Compose `dashboard` build arg
 2. Baked into the image: Maven `versions:set` in the Docker builder (git POM stays `1.0.0-SNAPSHOT`) plus `-Dquarkus.application.version`
 3. Annotated-tagged on `GITHUB_SHA` **after** SSH deploy succeeds (not on PRs)
 4. Exposed for UX [#49](https://github.com/kazetsukaimiko/freedriver-web/issues/49) at public `GET /api/build` → `{"build":"2026-08_r45"}`

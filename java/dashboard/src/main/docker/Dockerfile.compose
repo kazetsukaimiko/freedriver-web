@@ -1,5 +1,5 @@
 # Multi-stage image for docker compose `build:` from the repo root.
-#   docker build -f app/src/main/docker/Dockerfile.compose -t freedriver-app .
+#   docker build -f java/dashboard/src/main/docker/Dockerfile.compose -t freedriver-dashboard .
 # mqtt-contract, mqtt, and mqtt-paho are reactor siblings; no GitHub Packages pin.
 
 FROM maven:3.9-eclipse-temurin-23 AS build
@@ -9,11 +9,13 @@ COPY pom.xml ./
 COPY mqtt-contract/pom.xml mqtt-contract/pom.xml
 COPY mqtt/pom.xml mqtt/pom.xml
 COPY mqtt-paho/pom.xml mqtt-paho/pom.xml
-COPY app/pom.xml app/pom.xml
+COPY java/pom.xml java/pom.xml
+COPY java/bom/pom.xml java/bom/pom.xml
+COPY java/dashboard/pom.xml java/dashboard/pom.xml
 COPY mqtt-contract/src mqtt-contract/src
 COPY mqtt/src mqtt/src
 COPY mqtt-paho/src mqtt-paho/src
-COPY app/src app/src
+COPY java/dashboard/src java/dashboard/src
 
 ARG BUILD_NUMBER=1.0.0-SNAPSHOT
 RUN set -eu; \
@@ -22,7 +24,7 @@ RUN set -eu; \
       -DnewVersion="${BUILD_NUMBER}" \
       -DgenerateBackupPoms=false \
       -DprocessAllModules=true \
- && mvn -B -pl app -am -DskipTests \
+ && mvn -B -pl java/bom,java/dashboard -am -DskipTests \
       -Dquarkus.application.version="${BUILD_NUMBER}" \
       -Dquarkus.package.jar.manifest.attributes.Implementation-Version="${BUILD_NUMBER}" \
       package
@@ -30,10 +32,10 @@ RUN set -eu; \
 FROM registry.access.redhat.com/ubi9/openjdk-25-runtime:1.24
 ENV LANGUAGE='en_US:en'
 
-COPY --from=build --chown=185 /workspace/app/target/quarkus-app/lib/ /deployments/lib/
-COPY --from=build --chown=185 /workspace/app/target/quarkus-app/*.jar /deployments/
-COPY --from=build --chown=185 /workspace/app/target/quarkus-app/app/ /deployments/app/
-COPY --from=build --chown=185 /workspace/app/target/quarkus-app/quarkus/ /deployments/quarkus/
+COPY --from=build --chown=185 /workspace/java/dashboard/target/quarkus-app/lib/ /deployments/lib/
+COPY --from=build --chown=185 /workspace/java/dashboard/target/quarkus-app/*.jar /deployments/
+COPY --from=build --chown=185 /workspace/java/dashboard/target/quarkus-app/app/ /deployments/app/
+COPY --from=build --chown=185 /workspace/java/dashboard/target/quarkus-app/quarkus/ /deployments/quarkus/
 
 EXPOSE 8080
 USER 185

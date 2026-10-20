@@ -144,7 +144,7 @@ freedriver.appliances.mock=false
 quarkus.oidc.enabled=false
 ```
 
-`./mvnw -pl app -am quarkus:dev` uses **mock-autonomy** on the same `ApplianceControl` bus (`%dev`): no broker, no Keycloak, `/api/hello` and `/api/health` stay 200, `/api/appliances` is served from the mock event source (one Cabin instance, six named appliances).
+`./mvnw -pl java/dashboard -am quarkus:dev` uses **mock-autonomy** on the same `ApplianceControl` bus (`%dev`): no broker, no Keycloak, `/api/hello` and `/api/health` stay 200, `/api/appliances` is served from the mock event source (one Cabin instance, six named appliances).
 
 ### One `%dev` auth path
 

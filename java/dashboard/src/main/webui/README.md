@@ -2,7 +2,7 @@
 
 React + TypeScript SPA built with Vite and served by Quarkus Quinoa.
 
-Do not run this folder on its own for normal development. From `app/`:
+Do not run this folder on its own for normal development. From `java/dashboard/`:
 
 ```shell
 ./mvnw quarkus:dev

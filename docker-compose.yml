@@ -13,13 +13,13 @@ services:
       - /opt/freedriver-storage/caddy/config:/config
     depends_on:
       - keycloak
-      - app
+      - dashboard
       - grafana
 
-  app:
+  dashboard:
     build:
       context: .
-      dockerfile: app/src/main/docker/Dockerfile.compose
+      dockerfile: java/dashboard/src/main/docker/Dockerfile.compose
       args:
         BUILD_NUMBER: ${BUILD_NUMBER:-1.0.0-SNAPSHOT}
     restart: unless-stopped
