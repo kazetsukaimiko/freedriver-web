@@ -150,6 +150,11 @@ jobs:
           chmod +x scripts/sync-mosquitto-le-cert.sh scripts/test-sync-mosquitto-le-cert.sh
           ./scripts/test-sync-mosquitto-le-cert.sh
 
+      - name: Alloy reaches Docker only through the list-and-logs proxy
+        run: |
+          python3 observability/docker-logs-proxy/test_docker_logs_proxy.py
+          docker build -t freedriver-docker-logs-proxy:ci observability/docker-logs-proxy
+
       - name: Browser must not speak MQTT
         run: |
           if grep -RInE 'mqtt|8883|mosquitto' java/dashboard/src/main/webui; then

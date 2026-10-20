@@ -176,6 +176,34 @@ services:
       - "9090"
     mem_limit: 256m
 
+  docker-logs-proxy:
+    # Forwards container list, log streams, and a redacted inspect (running
+    # state and TTY). Alloy mounts docker-logs-sock, not the daemon socket.
+    # A read-only socket mount does not stop API calls.
+    build:
+      context: ./observability/docker-logs-proxy
+    restart: unless-stopped
+    user: "0"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      LISTEN_SOCK: /run/docker-logs/docker.sock
+      UPSTREAM_SOCK: /var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - docker-logs-sock:/run/docker-logs
+    healthcheck:
+      test: ["CMD", "python3", "/usr/local/bin/docker_logs_proxy.py", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    mem_limit: 64m
+
   alloy:
     image: grafana/alloy:v1.18.1
     restart: unless-stopped
@@ -187,14 +215,17 @@ services:
       - --storage.path=/var/lib/alloy/data
     volumes:
       - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - docker-logs-sock:/run/docker-logs:ro
     expose:
       - "12345"
     mem_limit: 192m
     environment:
       GOMEMLIMIT: 150MiB
     depends_on:
-      - loki
+      loki:
+        condition: service_started
+      docker-logs-proxy:
+        condition: service_healthy
 
   mosquitto:
     image: eclipse-mosquitto:2.1.2-alpine
@@ -231,3 +262,6 @@ services:
       - caddy
       - mosquitto
     mem_limit: 64m
+
+volumes:
+  docker-logs-sock:

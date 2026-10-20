@@ -1,6 +1,7 @@
 // Docker container logs → Loki. Prometheus scrapes Alloy on :12345.
+// This socket is the list-and-logs proxy, not the Docker daemon.
 discovery.docker "containers" {
-  host = "unix:///var/run/docker.sock"
+  host = "unix:///run/docker-logs/docker.sock"
 }
 
 discovery.relabel "containers" {
@@ -19,7 +20,7 @@ discovery.relabel "containers" {
 }
 
 loki.source.docker "containers" {
-  host       = "unix:///var/run/docker.sock"
+  host       = "unix:///run/docker-logs/docker.sock"
   targets    = discovery.relabel.containers.output
   forward_to = [loki.write.local.receiver]
 }
