@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fixture test for sync-mosquitto-le-cert.sh. No live secrets, no git certs.
+# Fixture test for sync-mosquitto-le-cert.sh. Generates throwaway certs in a temp dir.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -24,7 +24,7 @@ openssl req -x509 -newkey rsa:2048 -sha256 -days 2 -nodes \
   -subj "/CN=mqtt.freedriver.io" \
   -addext "subjectAltName=DNS:mqtt.freedriver.io" >/dev/null 2>&1
 
-# Live self-signed plus a leftover name Mosquitto must not keep.
+# Live self-signed pair plus a renamed copy for the sync to remove.
 cp "${WORKDIR}/old.crt" "${DEST_DIR}/server.crt"
 cp "${WORKDIR}/old.key" "${DEST_DIR}/server.key"
 cp "${WORKDIR}/old.crt" "${DEST_DIR}/server.crt.selfsigned"
@@ -50,7 +50,7 @@ if [[ "$crt_mode" != "640" ]]; then
   exit 1
 fi
 
-# Second run is a no-op (same bytes).
+# Second run with the same bytes leaves the files as they are.
 CADDY_CERTS="$CADDY_CERTS" DEST_DIR="$DEST_DIR" \
   "$SYNC" --once
 

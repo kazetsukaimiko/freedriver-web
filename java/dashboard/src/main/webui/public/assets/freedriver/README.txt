@@ -1,28 +1,27 @@
 Freedriver initial assets v1
 ============================
 
-Snow theme. Intricate ice-white + ice-blue snowflake. No mascot.
+Snow theme. Intricate ice-white + ice-blue snowflake.
 
 Color: frost white, ice-blue rim, white-hot core, semi-transparent crystal.
 Backgrounds: production files are transparent PNGs. previews/ are on charcoal.
 
 logos/
   freedriver-icon.png       snowflake mark only (also app icon / favicon source)
-  freedriver-lockup.png     snowflake + FREEDRIVER wordmark
-  freedriver-wordmark.png   FREEDRIVER only (ice-slash I)
+  freedriver-icon.svg       icon v2 vector master (#127)
   favicon.png               256px snowflake
   favicon-32.png            32px
 
 pages/
   freedriver-404.png        fractured snowflake + 404
   freedriver-500.png        cracked snowflake + 500
-  freedriver-loader.png     same as icon (spin/pulse in CSS)
+  freedriver-loader.svg     icon v2 animated loader, static under prefers-reduced-motion (#127)
   freedriver-denied.png     intact red snowflake (401/403)
 
-previews/                   review-only, do not ship if you can avoid it
+previews/                   review-only; builds ship logos/ and pages/
 
-Suggested site swap (replace Lonewatt, do not keep both)
--------------------------------------------------------
+Suggested site swap (Freedriver assets replace Lonewatt)
+--------------------------------------------------------
 site/index.html
   /assets/lonewatt/logos/lonewatt-lockup.png
     -> /assets/freedriver/logos/freedriver-lockup.png
@@ -48,4 +47,4 @@ app (Quinoa webui)
   solo-404 / solo-500 -> freedriver-404 / freedriver-500
   Remove /assets/lonewatt/ from the repo once swapped.
 
-These are first-pass generated marks, not final vectors.
+These are first-pass generated raster marks; logos/freedriver-icon.svg is the vector master.

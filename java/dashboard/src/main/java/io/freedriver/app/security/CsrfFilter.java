@@ -22,7 +22,7 @@ import java.util.Base64;
 
 /**
  * Command POST requires {@code X-CSRF-Token} matching the HttpOnly csrf cookie.
- * GET mints the token into that cookie and the map JSON. Session cookie is unchanged.
+ * GET mints the token into that cookie and the map JSON.
  */
 @Provider
 @ApplicationScoped

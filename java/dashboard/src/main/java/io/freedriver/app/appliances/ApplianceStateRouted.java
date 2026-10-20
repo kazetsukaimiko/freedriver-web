@@ -5,6 +5,6 @@ import lombok.NonNull;
 
 import java.util.UUID;
 
-/** CDI bus envelope. {@code instanceId} is the route key; it is not in the MQTT body. */
+/** CDI bus envelope. {@code instanceId} is the route key and travels in the MQTT topic. */
 public record ApplianceStateRouted(
         @NonNull UUID instanceId, @NonNull ApplianceStateMessage state) {}

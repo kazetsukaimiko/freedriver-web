@@ -1,0 +1,37 @@
+# Multi-stage image for the sms service, built from the repo root:
+#   docker build -f sms/src/main/docker/Dockerfile.compose -t freedriver-sms .
+
+FROM maven:3.9-eclipse-temurin-23 AS build
+WORKDIR /workspace
+
+COPY pom.xml ./
+COPY mqtt-contract/pom.xml mqtt-contract/pom.xml
+COPY mqtt/pom.xml mqtt/pom.xml
+COPY mqtt-paho/pom.xml mqtt-paho/pom.xml
+COPY app/pom.xml app/pom.xml
+COPY sms/pom.xml sms/pom.xml
+COPY sms/src sms/src
+
+ARG BUILD_NUMBER=1.0.0-SNAPSHOT
+RUN mvn -B -pl sms -DskipTests \
+      -Dquarkus.application.version="${BUILD_NUMBER}" \
+      package
+
+FROM registry.access.redhat.com/ubi9/openjdk-25-runtime:1.24
+ENV LANGUAGE='en_US:en'
+
+COPY --from=build --chown=185 /workspace/sms/target/quarkus-app/lib/ /deployments/lib/
+COPY --from=build --chown=185 /workspace/sms/target/quarkus-app/*.jar /deployments/
+COPY --from=build --chown=185 /workspace/sms/target/quarkus-app/app/ /deployments/app/
+COPY --from=build --chown=185 /workspace/sms/target/quarkus-app/quarkus/ /deployments/quarkus/
+
+# Phone list and agreement records (freedriver.sms.data-dir). Mount a persistent volume here.
+USER root
+RUN mkdir -p /deployments/data && chown 185:0 /deployments/data && chmod 700 /deployments/data
+USER 185
+
+EXPOSE 8080
+ENV JAVA_OPTS_APPEND="-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager"
+ENV JAVA_APP_JAR="/deployments/quarkus-run.jar"
+
+ENTRYPOINT [ "/opt/jboss/container/java/run/run-java.sh" ]

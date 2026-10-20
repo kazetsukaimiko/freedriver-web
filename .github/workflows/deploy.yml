@@ -13,6 +13,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     if: github.repository == 'kazetsukaimiko/freedriver-web'
+    environment: production
     permissions:
       contents: write
     steps:
@@ -43,7 +44,7 @@ jobs:
             fi
           done
           if [ "$missing" -ne 0 ]; then
-            echo "Add the required repository secrets, then re-run."
+            echo "Add the required production environment secrets, then re-run."
             exit 1
           fi
 

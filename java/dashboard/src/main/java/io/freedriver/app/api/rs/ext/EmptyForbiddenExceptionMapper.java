@@ -10,7 +10,7 @@ import jakarta.ws.rs.ext.Provider;
 import java.util.Map;
 
 /**
- * 403 on the API stays empty JSON. No names, no login HTML.
+ * 403 on the API is exactly the empty JSON object {@code {}}.
  */
 @Provider
 @Priority(1)

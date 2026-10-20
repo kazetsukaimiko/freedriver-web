@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import { goToSignIn } from './api'
 import {
   COMMAND_WAIT_MS,
   POLL_MS,
+  SIGN_IN_NOTICE,
+  SIGN_IN_NOTICE_MS,
   STALE_AFTER_MS,
   type Appliance,
   type CommandResult,
@@ -17,10 +20,14 @@ import {
 
 type Row = Appliance & { pending: boolean; error: string | null }
 
+/** 'now' goes to sign-in right away; 'notice' first shows SIGN_IN_NOTICE on the switches left unconfirmed. */
+type SignIn = 'now' | 'notice' | null
+
 type View =
   | { kind: 'waiting' }
   | { kind: 'denied' }
   | { kind: 'empty' }
+  | { kind: 'off' }
   | {
       kind: 'ready'
       instances: Instance[]
@@ -57,6 +64,9 @@ export function Dashboard({ search }: { search: string }) {
   const lastFreshAt = useRef<number | null>(demo === 'live' || demo === 'timeout' || demo === 'empty' ? Date.now() : null)
   const lastUpdatedRef = useRef<string | null>(null)
   const inFlight = useRef(new Map<string, AbortController>())
+  const [signIn, setSignIn] = useState<SignIn>(null)
+  const signingIn = useRef(false)
+  const stopPolling = useRef<() => void>(() => {})
 
   useEffect(() => {
     rowsRef.current = view.kind === 'ready' ? view.rows : []
@@ -77,7 +87,15 @@ export function Dashboard({ search }: { search: string }) {
     }
 
     let cancelled = false
+    let id: number | undefined
     const poll = new AbortController()
+
+    function stop() {
+      cancelled = true
+      poll.abort()
+      window.clearInterval(id)
+    }
+    stopPolling.current = stop
 
     async function load() {
       try {
@@ -86,13 +104,23 @@ export function Dashboard({ search }: { search: string }) {
           return
         }
         if (result.status === 'login') {
+          requireSignIn()
           return
         }
         if (result.status === 'denied') {
+          stop()
           lastFreshAt.current = null
           lastUpdatedRef.current = null
           rowsRef.current = []
           setView({ kind: 'denied' })
+          return
+        }
+        if (result.status === 'off') {
+          stop()
+          lastFreshAt.current = null
+          lastUpdatedRef.current = null
+          rowsRef.current = []
+          setView({ kind: 'off' })
           return
         }
         if (result.status === 'ok') {
@@ -114,12 +142,8 @@ export function Dashboard({ search }: { search: string }) {
     }
 
     void load()
-    const id = window.setInterval(() => void load(), POLL_MS)
-    return () => {
-      cancelled = true
-      poll.abort()
-      window.clearInterval(id)
-    }
+    id = window.setInterval(() => void load(), POLL_MS)
+    return stop
   }, [demo])
 
   useEffect(() => {
@@ -129,6 +153,17 @@ export function Dashboard({ search }: { search: string }) {
     const id = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(id)
   }, [view])
+
+  useEffect(() => {
+    if (signIn === 'now') {
+      goToSignIn()
+      return
+    }
+    if (signIn === 'notice') {
+      const id = window.setTimeout(goToSignIn, SIGN_IN_NOTICE_MS)
+      return () => window.clearTimeout(id)
+    }
+  }, [signIn])
 
   useEffect(() => {
     const pending = inFlight.current
@@ -163,7 +198,28 @@ export function Dashboard({ search }: { search: string }) {
     })
   }
 
+  /** The session has ended: stop polling, keep the current view, and send the page to sign-in. */
+  function requireSignIn() {
+    if (signingIn.current) {
+      return
+    }
+    signingIn.current = true
+    stopPolling.current()
+    inFlight.current.forEach((controller) => controller.abort())
+    inFlight.current.clear()
+    const unconfirmed = rowsRef.current.some((row) => row.pending)
+    if (unconfirmed) {
+      const next = rowsRef.current.map((row) =>
+        row.pending ? { ...row, pending: false, error: SIGN_IN_NOTICE } : row,
+      )
+      rowsRef.current = next
+      setView((current) => (current.kind === 'ready' ? { ...current, rows: next } : current))
+    }
+    setSignIn(unconfirmed ? 'notice' : 'now')
+  }
+
   function deny() {
+    stopPolling.current()
     inFlight.current.forEach((controller) => controller.abort())
     inFlight.current.clear()
     rowsRef.current = []
@@ -184,7 +240,11 @@ export function Dashboard({ search }: { search: string }) {
 
   function finishCommand(id: string, result: CommandResult) {
     inFlight.current.delete(id)
+    if (signingIn.current) {
+      return
+    }
     if (result.status === 'login') {
+      requireSignIn()
       return
     }
     if (result.status === 'denied') {
@@ -253,7 +313,7 @@ export function Dashboard({ search }: { search: string }) {
   }
 
   function toggle(row: Row) {
-    if (view.kind !== 'ready' || view.unreachable || row.pending) {
+    if (signingIn.current || view.kind !== 'ready' || view.unreachable || row.pending) {
       return
     }
     if (inFlight.current.has(row.id)) {
@@ -329,7 +389,7 @@ export function Dashboard({ search }: { search: string }) {
             Home status
           </h2>
           <p className="loader">
-            <img className="mark-art snow-spin" src="/assets/freedriver/pages/freedriver-loader.png" alt="" />
+            <img className="mark-art" src="/assets/freedriver/pages/freedriver-loader.svg" alt="Loading" />
             Waiting for home.
           </p>
         </section>
@@ -342,6 +402,14 @@ export function Dashboard({ search }: { search: string }) {
           <p className="empty-copy">No homes yet</p>
         </section>
       )}
+      {view.kind === 'off' && (
+        <section className="card" aria-labelledby="home-status">
+          <h2 id="home-status" className="visually-hidden">
+            Home status
+          </h2>
+          <p className="empty-copy">Remote control is off for now. Your homes will appear here once it's switched on.</p>
+        </section>
+      )}
       {view.kind === 'ready' && (
         <AppliancePanel
           instances={view.instances}
@@ -350,6 +418,7 @@ export function Dashboard({ search }: { search: string }) {
           unreachable={view.unreachable}
           lastUpdated={view.lastUpdated}
           now={now}
+          locked={signIn !== null}
           onSelect={selectInstance}
           onToggle={toggle}
         />
@@ -393,12 +462,15 @@ function initialView(demo: DemoMode | null): View {
   return { kind: 'waiting' }
 }
 
-function Denied() {
+export const DENIED_COPY = 'This account needs a dashboard or portal-admin role.'
+
+/** The Access denied page. `message` is the line under the heading. */
+export function Denied({ message = DENIED_COPY }: { message?: string }) {
   return (
     <main className="content status-page">
       <img className="mark-art" src="/assets/freedriver/pages/freedriver-denied.png" alt="" />
       <h1>Access denied</h1>
-      <p className="lede">This account needs a dashboard or portal-admin role.</p>
+      <p className="lede">{message}</p>
     </main>
   )
 }
@@ -410,6 +482,7 @@ function AppliancePanel({
   unreachable,
   lastUpdated,
   now,
+  locked,
   onSelect,
   onToggle,
 }: {
@@ -419,6 +492,7 @@ function AppliancePanel({
   unreachable: boolean
   lastUpdated: string | null
   now: number
+  locked: boolean
   onSelect: (instanceId: string) => void
   onToggle: (row: Row) => void
 }) {
@@ -467,7 +541,7 @@ function AppliancePanel({
               aria-checked={row.pending ? 'mixed' : row.on}
               aria-busy={row.pending}
               aria-label={row.name}
-              disabled={unreachable || row.pending}
+              disabled={unreachable || row.pending || locked}
               onClick={() => onToggle(row)}
             >
               <span className="switch-thumb" />

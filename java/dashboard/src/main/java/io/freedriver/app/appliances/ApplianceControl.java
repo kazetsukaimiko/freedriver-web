@@ -21,8 +21,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * One router. Mock event sources and a later MQTT client talk to this same bean.
- * There is no mock/disabled/live backend implementation of this type.
+ * The single appliance router. {@link MockAutonomy} and {@link MqttLiveClient} both talk to
+ * this bean over the CDI bus.
  */
 @ApplicationScoped
 public class ApplianceControl {

@@ -1,16 +1,15 @@
 #!/bin/sh
 # Copy Caddy's issued mqtt.freedriver.io cert+key onto Mosquitto MQTTS 8883.
 #
-# Stock caddy:2 emits cert_obtained but has no exec handler (that is a
-# plugin). Certs land under /data/caddy/certificates/<issuer>/<name>/.
-# This script is the Techops renew hook: compose sidecar runs --watch
+# Caddy stores certs under /data/caddy/certificates/<issuer>/<name>/.
+# This script is the Techops renew hook: the compose sidecar runs --watch
 # (start + every LE renew). Manual: sudo ./scripts/sync-mosquitto-le-cert.sh
 #
-# Replaces /opt/freedriver-secrets/mosquitto/server.{crt,key} in place.
-# No self-signed leftovers. uid 1883 can read the key; not world-readable.
-# Reloads Mosquitto via SIGHUP in a shared PID namespace (compose
-# pid: service:mosquitto). No Docker daemon socket, no Docker CLI.
-# Does not touch passwd, ACL, instanceId, or 1883. live-commands stays false.
+# Replaces /opt/freedriver-secrets/mosquitto/server.{crt,key} in place and
+# removes renamed copies of earlier pairs. The key is mode 0600 and the cert
+# 0640, both owned by uid 1883 when the script runs as root.
+# Reloads Mosquitto with SIGHUP in the shared PID namespace (compose
+# pid: service:mosquitto). Writes server.crt and server.key only.
 set -eu
 
 DOMAIN="${DOMAIN:-mqtt.freedriver.io}"
@@ -59,7 +58,7 @@ is_pem_cert() {
 }
 
 is_pem_key() {
-  # Caddy 2 default is P-256 PKCS#8 (BEGIN PRIVATE KEY), not RSA.
+  # PKCS#8 (Caddy 2's default P-256 key, BEGIN PRIVATE KEY), RSA or EC PEM.
   grep -qE -- "-----BEGIN (RSA |EC )?PRIVATE KEY-----" "$1" 2>/dev/null
 }
 
@@ -100,7 +99,8 @@ find_caddy_pair() {
 }
 
 cert_names_ok() {
-  # openssl is optional (sidecar image has it; CI fixture may too).
+  # Checks the names when openssl is on PATH (the sidecar image installs it)
+  # and passes otherwise.
   if ! command -v openssl >/dev/null 2>&1; then
     return 0
   fi
@@ -119,8 +119,8 @@ key_matches_cert() {
 }
 
 drop_selfsigned_leftovers() {
-  # Mosquitto only loads server.crt / server.key, but do not leave a
-  # renamed self-signed pair that a later bind or typo could pick up.
+  # Removes renamed copies of earlier pairs so server.crt and server.key are
+  # the one cert and key in DEST_DIR.
   rm -f \
     "${DEST_DIR}/server.crt.selfsigned" \
     "${DEST_DIR}/server.key.selfsigned" \
@@ -131,10 +131,8 @@ drop_selfsigned_leftovers() {
 }
 
 # Shared PID namespace with compose `pid: service:mosquitto`.
-# eclipse-mosquitto:2.1.2-alpine execs mosquitto as pid 1; if it does not,
-# walk /proc for comm=mosquitto. Never kill pid 1 unless it is mosquitto
-# (host --once / CI fixture must not HUP systemd or this script).
-# Do not talk to the Docker daemon.
+# Sends SIGHUP to pid 1 when its comm is mosquitto (eclipse-mosquitto:2.1.2-alpine
+# execs mosquitto as pid 1), else to the first other process with comm=mosquitto.
 reload_mosquitto() {
   pid=""
   if [ -r /proc/1/comm ]; then
@@ -208,8 +206,7 @@ install_pair() {
     chown "${MQTT_UID}:${MQTT_GID}" "$tmp_crt" "$tmp_key"
   fi
 
-  # In-place replace of the live self-signed (or prior LE). Same names
-  # Mosquitto already loads — no server.crt.selfsigned leftover.
+  # Replace the live pair in place under the names Mosquitto loads.
   mv -f "$tmp_crt" "$DEST_CRT"
   mv -f "$tmp_key" "$DEST_KEY"
   cleanup_tmp

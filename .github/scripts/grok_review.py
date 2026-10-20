@@ -2,8 +2,10 @@
 """Advisory xAI PR reviewer: full files + one-level-out neighbors, not hunk-only.
 
 The marketplace action tarmojussila/xai-code-review is hunk-only and must not be used.
-This script expects a checkout of the PR head plus enough git history to diff against
-the base. Findings are posted as a COMMENT review and never fail the job.
+Run it from a checkout of the PR head with enough git history to diff against the base.
+The workflow runs main's copy of this script and prompt; GROK_REVIEW_PROMPT holds the
+prompt path, and files are read only when they resolve inside the working directory.
+Findings are posted as a COMMENT review and never fail the job.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-PROMPT_PATH = Path(".github/grok-review-prompt.md")
+PROMPT_PATH = Path(os.environ.get("GROK_REVIEW_PROMPT") or ".github/grok-review-prompt.md")
 XAI_URL = "https://api.x.ai/v1/chat/completions"
 GITHUB_API = "https://api.github.com"
 DEFAULT_MODEL = "grok-4"
@@ -58,7 +60,7 @@ LAYER_MARKERS = (
     "Exception",
 )
 ADVISORY_BANNER = (
-    "> Advisory xAI review. Not a merge gate. Does not count as the required human review.\n\n"
+    "> Advisory xAI review. kaze's approval is the required human review; this comment is informational.\n\n"
 )
 
 
@@ -109,8 +111,12 @@ def unified_diff(base_sha: str, head_sha: str) -> str:
     return diff
 
 
+def inside_cwd(path: Path) -> bool:
+    return not path.is_symlink() and path.resolve().is_relative_to(Path.cwd().resolve())
+
+
 def read_text_file(path: Path) -> str | None:
-    if not path.is_file() or skipped(path):
+    if not path.is_file() or skipped(path) or not inside_cwd(path):
         return None
     data = path.read_bytes()
     if len(data) > MAX_FILE_BYTES:
@@ -155,9 +161,9 @@ def test_twins(path: Path) -> list[Path]:
 
 def layer_neighbors(changed: list[Path]) -> list[Path]:
     extra: list[Path] = []
-    app_touched = any(repo_rel(path).startswith("app/") for path in changed)
+    app_touched = any(repo_rel(path).startswith("java/dashboard/") for path in changed)
     if app_touched:
-        for root in (Path("app/src/main/resources"), Path("app/src/test/resources")):
+        for root in (Path("java/dashboard/src/main/resources"), Path("java/dashboard/src/test/resources")):
             if not root.is_dir():
                 continue
             for child in sorted(root.iterdir()):
@@ -400,14 +406,14 @@ def cmd_self_test() -> None:
     load_prompt()
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        main_svc = root / "app/src/main/java/io/freedriver/app/appliances/ApplianceService.java"
-        main_res = root / "app/src/main/java/io/freedriver/app/api/AppliancesResource.java"
-        main_filter = root / "app/src/main/java/io/freedriver/app/appliances/AppliancesDisabledFilter.java"
-        main_mapper = root / "app/src/main/java/io/freedriver/app/appliances/GoneMapper.java"
-        props = root / "app/src/main/resources/application.properties"
-        test_svc = root / "app/src/test/java/io/freedriver/app/appliances/ApplianceServiceTest.java"
-        test_http = root / "app/src/test/java/io/freedriver/app/api/AppliancesResourceTest.java"
-        sibling = root / "app/src/main/java/io/freedriver/app/appliances/CommandRateLimiter.java"
+        main_svc = root / "java/dashboard/src/main/java/io/freedriver/app/appliances/ApplianceService.java"
+        main_res = root / "java/dashboard/src/main/java/io/freedriver/app/api/AppliancesResource.java"
+        main_filter = root / "java/dashboard/src/main/java/io/freedriver/app/appliances/AppliancesDisabledFilter.java"
+        main_mapper = root / "java/dashboard/src/main/java/io/freedriver/app/appliances/GoneMapper.java"
+        props = root / "java/dashboard/src/main/resources/application.properties"
+        test_svc = root / "java/dashboard/src/test/java/io/freedriver/app/appliances/ApplianceServiceTest.java"
+        test_http = root / "java/dashboard/src/test/java/io/freedriver/app/api/AppliancesResourceTest.java"
+        sibling = root / "java/dashboard/src/main/java/io/freedriver/app/appliances/CommandRateLimiter.java"
         unrelated = root / "docs/unrelated.md"
         for path in (main_svc, main_res, main_filter, main_mapper, props, test_svc, test_http, sibling, unrelated):
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -416,18 +422,18 @@ def cmd_self_test() -> None:
         old = Path.cwd()
         os.chdir(root)
         try:
-            neighbors = collect_neighbors(["app/src/main/java/io/freedriver/app/appliances/ApplianceService.java"])
+            neighbors = collect_neighbors(["java/dashboard/src/main/java/io/freedriver/app/appliances/ApplianceService.java"])
         finally:
             os.chdir(old)
 
     needed = {
-        "app/src/main/java/io/freedriver/app/api/AppliancesResource.java",
-        "app/src/main/java/io/freedriver/app/appliances/AppliancesDisabledFilter.java",
-        "app/src/main/java/io/freedriver/app/appliances/GoneMapper.java",
-        "app/src/main/resources/application.properties",
-        "app/src/test/java/io/freedriver/app/appliances/ApplianceServiceTest.java",
-        "app/src/test/java/io/freedriver/app/api/AppliancesResourceTest.java",
-        "app/src/main/java/io/freedriver/app/appliances/CommandRateLimiter.java",
+        "java/dashboard/src/main/java/io/freedriver/app/api/AppliancesResource.java",
+        "java/dashboard/src/main/java/io/freedriver/app/appliances/AppliancesDisabledFilter.java",
+        "java/dashboard/src/main/java/io/freedriver/app/appliances/GoneMapper.java",
+        "java/dashboard/src/main/resources/application.properties",
+        "java/dashboard/src/test/java/io/freedriver/app/appliances/ApplianceServiceTest.java",
+        "java/dashboard/src/test/java/io/freedriver/app/api/AppliancesResourceTest.java",
+        "java/dashboard/src/main/java/io/freedriver/app/appliances/CommandRateLimiter.java",
     }
     missing = sorted(needed - set(neighbors))
     if missing:

@@ -7,7 +7,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
-/** In-memory map for one autonomy instance. Looked up by instanceId; not a wire DTO. */
+/** In-memory appliance state for one autonomy instance, keyed by instanceId. {@link InstanceView} is the REST shape. */
 public record ApplianceSnapshot(Instant receivedAt, List<Appliance> appliances) {
 
     public ApplianceSnapshot {

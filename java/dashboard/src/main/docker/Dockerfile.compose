@@ -14,6 +14,10 @@ COPY java/bom/pom.xml java/bom/pom.xml
 COPY java/dashboard-model/pom.xml java/dashboard-model/pom.xml
 COPY java/dashboard-api/pom.xml java/dashboard-api/pom.xml
 COPY java/dashboard/pom.xml java/dashboard/pom.xml
+COPY java/agent-dispatcher-model/pom.xml java/agent-dispatcher-model/pom.xml
+COPY java/agent-dispatcher-api/pom.xml java/agent-dispatcher-api/pom.xml
+COPY java/agent-dispatcher/pom.xml java/agent-dispatcher/pom.xml
+COPY sms/pom.xml sms/pom.xml
 COPY mqtt-contract/src mqtt-contract/src
 COPY mqtt/src mqtt/src
 COPY mqtt-paho/src mqtt-paho/src

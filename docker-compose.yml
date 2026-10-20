@@ -24,11 +24,10 @@ services:
       args:
         BUILD_NUMBER: ${BUILD_NUMBER:-1.0.0-SNAPSHOT}
     restart: unless-stopped
-    env_file: /opt/freedriver-secrets/.env
     environment:
       QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver
       QUARKUS_OIDC_CLIENT_ID: freedriver-api
-      QUARKUS_OIDC_CREDENTIALS_SECRET: ${QUARKUS_OIDC_CREDENTIALS_SECRET}
+      QUARKUS_OIDC_CREDENTIALS_SECRET: ${QUARKUS_OIDC_CREDENTIALS_SECRET:?QUARKUS_OIDC_CREDENTIALS_SECRET is required}
     expose:
       - "8080"
 
@@ -40,7 +39,6 @@ services:
       args:
         BUILD_NUMBER: ${BUILD_NUMBER:-1.0.0-SNAPSHOT}
     restart: unless-stopped
-    env_file: /opt/freedriver-secrets/.env
     environment:
       QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver
       QUARKUS_OIDC_CLIENT_ID: freedriver-dispatcher
@@ -49,25 +47,29 @@ services:
       - "8080"
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.3
+    build:
+      context: .
+      dockerfile: keycloak/Dockerfile
+    pull_policy: build
     restart: unless-stopped
     command: start
     ports:
       - "127.0.0.1:8081:8080"
-    env_file: /opt/freedriver-secrets/.env
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
       KC_DB_USERNAME: keycloak
-      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD is required}
       KC_HOSTNAME: https://auth.freedriver.io
       KC_HOSTNAME_ADMIN: http://127.0.0.1:8081
       KC_HTTP_ENABLED: "true"
       KC_PROXY_HEADERS: xforwarded
       KC_HEALTH_ENABLED: "true"
       KC_CACHE: local
+      # Shared secret the phone OTP SPI sends to http://sms:8080.
+      SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?KC_BOOTSTRAP_ADMIN_PASSWORD is required}
     depends_on:
       keycloak-db:
         condition: service_healthy
@@ -75,11 +77,10 @@ services:
   keycloak-db:
     image: postgres:16
     restart: unless-stopped
-    env_file: /opt/freedriver-secrets/.env
     environment:
       POSTGRES_DB: keycloak
       POSTGRES_USER: keycloak
-      POSTGRES_PASSWORD: ${KC_DB_PASSWORD}
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD:?KC_DB_PASSWORD is required}
     volumes:
       - /opt/freedriver-storage/keycloak-pg:/var/lib/postgresql/data
     healthcheck:
@@ -88,13 +89,44 @@ services:
       timeout: 5s
       retries: 10
 
+  # Internal OTP service. Keycloak calls http://sms:8080 on the compose
+  # network. HTTP contract and limits: docs/sms-otp.md.
+  sms:
+    build:
+      context: ./sms/stub
+    pull_policy: build
+    restart: unless-stopped
+    # Twilio Verify credentials (#170), see docs/sms-otp.md.
+    env_file:
+      - path: /opt/freedriver-secrets/twilio-verify.env
+        required: true
+    environment:
+      SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
+      # Number seeded into the sms phone list (#168, #169).
+      FREEDRIVER_SEED_PHONE: ${FREEDRIVER_SEED_PHONE:-}
+    expose:
+      - "8080"
+    # /health/live answers 200 while the process serves HTTP. /health is
+    # readiness and answers 503 until an SMS sender is connected (#107).
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/live')",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
   grafana:
     image: grafana/grafana:13.1.3
     restart: unless-stopped
-    env_file: /opt/freedriver-secrets/.env
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:?GF_SECURITY_ADMIN_PASSWORD is required}
       GF_SERVER_ROOT_URL: http://127.0.0.1:3000
       GF_SERVER_DOMAIN: 127.0.0.1
       GF_USERS_ALLOW_SIGN_UP: "false"
@@ -171,17 +203,15 @@ services:
       - "8883:8883"
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      # Live ACL is /opt/freedriver-secrets/mosquitto/acl (acl_file under
-      # this secrets mount). Do not bind-mount the git template as live.
+      # Holds passwd, acl, server.crt and server.key for mosquitto.conf.
       - /opt/freedriver-secrets/mosquitto:/mosquitto/config/secrets:ro
       - /opt/freedriver-storage/mosquitto:/mosquitto/data
 
-  # Stock caddy:2 has no cert_obtained exec hook. Watch Caddy's on-disk
-  # mqtt.freedriver.io material and copy it over Mosquitto server.{crt,key}.
-  # Share mosquitto's PID namespace and SIGHUP that process (pid 1 after
-  # exec, else comm=mosquitto). Do not mount the Docker daemon socket.
-  # If a HUP is missed: first install is read on mosquitto start; renew
-  # Techops can `docker compose --env-file /opt/freedriver-secrets/.env kill -s HUP mosquitto`.
+  # Watches Caddy's on-disk mqtt.freedriver.io certificate, copies it over
+  # Mosquitto's server.{crt,key}, and sends SIGHUP to mosquitto in the shared
+  # PID namespace (scripts/sync-mosquitto-le-cert.sh). Mosquitto also reads the
+  # files on start. Techops reloads by hand with
+  # `docker compose --env-file /opt/freedriver-secrets/.env kill -s HUP mosquitto`.
   mosquitto-cert-sync:
     build:
       context: ./scripts

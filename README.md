@@ -20,16 +20,17 @@ The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{gra
   - `app.freedriver.io` — Quinoa app behind Caddy
   - `grafana.freedriver.io` — 404 on purpose; Grafana is loopback-only
   - `mqtt.freedriver.io` — 404 on purpose (ACME HTTP-01). MQTTS is host 8883, not Caddy.
-- Keycloak 26 + local Postgres 16
+- Keycloak 26.3 + local Postgres 16. The image build adds the phone OTP provider at `/opt/keycloak/providers/freedriver-sms-otp.jar`.
+- `sms` — internal service at `http://sms:8080` on the compose network. The Quarkus service in `sms/` ([#107](https://github.com/kazetsukaimiko/freedriver-web/issues/107)) sends and checks sign-in codes through Twilio Verify; compose runs the `sms/stub` image until it switches to that build.
 - Grafana + Loki + Prometheus + Alloy (see Observability)
 - Mosquitto 2.1.2 MQTTS at `mqtt.freedriver.io:8883` (host 8883 only; no 1883). Connect notes: [docs/mqtt-connect.md](docs/mqtt-connect.md).
 
 ## Observability
 
-Grafana and the Keycloak admin console are not on the public internet.
+Grafana and the Keycloak admin console listen on 127.0.0.1 on the VPS host and are reached through an SSH tunnel to the `DEPLOY_HOST` address, signed in as your ops user:
 
 ```
-ssh -L 3000:127.0.0.1:3000 -L 8081:127.0.0.1:8081 -i <key> lonewatt-techops@138.197.90.42
+ssh -L 3000:127.0.0.1:3000 -L 8081:127.0.0.1:8081 -i <key> <ops-user>@<DEPLOY_HOST>
 ```
 
 Then Grafana is http://127.0.0.1:3000 (user `admin`, password `GF_SECURITY_ADMIN_PASSWORD` in `/opt/freedriver-secrets/.env`). Keycloak admin is http://127.0.0.1:8081/admin. Public `https://auth.freedriver.io/admin` returns 404; user login on that host is unchanged. `https://grafana.freedriver.io` and `https://mqtt.freedriver.io` return 404.
@@ -41,7 +42,7 @@ Alloy tails Docker container logs into Loki (14 days). Prometheus keeps ~15 days
 
 ## App
 
-The product app lives in `java/dashboard/`: Quarkus 3.38 (Java 21) with Quinoa serving a React TypeScript SPA. Shared Quarkus and Jackson versions live in `java/bom/`. It talks normal REST under `/api`. Keycloak at `https://auth.freedriver.io` will handle auth later; OIDC is present as a dependency with commented config so the app starts without secrets.
+The product app lives in `java/dashboard/`: Quarkus 3.38 (Java 23) with Quinoa serving a React TypeScript SPA. Shared Quarkus and Jackson versions live in `java/bom/`. It talks normal REST under `/api`. Auth is an OIDC BFF against Keycloak at `https://auth.freedriver.io`. It is on in the prod profile (`%prod.quarkus.oidc.enabled=true`) and off in the default, dev and test profiles, so the app starts locally with no secrets set. App details: [java/dashboard/README.md](java/dashboard/README.md).
 
 `java/agent-dispatcher/` is the device queue on the same host. Caddy sends `/api/dispatcher`, `/api/device`, and `/mcp` to that Compose service. OIDC is off there too. Contract: [`docs/device-dispatcher.md`](docs/device-dispatcher.md).
 
@@ -51,13 +52,21 @@ The product app lives in `java/dashboard/`: Quarkus 3.38 (Java 21) with Quinoa s
 
 Requires Java 23. Quinoa can install Node for the UI build. Open http://localhost:8080 for the dashboard (`GET /api/hello` and `GET /api/build` are public). Production is `https://app.freedriver.io` via Caddy → the Compose `dashboard` service.
 
-`mqtt-contract/`, `mqtt/`, and `mqtt-paho/` are reactor siblings (`io.freedriver:freedriver-mqtt-contract`, `freedriver-mqtt`, `freedriver-mqtt-paho`). The app does not pin autonomy's GitHub Packages jar.
+`mqtt-contract/`, `mqtt/`, and `mqtt-paho/` are reactor siblings (`io.freedriver:freedriver-mqtt-contract`, `freedriver-mqtt`, `freedriver-mqtt-paho`). The app builds the contract from this reactor ([docs/mqtt-contract-consume.md](docs/mqtt-contract-consume.md)).
+
+## SMS OTP scaffold
+
+Phone + code sign-in for house users. The `sms` service and the Keycloak `freedriver-sms-otp` authenticator share `SMS_OTP_SHARED_SECRET` from `/opt/freedriver-secrets/.env` on the VPS. Setup and flow steps: [docs/sms-otp.md](docs/sms-otp.md).
 
 ## Appliances API
 
-`GET/POST /api/appliances` is implemented against **mock-autonomy** on the same `ApplianceControl` bus for `quarkus:dev` and CI. The browser is REST only. Production keeps the route disabled (404), OIDC off, and MQTT disconnected. Integration contract: [`docs/appliances.md`](docs/appliances.md). Autonomy MQTT how-to: [`docs/autonomy-mqtt.md`](docs/autonomy-mqtt.md).
+`GET/POST /api/appliances` is implemented against **mock-autonomy** on the same `ApplianceControl` bus for `quarkus:dev` and CI. The browser is REST only. Production has sign-in on, keeps the route disabled (404), and keeps MQTT disconnected. Integration contract: [`docs/appliances.md`](docs/appliances.md). Autonomy MQTT how-to: [`docs/autonomy-mqtt.md`](docs/autonomy-mqtt.md).
 
-The live command route is **not** Done. It is blocked on [#25](https://github.com/kazetsukaimiko/freedriver-web/issues/25) and Security sign-off on [#27](https://github.com/kazetsukaimiko/freedriver-web/issues/27).
+The live command route is blocked on [#25](https://github.com/kazetsukaimiko/freedriver-web/issues/25) and Security sign-off on [#27](https://github.com/kazetsukaimiko/freedriver-web/issues/27).
+
+## Changelog
+
+`GET /api/changelog` serves the changelog packaged in the jar at the classpath path `changelog/CHANGELOG.md` as plain text to the `portal-admin`, `dashboard` and `changelog` roles, and answers 404 while the jar has no changelog file. The portal shows it at `/changelog`, linked from the build stamp. Contract and file path for the release job: [`docs/changelog.md`](docs/changelog.md).
 
 ## Deploy
 
@@ -82,10 +91,10 @@ Required repository secrets:
 
 | Secret | Value |
 | --- | --- |
-| `DEPLOY_HOST` | `138.197.90.42` |
-| `DEPLOY_USER` | `root` |
-| `DEPLOY_SSH_KEY` | private key whose public half is in `root` `authorized_keys` |
-| `DEPLOY_SSH_KNOWN_HOSTS` | output of `ssh-keyscan 138.197.90.42` |
+| `DEPLOY_HOST` | VPS host address |
+| `DEPLOY_USER` | SSH login user for deploys on the VPS host |
+| `DEPLOY_SSH_KEY` | private key whose public half is in the `DEPLOY_USER` account's `authorized_keys` |
+| `DEPLOY_SSH_KNOWN_HOSTS` | output of `ssh-keyscan` against the `DEPLOY_HOST` address |
 
 Pull requests also get an advisory Grok (xAI) review (`.github/workflows/grok-review.yml`). **kaze must add repository secret `XAI_API_KEY` from [console.x.ai](https://console.x.ai)** — do not invent a key. Optional Actions variable `XAI_MODEL` (default `grok-4`). The system prompt is kaze’s lock from [#64](https://github.com/kazetsukaimiko/freedriver-web/issues/64), copied verbatim into `.github/grok-review-prompt.md`. The job checks out the PR head and sends full touched files plus one-level-out neighbors; it is not a hunk-only marketplace action. Comments only: the job does not fail on findings, is not a merge gate, and does not count as the required human review.
 

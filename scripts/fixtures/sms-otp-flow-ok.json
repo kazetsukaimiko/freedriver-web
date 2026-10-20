@@ -1,0 +1,30 @@
+[
+  {
+    "id": "cookie",
+    "providerId": "auth-cookie",
+    "requirement": "ALTERNATIVE",
+    "authenticationFlow": false,
+    "level": 0
+  },
+  {
+    "id": "forms",
+    "displayName": "browser forms",
+    "requirement": "ALTERNATIVE",
+    "authenticationFlow": true,
+    "level": 0
+  },
+  {
+    "id": "user-pass",
+    "providerId": "auth-username-password-form",
+    "requirement": "REQUIRED",
+    "authenticationFlow": false,
+    "level": 1
+  },
+  {
+    "id": "sms",
+    "providerId": "freedriver-sms-otp",
+    "requirement": "ALTERNATIVE",
+    "authenticationFlow": false,
+    "level": 0
+  }
+]

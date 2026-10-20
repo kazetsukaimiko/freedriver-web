@@ -21,6 +21,8 @@ class BffSessionLockTest {
         assertFalse(properties.contains("quarkus.oidc.authentication.cookie-http-only"));
         assertTrue(properties.contains("quarkus.oidc.authentication.java-script-auto-redirect=false"));
         assertTrue(properties.contains("quarkus.http.auth.permission.appliances.policy=authenticated"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.changelog.paths=/api/changelog,/api/changelog/*"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.changelog.policy=authenticated"));
         assertTrue(properties.contains("quarkus.http.auth.permission.login.paths=/login"));
         assertTrue(properties.contains("quarkus.http.auth.permission.login.policy=authenticated"));
         assertTrue(properties.contains("quarkus.quinoa.ignored-path-prefixes=/api,/q,/login"));
@@ -29,6 +31,9 @@ class BffSessionLockTest {
         assertTrue(properties.contains("quarkus.oidc.auth-server-url=https://auth.freedriver.io/realms/freedriver"));
         assertTrue(properties.contains("quarkus.oidc.client-id=freedriver-api"));
         assertTrue(properties.contains("quarkus.oidc.credentials.secret=${QUARKUS_OIDC_CREDENTIALS_SECRET:}"));
+        assertTrue(properties.contains("\n%prod.quarkus.oidc.enabled=true\n"));
+        assertTrue(properties.contains("\n%prod.quarkus.oidc.credentials.secret=${QUARKUS_OIDC_CREDENTIALS_SECRET}\n"));
+        assertTrue(properties.contains("\n%prod.quarkus.oidc.authentication.force-redirect-https-scheme=true\n"));
         assertFalse(properties.contains("quarkus.oidc.credentials.secret=secret"));
     }
 
