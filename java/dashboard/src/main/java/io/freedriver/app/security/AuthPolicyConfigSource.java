@@ -20,8 +20,11 @@ public final class AuthPolicyConfigSource implements ConfigSource {
 
     static final String RESOURCE = "auth-policy.properties";
 
-    /** Above application.properties (250) so this file wins when a key is in both. */
-    private static final int ORDINAL = 270;
+    /**
+     * Above {@code application.properties} (250). {@link AuthPolicyLockInterceptor} is what
+     * keeps a higher-ordinal source from replacing these keys.
+     */
+    static final int ORDINAL = 270;
 
     private final Map<String, String> properties;
 

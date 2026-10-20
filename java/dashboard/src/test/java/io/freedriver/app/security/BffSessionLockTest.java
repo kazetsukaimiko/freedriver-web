@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -18,7 +19,7 @@ class BffSessionLockTest {
         String application = Files.readString(Path.of("src/main/resources/application.properties"));
         String loader = Files.readString(Path.of(
                 "src/main/resources/META-INF/services/org.eclipse.microprofile.config.spi.ConfigSource"));
-        assertTrue(loader.contains("io.freedriver.app.security.AuthPolicyConfigSource"));
+        assertEquals("io.freedriver.app.security.AuthPolicyConfigSource", loader.trim());
         assertFalse(application.contains("quarkus.config.locations"));
         assertTrue(application.contains("quarkus.quinoa.ignored-path-prefixes=/api,/q,/login,/logout"));
         assertFalse(application.contains("quarkus.oidc."));
