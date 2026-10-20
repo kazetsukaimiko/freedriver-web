@@ -231,11 +231,15 @@ services:
   mosquitto:
     image: eclipse-mosquitto:2.1.2-alpine
     restart: unless-stopped
+    # Host 8883 is the public listener (container 8884, Let's Encrypt).
+    # Container 8883 is the internal listener and is not published.
     ports:
-      - "8883:8883"
+      - "8883:8884"
+    expose:
+      - "8883"
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      # Holds passwd, acl, server.crt and server.key for mosquitto.conf.
+      # passwd, acl, server.crt, server.key, internal.crt, internal.key.
       - /opt/freedriver-secrets/mosquitto:/mosquitto/config/secrets:ro
       - /opt/freedriver-storage/mosquitto:/mosquitto/data
 

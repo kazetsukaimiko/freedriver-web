@@ -67,4 +67,6 @@ cmp -s "${LE_DIR}/mqtt.freedriver.io.key" "${DEST_DIR}/server.key"
 grep -qF -- "-----BEGIN PRIVATE KEY-----" "${DEST_DIR}/server.key"
 [[ ! -e "${DEST_DIR}/server.crt.selfsigned" ]]
 
+"${ROOT}/scripts/test-mqtt-two-sockets.sh"
+
 echo "sync-mosquitto-le-cert fixture ok"

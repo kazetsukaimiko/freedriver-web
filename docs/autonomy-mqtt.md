@@ -17,13 +17,13 @@ MQTT v1 types live in `io.freedriver:freedriver-mqtt-contract` (`io.freedriver.m
 | | Autonomy (home) | Quarkus (`api`) |
 | --- | --- | --- |
 | Host | `mqtt.freedriver.io:8883` | compose hostname `mosquitto:8883` |
-| TLS | MQTTS, verified against the public CA | MQTTS on the docker network |
+| TLS | MQTTS, public Let's Encrypt certificate | MQTTS, internal certificate `DNS:mosquitto` only |
 | User | `autonomy` (this instance only) | `api` (exact topics for this instance) |
 | Auth | broker password | broker password |
 
 ### TLS
 
-Let's Encrypt is live on `mqtt.freedriver.io:8883`. Verify the server certificate with hostname and chain checks, using the public CA as the trust anchor.
+Let's Encrypt is live on `mqtt.freedriver.io:8883` (host port 8883, the public listener). Verify that certificate with hostname and chain checks, using the public CA as the trust anchor. Compose hostname `mosquitto` port 8883 is a different socket and presents only `DNS:mosquitto`. Autonomy uses the public name, not that internal certificate.
 
 ### Passwords
 
