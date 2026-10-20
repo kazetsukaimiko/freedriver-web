@@ -56,7 +56,7 @@ Source: `keycloak/sms-otp-spi`. Provider id: `freedriver-sms-otp`. The Keycloak 
 
 On the browser flow the password form is the first challenge. Phone sign-in is the last top-level Alternative, reached with "Try another way".
 
-Pages render through `context.form()` with `freedriver-sms-phone.ftl` and `freedriver-sms-code.ftl` from `keycloak/themes/freedriver/login`, which extends `keycloak.v2`, so the phone pages share the password page's look and Keycloak's security headers. Strings live in the theme's `messages_en.properties`. Both pages carry a "Sign in with password" link that restarts the login on the password form.
+Pages render through `context.form()` with `freedriver-sms-phone.ftl` and `freedriver-sms-code.ftl` from `keycloak/themes/freedriver/login`, which extends `keycloak.v2`, so the phone pages share the password page's look and Keycloak's security headers. Strings live in the theme's `messages_en.properties`. Both pages carry a "Sign in with password" link that restarts the login on the password form. That link is the only alternate path on those two pages. The password page keeps Keycloak's layout, including "Try another way".
 
 Per auth session, kept in auth session notes:
 
