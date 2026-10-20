@@ -10,6 +10,7 @@
 /scripts/sync-mosquitto-le-cert.sh @kazetsukaimiko
 /scripts/mosquitto-cert-sync.Dockerfile @kazetsukaimiko
 /java/dashboard/src/main/java/io/freedriver/app/security/ @kazetsukaimiko
+/java/dashboard/src/main/resources/auth-policy.properties @kazetsukaimiko
 /mqtt-contract/ @kazetsukaimiko
 /mqtt/ @kazetsukaimiko
 /mqtt-paho/ @kazetsukaimiko
