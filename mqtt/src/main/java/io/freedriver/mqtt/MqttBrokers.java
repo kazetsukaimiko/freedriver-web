@@ -3,7 +3,9 @@ package io.freedriver.mqtt;
 import java.util.Locale;
 
 /**
- * Docker-network MQTTS only. Never mqtt.freedriver.io, never 1883, never skip-verify.
+ * Checks a live broker target and a topic before a session uses them.
+ * The target is a docker-network host, port 8883, and TLS.
+ * The topic is an exact filter.
  */
 public final class MqttBrokers {
 

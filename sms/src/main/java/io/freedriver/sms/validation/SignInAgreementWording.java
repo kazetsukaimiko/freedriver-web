@@ -12,7 +12,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** The sign-in agreement wording shown under the number field, character for character. */
+/** The sign-in agreement wording shown directly above the Send code button, character for character. */
 @Documented
 @NotNull
 @Pattern(regexp = "\\Q" + SignInAgreementWording.TEXT + "\\E")

@@ -14,6 +14,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.NewCookie;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -23,6 +24,8 @@ import java.util.Base64;
 /**
  * Command POST requires {@code X-CSRF-Token} matching the HttpOnly csrf cookie.
  * GET mints the token into that cookie and the map JSON.
+ * Secure is {@code freedriver.csrf.cookie-secure}. The app sees plain HTTP behind the
+ * TLS terminator, so the request scheme is not that flag.
  */
 @Provider
 @ApplicationScoped
@@ -35,10 +38,14 @@ public class CsrfFilter implements ContainerRequestFilter, ContainerResponseFilt
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final SecurityIdentity identity;
+    private final boolean cookieSecure;
 
     @Inject
-    public CsrfFilter(SecurityIdentity identity) {
+    public CsrfFilter(
+            SecurityIdentity identity,
+            @ConfigProperty(name = "freedriver.csrf.cookie-secure", defaultValue = "false") boolean cookieSecure) {
         this.identity = identity;
+        this.cookieSecure = cookieSecure;
     }
 
     @Override
@@ -74,12 +81,11 @@ public class CsrfFilter implements ContainerRequestFilter, ContainerResponseFilt
         String token = existing != null && existing.getValue() != null && !existing.getValue().isBlank()
                 ? existing.getValue()
                 : mint();
-        boolean secure = "https".equalsIgnoreCase(request.getUriInfo().getRequestUri().getScheme());
         response.getHeaders().add("Set-Cookie", new NewCookie.Builder(COOKIE)
                 .value(token)
                 .path("/")
                 .httpOnly(true)
-                .secure(secure)
+                .secure(cookieSecure)
                 .sameSite(NewCookie.SameSite.LAX)
                 .build());
         response.setEntity(new ApplianceMapResponse(map.instances(), token));

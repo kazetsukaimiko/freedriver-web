@@ -36,6 +36,7 @@ class SignInRequiredTest {
                     "quarkus.oidc.discovery-enabled", "false",
                     "quarkus.oidc.authorization-path", "protocol/openid-connect/auth",
                     "quarkus.oidc.token-path", "protocol/openid-connect/token",
+                    "quarkus.oidc.end-session-path", "protocol/openid-connect/logout",
                     "quarkus.http.test-port", "0");
         }
     }

@@ -47,7 +47,7 @@ Before any instance reports:
 { "csrfToken": "…", "instances": [] }
 ```
 
-Each `instanceName` is a dashboard tab. GET returns `csrfToken`. POST requires `X-CSRF-Token` matching the HttpOnly `freedriver-csrf` cookie. A bad or missing token is 400 with an empty body; that one switch fails and the session continues.
+Each `instanceName` is a dashboard tab. GET returns `csrfToken`. POST requires `X-CSRF-Token` matching the HttpOnly `freedriver-csrf` cookie. The cookie is `Secure` in `%prod` and omits `Secure` in `%dev` on `http://localhost` and `http://127.0.0.1`. A bad or missing token is 400 with an empty body; that one switch fails and the session continues.
 
 ### Status codes
 
@@ -83,6 +83,8 @@ Quarkus owns the OIDC code flow (`application-type=web-app`). The browser gets a
 
 Dashboard API requests send `X-Requested-With: JavaScript` (one shared fetch helper, `webui/src/api.ts`). With `java-script-auto-redirect=false`, a request without a session gets 499. The dashboard then stops polling and sends the whole page to `/login`; a switch command still waiting shows "Couldn't confirm. Check it after you sign in." for two seconds first. Sign-in returns to `/login`, which sends the browser to `/`, the dashboard. A browser opening an API path directly gets the redirect to sign-in.
 
+Sign-out is a full page load of `GET /logout` (`quarkus.oidc.logout.path`). Quarkus clears `q_session` and redirects to Keycloak's end-session endpoint with `id_token_hint`. Keycloak returns the browser to `https://app.freedriver.io/`. An anonymous `GET /` then goes to `/login`, which shows the Keycloak sign-in form.
+
 Map and command are fail-closed (status table above). CSRF protection is the `X-CSRF-Token` check. Sign-in is on in the prod profile (`%prod.quarkus.oidc.enabled=true`, #154).
 
 ## lastUpdated / stale / timeout
@@ -90,7 +92,7 @@ Map and command are fail-closed (status table above). CSRF protection is the `X-
 - `lastUpdated` is when **Quarkus received** a valid Topic A payload (ISO-8601 UTC).
 - **Stale** = more than 20 seconds since the last valid state, or before the first one.
 - POST waits up to 5 seconds (`FREEDRIVER_COMMAND_TIMEOUT`, default `5s`, hard-capped at 30s) for a state event whose `appliedCommandId` matches the command just issued. Waiters live in `ApplianceControl`.
-- Audit log records who / when / appliance / command / `confirmed` or `timeout`.
+- The audit line is `when`, `instance`, `appliance`, `on`, `commandId`, `result` (`confirmed` or `timeout`), and `subject`. `subject` is the caller's OIDC `sub` (the identity `sub` attribute, otherwise the JWT subject), and it is empty when that subject is missing. The line does not include the principal name, cookies, the session id, or the MQTT password.
 
 ## Production safety
 
@@ -116,4 +118,12 @@ Authorization stays **on** in `%dev` (`quarkus.security.auth.enabled-in-dev-mode
 
 `%test` uses `@TestSecurity`.
 
-Live MQTT is `io.freedriver:freedriver-mqtt` plus `freedriver-mqtt-paho`. The app CDI adapter (`MqttLiveClient`) talks to the same `ApplianceControl` bus, connects when `live-commands=true`, and fails startup when `live-commands` and `mock` are both true. `MqttBrokers` requires a docker-network host (`freedriver.io` names throw), port 8883, TLS, and exact topics. `freedriver.mqtt` is a mapped object (host, port, tls, username). Host and env vars: [mqtt-connect.md](mqtt-connect.md#quarkus).
+Live MQTT is `io.freedriver:freedriver-mqtt` plus `freedriver-mqtt-paho`. The app CDI adapter (`MqttLiveClient`) talks to the same `ApplianceControl` bus, connects when `live-commands=true`, and fails startup when `live-commands` and `mock` are both true. `MqttBrokers` requires a docker-network host (`freedriver.io` names throw), port 8883, TLS, and exact topics. `freedriver.mqtt` is a mapped object (host, port, tls, username, trust-certificate). Host and env vars: [mqtt-connect.md](mqtt-connect.md#quarkus).
+
+App MQTT logs use the logger `io.freedriver.mqtt`. No line includes a password, a payload, or an exception message. `live-commands` stays false, so the lines appear only after that flag is on.
+
+- INFO `mqtt connecting`, `mqtt connected` (first session and every reconnect, from Paho `connectComplete`), and `mqtt disconnected reason=`.
+- INFO `mqtt resubscribed topics=` after every reconnect. A clean session drops broker subscriptions, so the stored topics are subscribed again off the Paho comms thread.
+- DEBUG `mqtt state received instance= appliances=` for each accepted state message. INFO `mqtt state summary instance= messages= lastHeardAgo=` once a minute for each configured instance (`lastHeardAgo=never` when that home has not reported).
+- WARN `mqtt state rejected topic= reason=schema|unknown-instance`.
+- INFO `mqtt command sent commandId= instance= appliance= state= user=` when a command is published. The user is the signed-in principal name, read on the request and passed to the adapter as a string. WARN `mqtt command unacknowledged ... timeoutMs=` when no matching state arrives within the same clamped `command-timeout` the confirm wait uses. The audit line above is the acknowledgement.

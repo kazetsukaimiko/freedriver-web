@@ -40,15 +40,16 @@ import static org.mockito.Mockito.when;
 class SmsOtpAuthenticatorTest {
 
     static final String PHONE = "+15555550100";
-    static final String OK_USER = "{\"username\":\"house.user\"}";
     static final String WRONG = "{\"error\":\"invalid-code\"}";
 
-    /** One rendered page: template, error key and attributes. */
-    record Page(String template, String error, Map<String, Object> attributes) {}
+    /** One rendered page: template, error key, error parameters and attributes. */
+    record Page(String template, String error, List<Object> errorArgs, Map<String, Object> attributes) {}
 
     private final Map<String, String> notes = new HashMap<>();
     private final Map<Response, Page> pages = new IdentityHashMap<>();
     private final List<String> sends = new ArrayList<>();
+    private final List<String> sendBodies = new ArrayList<>();
+    private final List<String> verifyBodies = new ArrayList<>();
     private final Deque<SmsOtpClient.Wire> verifyReplies = new ArrayDeque<>();
     private SmsOtpClient.Wire sendReply;
 
@@ -56,6 +57,8 @@ class SmsOtpAuthenticatorTest {
     private MultivaluedHashMap<String, String> params;
     private UserProvider users;
     private UserModel user;
+    private GroupModel group;
+    private RealmModel realm;
     private SmsOtpAuthenticator authenticator;
 
     private String outcome;
@@ -64,13 +67,20 @@ class SmsOtpAuthenticatorTest {
 
     @BeforeEach
     void setUp() {
-        sendReply = new SmsOtpClient.Wire(200, "{\"status\":\"sent\"}");
+        sendReply = new SmsOtpClient.Wire(200, sent(PHONE));
         SmsOtpClient client = new SmsOtpClient((uri, secret, json) -> {
-            if (uri.getPath().equals("/otp/send")) {
+            if ("/sms/send".equals(uri.getPath())) {
+                sendBodies.add(json);
                 sends.add(SmsOtpClient.textField(json, "phone"));
                 return sendReply;
             }
-            return verifyReplies.isEmpty() ? new SmsOtpClient.Wire(503, "{}") : verifyReplies.pop();
+            if ("/sms/verify".equals(uri.getPath())) {
+                verifyBodies.add(json);
+                return verifyReplies.isEmpty()
+                        ? new SmsOtpClient.Wire(503, "{\"error\":\"unavailable\"}")
+                        : verifyReplies.pop();
+            }
+            return new SmsOtpClient.Wire(404, "{}");
         });
         authenticator = new SmsOtpAuthenticator(client, () -> Optional.of("real-secret"));
 
@@ -87,7 +97,7 @@ class SmsOtpAuthenticatorTest {
         users = mock(UserProvider.class);
         KeycloakSession session = mock(KeycloakSession.class);
         when(session.users()).thenReturn(users);
-        RealmModel realm = mock(RealmModel.class);
+        realm = mock(RealmModel.class);
 
         context = mock(AuthenticationFlowContext.class);
         when(context.getAuthenticationSession()).thenReturn(authSession);
@@ -102,12 +112,13 @@ class SmsOtpAuthenticatorTest {
         doAnswer(inv -> record("attempted", null, null)).when(context).attempted();
 
         user = mock(UserModel.class);
-        GroupModel group = PhoneSignInPolicyTest.group("phone-sign-in", null);
+        group = PhoneSignInPolicyTest.group("phone-sign-in", null);
         when(user.isEnabled()).thenReturn(true);
         when(user.getFirstAttribute("phone")).thenReturn(PHONE);
         when(user.getGroupsStream()).thenAnswer(inv -> Stream.of(group));
         when(user.getRoleMappingsStream()).thenAnswer(inv -> Stream.empty());
-        when(users.getUserByUsername(realm, "house.user")).thenReturn(user);
+        when(users.searchForUserByUserAttributeStream(realm, "phone", PHONE))
+                .thenAnswer(inv -> Stream.of(user));
     }
 
     private Object record(String what, Response response, AuthenticationFlowError error) {
@@ -120,6 +131,7 @@ class SmsOtpAuthenticatorTest {
     private LoginFormsProvider newForm() {
         Map<String, Object> attributes = new HashMap<>();
         String[] error = new String[1];
+        List<Object> errorArgs = new ArrayList<>();
         LoginFormsProvider[] self = new LoginFormsProvider[1];
         self[0] = mock(LoginFormsProvider.class, inv -> switch (inv.getMethod().getName()) {
             case "setAttribute" -> {
@@ -128,11 +140,15 @@ class SmsOtpAuthenticatorTest {
             }
             case "setError" -> {
                 error[0] = inv.getArgument(0);
+                errorArgs.clear();
+                for (int i = 1; i < inv.getArguments().length; i++) {
+                    errorArgs.add(inv.getArgument(i));
+                }
                 yield self[0];
             }
             case "createForm" -> {
                 Response response = mock(Response.class);
-                pages.put(response, new Page(inv.getArgument(0), error[0], Map.copyOf(attributes)));
+                pages.put(response, new Page(inv.getArgument(0), error[0], List.copyOf(errorArgs), Map.copyOf(attributes)));
                 yield response;
             }
             default -> null;
@@ -155,6 +171,7 @@ class SmsOtpAuthenticatorTest {
     private void enterPhone() {
         authenticator.authenticate(context);
         assertEquals(SmsOtpAuthenticator.PHONE_TEMPLATE, page().template());
+        assertEquals(SignInAgreement.WORDING, page().attributes().get(SmsOtpAuthenticator.ATTR_AGREEMENT));
         post("phone", "+1 555 555 0100");
         assertEquals(SmsOtpAuthenticator.CODE_TEMPLATE, page().template());
     }
@@ -162,6 +179,23 @@ class SmsOtpAuthenticatorTest {
     private void assertPage(String template, String error) {
         assertEquals(template, page().template());
         assertEquals(error, page().error());
+    }
+
+    private void assertWrongCode() {
+        assertEquals("failure", outcome);
+        assertSame(AuthenticationFlowError.INVALID_CREDENTIALS, failure);
+        assertPage(SmsOtpAuthenticator.CODE_TEMPLATE, SmsOtpAuthenticator.MSG_WRONG_CODE);
+        assertEquals(PHONE, notes.get(SmsOtpAuthenticator.NOTE_PHONE));
+        verify(context, never()).setUser(any());
+        verify(context, never()).success();
+    }
+
+    private static String sent(String phone) {
+        return "{\"sent\":{\"type\":\"otp\",\"phone\":\"" + phone + "\"}}";
+    }
+
+    private static String verified(String phone) {
+        return "{\"verified\":{\"type\":\"otp\",\"phone\":\"" + phone + "\"}}";
     }
 
     @Test
@@ -183,14 +217,95 @@ class SmsOtpAuthenticatorTest {
     }
 
     @Test
+    void phonePageShowsTheSharedAgreementWording() {
+        authenticator.authenticate(context);
+        assertEquals(SignInAgreement.WORDING, page().attributes().get(SmsOtpAuthenticator.ATTR_AGREEMENT));
+    }
+
+    @Test
+    void phoneRouteSendsTheStoredNumberAndShowsTheCodePage() {
+        notes.put(PhoneUsernameRouter.NOTE_ROUTE, PhoneUsernameRouter.ROUTE_PHONE);
+        notes.put(PhoneUsernameRouter.NOTE_NUMBER, "+19876543210");
+        sendReply = new SmsOtpClient.Wire(200, sent("+19876543210"));
+        authenticator.authenticate(context);
+        assertEquals(List.of("+19876543210"), sends);
+        assertPage(SmsOtpAuthenticator.CODE_TEMPLATE, null);
+        assertEquals("+19876543210", notes.get(SmsOtpAuthenticator.NOTE_PHONE));
+        assertEquals("1", notes.get(SmsOtpAuthenticator.NOTE_SENDS));
+
+        authenticator.authenticate(context);
+        assertEquals(1, sends.size());
+        assertPage(SmsOtpAuthenticator.CODE_TEMPLATE, null);
+    }
+
+    @Test
+    void phoneRouteStopsAtTheExistingSendCap() {
+        notes.put(PhoneUsernameRouter.NOTE_ROUTE, PhoneUsernameRouter.ROUTE_PHONE);
+        notes.put(PhoneUsernameRouter.NOTE_NUMBER, "+11234567890");
+        notes.put(SmsOtpAuthenticator.NOTE_SENDS, Integer.toString(1 + SmsOtpAuthenticator.MAX_RESENDS));
+        authenticator.authenticate(context);
+        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_CODE_LIMIT);
+        assertTrue(sends.isEmpty());
+        assertNull(notes.get(SmsOtpAuthenticator.NOTE_PHONE));
+    }
+
+    @Test
+    void usernameRouteDoesNotSend() {
+        notes.put(PhoneUsernameRouter.NOTE_ROUTE, PhoneUsernameRouter.ROUTE_USERNAME);
+        notes.put(PhoneUsernameRouter.NOTE_NUMBER, "+11234567890");
+        authenticator.authenticate(context);
+        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, null);
+        assertTrue(sends.isEmpty());
+        assertNull(notes.get(SmsOtpAuthenticator.NOTE_PHONE));
+    }
+
+    @Test
+    void emptySecretAttemptsBeforeARoutedSend() {
+        notes.put(PhoneUsernameRouter.NOTE_ROUTE, PhoneUsernameRouter.ROUTE_PHONE);
+        notes.put(PhoneUsernameRouter.NOTE_NUMBER, "+11234567890");
+        List<String> leaked = new ArrayList<>();
+        SmsOtpClient client = new SmsOtpClient((uri, secret, json) -> {
+            leaked.add(json);
+            return new SmsOtpClient.Wire(200, "{\"status\":\"sent\"}");
+        });
+        for (String raw : new String[] {null, "", "   ", SmsOtpConfig.PLACEHOLDER}) {
+            leaked.clear();
+            SmsOtpAuthenticator off = new SmsOtpAuthenticator(client, () -> SmsOtpConfig.normalize(raw));
+            outcome = null;
+            off.authenticate(context);
+            assertEquals("attempted", outcome);
+            params = new MultivaluedHashMap<>();
+            params.add("phone", "+11234567890");
+            off.action(context);
+            assertEquals("attempted", outcome);
+            assertTrue(leaked.isEmpty());
+        }
+        assertTrue(sends.isEmpty());
+    }
+
+    @Test
     void correctCodeForAllowedUserSignsIn() {
         enterPhone();
         assertEquals(List.of(PHONE), sends);
-        verifyReplies.add(new SmsOtpClient.Wire(200, OK_USER));
+        assertTrue(sendBodies.getFirst().contains("\"type\":\"otp\""));
+        assertTrue(sendBodies.getFirst().contains(SignInAgreement.WORDING));
+        verifyReplies.add(new SmsOtpClient.Wire(200, verified(PHONE)));
         post("code", "123456");
         assertEquals("success", outcome);
+        assertEquals("{\"phone\":\"" + PHONE + "\",\"code\":\"123456\"}", verifyBodies.getFirst());
         verify(context).setUser(user);
+        verify(users, never()).getUserByUsername(any(), any());
         assertNull(notes.get(SmsOtpAuthenticator.NOTE_PHONE));
+    }
+
+    @Test
+    void verifyUsesTheSavedPhoneNotTheForm() {
+        enterPhone();
+        verifyReplies.add(new SmsOtpClient.Wire(200, verified(PHONE)));
+        post("code", "123456", "phone", "+19999999999");
+        assertEquals(PHONE, SmsOtpClient.textField(verifyBodies.getFirst(), "phone"));
+        assertEquals("success", outcome);
+        verify(context).setUser(user);
     }
 
     @Test
@@ -201,47 +316,56 @@ class SmsOtpAuthenticatorTest {
     }
 
     @Test
-    void verifiedCodeForUnknownUsernameIsDenied() {
+    void verifiedCodeWithNoMatchingUserIsAWrongCode() {
+        when(users.searchForUserByUserAttributeStream(any(), anyString(), anyString()))
+                .thenAnswer(inv -> Stream.empty());
         enterPhone();
-        verifyReplies.add(new SmsOtpClient.Wire(200, "{\"username\":\"someone.else\"}"));
+        verifyReplies.add(new SmsOtpClient.Wire(200, verified(PHONE)));
         post("code", "123456");
-        assertDenied();
+        assertWrongCode();
     }
 
     @Test
-    void verifiedCodeForUserOutsideThePolicyIsDenied() {
+    void twoMatchingUsersAreAWrongCode() {
+        UserModel other = mock(UserModel.class);
+        when(other.isEnabled()).thenReturn(true);
+        when(other.getFirstAttribute("phone")).thenReturn(PHONE);
+        when(other.getGroupsStream()).thenAnswer(inv -> Stream.of(group));
+        when(other.getRoleMappingsStream()).thenAnswer(inv -> Stream.empty());
+        when(users.searchForUserByUserAttributeStream(realm, "phone", PHONE))
+                .thenAnswer(inv -> Stream.of(user, other));
+        enterPhone();
+        verifyReplies.add(new SmsOtpClient.Wire(200, verified(PHONE)));
+        post("code", "123456");
+        assertWrongCode();
+    }
+
+    @Test
+    void verifiedCodeForUserOutsideThePolicyIsAWrongCode() {
         when(user.getGroupsStream()).thenAnswer(inv -> Stream.empty());
         enterPhone();
-        verifyReplies.add(new SmsOtpClient.Wire(200, OK_USER));
+        verifyReplies.add(new SmsOtpClient.Wire(200, verified(PHONE)));
         post("code", "123456");
-        assertDenied();
+        assertWrongCode();
     }
 
     @Test
-    void verifiedCodeWithPhoneMismatchIsDenied() {
-        when(user.getFirstAttribute("phone")).thenReturn("+15555550199");
+    void verifiedPhoneThatDiffersFromTheNoteIsAWrongCode() {
         enterPhone();
-        verifyReplies.add(new SmsOtpClient.Wire(200, OK_USER));
-        post("code", "123456");
-        assertDenied();
+        verifyReplies.add(new SmsOtpClient.Wire(200, verified("+15555550199")));
+        post("code", "123456", "phone", "+15555550199");
+        assertWrongCode();
+        verify(users, never()).searchForUserByUserAttributeStream(any(), anyString(), anyString());
     }
 
     @Test
-    void userLookupFailureIsDenied() {
-        when(users.getUserByUsername(any(), anyString())).thenThrow(new IllegalStateException("store down"));
+    void userLookupFailureIsAWrongCode() {
+        when(users.searchForUserByUserAttributeStream(any(), anyString(), anyString()))
+                .thenThrow(new IllegalStateException("store down"));
         enterPhone();
-        verifyReplies.add(new SmsOtpClient.Wire(200, OK_USER));
+        verifyReplies.add(new SmsOtpClient.Wire(200, verified(PHONE)));
         post("code", "123456");
-        assertDenied();
-    }
-
-    private void assertDenied() {
-        assertEquals("failure", outcome);
-        assertSame(AuthenticationFlowError.ACCESS_DENIED, failure);
-        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_DENIED);
-        assertNull(notes.get(SmsOtpAuthenticator.NOTE_PHONE));
-        verify(context, never()).setUser(any());
-        verify(context, never()).success();
+        assertWrongCode();
     }
 
     @Test
@@ -347,11 +471,68 @@ class SmsOtpAuthenticatorTest {
     }
 
     @Test
-    void verifyUnavailableKeepsTheCodeFormWithoutCountingAWrongCode() {
+    void verifyUnavailableKeepsTheTypedCodeAndLeavesTheFormUp() {
+        enterPhone();
+        verifyReplies.add(new SmsOtpClient.Wire(503, "{\"error\":\"unavailable\"}"));
+        post("code", "123456");
+        assertEquals("challenge", outcome);
+        assertPage(SmsOtpAuthenticator.CODE_TEMPLATE, SmsOtpAuthenticator.MSG_CHECK_UNAVAILABLE);
+        assertEquals("123456", page().attributes().get(SmsOtpAuthenticator.ATTR_CODE));
+        assertEquals(true, page().attributes().get(SmsOtpAuthenticator.ATTR_RESEND_ALLOWED));
+        assertNull(notes.get(SmsOtpAuthenticator.NOTE_WRONG_CODES));
+        assertEquals(PHONE, notes.get(SmsOtpAuthenticator.NOTE_PHONE));
+    }
+
+    @Test
+    void otherVerifyFailureDoesNotKeepTheCodeOrCountItWrong() {
         enterPhone();
         verifyReplies.add(new SmsOtpClient.Wire(503, "{\"error\":\"stub\"}"));
         post("code", "123456");
+        assertEquals("challenge", outcome);
         assertPage(SmsOtpAuthenticator.CODE_TEMPLATE, SmsOtpAuthenticator.MSG_UNAVAILABLE);
+        assertNull(page().attributes().get(SmsOtpAuthenticator.ATTR_CODE));
         assertNull(notes.get(SmsOtpAuthenticator.NOTE_WRONG_CODES));
+    }
+
+    @Test
+    void sendRateLimitRoundsRetryAfterUpToMinutes() {
+        sendReply = new SmsOtpClient.Wire(429, "{\"error\":\"rate-limited\"}", "61");
+        authenticator.authenticate(context);
+        post("phone", PHONE);
+        assertEquals("challenge", outcome);
+        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_RATE_LIMITED);
+        assertEquals(List.of(2), page().errorArgs());
+        assertEquals(SignInAgreement.WORDING, page().attributes().get(SmsOtpAuthenticator.ATTR_AGREEMENT));
+        assertNull(notes.get(SmsOtpAuthenticator.NOTE_PHONE));
+    }
+
+    @Test
+    void sendRateLimitOfOneMinuteUsesTheSingularLine() {
+        sendReply = new SmsOtpClient.Wire(429, "{\"error\":\"rate-limited\"}", "60");
+        authenticator.authenticate(context);
+        post("phone", "+1 (555) 555-0100");
+        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_RATE_LIMITED_ONE);
+        assertTrue(page().errorArgs().isEmpty());
+    }
+
+    @Test
+    void unusableRetryAfterFallsBackToFifteenMinutes() {
+        sendReply = new SmsOtpClient.Wire(429, "{\"error\":\"rate-limited\"}", "tomorrow");
+        authenticator.authenticate(context);
+        post("phone", PHONE);
+        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_RATE_LIMITED);
+        assertEquals(List.of(15), page().errorArgs());
+    }
+
+    @Test
+    void verifyRateLimitStaysOnTheCodeForm() {
+        enterPhone();
+        verifyReplies.add(new SmsOtpClient.Wire(429, "{\"error\":\"rate-limited\"}", "120"));
+        post("code", "123456");
+        assertEquals("challenge", outcome);
+        assertPage(SmsOtpAuthenticator.CODE_TEMPLATE, SmsOtpAuthenticator.MSG_RATE_LIMITED);
+        assertEquals(List.of(2), page().errorArgs());
+        assertNull(notes.get(SmsOtpAuthenticator.NOTE_WRONG_CODES));
+        assertEquals(PHONE, notes.get(SmsOtpAuthenticator.NOTE_PHONE));
     }
 }
