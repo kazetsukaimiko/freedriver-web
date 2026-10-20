@@ -20,6 +20,7 @@
         <module>agent-dispatcher-model</module>
         <module>agent-dispatcher-api</module>
         <module>agent-dispatcher</module>
+        <module>device-daemon</module>
     </modules>
 
     <properties>

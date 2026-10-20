@@ -167,6 +167,12 @@ public class JobStore {
         }
     }
 
+    public AssignmentView assignment(String deviceId, UUID assignmentId) {
+        synchronized (monitor) {
+            return view(own(deviceId, assignmentId));
+        }
+    }
+
     public AssignmentView claim(String deviceId, UUID assignmentId) {
         synchronized (monitor) {
             Assignment assignment = own(deviceId, assignmentId);
@@ -195,8 +201,16 @@ public class JobStore {
                     }
                     assignment.grokSessionId = request.grokSessionId();
                 }
-                case SUCCEEDED, FAILED -> {
+                case SUCCEEDED -> {
                     if (assignment.state != AssignmentState.RUNNING) {
+                        throw conflict("assignment is " + assignment.state);
+                    }
+                }
+                // Claimed to failed is a refusal before a session starts (speech, or grok
+                // never started). Succeeded still requires running.
+                case FAILED -> {
+                    if (assignment.state != AssignmentState.RUNNING
+                            && assignment.state != AssignmentState.CLAIMED) {
                         throw conflict("assignment is " + assignment.state);
                     }
                 }
@@ -286,11 +300,17 @@ public class JobStore {
     }
 
     private AssignmentView view(Assignment assignment) {
+        Job job = jobs.get(assignment.jobId);
+        if (job == null) {
+            throw notFound("job");
+        }
         return new AssignmentView(
                 assignment.id,
                 assignment.jobId,
                 assignment.deviceId,
                 assignment.agentName,
+                job.channel,
+                job.prompt,
                 assignment.state,
                 assignment.grokSessionId,
                 assignment.note);
