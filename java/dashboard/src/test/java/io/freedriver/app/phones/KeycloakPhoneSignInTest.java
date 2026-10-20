@@ -121,11 +121,12 @@ class KeycloakPhoneSignInTest {
     }
 
     @Test
-    void prod_refuses_a_blank_invite_client_secret() {
-        assertThrows(IllegalStateException.class, () -> KeycloakPhoneSignIn.requireSecret(true, ""));
-        assertThrows(IllegalStateException.class, () -> KeycloakPhoneSignIn.requireSecret(true, " "));
-        KeycloakPhoneSignIn.requireSecret(false, "");
-        KeycloakPhoneSignIn.requireSecret(true, "secret-value");
+    void blank_secret_does_not_call_keycloak() {
+        KeycloakPhoneSignIn client = new KeycloakPhoneSignIn(
+                new ObjectMapper(), "http://127.0.0.1:9/realms/freedriver", "freedriver-invite", " ");
+        InviteUpstreamException error = assertThrows(InviteUpstreamException.class,
+                () -> client.removeFromPhoneSignIn("+15555550123"));
+        assertEquals("invite client secret is unset", error.getMessage());
     }
 
     private static KeycloakPhoneSignIn client(HttpServer server) {

@@ -3,10 +3,7 @@ package io.freedriver.app.phones;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.freedriver.app.invites.InviteUpstreamException;
-import io.quarkus.runtime.StartupEvent;
-import io.quarkus.runtime.configuration.ConfigUtils;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -63,17 +60,6 @@ public class KeycloakPhoneSignIn implements PhoneSignInDirectory {
             throw new IllegalArgumentException("auth server url has no /realms/ segment");
         }
         this.admin = URI.create(realmBase.substring(0, realms) + "/admin" + realmBase.substring(realms) + "/");
-    }
-
-    void failClosedWhenSecretBlank(@Observes StartupEvent event) {
-        requireSecret(ConfigUtils.getProfiles().contains("prod"), clientSecret);
-    }
-
-    /** Prod refuses a blank invite client secret. Non-prod may start without one. */
-    static void requireSecret(boolean prod, String secret) {
-        if (prod && (secret == null || secret.isBlank())) {
-            throw new IllegalStateException("freedriver.invite.client-secret is blank");
-        }
     }
 
     private URI admin(String pathAndQuery) {
