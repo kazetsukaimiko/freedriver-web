@@ -47,7 +47,7 @@ Before any instance reports:
 { "csrfToken": "…", "instances": [] }
 ```
 
-Each `instanceName` is a dashboard tab. GET returns `csrfToken`. POST requires `X-CSRF-Token` matching the HttpOnly `freedriver-csrf` cookie. A bad or missing token is 400 with an empty body; that one switch fails and the session continues.
+Each `instanceName` is a dashboard tab. GET returns `csrfToken`. POST requires `X-CSRF-Token` matching the HttpOnly `freedriver-csrf` cookie. The cookie is `Secure` in `%prod` and omits `Secure` in `%dev` on `http://localhost` and `http://127.0.0.1`. A bad or missing token is 400 with an empty body; that one switch fails and the session continues.
 
 ### Status codes
 
