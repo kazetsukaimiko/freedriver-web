@@ -66,6 +66,11 @@ services:
       KC_PROXY_HEADERS: xforwarded
       KC_HEALTH_ENABLED: "true"
       KC_CACHE: local
+      # jboss-logging writes successful events at DEBUG, under the container
+      # INFO level, so LOGIN and LOGOUT never reach `docker compose logs`.
+      # Passwords and token values are not fields of this listener.
+      # include-representation stays at its default false.
+      KC_SPI_EVENTS_LISTENER_JBOSS_LOGGING_SUCCESS_LEVEL: info
       # Shared secret the phone OTP SPI sends to http://sms:8080.
       SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
