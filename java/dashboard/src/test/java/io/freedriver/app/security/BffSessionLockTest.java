@@ -47,7 +47,7 @@ class BffSessionLockTest {
         assertTrue(properties.contains("quarkus.http.auth.permission.phones.policy=authenticated"));
         assertTrue(properties.contains("freedriver.invite.client-secret=${FREEDRIVER_INVITE_CLIENT_SECRET:}"));
         assertTrue(properties.contains(
-                "\n%prod.freedriver.invite.client-secret=${FREEDRIVER_INVITE_CLIENT_SECRET}\n"));
+                "\n%prod.freedriver.invite.client-secret=${FREEDRIVER_INVITE_CLIENT_SECRET:}\n"));
         String compose = Files.readString(Path.of("../../docker-compose.yml"));
         assertTrue(compose.contains("path: /opt/freedriver-secrets/keycloak-freedriver-invite.env"));
         assertTrue(compose.contains("required: false"));
