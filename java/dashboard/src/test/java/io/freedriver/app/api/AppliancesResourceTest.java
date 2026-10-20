@@ -100,7 +100,7 @@ class AppliancesResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void get_returns_cabin_tab_and_six_appliances() {
         given().when().get("/api/appliances")
                 .then()
@@ -127,7 +127,7 @@ class AppliancesResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void get_unknown_instances_is_empty_not_409() {
         control.forget(MockAutonomy.INSTANCE_ID);
         given().when().get("/api/appliances")
@@ -137,7 +137,7 @@ class AppliancesResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void post_without_csrf_400_no_command() {
         given().contentType(ContentType.JSON)
                 .body("{\"on\":true}")
@@ -149,7 +149,7 @@ class AppliancesResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void post_wrong_csrf_400_no_command() {
         var get = given().when().get("/api/appliances");
         given().contentType(ContentType.JSON)
@@ -164,7 +164,7 @@ class AppliancesResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void extra_json_fields_400() {
         commandSpec()
                 .body("{\"on\":true,\"extra\":1}")
@@ -174,7 +174,7 @@ class AppliancesResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void missing_on_400_from_constraint() {
         commandSpec()
                 .body("{}")
@@ -184,7 +184,7 @@ class AppliancesResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void oversized_name_400_from_constraint() {
         String tooLong = "a".repeat(ApplianceSchemas.NAME_MAX + 1);
         commandSpec()
@@ -195,7 +195,7 @@ class AppliancesResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void unknown_instance_404_no_command() {
         UUID missing = UUID.fromString("00000000-0000-4000-8000-000000000000");
         commandSpec()
@@ -206,7 +206,7 @@ class AppliancesResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void unknown_name_404_no_command() {
         commandSpec()
                 .body("{\"on\":true}")
@@ -216,7 +216,7 @@ class AppliancesResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void stale_instance_post_409_get_still_200() {
         control.markStale(MockAutonomy.INSTANCE_ID, Duration.ofSeconds(20));
 
@@ -239,7 +239,7 @@ class AppliancesResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void confirm_path_updates_map() {
         mock.setConfirmCommands(true);
 
@@ -263,7 +263,7 @@ class AppliancesResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void timeout_path_does_not_look_confirmed() {
         mock.setConfirmCommands(false);
 
@@ -280,7 +280,7 @@ class AppliancesResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void rate_limit_returns_429() {
         mock.setConfirmCommands(true);
         int limited = 0;
@@ -301,7 +301,7 @@ class AppliancesResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void get_is_never_rate_limited() {
         for (int i = 0; i < 12; i++) {
             given().when().get("/api/appliances").then().statusCode(200);

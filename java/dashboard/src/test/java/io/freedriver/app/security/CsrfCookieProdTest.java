@@ -36,7 +36,7 @@ class CsrfCookieProdTest {
     boolean cookieSecure;
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void prod_plain_http_sets_secure_httponly_lax_cookie() {
         assertEquals("http", base.getProtocol(), base.toString());
         assertTrue(cookieSecure);
