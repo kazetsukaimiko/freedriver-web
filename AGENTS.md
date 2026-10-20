@@ -33,7 +33,12 @@ When CI is green and the automated review is settled, mark the pull request read
 
 Address kaze's feedback with commits on the same branch, and with that reply. When you want to push back or clarify a requirement, the reply is the place to do it, and then wait.
 
-When kaze approves, merge. Leave the pull request open when kaze's review says to hold the merge.
+When kaze approves, merge only after the head-repository check below. Leave the pull request open when kaze's review says to hold the merge.
+
+Before merging, read the pull request's `head.repo.full_name`.
+
+- When `head.repo.full_name` is `kazetsukaimiko/freedriver-web`, follow the normal merge gate.
+- When `head.repo.full_name` is anything else, including a fork or a missing head repository, take no action on that pull request. Do not merge it, push to it, or comment on it. Tell the Product Manager the pull request number and the head repository.
 
 After the merge, follow [Merge and deploy](#merge-and-deploy).
 
