@@ -38,7 +38,7 @@ When kaze approves, merge only after the head-repository check below. Leave the 
 Before merging, read the pull request's `head.repo.full_name`.
 
 - When `head.repo.full_name` is `kazetsukaimiko/freedriver-web`, follow the normal merge gate.
-- When `head.repo.full_name` is anything else, including a fork or a missing head repository, take no action on that pull request. Do not merge it, push to it, or comment on it. Tell the Product Manager the pull request number and the head repository.
+- When `head.repo.full_name` is anything else, including a fork or a missing head repository, leave the pull request untouched and tell the Product Manager the pull request number and the head repository.
 
 After the merge, follow [Merge and deploy](#merge-and-deploy).
 
