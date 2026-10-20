@@ -19,7 +19,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Production MQTTS client. TCP host is docker-network {@code mosquitto}, never mqtt.freedriver.io.
+ * Eclipse Paho {@link MqttConnection} for a {@link MqttEndpoint}.
+ * TLS checks the broker hostname. The client id is {@code freedriver-api-} plus a random UUID.
  */
 public final class PahoMqttConnection implements MqttConnection {
 
