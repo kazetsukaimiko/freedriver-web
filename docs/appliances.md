@@ -119,3 +119,11 @@ Authorization stays **on** in `%dev` (`quarkus.security.auth.enabled-in-dev-mode
 `%test` uses `@TestSecurity`.
 
 Live MQTT is `io.freedriver:freedriver-mqtt` plus `freedriver-mqtt-paho`. The app CDI adapter (`MqttLiveClient`) talks to the same `ApplianceControl` bus, connects when `live-commands=true`, and fails startup when `live-commands` and `mock` are both true. `MqttBrokers` requires a docker-network host (`freedriver.io` names throw), port 8883, TLS, and exact topics. `freedriver.mqtt` is a mapped object (host, port, tls, username). Host and env vars: [mqtt-connect.md](mqtt-connect.md#quarkus).
+
+App MQTT logs use the logger `io.freedriver.mqtt`. No line includes a password, a payload, or an exception message. `live-commands` stays false, so the lines appear only after that flag is on.
+
+- INFO `mqtt connecting`, `mqtt connected` (first session and every reconnect, from Paho `connectComplete`), and `mqtt disconnected reason=`.
+- INFO `mqtt resubscribed topics=` after every reconnect. A clean session drops broker subscriptions, so the stored topics are subscribed again off the Paho comms thread.
+- DEBUG `mqtt state received instance= appliances=` for each accepted state message. INFO `mqtt state summary instance= messages= lastHeardAgo=` once a minute for each configured instance (`lastHeardAgo=never` when that home has not reported).
+- WARN `mqtt state rejected topic= reason=schema|unknown-instance`.
+- INFO `mqtt command sent commandId= instance= appliance= state= user=` when a command is published. The user is the signed-in principal name, read on the request and passed to the adapter as a string. WARN `mqtt command unacknowledged ... timeoutMs=` when no matching state arrives within the same clamped `command-timeout` the confirm wait uses. The audit line above is the acknowledgement.
