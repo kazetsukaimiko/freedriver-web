@@ -47,8 +47,9 @@ public class PhoneRemovalResource {
         if (phone == null || !PHONE.matcher(phone).matches()) {
             return Response.status(400).entity("{}").build();
         }
-        boolean dropped = sms.remove(phone);
+        // Keycloak first. A failed group removal must leave the sms row in place.
         boolean membership = keycloak.removeFromPhoneSignIn(phone);
+        boolean dropped = sms.remove(phone);
         if (!dropped && !membership) {
             return Response.status(404).entity("{}").build();
         }

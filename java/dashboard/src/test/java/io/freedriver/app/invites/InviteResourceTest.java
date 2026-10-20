@@ -111,6 +111,21 @@ class InviteResourceTest {
     }
 
     @Test
+    void anonymous_invite_use_stays_open() {
+        given().contentType(ContentType.JSON).body("{\"code\":\"nope\"}")
+                .post("/api/invites/use").then().statusCode(409).body("used", org.hamcrest.Matchers.is(false));
+    }
+
+    @Test
+    void anonymous_admin_routes_need_a_session() {
+        given().when().get("/api/invites").then().statusCode(401);
+        given().contentType(ContentType.JSON).body("{\"name\":\"Mom\"}").post("/api/invites").then().statusCode(401);
+        given().when().get("/api/phones").then().statusCode(401);
+        given().contentType(ContentType.JSON).body("{\"phone\":\"+15555550123\"}")
+                .post("/api/phones/remove").then().statusCode(401);
+    }
+
+    @Test
     @TestSecurity(user = "bob", roles = {"user"})
     void a_non_admin_is_refused() {
         given().when().get("/api/invites").then().statusCode(403);

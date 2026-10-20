@@ -31,7 +31,7 @@ services:
       SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
       FREEDRIVER_SMS_BASE_URL: http://sms:8080
       FREEDRIVER_INVITES_DIR: /deployments/data/invites
-      FREEDRIVER_INVITE_CLIENT_SECRET: ${FREEDRIVER_INVITE_CLIENT_SECRET:-}
+      FREEDRIVER_INVITE_CLIENT_SECRET: ${FREEDRIVER_INVITE_CLIENT_SECRET:?FREEDRIVER_INVITE_CLIENT_SECRET is required}
     volumes:
       - /opt/freedriver-storage/invites:/deployments/data/invites
     expose:

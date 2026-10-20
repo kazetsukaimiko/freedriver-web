@@ -3,7 +3,10 @@ package io.freedriver.app.phones;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.freedriver.app.invites.InviteUpstreamException;
+import io.quarkus.runtime.StartupEvent;
+import io.quarkus.runtime.configuration.ConfigUtils;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -16,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Takes a user out of the {@code phone-sign-in} group with the invite service account.
@@ -37,8 +41,12 @@ public class KeycloakPhoneSignIn implements PhoneSignInDirectory {
                                        defaultValue = "https://auth.freedriver.io/realms/freedriver") String authServer,
                                @ConfigProperty(name = "freedriver.invite.client-id", defaultValue = "freedriver-invite")
                                String clientId,
-                               @ConfigProperty(name = "freedriver.invite.client-secret", defaultValue = "")
-                               String clientSecret) {
+                               @ConfigProperty(name = "freedriver.invite.client-secret")
+                               Optional<String> clientSecret) {
+        this(json, authServer, clientId, clientSecret.orElse(""));
+    }
+
+    KeycloakPhoneSignIn(ObjectMapper json, String authServer, String clientId, String clientSecret) {
         this(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(), json, authServer, clientId,
                 clientSecret);
     }
@@ -55,6 +63,17 @@ public class KeycloakPhoneSignIn implements PhoneSignInDirectory {
             throw new IllegalArgumentException("auth server url has no /realms/ segment");
         }
         this.admin = URI.create(realmBase.substring(0, realms) + "/admin" + realmBase.substring(realms) + "/");
+    }
+
+    void failClosedWhenSecretBlank(@Observes StartupEvent event) {
+        requireSecret(ConfigUtils.getProfiles().contains("prod"), clientSecret);
+    }
+
+    /** Prod refuses a blank invite client secret. Non-prod may start without one. */
+    static void requireSecret(boolean prod, String secret) {
+        if (prod && (secret == null || secret.isBlank())) {
+            throw new IllegalStateException("freedriver.invite.client-secret is blank");
+        }
     }
 
     private URI admin(String pathAndQuery) {
@@ -99,9 +118,10 @@ public class KeycloakPhoneSignIn implements PhoneSignInDirectory {
         List<String> ids = new ArrayList<>();
         if (groups.isArray()) {
             for (JsonNode group : groups) {
-                if ("phone-sign-in".equals(group.path("name").asText())) {
-                    ids.add(group.path("id").asText());
+                if (!"phone-sign-in".equals(group.path("name").asText()) || hasParent(group)) {
+                    continue;
                 }
+                ids.add(group.path("id").asText());
             }
         }
         if (ids.size() != 1 || ids.get(0).isBlank()) {
@@ -111,7 +131,7 @@ public class KeycloakPhoneSignIn implements PhoneSignInDirectory {
     }
 
     private String userId(String token, String phone) {
-        String query = "users?q=" + url("phone:" + phone) + "&exact=true";
+        String query = "users?q=" + url("phone:" + phone) + "&exact=true&briefRepresentation=false";
         JsonNode users = read(send(authed(admin(query), token).GET().build()));
         if (!users.isArray() || users.isEmpty()) {
             return null;
@@ -119,11 +139,41 @@ public class KeycloakPhoneSignIn implements PhoneSignInDirectory {
         if (users.size() != 1) {
             throw new InviteUpstreamException("more than one user has this phone attribute");
         }
-        String id = users.get(0).path("id").asText("");
+        JsonNode user = users.get(0);
+        if (!phoneEquals(user, phone)) {
+            throw new InviteUpstreamException("phone attribute does not match");
+        }
+        String id = user.path("id").asText("");
         if (id.isBlank()) {
             throw new InviteUpstreamException("phone user has no id");
         }
         return id;
+    }
+
+    /** Top-level phone-sign-in only. A group with a parent is not the policy group. */
+    private static boolean hasParent(JsonNode group) {
+        JsonNode parentId = group.get("parentId");
+        if (parentId != null && !parentId.isNull() && !parentId.asText().isBlank()) {
+            return true;
+        }
+        JsonNode parent = group.get("parent");
+        return parent != null && !parent.isNull() && !(parent.isTextual() && parent.asText().isBlank());
+    }
+
+    private static boolean phoneEquals(JsonNode user, String phone) {
+        JsonNode values = user.path("attributes").path("phone");
+        if (values.isArray()) {
+            for (JsonNode value : values) {
+                if (phone.equals(value.asText())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (values.isMissingNode() || values.isNull()) {
+            return false;
+        }
+        return phone.equals(values.asText());
     }
 
     private int delete(URI uri, String token) {
