@@ -13,6 +13,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 
 /** Calls the sms service. The shared secret never goes to the browser. */
 @ApplicationScoped
@@ -29,8 +30,9 @@ public class HttpSmsPhoneList implements SmsPhoneList {
     @Inject
     public HttpSmsPhoneList(ObjectMapper json,
                             @ConfigProperty(name = "freedriver.sms.base-url", defaultValue = "http://sms:8080") String base,
-                            @ConfigProperty(name = "sms.otp.shared-secret", defaultValue = "") String secret) {
-        this(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(), json, base, secret);
+                            @ConfigProperty(name = "sms.otp.shared-secret") Optional<String> secret) {
+        // Empty env is a set value. Quarkus rejects that for String, including defaultValue "".
+        this(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(), json, base, secret.orElse(""));
     }
 
     HttpSmsPhoneList(HttpClient http, ObjectMapper json, String base, String secret) {
