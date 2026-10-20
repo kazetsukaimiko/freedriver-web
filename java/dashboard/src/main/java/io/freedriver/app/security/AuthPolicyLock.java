@@ -68,24 +68,47 @@ final class AuthPolicyLock {
     }
 
     /**
-     * {@code shared} and {@code applies-to} on an HTTP permission, and {@code tenant-enabled}
-     * on an OIDC tenant. Other locked names have no built-in default.
+     * {@code shared=false} and {@code applies-to=ALL} for a permission already in the file
+     * and for the {@code *} lookup. {@code tenant-enabled=true} for the default tenant and
+     * the literal {@code quarkus.oidc.*.tenant-enabled} lookup. Every other locked name is absent.
      */
-    private static String builtInRaw(String bare) {
-        if (bare.startsWith("quarkus.http.auth.permission.")) {
-            if (bare.endsWith(".shared")) {
-                return "false";
-            }
-            if (bare.endsWith(".applies-to")) {
-                return "ALL";
-            }
-            return null;
-        }
-        if ("quarkus.oidc.tenant-enabled".equals(bare)
-                || (bare.startsWith("quarkus.oidc.") && bare.endsWith(".tenant-enabled"))) {
+    private String builtInRaw(String bare) {
+        if ("quarkus.oidc.tenant-enabled".equals(bare) || "quarkus.oidc.*.tenant-enabled".equals(bare)) {
             return "true";
         }
+        if (!bare.startsWith("quarkus.http.auth.permission.")) {
+            return null;
+        }
+        String suffix;
+        String value;
+        if (bare.endsWith(".shared")) {
+            suffix = ".shared";
+            value = "false";
+        } else if (bare.endsWith(".applies-to")) {
+            suffix = ".applies-to";
+            value = "ALL";
+        } else {
+            return null;
+        }
+        String key = bare.substring("quarkus.http.auth.permission.".length(), bare.length() - suffix.length());
+        if ("*".equals(key) || permissionInFile(key)) {
+            return value;
+        }
         return null;
+    }
+
+    /** True when {@code auth-policy.properties} already has a line for this permission name. */
+    private boolean permissionInFile(String key) {
+        if (key.isEmpty() || key.indexOf('.') >= 0 || key.indexOf('*') >= 0) {
+            return false;
+        }
+        String marker = "quarkus.http.auth.permission." + key + ".";
+        for (String owned : bareKeys) {
+            if (owned.startsWith(marker)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Value for the exact name the profile interceptor asks for. */
