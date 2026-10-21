@@ -1,9 +1,9 @@
 name: Grok review
 
-# Reviews PRs from branches in this repository. Runs main's reviewer script and prompt
+# Reviews PRs from branches in this repository. Runs main's reviewer script and prompts
 # under pull_request_target in the main-only grok-review environment. The PR head is
 # fetched into pr/ as data: symlinks check out as plain files, and no code from the PR
-# runs in this job.
+# runs in either job.
 on:
   pull_request_target:
     branches: [main]
@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   review:
-    name: Review
+    name: Principled Engineering Review
     runs-on: ubuntu-latest
     if: github.repository == 'kazetsukaimiko/freedriver-web' && github.event.pull_request.head.repo.full_name == github.repository
     environment: grok-review
@@ -59,4 +59,49 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GROK_REVIEW_PROMPT: ${{ github.workspace }}/reviewer/.github/grok-review-prompt.md
-        run: python3 "$GITHUB_WORKSPACE/reviewer/.github/scripts/grok_review.py"
+          GROK_REVIEW_MODE: engineering
+        run: python3 "$GITHUB_WORKSPACE/reviewer/.github/scripts/grok_review.py" --mode engineering --prompt "$GITHUB_WORKSPACE/reviewer/.github/grok-review-prompt.md"
+
+  security-review:
+    name: Security Review
+    runs-on: ubuntu-latest
+    if: github.repository == 'kazetsukaimiko/freedriver-web' && github.event.pull_request.head.repo.full_name == github.repository
+    environment: grok-review
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # tarmojussila/xai-code-review is hunk-only and must not be used (#64).
+      - name: Checkout main's reviewer script and prompt
+        uses: actions/checkout@v4
+        with:
+          path: reviewer
+          persist-credentials: false
+
+      - name: Fetch PR head and base as data
+        env:
+          REPO: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git init -q pr
+          git -C pr config core.symlinks false
+          git -C pr remote add origin "https://github.com/${REPO}.git"
+          git -C pr fetch -q --no-tags origin "$HEAD_SHA" "$BASE_SHA"
+          git -C pr -c advice.detachedHead=false checkout -q "$HEAD_SHA"
+
+      - name: Review with full files and neighbors
+        working-directory: pr
+        env:
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          XAI_MODEL: ${{ vars.XAI_MODEL || 'grok-4' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GROK_REVIEW_PROMPT: ${{ github.workspace }}/reviewer/.github/grok-security-prompt.md
+          GROK_REVIEW_MODE: security
+        run: python3 "$GITHUB_WORKSPACE/reviewer/.github/scripts/grok_review.py" --mode security --prompt "$GITHUB_WORKSPACE/reviewer/.github/grok-security-prompt.md"

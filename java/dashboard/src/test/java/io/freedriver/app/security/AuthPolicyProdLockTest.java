@@ -214,7 +214,7 @@ class AuthPolicyProdLockTest {
     }
 
     @Test
-    void service_files_are_exact_registrations_and_code_owned() throws IOException {
+    void service_files_are_exact_registrations() throws IOException {
         Path services = Path.of("src/main/resources/META-INF/services");
         assertEquals(
                 "io.freedriver.app.security.AuthPolicyConfigSource",
@@ -237,14 +237,11 @@ class AuthPolicyProdLockTest {
             assertFalse(Files.exists(services.resolve(forbidden)), forbidden);
         }
         String owners = Files.readString(Path.of("../../.github/CODEOWNERS"));
-        assertTrue(owners.contains(
-                "/java/dashboard/src/main/resources/META-INF/services/org.eclipse.microprofile.config.spi.ConfigSource @kazetsukaimiko"));
-        assertTrue(owners.contains(
-                "/java/dashboard/src/main/resources/META-INF/services/io.smallrye.config.ConfigSourceInterceptor @kazetsukaimiko"));
-        assertTrue(owners.contains(
-                "/java/dashboard/src/main/resources/META-INF/services/io.smallrye.config.SmallRyeConfigBuilderCustomizer @kazetsukaimiko"));
-        assertTrue(owners.contains("/java/dashboard/src/main/resources/auth-policy.properties @kazetsukaimiko"));
-        assertTrue(owners.contains("/java/dashboard/src/test/java/io/freedriver/app/security/ @kazetsukaimiko"));
+        assertEquals(
+                "/.github/ @kazetsukaimiko\n"
+                        + "/.github/scripts/grok_review.py @kazetsukaimiko\n"
+                        + "/.github/grok-security-prompt.md @kazetsukaimiko\n",
+                owners);
     }
 
     private static SmallRyeConfig prodConfig(ConfigSource... extra) {

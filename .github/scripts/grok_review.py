@@ -3,9 +3,14 @@
 
 The marketplace action tarmojussila/xai-code-review is hunk-only and must not be used.
 Run it from a checkout of the PR head with enough git history to diff against the base.
-The workflow runs main's copy of this script and prompt; GROK_REVIEW_PROMPT holds the
-prompt path, and files are read only when they resolve inside the working directory.
-Findings are posted as a COMMENT review and never fail the job.
+The workflow runs main's copy of this script and prompt. GROK_REVIEW_PROMPT, or
+--prompt, is the prompt path. GROK_REVIEW_MODE, or --mode, is engineering or
+security. Files are read only when they resolve inside the working directory.
+Both modes post a COMMENT review. Engineering mode exits 0 after posting.
+Security mode exits 1 after posting when the verdict line is request-changes or
+a finding line is Severity: block. HTTP 429 and an empty choices body are tried
+three times (the first call plus two retries). The comment then says the review
+did not run, and the process exits 0.
 """
 
 from __future__ import annotations
@@ -13,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -24,6 +30,14 @@ PROMPT_PATH = Path(os.environ.get("GROK_REVIEW_PROMPT") or ".github/grok-review-
 XAI_URL = "https://api.x.ai/v1/chat/completions"
 GITHUB_API = "https://api.github.com"
 DEFAULT_MODEL = "grok-4"
+ENGINEERING_MODE = "engineering"
+SECURITY_MODE = "security"
+REVIEW_MODES = {ENGINEERING_MODE, SECURITY_MODE}
+# First call plus two retries when xAI returns HTTP 429 or an empty choices body.
+MODEL_ATTEMPTS = 3
+ENGINEERING_LOCK = "You are a principled engineer reviewing a GitHub pull request on freedriver-web."
+SECURITY_LOCK = "You are a security reviewer for a GitHub pull request on freedriver-web."
+SECURITY_FAIL_MARK = "fails the Security Review job"
 MAX_FILE_BYTES = 256 * 1024
 MAX_DIFF_CHARS = 80_000
 MAX_PACK_CHARS = 220_000
@@ -59,9 +73,22 @@ LAYER_MARKERS = (
     "Producer",
     "Exception",
 )
-ADVISORY_BANNER = (
-    "> Advisory xAI review. kaze's approval is the required human review; this comment is informational.\n\n"
-)
+BANNERS = {
+    ENGINEERING_MODE: (
+        "> Principled Engineering Review. kaze's approval is the required human review; this comment is informational.\n\n"
+    ),
+    SECURITY_MODE: (
+        "> Security Review. kaze's approval is the required human review.\n\n"
+    ),
+}
+DID_NOT_RUN = {
+    ENGINEERING_MODE: "> Principled Engineering Review did not run.\n",
+    SECURITY_MODE: "> Security Review did not run.\n",
+}
+
+
+class ModelRetry(Exception):
+    """xAI returned HTTP 429. The caller retries, then posts that the review did not run."""
 
 
 def die(message: str, code: int = 1) -> None:
@@ -280,15 +307,81 @@ def build_pack(
     return pack
 
 
-def load_prompt() -> str:
+def review_mode(explicit: str | None) -> str:
+    raw = (explicit or os.environ.get("GROK_REVIEW_MODE") or ENGINEERING_MODE).strip().lower()
+    if raw not in REVIEW_MODES:
+        die(f"unknown review mode {raw}")
+    return raw
+
+
+def load_prompt(mode: str) -> str:
     if not PROMPT_PATH.is_file():
         die(f"missing {PROMPT_PATH}")
     text = PROMPT_PATH.read_text()
-    if "You are a principled engineer reviewing a GitHub pull request on freedriver-web." not in text:
-        die(f"{PROMPT_PATH} is not the #64 lock (principled-engineer prompt missing)")
-    if "Comment on the diff only" in text:
-        die(f"{PROMPT_PATH} looks like the old paraphrase, not the #64 lock")
+    if mode == ENGINEERING_MODE:
+        if ENGINEERING_LOCK not in text:
+            die(f"{PROMPT_PATH} is not the #64 lock (principled-engineer prompt missing)")
+        if "Comment on the diff only" in text:
+            die(f"{PROMPT_PATH} looks like the old paraphrase, not the #64 lock")
+        return text
+    if mode == SECURITY_MODE:
+        if SECURITY_LOCK not in text:
+            die(f"{PROMPT_PATH} is not the security review prompt")
+        if SECURITY_FAIL_MARK not in text:
+            die(f"{PROMPT_PATH} does not say a block finding or request-changes {SECURITY_FAIL_MARK}")
+        return text
+    die(f"unknown review mode {mode}")
+
+
+def normalize_review_line(line: str) -> str:
+    text = line.strip()
+    text = re.sub(r"^[-*]\s+", "", text)
+    text = text.replace("**", "").replace("`", "").strip()
     return text
+
+
+def security_job_fails(review: str) -> bool:
+    """True when a finding line is exactly Severity: block or the verdict line is request-changes."""
+    for line in review.splitlines():
+        text = normalize_review_line(line)
+        if re.fullmatch(r"severity:\s*block", text, flags=re.IGNORECASE):
+            return True
+        if re.fullmatch(r"verdict:\s*request-changes", text, flags=re.IGNORECASE):
+            return True
+    return False
+
+
+def completion_text(result: object) -> str | None:
+    if not isinstance(result, dict):
+        return None
+    choices = result.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    first = choices[0]
+    if not isinstance(first, dict):
+        return None
+    message = first.get("message")
+    if not isinstance(message, dict):
+        return None
+    content = message.get("content")
+    if not isinstance(content, str) or not content.strip():
+        return None
+    return content.strip()
+
+
+def with_model_retries(fetch) -> str | None:
+    for attempt in range(1, MODEL_ATTEMPTS + 1):
+        try:
+            result = fetch()
+        except ModelRetry as error:
+            print(f"{error} (attempt {attempt}/{MODEL_ATTEMPTS})", file=sys.stderr)
+            continue
+        content = completion_text(result)
+        if content is None:
+            print(f"xAI empty choices (attempt {attempt}/{MODEL_ATTEMPTS})", file=sys.stderr)
+            continue
+        return content
+    return None
 
 
 def http_json(url: str, *, token: str, payload: dict | None = None, timeout: int = 60) -> dict:
@@ -303,16 +396,21 @@ def http_json(url: str, *, token: str, payload: dict | None = None, timeout: int
     request = urllib.request.Request(url, data=data, headers=headers, method="GET" if data is None else "POST")
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
+            raw = response.read().decode("utf-8")
+        if url == XAI_URL and not raw.strip():
+            return {}
+        return json.loads(raw)
     except urllib.error.HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")
+        if error.code == 429 and url == XAI_URL:
+            raise ModelRetry(f"HTTP 429 from {url}") from error
         die(f"HTTP {error.code} from {url}: {detail}")
     except urllib.error.URLError as error:
         die(f"request failed for {url}: {error}")
     raise AssertionError("unreachable")
 
 
-def call_xai(system_prompt: str, user_pack: str, api_key: str, model: str) -> str:
+def call_xai(system_prompt: str, user_pack: str, api_key: str, model: str) -> str | None:
     payload = {
         "model": model,
         "temperature": 0.2,
@@ -322,14 +420,11 @@ def call_xai(system_prompt: str, user_pack: str, api_key: str, model: str) -> st
             {"role": "user", "content": user_pack},
         ],
     }
-    result = http_json(XAI_URL, token=api_key, payload=payload, timeout=600)
-    try:
-        content = result["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError) as error:
-        die(f"xAI response missing message content: {error}; body={result!r}"[:2000])
-    if not isinstance(content, str) or not content.strip():
-        die("xAI returned an empty review")
-    return content.strip()
+
+    def fetch() -> dict:
+        return http_json(XAI_URL, token=api_key, payload=payload, timeout=600)
+
+    return with_model_retries(fetch)
 
 
 def post_review(repo: str, pr_number: str, head_sha: str, body: str, token: str) -> None:
@@ -351,7 +446,7 @@ def require_env(name: str) -> str:
     return value
 
 
-def cmd_review() -> None:
+def cmd_review(mode: str) -> None:
     api_key = os.environ.get("XAI_API_KEY", "").strip()
     if not api_key:
         die(
@@ -367,7 +462,7 @@ def cmd_review() -> None:
     base_sha = require_env("BASE_SHA")
     head_sha = require_env("HEAD_SHA")
 
-    prompt = load_prompt()
+    prompt = load_prompt(mode)
     changed = changed_name_status(base_sha, head_sha)
     pack = build_pack(
         title=title,
@@ -381,8 +476,17 @@ def cmd_review() -> None:
         file=sys.stderr,
     )
     review = call_xai(prompt, pack, api_key, model)
-    post_review(repo, pr_number, head_sha, ADVISORY_BANNER + review, token)
-    print("Posted advisory PR review comment (job stays green on findings).")
+    if review is None:
+        post_review(repo, pr_number, head_sha, DID_NOT_RUN[mode], token)
+        print("Posted that the review did not run. Job stays green.")
+        return
+    post_review(repo, pr_number, head_sha, BANNERS[mode] + review, token)
+    if mode == SECURITY_MODE and security_job_fails(review):
+        die("Security Review found Severity: block or verdict request-changes.")
+    if mode == ENGINEERING_MODE:
+        print("Posted Principled Engineering Review comment (job stays green on findings).")
+        return
+    print("Posted Security Review comment.")
 
 
 def cmd_pack_only() -> None:
@@ -401,9 +505,72 @@ def cmd_pack_only() -> None:
     print(pack)
 
 
+def load_prompt_at(path: Path, mode: str) -> str:
+    global PROMPT_PATH
+    previous = PROMPT_PATH
+    PROMPT_PATH = path
+    try:
+        return load_prompt(mode)
+    finally:
+        PROMPT_PATH = previous
+
+
+def expect_prompt_rejected(path: Path, mode: str) -> None:
+    try:
+        load_prompt_at(path, mode)
+    except SystemExit:
+        return
+    die(f"{path} was accepted for mode {mode}")
+
+
 def cmd_self_test() -> None:
-    """Prove neighbor walking without calling xAI or GitHub."""
-    load_prompt()
+    """Prove neighbor walking, prompt locks, and the security verdict parser. No network."""
+    load_prompt(ENGINEERING_MODE)
+    security_prompt = Path(".github/grok-security-prompt.md")
+    engineering_prompt = Path(".github/grok-review-prompt.md")
+    load_prompt_at(security_prompt, SECURITY_MODE)
+    expect_prompt_rejected(security_prompt, ENGINEERING_MODE)
+    expect_prompt_rejected(engineering_prompt, SECURITY_MODE)
+    if not security_job_fails("Verdict: request-changes"):
+        die("parser missed verdict request-changes")
+    if not security_job_fails("- Severity: block"):
+        die("parser missed Severity: block")
+    if not security_job_fails("**Verdict:** `request-changes`"):
+        die("parser missed a marked verdict line")
+    if security_job_fails("Severity: block | should-fix | adjacent | nit"):
+        die("parser treated the severity menu as a block finding")
+    if security_job_fails("Verdict: approve-as-is"):
+        die("parser failed a clean verdict")
+    if security_job_fails("Severity: should-fix"):
+        die("parser treated should-fix as block")
+    if security_job_fails("A severity line Severity: block fails the Security Review job."):
+        die("parser treated a sentence as a finding line")
+    if completion_text({}) is not None or completion_text({"choices": []}) is not None:
+        die("empty choices should be empty")
+    if completion_text({"choices": [{"message": {"content": "  "}}]}) is not None:
+        die("blank content should be empty")
+    if completion_text({"choices": [{"message": {"content": " hi "}}]}) != "hi":
+        die("completion text mismatch")
+    calls = {"n": 0}
+
+    def rate_limited_then_text() -> dict:
+        calls["n"] += 1
+        if calls["n"] < MODEL_ATTEMPTS:
+            raise ModelRetry("HTTP 429")
+        return {"choices": [{"message": {"content": "Verdict: approve-as-is"}}]}
+
+    if with_model_retries(rate_limited_then_text) != "Verdict: approve-as-is":
+        die("retries did not return the later review")
+    if calls["n"] != MODEL_ATTEMPTS:
+        die(f"expected {MODEL_ATTEMPTS} attempts, got {calls['n']}")
+    empty_calls = {"n": 0}
+
+    def always_empty() -> dict:
+        empty_calls["n"] += 1
+        return {"choices": []}
+
+    if with_model_retries(always_empty) is not None or empty_calls["n"] != MODEL_ATTEMPTS:
+        die("empty choices should retry twice and then give up")
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         main_svc = root / "java/dashboard/src/main/java/io/freedriver/app/appliances/ApplianceService.java"
@@ -444,7 +611,17 @@ def cmd_self_test() -> None:
 
 
 def main() -> None:
+    global PROMPT_PATH
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--prompt",
+        help="System prompt path. Overrides GROK_REVIEW_PROMPT.",
+    )
+    parser.add_argument(
+        "--mode",
+        help="engineering exits 0 on findings. security exits 1 on request-changes or Severity: block. "
+        "Default: GROK_REVIEW_MODE or engineering.",
+    )
     parser.add_argument(
         "--pack-only",
         action="store_true",
@@ -456,13 +633,16 @@ def main() -> None:
         help="Check prompt lock + neighbor walking; no network.",
     )
     args = parser.parse_args()
+    if args.prompt:
+        PROMPT_PATH = Path(args.prompt)
+    mode = review_mode(args.mode)
     if args.self_test:
         cmd_self_test()
         return
     if args.pack_only:
         cmd_pack_only()
         return
-    cmd_review()
+    cmd_review(mode)
 
 
 if __name__ == "__main__":
