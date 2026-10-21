@@ -29,7 +29,7 @@ jobs:
     steps:
       # tarmojussila/xai-code-review is hunk-only and must not be used (#64).
       - name: Checkout main's reviewer script and prompt
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: reviewer
           persist-credentials: false
@@ -73,7 +73,7 @@ jobs:
     steps:
       # tarmojussila/xai-code-review is hunk-only and must not be used (#64).
       - name: Checkout main's reviewer script and prompt
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: reviewer
           persist-credentials: false
