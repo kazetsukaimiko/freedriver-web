@@ -6,7 +6,13 @@ package io.freedriver.sms.otp;
  */
 public interface SmsSender {
 
-    SendOutcome sendCode(String phone);
+    SendResult sendCode(String phone);
 
     CheckOutcome checkCode(String phone, String code);
+
+    /**
+     * Sets an open verification to {@code canceled}. A sid that is not a Twilio verification sid
+     * is ignored. Returns whether the provider no longer has that verification.
+     */
+    boolean cancelVerification(String verificationSid);
 }

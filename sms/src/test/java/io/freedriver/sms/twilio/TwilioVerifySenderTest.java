@@ -88,7 +88,7 @@ class TwilioVerifySenderTest {
         String phone = agreed();
         stubSend(201, "{\"sid\":\"VE1\",\"status\":\"pending\"}");
 
-        assertEquals(SendOutcome.SENT, sender.sendCode(phone));
+        assertEquals(SendOutcome.SENT, sender.sendCode(phone).outcome());
 
         String basic = "Basic " + Base64.getEncoder().encodeToString(
                 (TestNumbers.SID_API_KEY + ":" + TestNumbers.API_KEY_SECRET).getBytes(StandardCharsets.UTF_8));
@@ -113,6 +113,35 @@ class TwilioVerifySenderTest {
     }
 
     @Test
+    void check_attempt_limit_is_too_many_attempts() {
+        String phone = agreed();
+        stubCheck(429, "{\"code\":60202,\"message\":\"Max check attempts reached\"}");
+
+        try (LogCapture logs = LogCapture.open()) {
+            assertEquals(CheckOutcome.TOO_MANY_ATTEMPTS, sender.checkCode(phone, "000000"));
+            assertTrue(logs.all().contains("60202"), logs.all());
+            assertFalse(logs.all().contains("Max check attempts"), logs.all());
+            assertFalse(logs.all().contains(phone), logs.all());
+        }
+    }
+
+    @Test
+    void cancel_sets_the_verification_status_to_canceled() {
+        String phone = agreed();
+        String sid = "VE" + "a".repeat(32);
+        stubSend(201, "{\"sid\":\"" + sid + "\",\"status\":\"pending\"}");
+        twilio.stubFor(post(urlEqualTo(VERIFICATIONS + "/" + sid)).willReturn(aResponse().withStatus(200)
+                .withHeader("Content-Type", "application/json").withBody("{\"sid\":\"" + sid + "\",\"status\":\"canceled\"}")));
+
+        assertEquals(sid, sender.sendCode(phone).verificationSid());
+        assertTrue(sender.cancelVerification(sid));
+        twilio.verify(1, postRequestedFor(urlEqualTo(VERIFICATIONS + "/" + sid))
+                .withFormParam("Status", equalTo("canceled")));
+        assertFalse(sender.cancelVerification("not-a-sid"));
+        twilio.verify(1, postRequestedFor(urlEqualTo(VERIFICATIONS + "/" + sid)));
+    }
+
+    @Test
     void check_reports_a_wrong_code_from_twilio() {
         String phone = agreed();
         stubCheck(200, "{\"status\":\"pending\",\"valid\":false}");
@@ -132,7 +161,7 @@ class TwilioVerifySenderTest {
         stubSend(400, "{\"code\":60200,\"message\":\"Invalid parameter `To`: " + phone + "\"}");
 
         try (LogCapture logs = LogCapture.open()) {
-            assertEquals(SendOutcome.FAILED, sender.sendCode(phone));
+            assertEquals(SendOutcome.FAILED, sender.sendCode(phone).outcome());
             String out = logs.all();
             assertTrue(out.contains("***" + phone.substring(phone.length() - 2)), out);
             assertTrue(out.contains("60200"), out);
@@ -149,7 +178,7 @@ class TwilioVerifySenderTest {
         TwilioVerifySender impatient = sender(Duration.ofMillis(300));
 
         try (LogCapture logs = LogCapture.open()) {
-            assertEquals(SendOutcome.FAILED, impatient.sendCode(phone));
+            assertEquals(SendOutcome.FAILED, impatient.sendCode(phone).outcome());
             String out = logs.all();
             assertTrue(out.contains("timed out"), out);
             assertTrue(out.contains("***" + phone.substring(phone.length() - 2)), out);
@@ -177,7 +206,7 @@ class TwilioVerifySenderTest {
         stubSend(201, "{\"status\":\"pending\"}");
 
         try (LogCapture logs = LogCapture.open()) {
-            assertEquals(SendOutcome.REFUSED_NO_AGREEMENT, sender.sendCode(phone));
+            assertEquals(SendOutcome.REFUSED_NO_AGREEMENT, sender.sendCode(phone).outcome());
             assertTrue(logs.all().contains("***" + phone.substring(phone.length() - 2)), logs.all());
             assertFalse(logs.all().contains(phone), logs.all());
         }

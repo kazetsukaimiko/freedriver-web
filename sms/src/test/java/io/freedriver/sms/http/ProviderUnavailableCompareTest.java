@@ -2,6 +2,10 @@ package io.freedriver.sms.http;
 
 import io.freedriver.sms.otp.FakeSmsSender;
 import io.freedriver.sms.otp.ProviderOutage;
+import io.freedriver.sms.phones.ConsentLedger;
+import io.freedriver.sms.phones.ConsentPurpose;
+import io.freedriver.sms.phones.ConsentRecord;
+import io.freedriver.sms.phones.ConsentSource;
 import io.freedriver.sms.phones.PhoneDirectory;
 import io.freedriver.sms.phones.PhoneEntry;
 import io.freedriver.sms.security.PhoneRateLimiter;
@@ -17,6 +21,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.TreeMap;
 
+import static io.freedriver.sms.support.SmsCalls.send;
 import static io.freedriver.sms.support.SmsCalls.verify;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -36,6 +41,8 @@ class ProviderUnavailableCompareTest {
 
     @Inject
     PhoneDirectory directory;
+    @Inject
+    ConsentLedger consents;
     @Inject
     FakeSmsSender sender;
     @Inject
@@ -62,7 +69,7 @@ class ProviderUnavailableCompareTest {
 
     @Test
     void an_answer_from_the_provider_does_not_add_the_wait() {
-        String listed = listed();
+        String listed = openVerification();
         sender.failChecksAfter(ERROR_DELAY);
         verify(listed, CODE).statusCode(503);
 
@@ -79,15 +86,16 @@ class ProviderUnavailableCompareTest {
     }
 
     private void compareFailure(Duration delay, boolean error) {
-        String listed = listed();
+        String listed = openVerification();
         String unlisted = TestNumbers.fresh();
+        send(unlisted).statusCode(200);
         if (error) {
             sender.failChecksAfter(delay);
         } else {
             sender.timeOutChecksAfter(delay);
         }
         // The first unavailable response loads the failure path. Measure the pair after that.
-        verify(listed(), CODE).statusCode(503);
+        verify(openVerification(), CODE).statusCode(503);
         outage.reset();
 
         Response[] listedResponse = new Response[1];
@@ -111,6 +119,15 @@ class ProviderUnavailableCompareTest {
     private String listed() {
         String phone = TestNumbers.fresh();
         directory.add(new PhoneEntry(phone, "Mom", "house.user", "dashboard", Instant.now()));
+        return phone;
+    }
+
+    /** A listed number with an agreement and an open verification, so verify reaches the provider. */
+    private String openVerification() {
+        String phone = listed();
+        consents.record(new ConsentRecord(phone, ConsentPurpose.SIGN_IN_CODES, TestNumbers.WORDING,
+                ConsentSource.INVITE_PAGE, Instant.now()));
+        send(phone).statusCode(200);
         return phone;
     }
 

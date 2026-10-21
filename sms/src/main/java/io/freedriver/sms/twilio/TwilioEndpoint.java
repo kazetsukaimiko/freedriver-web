@@ -54,4 +54,9 @@ public record TwilioEndpoint(URI base) {
     public URI verificationCheck(String serviceSid) {
         return URI.create(base + "/v2/Services/" + serviceSid + "/VerificationCheck");
     }
+
+    /** Update one verification, including setting its status to {@code canceled}. */
+    public URI verification(String serviceSid, String verificationSid) {
+        return URI.create(base + "/v2/Services/" + serviceSid + "/Verifications/" + verificationSid);
+    }
 }

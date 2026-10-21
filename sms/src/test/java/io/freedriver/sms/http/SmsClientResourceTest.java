@@ -97,6 +97,7 @@ class SmsClientResourceTest {
                 () -> client.verify(new VerifyRequest(phone, "000000")));
         assertEquals(400, rejected.status());
         assertEquals("invalid-code", rejected.error());
+        assertEquals("wrong_code", rejected.reason());
         assertFalse(rejected.getMessage().contains(phone));
         assertFalse(rejected.getMessage().contains("000000"));
         assertFalse(rejected.getMessage().contains("{"));

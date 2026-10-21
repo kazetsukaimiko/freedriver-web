@@ -7,6 +7,9 @@ import io.freedriver.sms.model.OtpSendRequest;
 import io.freedriver.sms.model.SendRequest;
 import io.freedriver.sms.model.SentResponse;
 import io.freedriver.sms.model.VerifyRequest;
+import io.freedriver.sms.model.VerifyFailure;
+import io.freedriver.sms.otp.TooManyAttemptsException;
+import io.freedriver.sms.otp.VerificationLedger;
 import io.freedriver.sms.phones.ConsentLedger;
 import io.freedriver.sms.phones.ConsentPurpose;
 import io.freedriver.sms.phones.PhoneDirectory;
@@ -40,8 +43,9 @@ import java.lang.reflect.Method;
  * other number gets, and no provider call.</li>
  * <li>Code checks: a per-number count of wrong codes. The slot is taken when the check starts, so
  * parallel guesses stop at the limit. A wrong code keeps the slot. A successful check clears the
- * number. Any other answer gives the slot back. Past the limit the request throws
- * {@link RateLimitedException}.</li>
+ * number. An expired verification takes no slot, so expiry wins over the attempt cap. Past the
+ * limit, or after Twilio's attempt cap has closed the verification, the request throws
+ * {@link TooManyAttemptsException}. Any other answer gives the slot back.</li>
  * </ul>
  * A body that is not a valid request is left to request validation, which refuses it with 400 and
  * counts nothing.
@@ -61,18 +65,20 @@ public class PhoneRateLimitFilter implements ContainerRequestFilter, ContainerRe
     private final PhoneDirectory directory;
     private final ConsentLedger consents;
     private final SeedAgreement seedAgreement;
+    private final VerificationLedger verifications;
     private final Validator validator;
     private final ObjectMapper json;
 
     @Inject
     public PhoneRateLimitFilter(PhoneRateLimiter limiter, DailySendCap dailyCap, PhoneDirectory directory,
-                                ConsentLedger consents, SeedAgreement seedAgreement, Validator validator,
-                                ObjectMapper json) {
+                                ConsentLedger consents, SeedAgreement seedAgreement,
+                                VerificationLedger verifications, Validator validator, ObjectMapper json) {
         this.limiter = limiter;
         this.dailyCap = dailyCap;
         this.directory = directory;
         this.consents = consents;
         this.seedAgreement = seedAgreement;
+        this.verifications = verifications;
         this.validator = validator;
         this.json = json;
     }
@@ -102,12 +108,16 @@ public class PhoneRateLimitFilter implements ContainerRequestFilter, ContainerRe
             }
             case CODE_CHECK -> {
                 String phone = verifyPhone(body);
-                if (phone == null) {
+                if (phone == null || verifications.expired(phone)) {
                     return;
+                }
+                if (verifications.exhausted(phone)) {
+                    throw new TooManyAttemptsException(limiter.window());
                 }
                 PhoneRateLimiter.CodeCheck check = limiter.tryAcquireCodeCheck(phone);
                 if (check == null) {
-                    throw new RateLimitedException(limiter.window());
+                    verifications.exhaust(phone);
+                    throw new TooManyAttemptsException(limiter.window());
                 }
                 request.setProperty(CODE_CHECK_PROPERTY, check);
             }
@@ -122,11 +132,24 @@ public class PhoneRateLimitFilter implements ContainerRequestFilter, ContainerRe
         if (response.getStatus() == 200) {
             limiter.clearWrongCodes(check.phone());
             check.keep();
-        } else if (response.getStatus() == 400 && ErrorResponse.INVALID_CODE.equals(response.getEntity())) {
+        } else if (countsAsWrongCode(response.getEntity()) || countsAsAttemptCap(response.getEntity())) {
             check.keep();
         } else {
             check.release();
         }
+    }
+
+    /** A malformed code and a wrong code both count. An expired code does not. */
+    private static boolean countsAsWrongCode(Object entity) {
+        if (!(entity instanceof ErrorResponse error) || !"invalid-code".equals(error.error())) {
+            return false;
+        }
+        return error.reason() == null || VerifyFailure.WRONG_CODE.equals(error.reason());
+    }
+
+    private static boolean countsAsAttemptCap(Object entity) {
+        return entity instanceof ErrorResponse error
+                && VerifyFailure.TOO_MANY_ATTEMPTS.equals(error.reason());
     }
 
     /**

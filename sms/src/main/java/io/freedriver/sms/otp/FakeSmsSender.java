@@ -6,9 +6,11 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -23,11 +25,14 @@ public class FakeSmsSender extends AgreementGatedSender {
     private final SecureRandom random = new SecureRandom();
     private final Clock clock;
     private final Map<String, Pending> pending = new ConcurrentHashMap<>();
+    private final Map<String, String> phoneBySid = new ConcurrentHashMap<>();
     private final Map<String, AtomicInteger> checksByPhone = new ConcurrentHashMap<>();
+    private final List<String> cancelledSids = new CopyOnWriteArrayList<>();
     private final AtomicInteger deliveries = new AtomicInteger();
     private final AtomicInteger checks = new AtomicInteger();
     private volatile Duration failureDelay = Duration.ZERO;
     private volatile boolean failChecks;
+    private volatile CheckOutcome forcedCheck;
 
     public FakeSmsSender(ConsentLedger consents, Clock clock) {
         super(consents);
@@ -35,11 +40,26 @@ public class FakeSmsSender extends AgreementGatedSender {
     }
 
     @Override
-    protected SendOutcome deliver(String phone) {
+    protected SendResult deliver(String phone) {
         String code = "%06d".formatted(random.nextInt(1_000_000));
-        pending.put(phone, new Pending(code, clock.instant().plus(CODE_TTL)));
+        String sid = VerificationSid.random(random);
+        pending.put(phone, new Pending(code, clock.instant().plus(CODE_TTL), sid));
+        phoneBySid.put(sid, phone);
         deliveries.incrementAndGet();
-        return SendOutcome.SENT;
+        return new SendResult(SendOutcome.SENT, sid);
+    }
+
+    @Override
+    public boolean cancelVerification(String verificationSid) {
+        if (!VerificationSid.matches(verificationSid)) {
+            return false;
+        }
+        cancelledSids.add(verificationSid);
+        String phone = phoneBySid.remove(verificationSid);
+        if (phone != null) {
+            pending.remove(phone);
+        }
+        return true;
     }
 
     /** Test hook: the next checks fail after {@code delay}, as a provider error. */
@@ -53,6 +73,11 @@ public class FakeSmsSender extends AgreementGatedSender {
         failChecksAfter(delay);
     }
 
+    /** Test hook: the next check returns this outcome, as a provider answer such as Twilio 60202. */
+    public void forceNextCheck(CheckOutcome outcome) {
+        forcedCheck = outcome;
+    }
+
     @Override
     public CheckOutcome checkCode(String phone, String code) {
         checks.incrementAndGet();
@@ -61,11 +86,17 @@ public class FakeSmsSender extends AgreementGatedSender {
             sleep(failureDelay);
             return CheckOutcome.FAILED;
         }
+        CheckOutcome forced = forcedCheck;
+        if (forced != null) {
+            forcedCheck = null;
+            return forced;
+        }
         Pending entry = pending.get(phone);
         if (entry == null || !clock.instant().isBefore(entry.expiresAt()) || !entry.code().equals(code)) {
             return CheckOutcome.WRONG_CODE;
         }
         pending.remove(phone, entry);
+        phoneBySid.remove(entry.sid());
         return CheckOutcome.APPROVED;
     }
 
@@ -74,9 +105,19 @@ public class FakeSmsSender extends AgreementGatedSender {
         return Optional.ofNullable(pending.get(phone)).map(Pending::code);
     }
 
+    /** Test hook: the verification sid last delivered to this number. */
+    public Optional<String> pendingSid(String phone) {
+        return Optional.ofNullable(pending.get(phone)).map(Pending::sid);
+    }
+
+    /** Test hook: verification sids this sender was asked to cancel. */
+    public List<String> cancelledSids() {
+        return List.copyOf(cancelledSids);
+    }
+
     /** Test hook: makes the pending code for this number expired. */
     public void expirePending(String phone) {
-        pending.computeIfPresent(phone, (ignored, entry) -> new Pending(entry.code(), clock.instant().minusSeconds(1)));
+        pending.computeIfPresent(phone, (ignored, entry) -> new Pending(entry.code(), clock.instant().minusSeconds(1), entry.sid()));
     }
 
     /** Test hook: provider sends made since the last reset. */
@@ -97,11 +138,14 @@ public class FakeSmsSender extends AgreementGatedSender {
 
     public void reset() {
         pending.clear();
+        phoneBySid.clear();
+        cancelledSids.clear();
         checksByPhone.clear();
         deliveries.set(0);
         checks.set(0);
         failureDelay = Duration.ZERO;
         failChecks = false;
+        forcedCheck = null;
     }
 
     private static void sleep(Duration delay) {
@@ -115,6 +159,6 @@ public class FakeSmsSender extends AgreementGatedSender {
         }
     }
 
-    private record Pending(String code, Instant expiresAt) {
+    private record Pending(String code, Instant expiresAt, String sid) {
     }
 }
