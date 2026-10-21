@@ -1,4 +1,4 @@
-package io.freedriver.app.appliances;
+package io.freedriver.app.security;
 
 import org.junit.jupiter.api.Test;
 

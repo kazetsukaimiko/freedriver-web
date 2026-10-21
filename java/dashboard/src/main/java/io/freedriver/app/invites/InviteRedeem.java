@@ -1,6 +1,6 @@
 package io.freedriver.app.invites;
 
-import io.freedriver.app.appliances.CommandRateLimiter;
+import io.freedriver.app.security.CommandRateLimiter;
 import io.freedriver.app.phones.PhoneSignInDirectory;
 import io.freedriver.app.phones.SmsPhoneList;
 import io.freedriver.app.phones.UsPhones;

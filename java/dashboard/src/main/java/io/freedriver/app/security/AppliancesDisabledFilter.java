@@ -1,5 +1,6 @@
-package io.freedriver.app.appliances;
+package io.freedriver.app.security;
 
+import io.freedriver.app.appliances.AppliancesConfig;
 import jakarta.annotation.Priority;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Priorities;

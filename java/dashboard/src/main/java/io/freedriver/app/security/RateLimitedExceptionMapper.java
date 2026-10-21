@@ -1,6 +1,5 @@
-package io.freedriver.app.api.rs.ext;
+package io.freedriver.app.security;
 
-import io.freedriver.app.security.RateLimitedException;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;

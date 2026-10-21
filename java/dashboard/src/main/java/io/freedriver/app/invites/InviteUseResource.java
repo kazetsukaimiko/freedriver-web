@@ -1,6 +1,6 @@
 package io.freedriver.app.invites;
 
-import io.freedriver.app.appliances.CommandRateLimiter;
+import io.freedriver.app.security.CommandRateLimiter;
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;

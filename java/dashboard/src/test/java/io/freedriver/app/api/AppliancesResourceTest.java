@@ -3,7 +3,7 @@ package io.freedriver.app.api;
 import io.freedriver.app.appliances.ApplianceAudit;
 import io.freedriver.app.appliances.ApplianceControl;
 import io.freedriver.app.appliances.ApplianceCommandRouted;
-import io.freedriver.app.appliances.CommandRateLimiter;
+import io.freedriver.app.security.CommandRateLimiter;
 import io.freedriver.app.appliances.MockAutonomy;
 import io.freedriver.app.security.CsrfFilter;
 import io.freedriver.mqtt.contract.ApplianceSchemas;

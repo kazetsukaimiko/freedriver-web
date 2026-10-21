@@ -1,4 +1,4 @@
-package io.freedriver.app.api;
+package io.freedriver.app.security;
 
 import io.freedriver.app.appliances.MockAutonomy;
 import io.quarkus.test.junit.QuarkusTest;
