@@ -9,4 +9,10 @@ public interface SmsPhoneList {
 
     /** @return true when the number was on the list */
     boolean remove(String phone);
+
+    /**
+     * Throws when the shared secret is null, empty, or whitespace.
+     * Does not delete a row and does not open a connection.
+     */
+    void requireSharedSecret();
 }

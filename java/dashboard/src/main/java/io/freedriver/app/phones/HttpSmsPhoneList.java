@@ -64,9 +64,18 @@ public class HttpSmsPhoneList implements SmsPhoneList {
         }
     }
 
+    @Override
+    public void requireSharedSecret() {
+        // The blank-secret refusal stays in send. A null request does not open a connection.
+        send(null);
+    }
+
     private HttpResponse<String> send(HttpRequest.Builder request) {
-        if (secret.isBlank()) {
+        if (secret == null || secret.isBlank()) {
             throw new InviteUpstreamException("sms shared secret is unset");
+        }
+        if (request == null) {
+            return null;
         }
         try {
             HttpResponse<String> response = http.send(request
