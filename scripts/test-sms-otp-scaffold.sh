@@ -210,6 +210,30 @@ for template in freedriver-sms-phone.ftl freedriver-sms-code.ftl; do
   grep -q 'url.loginRestartFlowUrl' "$THEME/$template"
 done
 grep -q 'keycloak/themes/freedriver /opt/keycloak/themes/freedriver' keycloak/Dockerfile
+if grep -q 'SMS_OTP_SHARED_SECRET' keycloak/Dockerfile; then
+  fail "Dockerfile must not mention SMS_OTP_SHARED_SECRET"
+fi
+if grep -E 'GITHUB_TOKEN|GH_TOKEN|PACKAGES_TOKEN|settings.xml' keycloak/Dockerfile; then
+  fail "Dockerfile must not take a package-registry token"
+fi
+grep -q 'eclipse-temurin-23' keycloak/Dockerfile
+grep -q './mvnw -C -pl sms-client -am package' keycloak/Dockerfile
+grep -q 'secrets' .dockerignore
+grep -q '\*\*/\*\.env' .dockerignore
+if grep -RIn 'SmsOtpClient' keycloak/sms-otp-spi/src; then
+  fail "hand-written SmsOtpClient must be removed"
+fi
+if grep -RIn 'java.net.http' keycloak/sms-otp-spi/src/main; then
+  fail "provider must call sms-client, not its own HTTP client"
+fi
+if grep -RInE 'jakarta\.validation\.(Validator|Validation)' keycloak/sms-otp-spi/src/main; then
+  fail "provider must not run a Validator"
+fi
+for module in sms-model sms-api sms-client; do
+  if ! grep -q '<maven.compiler.release>21</maven.compiler.release>' "$module/pom.xml"; then
+    fail "$module must stay on Java release 21"
+  fi
+done
 # Authenticators render theme pages. The invite realm resource is a JSON API, not a page.
 if grep -RIn 'Response.ok' keycloak/sms-otp-spi/src/main --include='*Authenticator*.java'; then
   fail "render authenticator pages with context.form()"

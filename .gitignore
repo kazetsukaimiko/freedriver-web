@@ -1,4 +1,5 @@
 .env
+.source-commit
 BUILD_NUMBER
 settings.xml
 mqtt-contract/target/

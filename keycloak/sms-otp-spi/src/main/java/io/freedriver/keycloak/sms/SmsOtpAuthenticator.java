@@ -55,14 +55,14 @@ public final class SmsOtpAuthenticator implements Authenticator {
 
     private static final Pattern CODE = Pattern.compile("^[0-9]{6}$");
 
-    private final SmsOtpClient client;
+    private final SmsOtpCalls client;
     private final Supplier<Optional<String>> secret;
 
     public SmsOtpAuthenticator() {
-        this(new SmsOtpClient(), SmsOtpConfig::secret);
+        this(SmsOtpCalls.production(), SmsOtpConfig::secret);
     }
 
-    SmsOtpAuthenticator(SmsOtpClient client, Supplier<Optional<String>> secret) {
+    SmsOtpAuthenticator(SmsOtpCalls client, Supplier<Optional<String>> secret) {
         this.client = client;
         this.secret = secret;
     }
@@ -120,12 +120,12 @@ public final class SmsOtpAuthenticator implements Authenticator {
             context.challenge(phonePage(context, MSG_PHONE_INVALID));
             return;
         }
-        SmsOtpClient.Result result = text(context, key, phone);
-        if (result.outcome() == SmsOtpClient.Outcome.RATE_LIMITED) {
+        SmsOtpCalls.Result result = text(context, key, phone);
+        if (result.outcome() == SmsOtpCalls.Outcome.RATE_LIMITED) {
             context.challenge(rateLimited(context, true, result.retryAfterSeconds()));
             return;
         }
-        if (result.outcome() != SmsOtpClient.Outcome.SENT || !phone.equals(result.phone())) {
+        if (result.outcome() != SmsOtpCalls.Outcome.SENT || !phone.equals(result.phone())) {
             context.challenge(phonePage(context, MSG_UNAVAILABLE));
             return;
         }
@@ -139,12 +139,12 @@ public final class SmsOtpAuthenticator implements Authenticator {
             context.challenge(codePage(context, null, null));
             return;
         }
-        SmsOtpClient.Result result = text(context, key, phone);
-        if (result.outcome() == SmsOtpClient.Outcome.RATE_LIMITED) {
+        SmsOtpCalls.Result result = text(context, key, phone);
+        if (result.outcome() == SmsOtpCalls.Outcome.RATE_LIMITED) {
             context.challenge(rateLimited(context, false, result.retryAfterSeconds()));
             return;
         }
-        if (result.outcome() != SmsOtpClient.Outcome.SENT || !phone.equals(result.phone())) {
+        if (result.outcome() != SmsOtpCalls.Outcome.SENT || !phone.equals(result.phone())) {
             context.challenge(codePage(context, MSG_UNAVAILABLE, null));
             return;
         }
@@ -152,7 +152,7 @@ public final class SmsOtpAuthenticator implements Authenticator {
     }
 
     /** Counts the send in the auth session, then asks sms to text the code. */
-    private SmsOtpClient.Result text(AuthenticationFlowContext context, String key, String phone) {
+    private SmsOtpCalls.Result text(AuthenticationFlowContext context, String key, String phone) {
         session(context).setAuthNote(NOTE_SENDS, Integer.toString(count(context, NOTE_SENDS) + 1));
         return client.send(key, phone);
     }
@@ -164,7 +164,7 @@ public final class SmsOtpAuthenticator implements Authenticator {
             return;
         }
         // The saved note is the only phone this step will check. The form is not read.
-        SmsOtpClient.Result result = client.verify(key, phone, code);
+        SmsOtpCalls.Result result = client.verify(key, phone, code);
         switch (result.outcome()) {
             case VERIFIED -> {
                 if (result.phone() == null || !result.phone().equals(phone)) {
@@ -237,10 +237,10 @@ public final class SmsOtpAuthenticator implements Authenticator {
     /** Whole minutes, rounded up. One second is one minute. */
     static int retryMinutes(Integer retryAfterSeconds) {
         int seconds = retryAfterSeconds == null
-                ? SmsOtpClient.DEFAULT_RETRY_AFTER_SECONDS
+                ? SmsOtpCalls.DEFAULT_RETRY_AFTER_SECONDS
                 : retryAfterSeconds;
         if (seconds < 1) {
-            seconds = SmsOtpClient.DEFAULT_RETRY_AFTER_SECONDS;
+            seconds = SmsOtpCalls.DEFAULT_RETRY_AFTER_SECONDS;
         }
         return (seconds + 59) / 60;
     }

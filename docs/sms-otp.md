@@ -56,7 +56,7 @@ The Twilio Verify credentials reach `sms` only, from `/opt/freedriver-secrets/tw
 
 ## Keycloak SPI
 
-Source: `keycloak/sms-otp-spi`. Provider id: `freedriver-sms-otp`. The Keycloak image build copies the JAR to `/opt/keycloak/providers/freedriver-sms-otp.jar`, copies the `freedriver` login theme to `/opt/keycloak/themes/freedriver`, and runs `kc.sh build`. Requirement choices: ALTERNATIVE and DISABLED.
+Source: `keycloak/sms-otp-spi`. Provider id: `freedriver-sms-otp`. The Keycloak image build runs `./mvnw -C -pl sms-client -am package` on a JDK 23 image, shades `sms-model`, `sms-api`, and `sms-client` from that same checkout into `/opt/keycloak/providers/freedriver-sms-otp.jar`, copies the `freedriver` login theme to `/opt/keycloak/themes/freedriver`, and runs `kc.sh build`. The jar manifest `Implementation-SCM-Revision` is the source commit. Jackson is not in the jar. `jakarta.validation-api` is not in the jar, and the provider does not run a `Validator`. `SMS_OTP_SHARED_SECRET` stays a runtime environment value. It is not a build arg and it is not copied into a layer. Requirement choices: ALTERNATIVE and DISABLED.
 
 The same JAR also contains `freedriver-phone-username-router` and `freedriver-sms-route-condition`.
 
