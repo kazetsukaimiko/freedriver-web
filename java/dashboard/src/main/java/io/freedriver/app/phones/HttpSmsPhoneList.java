@@ -13,6 +13,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 
 /** Calls the sms service. The shared secret never goes to the browser. */
 @ApplicationScoped
@@ -29,8 +30,9 @@ public class HttpSmsPhoneList implements SmsPhoneList {
     @Inject
     public HttpSmsPhoneList(ObjectMapper json,
                             @ConfigProperty(name = "freedriver.sms.base-url", defaultValue = "http://sms:8080") String base,
-                            @ConfigProperty(name = "sms.otp.shared-secret", defaultValue = "") String secret) {
-        this(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(), json, base, secret);
+                            @ConfigProperty(name = "sms.otp.shared-secret") Optional<String> secret) {
+        this(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(), json, base,
+                secret.orElse(""));
     }
 
     HttpSmsPhoneList(HttpClient http, ObjectMapper json, String base, String secret) {
@@ -62,9 +64,18 @@ public class HttpSmsPhoneList implements SmsPhoneList {
         }
     }
 
+    @Override
+    public void requireSharedSecret() {
+        // The blank-secret refusal stays in send. A null request does not open a connection.
+        send(null);
+    }
+
     private HttpResponse<String> send(HttpRequest.Builder request) {
-        if (secret.isBlank()) {
+        if (secret == null || secret.isBlank()) {
             throw new InviteUpstreamException("sms shared secret is unset");
+        }
+        if (request == null) {
+            return null;
         }
         try {
             HttpResponse<String> response = http.send(request

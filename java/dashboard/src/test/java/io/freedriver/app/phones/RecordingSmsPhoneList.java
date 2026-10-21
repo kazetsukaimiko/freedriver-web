@@ -33,6 +33,10 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
         return rows.removeIf(row -> row.phone().equals(phone));
     }
 
+    @Override
+    public void requireSharedSecret() {
+    }
+
     public void clear() {
         removed.clear();
         rows.clear();

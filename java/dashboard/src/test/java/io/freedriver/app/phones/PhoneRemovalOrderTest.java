@@ -46,6 +46,10 @@ class PhoneRemovalOrderTest {
                 order.add("sms");
                 return true;
             }
+
+            @Override
+            public void requireSharedSecret() {
+            }
         };
         return new PhoneRemovalResource(sms, keycloak);
     }

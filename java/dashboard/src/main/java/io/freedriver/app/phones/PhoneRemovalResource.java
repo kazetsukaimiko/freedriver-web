@@ -47,7 +47,8 @@ public class PhoneRemovalResource {
         if (phone == null || !PHONE.matcher(phone).matches()) {
             return Response.status(400).entity("{}").build();
         }
-        // Keycloak first. A failed group removal must leave the sms row in place.
+        // Blank secret fails closed before Keycloak. A failed group removal must leave the sms row in place.
+        sms.requireSharedSecret();
         boolean membership = keycloak.removeFromPhoneSignIn(phone);
         boolean dropped = sms.remove(phone);
         if (!dropped && !membership) {
