@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * Takes a user out of the {@code phone-sign-in} group with the invite service account.
@@ -25,10 +26,13 @@ import java.util.Optional;
 @ApplicationScoped
 public class KeycloakPhoneSignIn implements PhoneSignInDirectory {
 
+    private static final Pattern USERNAME = Pattern.compile("inv[0-9a-f]{32}");
+
     private final HttpClient http;
     private final ObjectMapper json;
     private final URI tokenEndpoint;
     private final URI admin;
+    private final String realmBase;
     private final String clientId;
     private final String clientSecret;
 
@@ -53,7 +57,7 @@ public class KeycloakPhoneSignIn implements PhoneSignInDirectory {
         this.json = json;
         this.clientId = clientId;
         this.clientSecret = clientSecret == null ? "" : clientSecret;
-        String realmBase = authServer.endsWith("/") ? authServer.substring(0, authServer.length() - 1) : authServer;
+        this.realmBase = authServer.endsWith("/") ? authServer.substring(0, authServer.length() - 1) : authServer;
         this.tokenEndpoint = URI.create(realmBase + "/protocol/openid-connect/token");
         int realms = realmBase.indexOf("/realms/");
         if (realms < 0) {
@@ -82,6 +86,56 @@ public class KeycloakPhoneSignIn implements PhoneSignInDirectory {
             throw new InviteUpstreamException("Keycloak left the user in phone-sign-in (" + status + ")");
         }
         return true;
+    }
+
+    @Override
+    public Created createPhoneSignInUser(String phone) {
+        if (clientSecret.isBlank()) {
+            throw new InviteUpstreamException("invite client secret is unset");
+        }
+        String token = token();
+        String body;
+        try {
+            body = json.writeValueAsString(java.util.Map.of("phone", phone));
+        } catch (Exception e) {
+            throw new InviteUpstreamException("invite account body was not writable", e);
+        }
+        HttpRequest request = HttpRequest.newBuilder(URI.create(realmBase + "/freedriver-invite/users"))
+                .header("Authorization", "Bearer " + token)
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(5))
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        HttpResponse<String> response = send(request);
+        if (response.statusCode() / 100 != 2) {
+            throw new InviteUpstreamException("invite account create answered " + response.statusCode());
+        }
+        Created created = created(response.body());
+        if (created.adminRoles() == null || !created.adminRoles().isEmpty()
+                || created.groups() == null || !created.groups().equals(List.of("phone-sign-in"))
+                || created.username() == null || !USERNAME.matcher(created.username()).matches()) {
+            throw new InviteUpstreamException("invite account was not a plain phone-sign-in user");
+        }
+        return created;
+    }
+
+    private Created created(String body) {
+        try {
+            JsonNode node = json.readTree(body);
+            List<String> groups = new ArrayList<>();
+            for (JsonNode group : node.path("groups")) {
+                groups.add(group.asText());
+            }
+            List<String> adminRoles = new ArrayList<>();
+            for (JsonNode role : node.path("adminRoles")) {
+                adminRoles.add(role.asText());
+            }
+            return new Created(node.path("username").asText(""), groups, adminRoles);
+        } catch (InviteUpstreamException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new InviteUpstreamException("invite account body was not json", e);
+        }
     }
 
     private String token() {

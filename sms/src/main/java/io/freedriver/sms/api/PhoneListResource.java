@@ -8,7 +8,10 @@ import io.freedriver.sms.phones.PhoneEntry;
 import io.freedriver.sms.validation.UsPhoneNumber;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
@@ -54,6 +57,16 @@ public class PhoneListResource {
         return new Removed(directory.remove(request.phone()));
     }
 
+    /** Puts an invited number on the list after its code is verified. Role is {@code dashboard} only. */
+    @POST
+    @Path("add")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Added add(@Valid @NotNull AddPhone request) {
+        boolean added = directory.add(new PhoneEntry(
+                request.phone(), request.name(), request.username(), request.role(), Instant.now()));
+        return new Added(added);
+    }
+
     private Instant consentedAt(String phone) {
         return consents.history(phone).stream()
                 .filter(record -> record.purpose() == ConsentPurpose.SIGN_IN_CODES)
@@ -78,5 +91,15 @@ public class PhoneListResource {
     }
 
     public record Removed(boolean removed) {
+    }
+
+    public record AddPhone(
+            @UsPhoneNumber String phone,
+            @NotBlank @Size(max = 40) String name,
+            @NotBlank @Pattern(regexp = "inv[0-9a-f]{32}") String username,
+            @NotBlank @Pattern(regexp = "dashboard") String role) {
+    }
+
+    public record Added(boolean added) {
     }
 }

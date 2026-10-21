@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -115,6 +116,43 @@ class KeycloakPhoneSignInTest {
                     () -> client.removeFromPhoneSignIn("+15555550123"));
             assertEquals("phone attribute does not match", error.getMessage());
             assertNull(deletePath.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void create_sends_only_the_phone_and_refuses_an_admin_role() throws Exception {
+        AtomicReference<String> body = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/realms/freedriver/protocol/openid-connect/token", exchange -> {
+            byte[] token = "{\"access_token\":\"tok\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, token.length);
+            exchange.getResponseBody().write(token);
+            exchange.close();
+        });
+        server.createContext("/realms/freedriver/freedriver-invite/users", exchange -> {
+            body.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            byte[] response = ("{\"username\":\"inv" + "ab".repeat(16)
+                    + "\",\"groups\":[\"phone-sign-in\"],\"adminRoles\":[]}")
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            String auth = "http://127.0.0.1:" + server.getAddress().getPort() + "/realms/freedriver";
+            KeycloakPhoneSignIn client = new KeycloakPhoneSignIn(
+                    new ObjectMapper(), auth, "freedriver-invite", "secret-value");
+            PhoneSignInDirectory.Created created = client.createPhoneSignInUser("+15555550123");
+            assertEquals(java.util.List.of("phone-sign-in"), created.groups());
+            assertTrue(created.adminRoles().isEmpty());
+            assertTrue(body.get().contains("\"phone\":\"+15555550123\""));
+            assertFalse(body.get().contains("portal-admin"));
+            assertFalse(body.get().contains("credentials"));
+            assertFalse(body.get().contains("realmRoles"));
+            assertFalse(body.get().contains("groups"));
         } finally {
             server.stop(0);
         }

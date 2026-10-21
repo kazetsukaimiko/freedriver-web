@@ -1,5 +1,6 @@
 package io.freedriver.sms.phones;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.freedriver.sms.validation.UsPhoneNumber;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -15,5 +16,10 @@ public record ConsentRecord(
         @NotNull ConsentPurpose purpose,
         @NotBlank String wording,
         @NotNull ConsentSource source,
-        @NotNull Instant givenAt) {
+        @NotNull Instant givenAt,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String inviteId) {
+
+    public ConsentRecord(String phone, ConsentPurpose purpose, String wording, ConsentSource source, Instant givenAt) {
+        this(phone, purpose, wording, source, givenAt, null);
+    }
 }

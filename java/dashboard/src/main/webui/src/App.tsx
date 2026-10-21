@@ -5,6 +5,7 @@ import { BuildStamp } from './BuildStamp'
 import { Changelog } from './Changelog'
 import { CHANGELOG_PATH } from './changelog'
 import { Dashboard } from './Dashboard'
+import { InvitePage } from './InvitePage'
 import { PhoneSignIn } from './PhoneSignIn'
 import { PHONES_PATH } from './phones'
 import './App.css'
@@ -57,9 +58,15 @@ function markSplashSeen() {
   window.history.replaceState({}, '', next)
 }
 
+function isInvitePath(pathname: string) {
+  return pathname === '/invite' || pathname === '/invite/'
+}
+
 function App() {
-  const [splash, setSplash] = useState<Splash>(() => (shouldPlaySplash() ? 'playing' : 'done'))
   const [path, setPath] = useState(() => window.location.pathname)
+  const [splash, setSplash] = useState<Splash>(() =>
+    isInvitePath(window.location.pathname) || !shouldPlaySplash() ? 'done' : 'playing',
+  )
   const [search, setSearch] = useState(() => window.location.search)
   const [signingOut, setSigningOut] = useState(false)
   const [portalAdmin, setPortalAdmin] = useState(false)
@@ -106,6 +113,9 @@ function App() {
   }, [splash])
 
   useEffect(() => {
+    if (isInvitePath(path)) {
+      return
+    }
     let cancelled = false
     apiFetch('/api/invites')
       .then((response) => {
@@ -141,6 +151,10 @@ function App() {
     }, 0)
     return () => window.clearTimeout(id)
   }, [signingOut])
+
+  if (isInvitePath(path)) {
+    return <InvitePage />
+  }
 
   const page: Page = pages.get(path) ?? 'not-found'
   const hrefFor = (to: string) => to + search
