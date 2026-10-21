@@ -48,5 +48,8 @@ class TwilioEndpointTest {
         String sid = "VA" + "2".repeat(32);
         assertEquals("https://verify.twilio.com/v2/Services/" + sid + "/Verifications", endpoint.verifications(sid).toString());
         assertEquals("https://verify.twilio.com/v2/Services/" + sid + "/VerificationCheck", endpoint.verificationCheck(sid).toString());
+        String verification = "VE" + "3".repeat(32);
+        assertEquals("https://verify.twilio.com/v2/Services/" + sid + "/Verifications/" + verification,
+                endpoint.verification(sid, verification).toString());
     }
 }

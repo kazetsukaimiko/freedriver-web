@@ -1,0 +1,121 @@
+name: Publish SMS
+
+# Release tags only. Deploy stamps stay YYYY-MM_rN and do not match this filter.
+# Actions ? and + quantify the preceding character, so ???? is not a valid tag filter.
+on:
+  push:
+    tags:
+      - "sms/[0-9][0-9][0-9][0-9]-[0-9][0-9]_r[0-9]+"
+
+# Read-only except the publish job below. No environment. No repository secrets.
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-sms-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: github.repository == 'kazetsukaimiko/freedriver-web'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Refuse a tag that is not a main release
+        env:
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/}"
+          pattern='^sms/[0-9]{4}-(0[1-9]|1[0-2])_r[0-9]+$'
+          if [[ ! "$tag" =~ $pattern ]]; then
+            echo "refusing: ${tag} is not sms/YEAR-MONTH_rBUILD_NUM"
+            exit 1
+          fi
+          git fetch origin main
+          commit="$(git rev-parse 'HEAD^{commit}')"
+          if ! git merge-base --is-ancestor "$commit" origin/main; then
+            echo "refusing: ${commit} is not on main"
+            exit 1
+          fi
+          version="${tag#sms/}"
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+          echo "Publishing ${version} from ${commit}"
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "23"
+          cache: maven
+          server-id: github
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
+
+      # versions:set stays in this workspace. Git poms remain 1.0.0-SNAPSHOT.
+      - name: Set the release version and package the client artifacts
+        run: |
+          set -euo pipefail
+          ./mvnw -B --no-transfer-progress \
+            org.codehaus.mojo:versions-maven-plugin:2.21.0:set \
+            -DnewVersion="${VERSION}" \
+            -DgenerateBackupPoms=false \
+            -DprocessAllModules=true
+          ./mvnw -B --no-transfer-progress -pl sms-model,sms-api,sms-client -am package -DskipTests
+          if [[ -e sms/target ]]; then
+            echo "sms-server must not be built for publish"
+            exit 1
+          fi
+
+      - name: Flatten and publish sms-model, sms-api, and sms-client
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ./mvnw -B --no-transfer-progress -pl sms-model,sms-api,sms-client \
+            org.codehaus.mojo:flatten-maven-plugin:1.7.0:flatten \
+            -DflattenMode=oss \
+            -DupdatePomFile=false \
+            -DflattenedPomFilename=.flattened-pom.xml
+          python3 - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          version = os.environ["VERSION"]
+          ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+          for artifact in ("sms-model", "sms-api", "sms-client"):
+              path = f"{artifact}/.flattened-pom.xml"
+              root = ET.parse(path).getroot()
+              def text(tag):
+                  el = root.find(f"m:{tag}", ns)
+                  return el.text if el is not None else None
+              if (text("groupId"), text("artifactId"), text("version")) != ("io.freedriver.sms", artifact, version):
+                  raise SystemExit(f"bad coordinate in {path}")
+              if root.find("m:parent", ns) is not None:
+                  raise SystemExit(f"parent must not be published in {path}")
+              xml = open(path, encoding="utf-8").read()
+              if "sms-server" in xml or "quarkus" in xml:
+                  raise SystemExit(f"unexpected content in {path}")
+          print("flattened coordinates ok")
+          PY
+          for artifact in sms-model sms-api sms-client; do
+            ./mvnw -B --no-transfer-progress -N \
+              org.apache.maven.plugins:maven-deploy-plugin:3.1.4:deploy-file \
+              -Dfile="${artifact}/target/${artifact}-${VERSION}.jar" \
+              -DpomFile="${artifact}/.flattened-pom.xml" \
+              -DrepositoryId=github \
+              -Durl="https://maven.pkg.github.com/kazetsukaimiko/freedriver-web"
+          done
+          {
+            echo "Published \`io.freedriver.sms\` \`${VERSION}\`"
+            echo
+            echo "- \`io.freedriver.sms:sms-model:${VERSION}\`"
+            echo "- \`io.freedriver.sms:sms-api:${VERSION}\`"
+            echo "- \`io.freedriver.sms:sms-client:${VERSION}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

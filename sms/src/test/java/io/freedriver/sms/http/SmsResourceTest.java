@@ -153,32 +153,6 @@ class SmsResourceTest {
     }
 
     @Test
-    void unlisted_no_pending_expired_and_wrong_codes_get_one_identical_answer() {
-        String phone = TestNumbers.fresh();
-        ExtractableResponse<Response> unlisted = verify(phone, "123456").extract();
-
-        directory.add(new PhoneEntry(phone, "Mom", "house.user", "dashboard", Instant.now()));
-        consents.record(new ConsentRecord(phone, ConsentPurpose.SIGN_IN_CODES, TestNumbers.WORDING,
-                ConsentSource.INVITE_PAGE, Instant.now()));
-        ExtractableResponse<Response> noPending = verify(phone, "123456").extract();
-
-        send(phone).statusCode(200);
-        String expiredCode = sender.pendingCode(phone).orElseThrow();
-        sender.expirePending(phone);
-        ExtractableResponse<Response> expired = verify(phone, expiredCode).extract();
-
-        send(phone).statusCode(200);
-        String code = sender.pendingCode(phone).orElseThrow();
-        ExtractableResponse<Response> wrong = verify(phone, code.equals("000000") ? "111111" : "000000").extract();
-
-        assertEquals(400, unlisted.statusCode());
-        assertEquals("{\"error\":\"invalid-code\"}", unlisted.asString());
-        SameAnswer.assertSameAnswer(unlisted, noPending);
-        SameAnswer.assertSameAnswer(unlisted, expired);
-        SameAnswer.assertSameAnswer(unlisted, wrong);
-    }
-
-    @Test
     void past_the_send_limit_listed_and_unlisted_numbers_get_the_same_answer() {
         String listed = listedAndAgreed("house.user");
         String unlisted = TestNumbers.fresh();
@@ -201,6 +175,7 @@ class SmsResourceTest {
         String listed = listedAndAgreed("house.user");
         String unlisted = TestNumbers.fresh();
         send(listed).statusCode(200);
+        send(unlisted).statusCode(200);
         String code = sender.pendingCode(listed).orElseThrow();
         String wrong = code.equals("000000") ? "111111" : "000000";
         for (int i = 0; i < 5; i++) {
@@ -211,7 +186,8 @@ class SmsResourceTest {
         ExtractableResponse<Response> listedLimited = verify(listed, code).extract();
         ExtractableResponse<Response> unlistedLimited = verify(unlisted, code).extract();
 
-        assertEquals(429, listedLimited.statusCode());
+        assertEquals(429, listedLimited.statusCode(), listedLimited.asString());
+        assertEquals(429, unlistedLimited.statusCode(), unlistedLimited.asString());
         assertEquals("900", listedLimited.header("Retry-After"));
         SameAnswer.assertSameAnswer(listedLimited, unlistedLimited);
         assertEquals(checks, sender.checks(), "a locked number reaches no provider check");

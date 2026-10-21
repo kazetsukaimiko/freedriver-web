@@ -87,7 +87,7 @@ final class SmsHttpHandler implements InvocationHandler {
             }
         }
         Long retry = status == 429 ? retryAfter(response) : null;
-        throw new SmsClientException(status, errorToken(responseBody), retry);
+        throw new SmsClientException(status, errorToken(responseBody), retry, reasonToken(responseBody));
     }
 
     private URI endpoint(Method method) {
@@ -202,6 +202,25 @@ final class SmsHttpHandler implements InvocationHandler {
                 return null;
             }
             return error.textValue();
+        } catch (IOException ex) {
+            return null;
+        }
+    }
+
+    private static String reasonToken(byte[] body) {
+        if (body.length == 0) {
+            return null;
+        }
+        try {
+            JsonNode root = JSON.readTree(body);
+            if (root == null || !root.isObject()) {
+                return null;
+            }
+            JsonNode reason = root.get("reason");
+            if (reason == null || !reason.isTextual()) {
+                return null;
+            }
+            return reason.textValue();
         } catch (IOException ex) {
             return null;
         }

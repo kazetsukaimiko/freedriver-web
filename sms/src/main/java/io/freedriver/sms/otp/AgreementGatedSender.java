@@ -20,14 +20,14 @@ public abstract class AgreementGatedSender implements SmsSender {
     }
 
     @Override
-    public final SendOutcome sendCode(String phone) {
+    public final SendResult sendCode(String phone) {
         if (!consents.hasAgreed(phone, ConsentPurpose.SIGN_IN_CODES)) {
             LOG.warnf("Code send refused for %s: no recorded sign-in agreement", PhoneMask.mask(phone));
-            return SendOutcome.REFUSED_NO_AGREEMENT;
+            return SendResult.of(SendOutcome.REFUSED_NO_AGREEMENT);
         }
         return deliver(phone);
     }
 
     /** Provider call for a number whose agreement is on record. */
-    protected abstract SendOutcome deliver(String phone);
+    protected abstract SendResult deliver(String phone);
 }

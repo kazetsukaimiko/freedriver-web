@@ -42,6 +42,16 @@ class SmsOtpCallsTest {
                 SmsOtpCalls.fromException(new SmsClientException(403, "no", null), false).outcome());
         assertEquals(SmsOtpCalls.Outcome.RATE_LIMITED,
                 SmsOtpCalls.fromException(new SmsClientException(429, "rate-limited", 900L), true).outcome());
+        assertEquals(SmsOtpCalls.Outcome.EXPIRED,
+                SmsOtpCalls.fromException(new SmsClientException(400, "invalid-code", null, "expired"), true).outcome());
+        assertEquals(SmsOtpCalls.Outcome.INVALID_CODE,
+                SmsOtpCalls.fromException(new SmsClientException(400, "invalid-code", null, "wrong_code"), true).outcome());
+        assertEquals(SmsOtpCalls.Outcome.TOO_MANY_ATTEMPTS,
+                SmsOtpCalls.fromException(new SmsClientException(429, "rate-limited", 900L, "too_many_attempts"), true)
+                        .outcome());
+        assertEquals(SmsOtpCalls.Outcome.RATE_LIMITED,
+                SmsOtpCalls.fromException(new SmsClientException(429, "rate-limited", 900L, "too_many_attempts"), false)
+                        .outcome());
     }
 
     @Test

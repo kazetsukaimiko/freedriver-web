@@ -6,6 +6,8 @@ import io.freedriver.sms.PhoneMask;
 import io.freedriver.sms.otp.AgreementGatedSender;
 import io.freedriver.sms.otp.CheckOutcome;
 import io.freedriver.sms.otp.SendOutcome;
+import io.freedriver.sms.otp.SendResult;
+import io.freedriver.sms.otp.VerificationSid;
 import io.freedriver.sms.phones.ConsentLedger;
 import org.jboss.logging.Logger;
 
@@ -24,10 +26,10 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Twilio Verify client. It makes exactly two calls: create a verification (Twilio generates and
- * texts the code) and create a verification check. It never sends its own code, never stores or
- * logs a code, and logs failures with the number masked to its last four digits. The JDK HTTP
- * client it uses has no request or response logging switched on.
+ * Twilio Verify client. It creates a verification (Twilio generates and texts the code), checks
+ * a code, and cancels a verification by setting its status to {@code canceled}. It never sends
+ * its own code, never stores or logs a code, and logs failures with the number masked to its last
+ * two digits. The JDK HTTP client it uses has no request or response logging switched on.
  */
 public class TwilioVerifySender extends AgreementGatedSender {
 
@@ -56,7 +58,7 @@ public class TwilioVerifySender extends AgreementGatedSender {
     }
 
     @Override
-    protected SendOutcome deliver(String phone) {
+    protected SendResult deliver(String phone) {
         Map<String, String> form = new LinkedHashMap<>();
         form.put("To", phone);
         form.put("Channel", "sms");
@@ -64,7 +66,12 @@ public class TwilioVerifySender extends AgreementGatedSender {
         try {
             HttpResponse<String> response = post(endpoint.verifications(serviceSid), form);
             if (response.statusCode() == 201 || response.statusCode() == 200) {
-                return SendOutcome.SENT;
+                String sid = field(response.body(), "sid");
+                if (!VerificationSid.matches(sid)) {
+                    LOG.warnf("Twilio accepted the code send to %s without a verification sid", masked);
+                    return SendResult.of(SendOutcome.SENT);
+                }
+                return new SendResult(SendOutcome.SENT, sid);
             }
             LOG.warnf("Twilio refused the code send to %s (HTTP %d, Twilio error %s)",
                     masked, response.statusCode(), twilioError(response.body()));
@@ -76,7 +83,33 @@ public class TwilioVerifySender extends AgreementGatedSender {
             Thread.currentThread().interrupt();
             LOG.warnf("Twilio code send to %s was interrupted", masked);
         }
-        return SendOutcome.FAILED;
+        return SendResult.of(SendOutcome.FAILED);
+    }
+
+    @Override
+    public boolean cancelVerification(String verificationSid) {
+        if (!VerificationSid.matches(verificationSid)) {
+            return false;
+        }
+        Map<String, String> form = new LinkedHashMap<>();
+        form.put("Status", "canceled");
+        try {
+            HttpResponse<String> response = post(endpoint.verification(serviceSid, verificationSid), form);
+            int status = response.statusCode();
+            if (status == 200 || status == 201 || status == 404) {
+                return true;
+            }
+            LOG.warnf("Twilio did not cancel a verification (HTTP %d, Twilio error %s)",
+                    status, twilioError(response.body()));
+        } catch (HttpTimeoutException e) {
+            LOG.warnf("Twilio timed out canceling a verification after %s", timeout);
+        } catch (IOException e) {
+            LOG.warnf("Twilio cancel failed: %s", e.getClass().getSimpleName());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warnf("Twilio cancel was interrupted");
+        }
+        return false;
     }
 
     @Override
@@ -92,6 +125,11 @@ public class TwilioVerifySender extends AgreementGatedSender {
                 return "approved".equals(field(response.body(), "status"))
                         ? CheckOutcome.APPROVED
                         : CheckOutcome.WRONG_CODE;
+            }
+            if (status == 429 && "60202".equals(twilioError(response.body()))) {
+                LOG.infof("Twilio check attempt limit reached for %s (HTTP %d, Twilio error 60202)",
+                        masked, status);
+                return CheckOutcome.TOO_MANY_ATTEMPTS;
             }
             if (status == 404 || status == 429) {
                 // No pending verification (expired, already used) or out of check attempts.
