@@ -210,7 +210,8 @@ for template in freedriver-sms-phone.ftl freedriver-sms-code.ftl; do
   grep -q 'url.loginRestartFlowUrl' "$THEME/$template"
 done
 grep -q 'keycloak/themes/freedriver /opt/keycloak/themes/freedriver' keycloak/Dockerfile
-if grep -RIn 'Response.ok' keycloak/sms-otp-spi/src/main; then
+# Authenticators render theme pages. The invite realm resource is a JSON API, not a page.
+if grep -RIn 'Response.ok' keycloak/sms-otp-spi/src/main --include='*Authenticator*.java'; then
   fail "render authenticator pages with context.form()"
 fi
 

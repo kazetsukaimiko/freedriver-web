@@ -53,14 +53,36 @@ public class InviteRedeemResource {
         return respond(redeem.verify(code, otp));
     }
 
-    private static Response respond(InviteRedeem.Answer answer) {
-        if (answer.verified()) {
+    private static Response respond(InviteRedeem.Outcome outcome) {
+        if (outcome.signedIn()) {
             return Response.ok(Map.of("next", "/login")).build();
         }
-        if (answer.error() == null) {
-            return Response.ok(Map.of("codesSent", answer.codesSent())).build();
+        if (outcome.failure() == null) {
+            return Response.ok(Map.of("codesSent", outcome.codesSent())).build();
         }
-        return Response.status(answer.status()).entity(Map.of("error", answer.error())).build();
+        return Response.status(status(outcome.failure())).entity(Map.of("error", error(outcome.failure()))).build();
+    }
+
+    private static int status(InviteRedeem.Failure failure) {
+        return switch (failure) {
+            case BAD_REQUEST, BAD_PHONE, INVALID_CODE -> 400;
+            case DEAD, ALREADY_LISTED, CODES -> 409;
+            case LIMITED -> 429;
+            case UNAVAILABLE -> 502;
+        };
+    }
+
+    private static String error(InviteRedeem.Failure failure) {
+        return switch (failure) {
+            case BAD_REQUEST -> "bad-request";
+            case BAD_PHONE -> "bad-phone";
+            case DEAD -> "dead";
+            case ALREADY_LISTED -> "already-listed";
+            case CODES -> "codes";
+            case LIMITED -> "rate-limited";
+            case UNAVAILABLE -> "unavailable";
+            case INVALID_CODE -> "invalid-code";
+        };
     }
 
     public record Start(String code, String phone, String wording) {

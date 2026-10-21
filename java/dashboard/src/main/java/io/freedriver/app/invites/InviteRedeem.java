@@ -32,67 +32,67 @@ public class InviteRedeem {
         this.limiter = limiter;
     }
 
-    public Answer start(String code, String rawPhone, String wording) {
+    public Outcome start(String code, String rawPhone, String wording) {
         if (!allowed(code)) {
-            return Answer.limited();
+            return Outcome.limited();
         }
         if (!InviteWording.TEXT.equals(wording)) {
-            return Answer.of(400, "bad-request");
+            return Outcome.failed(Failure.BAD_REQUEST);
         }
         Optional<InviteStore.InviteState> found = store.state(code);
         if (found.isEmpty() || !found.get().open() || found.get().submissions() >= 3) {
-            return Answer.dead();
+            return Outcome.dead();
         }
         if (found.get().codesSent() >= 3) {
-            return Answer.codes();
+            return Outcome.codes();
         }
         Optional<String> phone = UsPhones.canonical(rawPhone);
         if (phone.isEmpty()) {
-            return Answer.of(400, "bad-phone");
+            return Outcome.failed(Failure.BAD_PHONE);
         }
         if (listed(phone.get())) {
-            return Answer.listed();
+            return Outcome.listed();
         }
         InviteStore.InviteState previous = found.get();
         InviteStore.Slot slot = store.takeSubmission(code, phone.get());
         if (slot == InviteStore.Slot.CODES) {
-            return Answer.codes();
+            return Outcome.codes();
         }
         if (slot != InviteStore.Slot.OK) {
-            return Answer.dead();
+            return Outcome.dead();
         }
         return sent(code, previous, phone.get(), true);
     }
 
-    public Answer resend(String code) {
+    public Outcome resend(String code) {
         if (!allowed(code)) {
-            return Answer.limited();
+            return Outcome.limited();
         }
         Optional<InviteStore.InviteState> found = store.state(code);
         if (found.isEmpty() || !found.get().open() || found.get().pendingPhone() == null) {
-            return Answer.dead();
+            return Outcome.dead();
         }
         if (found.get().codesSent() >= 3) {
-            return Answer.codes();
+            return Outcome.codes();
         }
         InviteStore.InviteState previous = found.get();
         InviteStore.Slot slot = store.takeResend(code);
         if (slot == InviteStore.Slot.CODES) {
-            return Answer.codes();
+            return Outcome.codes();
         }
         if (slot != InviteStore.Slot.OK) {
-            return Answer.dead();
+            return Outcome.dead();
         }
         return sent(code, previous, previous.pendingPhone(), false);
     }
 
-    public Answer verify(String code, String otp) {
+    public Outcome verify(String code, String otp) {
         if (!allowed(code)) {
-            return Answer.limited();
+            return Outcome.limited();
         }
         Optional<InviteStore.InviteState> found = store.state(code);
         if (found.isEmpty() || !found.get().open() || found.get().pendingPhone() == null) {
-            return Answer.dead();
+            return Outcome.dead();
         }
         String phone = found.get().pendingPhone();
         SmsPhoneList.InviteCheck check;
@@ -100,17 +100,17 @@ public class InviteRedeem {
             check = sms.checkInviteCode(phone, otp);
         } catch (InviteUpstreamException e) {
             LOG.warnf("Invite check failed for %s", PhoneLog.mask(phone));
-            return Answer.unavailable();
+            return Outcome.unavailable();
         }
         switch (check) {
             case WRONG -> {
-                return Answer.of(400, "invalid-code");
+                return Outcome.failed(Failure.INVALID_CODE);
             }
             case LIMITED -> {
-                return Answer.limited();
+                return Outcome.limited();
             }
             case UNAVAILABLE -> {
-                return Answer.unavailable();
+                return Outcome.unavailable();
             }
             case APPROVED -> {
                 // The code matched the number this invite texted.
@@ -121,14 +121,14 @@ public class InviteRedeem {
             user = keycloak.createPhoneSignInUser(phone);
         } catch (InviteUpstreamException e) {
             LOG.warnf("Invite account was not created for %s", PhoneLog.mask(phone));
-            return Answer.unavailable();
+            return Outcome.unavailable();
         }
         boolean added;
         try {
             added = sms.addInvited(phone, found.get().name(), user.username());
         } catch (InviteUpstreamException e) {
             LOG.warnf("Invite list add failed for %s", PhoneLog.mask(phone));
-            return Answer.unavailable();
+            return Outcome.unavailable();
         }
         if (store.use(code) != InviteStore.UseResult.USED) {
             if (added) {
@@ -143,32 +143,32 @@ public class InviteRedeem {
                     LOG.warnf("Invite group rollback failed for %s", PhoneLog.mask(phone));
                 }
             }
-            return Answer.dead();
+            return Outcome.dead();
         }
         LOG.infof("Invite completed for %s", PhoneLog.mask(phone));
-        return Answer.signedIn();
+        return Outcome.complete();
     }
 
-    private Answer sent(String code, InviteStore.InviteState previous, String phone, boolean submission) {
+    private Outcome sent(String code, InviteStore.InviteState previous, String phone, boolean submission) {
         SmsPhoneList.InviteText sent;
         try {
             sent = sms.sendInviteCode(phone, previous.id());
         } catch (InviteUpstreamException e) {
             store.restore(code, previous);
             LOG.warnf("Invite text failed for %s", PhoneLog.mask(phone));
-            return Answer.unavailable();
+            return Outcome.unavailable();
         }
         if (sent != SmsPhoneList.InviteText.SENT) {
             store.restore(code, previous);
             return switch (sent) {
-                case ALREADY_LISTED -> Answer.listed();
-                case LIMITED -> Answer.limited();
-                case SENT, UNAVAILABLE -> Answer.unavailable();
+                case ALREADY_LISTED -> Outcome.listed();
+                case LIMITED -> Outcome.limited();
+                case SENT, UNAVAILABLE -> Outcome.unavailable();
             };
         }
         LOG.infof(submission ? "Invite code requested for %s" : "Invite code resent for %s", PhoneLog.mask(phone));
         int codes = store.state(code).map(InviteStore.InviteState::codesSent).orElse(previous.codesSent() + 1);
-        return Answer.ok(codes);
+        return Outcome.ok(codes);
     }
 
     private boolean listed(String phone) {
@@ -179,38 +179,43 @@ public class InviteRedeem {
         return limiter.tryAcquire(InviteStore.rateKey(code));
     }
 
-    public record Answer(int status, String error, Integer codesSent, boolean verified) {
+    /** Why a redeem step stopped. The HTTP resource maps these to status codes. */
+    public enum Failure {
+        BAD_REQUEST, BAD_PHONE, DEAD, ALREADY_LISTED, CODES, LIMITED, UNAVAILABLE, INVALID_CODE
+    }
 
-        static Answer ok(int codesSent) {
-            return new Answer(200, null, codesSent, false);
+    public record Outcome(Failure failure, Integer codesSent, boolean signedIn) {
+
+        static Outcome ok(int codesSent) {
+            return new Outcome(null, codesSent, false);
         }
 
-        static Answer signedIn() {
-            return new Answer(200, null, null, true);
+        static Outcome complete() {
+            return new Outcome(null, null, true);
         }
 
-        static Answer dead() {
-            return of(409, "dead");
+        static Outcome dead() {
+            return failed(Failure.DEAD);
         }
 
-        static Answer listed() {
-            return of(409, "already-listed");
+        static Outcome listed() {
+            return failed(Failure.ALREADY_LISTED);
         }
 
-        static Answer codes() {
-            return of(409, "codes");
+        static Outcome codes() {
+            return failed(Failure.CODES);
         }
 
-        static Answer limited() {
-            return of(429, "rate-limited");
+        static Outcome limited() {
+            return failed(Failure.LIMITED);
         }
 
-        static Answer unavailable() {
-            return of(502, "unavailable");
+        static Outcome unavailable() {
+            return failed(Failure.UNAVAILABLE);
         }
 
-        static Answer of(int status, String error) {
-            return new Answer(status, error, null, false);
+        static Outcome failed(Failure failure) {
+            return new Outcome(failure, null, false);
         }
     }
 }
