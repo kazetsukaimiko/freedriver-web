@@ -1,4 +1,5 @@
 .env
+.source-commit
 BUILD_NUMBER
 settings.xml
 mqtt-contract/target/
@@ -9,6 +10,9 @@ mqtt-paho/target/
 mqtt-paho/.flattened-pom.xml
 app/target/
 sms/target/
+sms-model/target/
+sms-api/target/
+sms-client/target/
 keycloak/sms-otp-spi/target/
 keycloak/providers/*.jar
 __pycache__/

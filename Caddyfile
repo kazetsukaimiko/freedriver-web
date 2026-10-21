@@ -19,6 +19,11 @@ app.freedriver.io {
 	handle @dispatcher {
 		reverse_proxy agent-dispatcher:8080
 	}
+	@invite path /invite /invite/*
+	handle @invite {
+		header Referrer-Policy "no-referrer"
+		reverse_proxy dashboard:8080
+	}
 	handle {
 		reverse_proxy dashboard:8080
 	}

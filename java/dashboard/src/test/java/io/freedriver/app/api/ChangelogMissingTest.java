@@ -36,7 +36,7 @@ class ChangelogMissingTest {
     }
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void missing_changelog_is_404() {
         given().header("X-Requested-With", "JavaScript")
                 .when().get("/api/changelog")

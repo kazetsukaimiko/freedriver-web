@@ -5,6 +5,8 @@ import io.freedriver.sms.support.TestNumbers;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 
@@ -32,6 +34,18 @@ class ConsentLedgerTest {
         assertEquals(ConsentSource.SEEDED_FIRST_SIGN_IN, record.source());
         assertEquals(at, record.givenAt());
         assertFalse(reloaded.hasAgreed(TestNumbers.fresh(), ConsentPurpose.SIGN_IN_CODES));
+    }
+
+    @Test
+    void a_record_without_an_invite_id_still_loads() throws Exception {
+        String phone = "+15555550111";
+        Files.writeString(dataDir.resolve(ConsentLedger.FILE),
+                "{\"phone\":\"" + phone + "\",\"purpose\":\"SIGN_IN_CODES\",\"wording\":\"kept\","
+                        + "\"source\":\"INVITE_PAGE\",\"givenAt\":\"2026-09-27T16:00:00Z\"}\n",
+                StandardCharsets.UTF_8);
+        ConsentRecord record = new ConsentLedger(dataDir, Json.mapper()).history(phone).getFirst();
+        assertEquals(null, record.inviteId());
+        assertEquals("kept", record.wording());
     }
 
     @Test

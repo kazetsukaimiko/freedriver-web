@@ -15,6 +15,24 @@ afterEach(() => {
   window.history.replaceState({}, '', '/')
 })
 
+it('shows Phone sign-in when the invite list allows this account', async () => {
+  window.history.replaceState({}, '', '/?splash=0')
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) =>
+      url === '/api/invites'
+        ? Response.json({ invites: [], csrfToken: 'csrf-1' })
+        : new Response(null, { status: 404 }),
+    ),
+  )
+  render(<App />)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0)
+  })
+
+  expect(screen.getByRole('link', { name: 'Phone sign-in' })).toBeTruthy()
+})
+
 it('shows the dashboard at /, where /login returns the browser after sign-in', async () => {
   window.history.replaceState({}, '', '/?splash=0')
   render(<App />)
@@ -96,4 +114,56 @@ it('one tap shows the loader and leaves for /logout with no confirm step', async
     await vi.advanceTimersByTimeAsync(0)
   })
   expect(window.location.pathname).toBe('/logout')
+})
+
+it('docks the splash onto the nav brand box, not the nav padding', async () => {
+  const root = document.documentElement
+  let top = 116.640625
+  let left = 16
+  const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    if (this.classList.contains('brand') && this.closest('.nav-brand')) {
+      return new DOMRect(left, top, 137.265625, 24)
+    }
+    return new DOMRect(0, 0, 0, 0)
+  })
+  try {
+    window.history.replaceState({}, '', '/?splash=1')
+    sessionStorage.removeItem('freedriver.splash.seen')
+    render(<App />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    expect(root.style.getPropertyValue('--brand-top')).toBe('116.640625px')
+    expect(root.style.getPropertyValue('--brand-left')).toBe('16px')
+    expect(root.style.getPropertyValue('--brand-size')).toBe('')
+
+    top = 80.5
+    left = 21.59375
+    window.dispatchEvent(new Event('resize'))
+    expect(root.style.getPropertyValue('--brand-top')).toBe('80.5px')
+    expect(root.style.getPropertyValue('--brand-left')).toBe('21.59375px')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700)
+    })
+    expect(document.querySelector('.splash-brand')?.classList.contains('is-docked')).toBe(true)
+    expect(root.style.getPropertyValue('--brand-top')).toBe('80.5px')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800)
+    })
+    expect(document.querySelector('.splash-bg')?.classList.contains('is-leaving')).toBe(true)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700)
+    })
+    expect(document.querySelector('.splash')).toBeNull()
+    expect(root.style.getPropertyValue('--brand-top')).toBe('')
+    expect(root.style.getPropertyValue('--brand-left')).toBe('')
+  } finally {
+    spy.mockRestore()
+    root.style.removeProperty('--brand-left')
+    root.style.removeProperty('--brand-top')
+    sessionStorage.removeItem('freedriver.splash.seen')
+  }
 })

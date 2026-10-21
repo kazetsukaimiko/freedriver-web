@@ -1,20 +1,24 @@
-import { useEffect, useState, type MouseEvent } from 'react'
-import { SIGN_OUT_PATH } from './api'
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
+import { SIGN_OUT_PATH, apiFetch } from './api'
 import { Brand } from './Brand'
 import { BuildStamp } from './BuildStamp'
 import { Changelog } from './Changelog'
 import { CHANGELOG_PATH } from './changelog'
 import { Dashboard } from './Dashboard'
+import { InvitePage } from './InvitePage'
+import { PhoneSignIn } from './PhoneSignIn'
+import { PHONES_PATH } from './phones'
 import './App.css'
 
 type Splash = 'playing' | 'docking' | 'revealing' | 'done'
 
-type Page = 'dashboard' | 'changelog' | 'not-found'
+type Page = 'dashboard' | 'changelog' | 'phones' | 'not-found'
 
 const pages = new Map<string, Page>([
   ['/', 'dashboard'],
   ['/dashboard', 'dashboard'],
   [CHANGELOG_PATH, 'changelog'],
+  [PHONES_PATH, 'phones'],
 ])
 const SPLASH_KEY = 'freedriver.splash.seen'
 
@@ -29,6 +33,19 @@ function shouldPlaySplash() {
   return sessionStorage.getItem(SPLASH_KEY) !== '1'
 }
 
+function placeSplashDock(brand: Element) {
+  const rect = brand.getBoundingClientRect()
+  const root = document.documentElement
+  root.style.setProperty('--brand-left', `${rect.left}px`)
+  root.style.setProperty('--brand-top', `${rect.top}px`)
+}
+
+function clearSplashDock() {
+  const root = document.documentElement
+  root.style.removeProperty('--brand-left')
+  root.style.removeProperty('--brand-top')
+}
+
 function markSplashSeen() {
   sessionStorage.setItem(SPLASH_KEY, '1')
   const params = new URLSearchParams(window.location.search)
@@ -41,11 +58,19 @@ function markSplashSeen() {
   window.history.replaceState({}, '', next)
 }
 
+function isInvitePath(pathname: string) {
+  return pathname === '/invite' || pathname === '/invite/'
+}
+
 function App() {
-  const [splash, setSplash] = useState<Splash>(() => (shouldPlaySplash() ? 'playing' : 'done'))
   const [path, setPath] = useState(() => window.location.pathname)
+  const [splash, setSplash] = useState<Splash>(() =>
+    isInvitePath(window.location.pathname) || !shouldPlaySplash() ? 'done' : 'playing',
+  )
   const [search, setSearch] = useState(() => window.location.search)
   const [signingOut, setSigningOut] = useState(false)
+  const [portalAdmin, setPortalAdmin] = useState(false)
+  const navBrand = useRef<HTMLAnchorElement>(null)
 
   useEffect(() => {
     if (splash === 'playing') {
@@ -62,6 +87,51 @@ function App() {
       return () => window.clearTimeout(id)
     }
   }, [splash])
+
+  // Mobile nav centers the brand in its row, so the dock target is that box.
+  useLayoutEffect(() => {
+    if (splash === 'done') {
+      clearSplashDock()
+      return
+    }
+    const brand = navBrand.current?.querySelector('.brand')
+    if (!brand) {
+      return
+    }
+    const place = () => placeSplashDock(brand)
+    place()
+    const nav = navBrand.current?.closest('.nav')
+    const observer = new ResizeObserver(place)
+    if (nav) {
+      observer.observe(nav)
+    }
+    window.addEventListener('resize', place)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', place)
+    }
+  }, [splash])
+
+  useEffect(() => {
+    if (isInvitePath(path)) {
+      return
+    }
+    let cancelled = false
+    apiFetch('/api/invites')
+      .then((response) => {
+        if (!cancelled) {
+          setPortalAdmin(response.ok)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPortalAdmin(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [path])
 
   useEffect(() => {
     const onPop = () => {
@@ -81,6 +151,10 @@ function App() {
     }, 0)
     return () => window.clearTimeout(id)
   }, [signingOut])
+
+  if (isInvitePath(path)) {
+    return <InvitePage />
+  }
 
   const page: Page = pages.get(path) ?? 'not-found'
   const hrefFor = (to: string) => to + search
@@ -111,7 +185,7 @@ function App() {
       )}
 
       <header className="nav">
-        <a className="nav-brand" href={hrefFor('/')} onClick={(event) => go(event, '/')}>
+        <a ref={navBrand} className="nav-brand" href={hrefFor('/')} onClick={(event) => go(event, '/')}>
           <Brand />
         </a>
         <nav aria-label="Primary">
@@ -122,6 +196,15 @@ function App() {
           >
             Dashboard
           </a>
+          {portalAdmin && (
+            <a
+              className={page === 'phones' ? 'nav-item is-current' : 'nav-item'}
+              href={hrefFor(PHONES_PATH)}
+              onClick={(event) => go(event, PHONES_PATH)}
+            >
+              Phone sign-in
+            </a>
+          )}
         </nav>
         <a
           className="sign-out"
@@ -141,6 +224,7 @@ function App() {
       <div className="workspace">
         {page === 'dashboard' && <Dashboard search={search} />}
         {page === 'changelog' && <Changelog />}
+        {page === 'phones' && <PhoneSignIn />}
         {page === 'not-found' && <NotFound />}
       </div>
       <BuildStamp changelogHref={hrefFor(CHANGELOG_PATH)} onOpenChangelog={(event) => go(event, CHANGELOG_PATH)} />

@@ -1,7 +1,7 @@
 package io.freedriver.sms.api.rs.ext;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import io.freedriver.sms.api.ErrorResponse;
+import io.freedriver.sms.model.ErrorResponse;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.ExceptionMapper;

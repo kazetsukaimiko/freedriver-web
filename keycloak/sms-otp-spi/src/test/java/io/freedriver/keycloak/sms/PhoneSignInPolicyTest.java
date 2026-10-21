@@ -80,6 +80,9 @@ class PhoneSignInPolicyTest {
         assertEquals(PHONE, PhoneSignInPolicy.normalizePhone(" +1 (555) 555-0100 "));
         assertEquals(PHONE, PhoneSignInPolicy.normalizePhone("+1.555.555.0100"));
         assertEquals("", PhoneSignInPolicy.normalizePhone(null));
+        // The router grammar is separate. This normalizer still only strips separators.
+        assertEquals("1234567890", PhoneSignInPolicy.normalizePhone("123-456-7890"));
+        assertEquals("+11234567890", PhoneSignInPolicy.normalizePhone("+11234567890"));
         assertTrue(PhoneSignInPolicy.allows(user, "+1 555 555 0100"));
     }
 

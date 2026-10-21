@@ -28,6 +28,17 @@ services:
       QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver
       QUARKUS_OIDC_CLIENT_ID: freedriver-api
       QUARKUS_OIDC_CREDENTIALS_SECRET: ${QUARKUS_OIDC_CREDENTIALS_SECRET:?QUARKUS_OIDC_CREDENTIALS_SECRET is required}
+      SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
+      FREEDRIVER_SMS_BASE_URL: http://sms:8080
+      FREEDRIVER_INVITES_DIR: /deployments/data/invites
+    # Invite service account (#172). The provision script writes this file.
+    # Do not also interpolate FREEDRIVER_INVITE_CLIENT_SECRET here: that would
+    # override the file. Prod startup still fails when the secret is blank.
+    env_file:
+      - path: /opt/freedriver-secrets/keycloak-freedriver-invite.env
+        required: false
+    volumes:
+      - /opt/freedriver-storage/invites:/deployments/data/invites
     expose:
       - "8080"
 
@@ -50,6 +61,9 @@ services:
     build:
       context: .
       dockerfile: keycloak/Dockerfile
+      args:
+        # Deploy writes this from the checkout SHA. Not a secret.
+        SOURCE_COMMIT: ${SOURCE_COMMIT:-unknown}
     pull_policy: build
     restart: unless-stopped
     command: start
@@ -94,7 +108,10 @@ services:
   # network. HTTP contract and limits: docs/sms-otp.md.
   sms:
     build:
-      context: ./sms/stub
+      context: .
+      dockerfile: sms/src/main/docker/Dockerfile.compose
+      args:
+        BUILD_NUMBER: ${BUILD_NUMBER:-1.0.0-SNAPSHOT}
     pull_policy: build
     restart: unless-stopped
     # Twilio Verify credentials (#170), see docs/sms-otp.md.
@@ -105,22 +122,21 @@ services:
       SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
       # Number seeded into the sms phone list (#168, #169).
       FREEDRIVER_SEED_PHONE: ${FREEDRIVER_SEED_PHONE:-}
+      # Daily cap on texts that reach Twilio. Required. sms only (#175).
+      FREEDRIVER_SMS_DAILY_SEND_CAP: ${FREEDRIVER_SMS_DAILY_SEND_CAP:?FREEDRIVER_SMS_DAILY_SEND_CAP is required}
     expose:
       - "8080"
-    # /health/live answers 200 while the process serves HTTP. /health is
-    # readiness and answers 503 until an SMS sender is connected (#107).
+    # Agreement records. The deploy workflow creates this directory for uid 185.
+    volumes:
+      - /opt/freedriver-storage/sms:/deployments/data
+    # /health/live answers 200 while the process serves HTTP. The Java image
+    # has no Python, so this runs health-live.sh.
     healthcheck:
-      test:
-        [
-          "CMD",
-          "python3",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health/live')",
-        ]
+      test: ["CMD", "bash", "/usr/local/bin/health-live.sh"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 5s
+      start_period: 90s
 
   grafana:
     image: grafana/grafana:13.1.3

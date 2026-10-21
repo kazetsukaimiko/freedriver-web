@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
@@ -26,5 +27,18 @@ class ApplianceServiceSurfaceTest {
         assertFalse(source.contains("jakarta.ws.rs"), source);
         assertFalse(source.contains("SecurityIdentity"), source);
         assertFalse(source.contains("CommandRateLimiter"), source);
+    }
+
+    @Test
+    void mqtt_adapter_has_no_security_identity() throws IOException {
+        try (Stream<Path> files = Files.list(Path.of("src/main/java/io/freedriver/app/appliances"))) {
+            for (Path file : files.toList()) {
+                if (!file.getFileName().toString().endsWith(".java")) {
+                    continue;
+                }
+                String source = Files.readString(file);
+                assertFalse(source.contains("SecurityIdentity"), file.toString());
+            }
+        }
     }
 }

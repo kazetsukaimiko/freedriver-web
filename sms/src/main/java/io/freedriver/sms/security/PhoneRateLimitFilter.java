@@ -1,11 +1,12 @@
 package io.freedriver.sms.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.freedriver.sms.api.ErrorResponse;
-import io.freedriver.sms.api.OtpSendRequest;
-import io.freedriver.sms.api.SendRequest;
-import io.freedriver.sms.api.SentResponse;
-import io.freedriver.sms.api.VerifyRequest;
+import io.freedriver.sms.api.PhoneRateLimited;
+import io.freedriver.sms.model.ErrorResponse;
+import io.freedriver.sms.model.OtpSendRequest;
+import io.freedriver.sms.model.SendRequest;
+import io.freedriver.sms.model.SentResponse;
+import io.freedriver.sms.model.VerifyRequest;
 import io.freedriver.sms.phones.ConsentLedger;
 import io.freedriver.sms.phones.ConsentPurpose;
 import io.freedriver.sms.phones.PhoneDirectory;
@@ -37,8 +38,10 @@ import java.lang.reflect.Method;
  * service-wide daily cap, which counts only sends that reach the provider (listed numbers with an
  * agreement on file, or the seeded number's first sign-in carrying its agreement). Once the cap is reached, those sends get the same {@code sent} answer every
  * other number gets, and no provider call.</li>
- * <li>Code checks: a per-number count of rejected codes, taken from the response; past it the
- * request throws {@link RateLimitedException}.</li>
+ * <li>Code checks: a per-number count of wrong codes. The slot is taken when the check starts, so
+ * parallel guesses stop at the limit. A wrong code keeps the slot. A successful check clears the
+ * number. Any other answer gives the slot back. Past the limit the request throws
+ * {@link RateLimitedException}.</li>
  * </ul>
  * A body that is not a valid request is left to request validation, which refuses it with 400 and
  * counts nothing.
@@ -47,7 +50,7 @@ import java.lang.reflect.Method;
 @Priority(Priorities.AUTHORIZATION + 100)
 public class PhoneRateLimitFilter implements ContainerRequestFilter, ContainerResponseFilter {
 
-    static final String PHONE_PROPERTY = PhoneRateLimitFilter.class.getName() + ".phone";
+    static final String CODE_CHECK_PROPERTY = PhoneRateLimitFilter.class.getName() + ".code-check";
     private static final int MAX_BODY = 4096;
 
     @Context
@@ -102,23 +105,27 @@ public class PhoneRateLimitFilter implements ContainerRequestFilter, ContainerRe
                 if (phone == null) {
                     return;
                 }
-                if (limiter.codeChecksLocked(phone)) {
+                PhoneRateLimiter.CodeCheck check = limiter.tryAcquireCodeCheck(phone);
+                if (check == null) {
                     throw new RateLimitedException(limiter.window());
                 }
-                request.setProperty(PHONE_PROPERTY, phone);
+                request.setProperty(CODE_CHECK_PROPERTY, check);
             }
         }
     }
 
     @Override
     public void filter(ContainerRequestContext request, ContainerResponseContext response) {
-        if (!(request.getProperty(PHONE_PROPERTY) instanceof String phone)) {
+        if (!(request.getProperty(CODE_CHECK_PROPERTY) instanceof PhoneRateLimiter.CodeCheck check)) {
             return;
         }
         if (response.getStatus() == 200) {
-            limiter.clearWrongCodes(phone);
+            limiter.clearWrongCodes(check.phone());
+            check.keep();
         } else if (response.getStatus() == 400 && ErrorResponse.INVALID_CODE.equals(response.getEntity())) {
-            limiter.recordWrongCode(phone);
+            check.keep();
+        } else {
+            check.release();
         }
     }
 

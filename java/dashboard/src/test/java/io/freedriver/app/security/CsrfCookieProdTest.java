@@ -36,7 +36,7 @@ class CsrfCookieProdTest {
     boolean cookieSecure;
 
     @Test
-    @TestSecurity(user = "scott", roles = {"dashboard"})
+    @TestSecurity(user = "ada", roles = {"dashboard"})
     void prod_plain_http_sets_secure_httponly_lax_cookie() {
         assertEquals("http", base.getProtocol(), base.toString());
         assertTrue(cookieSecure);
@@ -65,6 +65,7 @@ class CsrfCookieProdTest {
             return Map.of(
                     "quarkus.oidc.enabled", "false",
                     "quarkus.oidc.credentials.secret", "unused-by-this-test",
+                    "freedriver.invite.client-secret", "unused-by-this-test",
                     "freedriver.appliances.enabled", "true",
                     "freedriver.appliances.live-commands", "false",
                     "freedriver.appliances.mock", "true",

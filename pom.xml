@@ -14,6 +14,9 @@
         <module>mqtt</module>
         <module>mqtt-paho</module>
         <module>java</module>
+        <module>sms-model</module>
+        <module>sms-api</module>
+        <module>sms-client</module>
         <module>sms</module>
     </modules>
 
@@ -27,6 +30,10 @@
         <jakarta.validation.version>3.1.1</jakarta.validation.version>
         <junit.version>5.13.4</junit.version>
         <surefire-plugin.version>3.5.6</surefire-plugin.version>
+        <!-- Versions Keycloak 26.3.5 puts on its runtime (Jackson, JAX-RS) or build (validation) classpath. -->
+        <keycloak.jackson.version>2.18.2</keycloak.jackson.version>
+        <keycloak.jakarta.ws.rs.version>3.1.0</keycloak.jakarta.ws.rs.version>
+        <keycloak.jakarta.validation.version>3.0.2</keycloak.jakarta.validation.version>
     </properties>
 
     <distributionManagement>

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { goToSignIn } from './api'
+import { InviteWelcome } from './InviteWelcome'
+import './dashboard.css'
 import {
   COMMAND_WAIT_MS,
   POLL_MS,
@@ -16,6 +18,8 @@ import {
   fetchApplianceMap,
   formatLastHeard,
   postApplianceCommand,
+  practiceList,
+  TEST_APPLIANCE_BANNER,
 } from './dashboard'
 
 type Row = Appliance & { pending: boolean; error: string | null }
@@ -377,12 +381,18 @@ export function Dashboard({ search }: { search: string }) {
   }
 
   if (view.kind === 'denied') {
-    return <Denied />
+    return (
+      <>
+        <InviteWelcome />
+        <Denied />
+      </>
+    )
   }
 
   return (
     <main className="content">
       <h1>Dashboard</h1>
+      <InviteWelcome />
       {view.kind === 'waiting' && (
         <section className="card" aria-labelledby="home-status">
           <h2 id="home-status" className="visually-hidden">
@@ -521,6 +531,11 @@ function AppliancePanel({
           </button>
         ))}
       </div>
+      {practiceList(rows.map((row) => row.name)) && (
+        <div className="info-banner" role="status">
+          <p>{TEST_APPLIANCE_BANNER}</p>
+        </div>
+      )}
       {unreachable && (
         <div className="unreachable-banner" role="alert">
           <p>{selected?.instanceName ?? 'Home'} is unreachable</p>

@@ -20,6 +20,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Record the Keycloak provider source commit
+        run: printf '%s\n' "$GITHUB_SHA" > .source-commit
+
       # Same scheme as autonomy mqtt-contract: YEAR-MONTH_rBUILD_NUM (UTC + github.run_number).
       # Example: 2026-08_r45. Not semver. Git poms stay 1.0.0-SNAPSHOT for local builds.
       - name: Stamp YEAR-MONTH_rBUILD_NUM
@@ -71,16 +74,31 @@ jobs:
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
             'bash -s' <<'REMOTE'
           set -euo pipefail
-          sudo mkdir -p /opt/freedriver-storage/grafana /opt/freedriver-storage/loki /opt/freedriver-storage/prometheus /opt/freedriver-storage/mosquitto
+          sudo mkdir -p /opt/freedriver-storage/grafana /opt/freedriver-storage/loki /opt/freedriver-storage/prometheus /opt/freedriver-storage/mosquitto /opt/freedriver-storage/sms
           sudo chown 472:472 /opt/freedriver-storage/grafana
           sudo chown 10001:10001 /opt/freedriver-storage/loki
           sudo chown 65534:65534 /opt/freedriver-storage/prometheus
           sudo chown 1883:1883 /opt/freedriver-storage/mosquitto
+          # sms image user. Agreement files under /deployments/data must survive restarts.
+          sudo chown 185:0 /opt/freedriver-storage/sms
+          sudo chmod 700 /opt/freedriver-storage/sms
           cd /opt/freedriver-web
           export BUILD_NUMBER="$(cat BUILD_NUMBER)"
+          if [ -f .source-commit ]; then
+            export SOURCE_COMMIT="$(tr -d '[:space:]' < .source-commit)"
+          else
+            export SOURCE_COMMIT=unknown
+          fi
+          echo "Keycloak provider source commit: ${SOURCE_COMMIT}"
+          # --build rebuilds every image, including keycloak (SPI jar and theme) and sms.
           docker compose --env-file /opt/freedriver-secrets/.env up -d --pull always --build
           docker compose --env-file /opt/freedriver-secrets/.env up -d --force-recreate --no-deps caddy
           REMOTE
+
+      - name: Name the Keycloak provider commit
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "Keycloak provider source commit: ${GITHUB_SHA}" >> "$GITHUB_STEP_SUMMARY"
 
       # Tag only after SSH deploy succeeds, and only on main (not PRs / other refs).
       - name: Tag successful deploy

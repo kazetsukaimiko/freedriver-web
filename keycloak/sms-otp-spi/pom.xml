@@ -4,8 +4,9 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <!-- Standalone build outside the root reactor. keycloak/Dockerfile and CI
-         build it with -f keycloak/sms-otp-spi/pom.xml. -->
+    <!-- Standalone build outside the root reactor. Install sms-client from this
+         checkout first (./mvnw -C -pl sms-client -am package, then install).
+         keycloak/Dockerfile and CI do that. Not a package-registry read. -->
     <groupId>io.freedriver</groupId>
     <artifactId>freedriver-sms-otp-spi</artifactId>
     <version>1.0.0-SNAPSHOT</version>
@@ -19,6 +20,8 @@
         <jackson.version>2.18.2</jackson.version>
         <junit.version>5.13.4</junit.version>
         <mockito.version>5.20.0</mockito.version>
+        <!-- Image build sets this from the deploy commit. Not a secret. -->
+        <source.commit>unknown</source.commit>
     </properties>
 
     <dependencies>
@@ -41,18 +44,52 @@
             <version>${keycloak.version}</version>
             <scope>provided</scope>
         </dependency>
+        <!-- ConditionalAuthenticator is in keycloak-services. The server provides it.
+             Transitives stay off this build; server-spi already supplies the types it uses. -->
+        <dependency>
+            <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-services</artifactId>
+            <version>${keycloak.version}</version>
+            <scope>provided</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <dependency>
             <groupId>jakarta.ws.rs</groupId>
             <artifactId>jakarta.ws.rs-api</artifactId>
             <version>3.1.0</version>
             <scope>provided</scope>
         </dependency>
-        <!-- Jackson version that keycloak-core 26.3.5 brings; the Keycloak server supplies it at runtime. -->
+        <!-- Jackson and validation-api are provided by the build, not bundled.
+             Keycloak 26.3 supplies Jackson and JAX-RS at runtime. validation-api is not on that runtime,
+             and this provider does not run a Validator. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+            <version>${jackson.version}</version>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
             <version>${jackson.version}</version>
             <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.validation</groupId>
+            <artifactId>jakarta.validation-api</artifactId>
+            <version>3.0.2</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- Built from this checkout by ./mvnw -C -pl sms-client -am package. Not a registry read. -->
+        <dependency>
+            <groupId>io.freedriver.sms</groupId>
+            <artifactId>sms-client</artifactId>
+            <version>1.0.0-SNAPSHOT</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -88,6 +125,58 @@
             <plugin>
                 <artifactId>maven-jar-plugin</artifactId>
                 <version>3.4.2</version>
+                <configuration>
+                    <archive>
+                        <manifestEntries>
+                            <Implementation-SCM-Revision>${source.commit}</Implementation-SCM-Revision>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <artifactSet>
+                                <includes>
+                                    <include>io.freedriver.sms:sms-model</include>
+                                    <include>io.freedriver.sms:sms-api</include>
+                                    <include>io.freedriver.sms:sms-client</include>
+                                </includes>
+                            </artifactSet>
+                            <filters>
+                                <filter>
+                                    <artifact>io.freedriver.sms:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/MANIFEST.MF</exclude>
+                                        <exclude>META-INF/maven/**</exclude>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <manifestEntries>
+                                        <Implementation-Title>freedriver-sms-otp-spi</Implementation-Title>
+                                        <Implementation-Version>${project.version}</Implementation-Version>
+                                        <Implementation-SCM-Revision>${source.commit}</Implementation-SCM-Revision>
+                                    </manifestEntries>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>

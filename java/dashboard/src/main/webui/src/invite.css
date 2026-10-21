@@ -1,0 +1,114 @@
+.invite-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1rem;
+  background: #f3f4f6;
+  color: #1a1a1a;
+}
+
+.invite-card {
+  width: min(24rem, 100%);
+  padding: 1.75rem 1.5rem 1.5rem;
+  border: 1px solid #e4e4e7;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+
+.invite-card .brand {
+  margin: 0 auto 1.25rem;
+}
+
+.invite-card h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.35rem;
+  color: #1a1a1a;
+}
+
+.invite-card .lede,
+.invite-card .invite-note,
+.invite-card .invite-wording {
+  margin: 0 0 1rem;
+  color: #3f3f46;
+}
+
+.invite-card label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+
+.invite-card input {
+  font: inherit;
+  font-weight: 400;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid #d4d4d8;
+  border-radius: 0.45rem;
+  background: #ffffff;
+  color: #1a1a1a;
+}
+
+.invite-normalized {
+  margin: 0.4rem 0 0;
+  color: #3f3f46;
+  font-weight: 400;
+}
+
+.invite-wording {
+  margin-top: 0.85rem;
+}
+
+.invite-primary {
+  display: block;
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.7rem 1rem;
+  border: 0;
+  border-radius: 0.45rem;
+  background: #0f2a47;
+  color: #ffffff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.invite-primary:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.invite-error {
+  margin: 0.75rem 0 0;
+  color: #9f1d1d;
+}
+
+.invite-actions {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.invite-text-button,
+.invite-card a {
+  color: #0f2a47;
+  font: inherit;
+  text-align: center;
+}
+
+.invite-text-button {
+  border: 0;
+  background: none;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.invite-card .loader {
+  margin: 0.5rem 0 0;
+}
+
+.invite-card .mark-art {
+  width: 4.5rem;
+  height: auto;
+}
