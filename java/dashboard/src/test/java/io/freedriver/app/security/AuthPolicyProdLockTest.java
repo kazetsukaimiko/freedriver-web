@@ -240,7 +240,12 @@ class AuthPolicyProdLockTest {
         assertEquals(
                 "/.github/ @kazetsukaimiko\n"
                         + "/.github/scripts/grok_review.py @kazetsukaimiko\n"
-                        + "/.github/grok-security-prompt.md @kazetsukaimiko\n",
+                        + "/.github/grok-security-prompt.md @kazetsukaimiko\n"
+                        + "/sms-model/ @kazetsukaimiko\n"
+                        + "/sms-api/ @kazetsukaimiko\n"
+                        + "/sms-client/ @kazetsukaimiko\n"
+                        + "/pom.xml @kazetsukaimiko\n"
+                        + "/.mvn/wrapper/ @kazetsukaimiko\n",
                 owners);
     }
 
