@@ -115,8 +115,8 @@ class KeycloakLoadTest {
         String location = source(type);
         assertTrue(location.contains("/lib/lib/main/"), location);
         assertTrue(location.contains(jarName), location);
-        assertFalse(location.contains("sms-model"), location);
-        assertFalse(location.contains("sms-client"), location);
+        // The dist may be unpacked under sms-client/target, so match the module output, not the name.
+        assertFalse(location.contains("/target/classes"), location);
     }
 
     private static void assertFromModule(Class<?> type, String module) {
