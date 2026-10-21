@@ -1,4 +1,4 @@
-package io.freedriver.app.api.rs.ext;
+package io.freedriver.app.security;
 
 import io.freedriver.app.appliances.ApplianceNotFoundException;
 import jakarta.ws.rs.core.Response;

@@ -1,4 +1,4 @@
-package io.freedriver.app.api.rs.ext;
+package io.freedriver.app.security;
 
 import io.quarkus.security.UnauthorizedException;
 import jakarta.annotation.Priority;

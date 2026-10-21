@@ -1,5 +1,6 @@
-package io.freedriver.app.appliances;
+package io.freedriver.app.security;
 
+import io.freedriver.app.appliances.AppliancesConfig;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import lombok.NonNull;

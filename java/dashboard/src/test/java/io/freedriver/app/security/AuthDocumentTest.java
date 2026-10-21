@@ -1,4 +1,4 @@
-package io.freedriver.app.api;
+package io.freedriver.app.security;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;

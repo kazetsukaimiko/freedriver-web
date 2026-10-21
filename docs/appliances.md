@@ -114,7 +114,7 @@ With sign-in on, the appliances API still returns 404 in prod and sends nothing 
 
 Authorization stays **on** in `%dev` (`quarkus.security.auth.enabled-in-dev-mode` keeps its default, true). `DevOpenAuthAugmentor` in `io.freedriver.app.security` is the single open-auth type, gated with `@IfBuildProfile("dev")`. It grants principal `dev` and role `dashboard` to anonymous callers so `@RolesAllowed` runs. Appliance auth is `@RolesAllowed` in every profile.
 
-`AppliancesDisabledFilter` in appliances owns the feature-off URL tree (404).
+`AppliancesDisabledFilter` in `io.freedriver.app.security` owns the feature-off URL tree (404).
 
 `%test` uses `@TestSecurity`.
 

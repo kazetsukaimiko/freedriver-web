@@ -1,6 +1,5 @@
 package io.freedriver.app.security;
 
-import io.freedriver.app.appliances.CommandRateLimiter;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;

@@ -1,4 +1,4 @@
-package io.freedriver.app.api.rs.ext;
+package io.freedriver.app.security;
 
 import io.freedriver.app.appliances.ApplianceControl;
 import io.freedriver.app.appliances.ApplianceService;
