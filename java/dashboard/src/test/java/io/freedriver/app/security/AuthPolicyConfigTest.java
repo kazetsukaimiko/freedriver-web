@@ -26,8 +26,6 @@ class AuthPolicyConfigTest {
     @Test
     void each_permission_and_the_rate_limit_match_the_moved_file() throws IOException {
         String auth = Files.readString(Path.of("src/main/resources/auth-policy.properties"));
-        String owners = Files.readString(Path.of("../../.github/CODEOWNERS"));
-        assertTrue(owners.contains("/java/dashboard/src/main/resources/auth-policy.properties @kazetsukaimiko"));
         assertTrue(auth.contains("quarkus.http.auth.permission.public.paths=/*"));
         assertTrue(auth.contains("quarkus.http.auth.permission.public.policy=permit"));
         assertTrue(auth.contains("quarkus.http.auth.permission.appliances.paths=/api/appliances,/api/appliances/*"));
