@@ -61,6 +61,9 @@ services:
     build:
       context: .
       dockerfile: keycloak/Dockerfile
+      args:
+        # Deploy writes this from the checkout SHA. Not a secret.
+        SOURCE_COMMIT: ${SOURCE_COMMIT:-unknown}
     pull_policy: build
     restart: unless-stopped
     command: start
