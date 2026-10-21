@@ -20,8 +20,8 @@ import java.util.regex.Pattern;
  * Phone + code sign-in as an Alternative beside the password form.
  * With an empty or placeholder secret the execution marks itself {@code attempted}.
  * Pages render through {@code context.form()} with the freedriver login theme templates.
- * Per auth session, stored in auth notes: 4 texts (the first code and 3 resends) and
- * 5 wrong codes, after which the pending code is cleared and the phone form returns.
+ * Per auth session, stored in auth notes: 4 texts (the first code and 3 resends).
+ * An expired code and too many wrong codes stay on the code form with the field cleared.
  * With the texts used up, both pages show the code-limit message and the phone form skips the send.
  * A verified code signs in only when exactly one user with that {@code phone} attribute
  * passes {@link PhoneSignInPolicy}. Any other outcome is a wrong code.
@@ -35,7 +35,6 @@ public final class SmsOtpAuthenticator implements Authenticator {
     static final String NOTE_WRONG_CODES = "freedriver.sms.wrong-codes";
     static final String NOTE_SENDS = "freedriver.sms.sends";
 
-    static final int MAX_WRONG_CODES = 5;
     static final int MAX_RESENDS = 3;
 
     static final String PHONE_TEMPLATE = "freedriver-sms-phone.ftl";
@@ -47,7 +46,8 @@ public final class SmsOtpAuthenticator implements Authenticator {
     static final String MSG_PHONE_INVALID = "freedriverSmsPhoneInvalid";
     static final String MSG_UNAVAILABLE = "freedriverSmsUnavailable";
     static final String MSG_WRONG_CODE = "freedriverSmsWrongCode";
-    static final String MSG_TOO_MANY_TRIES = "freedriverSmsTooManyTries";
+    static final String MSG_EXPIRED = "freedriverSmsExpired";
+    static final String MSG_TOO_MANY_CODES = "freedriverSmsTooManyCodes";
     static final String MSG_CODE_LIMIT = "freedriverSmsCodeLimit";
     static final String MSG_RATE_LIMITED = "freedriverSmsRateLimited";
     static final String MSG_RATE_LIMITED_ONE = "freedriverSmsRateLimitedOne";
@@ -174,6 +174,10 @@ public final class SmsOtpAuthenticator implements Authenticator {
                 signIn(context, phone);
             }
             case INVALID_CODE -> wrongCode(context);
+            case EXPIRED -> context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS,
+                    codePage(context, MSG_EXPIRED, null));
+            case TOO_MANY_ATTEMPTS -> context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS,
+                    codePage(context, MSG_TOO_MANY_CODES, null));
             case RATE_LIMITED -> context.challenge(rateLimited(context, false, result.retryAfterSeconds()));
             case CHECK_UNAVAILABLE -> context.challenge(codePage(context, MSG_CHECK_UNAVAILABLE, code));
             default -> context.challenge(codePage(context, MSG_UNAVAILABLE, null));
@@ -182,12 +186,6 @@ public final class SmsOtpAuthenticator implements Authenticator {
 
     private void wrongCode(AuthenticationFlowContext context) {
         int wrong = count(context, NOTE_WRONG_CODES) + 1;
-        if (wrong >= MAX_WRONG_CODES) {
-            clearPending(context);
-            context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS,
-                    phonePage(context, sendAllowed(context) ? MSG_TOO_MANY_TRIES : MSG_CODE_LIMIT));
-            return;
-        }
         session(context).setAuthNote(NOTE_WRONG_CODES, Integer.toString(wrong));
         context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS, codePage(context, MSG_WRONG_CODE, null));
     }

@@ -53,7 +53,11 @@ class SmsOtpAuthenticatorTest {
     record Page(String template, String error, List<Object> errorArgs, Map<String, Object> attributes) {}
 
     /** Scripted sms-client failure, or a 200 whose verified phone is {@code phone}. */
-    record Scripted(int status, String error, Long retryAfterSeconds, String phone) {}
+    record Scripted(int status, String error, Long retryAfterSeconds, String phone, String reason) {
+        Scripted(int status, String error, Long retryAfterSeconds, String phone) {
+            this(status, error, retryAfterSeconds, phone, null);
+        }
+    }
 
     private final Map<String, String> notes = new HashMap<>();
     private final Map<Response, Page> pages = new IdentityHashMap<>();
@@ -104,7 +108,7 @@ class SmsOtpAuthenticatorTest {
                         ? new Scripted(503, "unavailable", null, null)
                         : verifyReplies.pop();
                 if (reply.status != 200) {
-                    throw new SmsClientException(reply.status, reply.error, reply.retryAfterSeconds);
+                    throw new SmsClientException(reply.status, reply.error, reply.retryAfterSeconds, reply.reason);
                 }
                 return VerifiedResponse.otp(reply.phone);
             }
@@ -402,22 +406,26 @@ class SmsOtpAuthenticatorTest {
     }
 
     @Test
-    void fifthWrongCodeReturnsToThePhoneFormAndClearsThePendingCode() {
+    void expiredCodeClearsTheFieldAndStaysOnTheCodeForm() {
         enterPhone();
-        for (int i = 1; i < SmsOtpAuthenticator.MAX_WRONG_CODES; i++) {
-            verifyReplies.add(new Scripted(400, "invalid-code", null, null));
-            post("code", "000000");
-            assertPage(SmsOtpAuthenticator.CODE_TEMPLATE, SmsOtpAuthenticator.MSG_WRONG_CODE);
-        }
-        // A malformed code counts as a wrong code and skips the sms call.
-        post("code", "12ab");
-        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_TOO_MANY_TRIES);
-        assertNull(notes.get(SmsOtpAuthenticator.NOTE_PHONE));
-        assertNull(notes.get(SmsOtpAuthenticator.NOTE_WRONG_CODES));
+        verifyReplies.add(new Scripted(400, "invalid-code", null, null, "expired"));
+        post("code", "123456");
+        assertEquals("failure", outcome);
+        assertPage(SmsOtpAuthenticator.CODE_TEMPLATE, SmsOtpAuthenticator.MSG_EXPIRED);
+        assertNull(page().attributes().get(SmsOtpAuthenticator.ATTR_CODE));
+        assertEquals(PHONE, notes.get(SmsOtpAuthenticator.NOTE_PHONE));
+    }
 
-        post("phone", PHONE);
-        assertPage(SmsOtpAuthenticator.CODE_TEMPLATE, null);
-        assertEquals(2, sends.size());
+    @Test
+    void tooManyWrongCodesClearsTheFieldAndStaysOnTheCodeForm() {
+        enterPhone();
+        verifyReplies.add(new Scripted(429, "rate-limited", 900L, null, "too_many_attempts"));
+        post("code", "123456");
+        assertEquals("failure", outcome);
+        assertPage(SmsOtpAuthenticator.CODE_TEMPLATE, SmsOtpAuthenticator.MSG_TOO_MANY_CODES);
+        assertNull(page().attributes().get(SmsOtpAuthenticator.ATTR_CODE));
+        assertEquals(PHONE, notes.get(SmsOtpAuthenticator.NOTE_PHONE));
+        assertTrue(page().errorArgs().isEmpty());
     }
 
     @Test
@@ -437,20 +445,16 @@ class SmsOtpAuthenticatorTest {
     }
 
     @Test
-    void fifthWrongCodeWithTextsUsedUpShowsTheCodeLimitOnThePhoneForm() {
+    void tooManyWrongCodesWithTextsUsedUpStaysOnTheCodeForm() {
         enterPhone();
         for (int i = 1; i <= SmsOtpAuthenticator.MAX_RESENDS; i++) {
             post("resend", "1");
         }
-        for (int i = 1; i <= SmsOtpAuthenticator.MAX_WRONG_CODES; i++) {
-            verifyReplies.add(new Scripted(400, "invalid-code", null, null));
-            post("code", "000000");
-        }
-        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_CODE_LIMIT);
-        assertNull(notes.get(SmsOtpAuthenticator.NOTE_PHONE));
-
-        post("phone", PHONE);
-        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_CODE_LIMIT);
+        verifyReplies.add(new Scripted(429, "rate-limited", 900L, null, "too_many_attempts"));
+        post("code", "000000");
+        assertPage(SmsOtpAuthenticator.CODE_TEMPLATE, SmsOtpAuthenticator.MSG_TOO_MANY_CODES);
+        assertEquals(false, page().attributes().get(SmsOtpAuthenticator.ATTR_RESEND_ALLOWED));
+        assertEquals(PHONE, notes.get(SmsOtpAuthenticator.NOTE_PHONE));
         assertEquals(1 + SmsOtpAuthenticator.MAX_RESENDS, sends.size());
     }
 

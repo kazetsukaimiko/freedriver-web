@@ -10,6 +10,7 @@ import io.freedriver.sms.model.SendType;
 import io.freedriver.sms.model.SentResponse;
 import io.freedriver.sms.model.SmsTarget;
 import io.freedriver.sms.model.VerifiedResponse;
+import io.freedriver.sms.model.VerifyFailure;
 import io.freedriver.sms.model.VerifyRequest;
 
 import java.util.function.Function;
@@ -25,6 +26,8 @@ final class SmsOtpCalls {
         SENT,
         VERIFIED,
         INVALID_CODE,
+        EXPIRED,
+        TOO_MANY_ATTEMPTS,
         RATE_LIMITED,
         /** Verify answered 503 {@code unavailable}. */
         CHECK_UNAVAILABLE,
@@ -86,9 +89,15 @@ final class SmsOtpCalls {
     static Result fromException(SmsClientException ex, boolean verify) {
         int status = ex.status();
         if (status == 429) {
+            if (verify && VerifyFailure.TOO_MANY_ATTEMPTS.equals(ex.reason())) {
+                return Result.of(Outcome.TOO_MANY_ATTEMPTS);
+            }
             return new Result(Outcome.RATE_LIMITED, null, retrySeconds(ex.retryAfterSeconds()));
         }
         if (verify && status == 400 && "invalid-code".equals(ex.error())) {
+            if (VerifyFailure.EXPIRED.equals(ex.reason())) {
+                return Result.of(Outcome.EXPIRED);
+            }
             return Result.of(Outcome.INVALID_CODE);
         }
         if (verify && status == 503 && "unavailable".equals(ex.error())) {

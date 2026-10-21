@@ -319,8 +319,9 @@ class PhoneUsernameRouterTest {
                 "freedriverSmsDenied=That code didn''t work. Request a new one."));
         assertTrue(messages.contains(
                 "freedriverSmsCodeLimit=Code limit reached. Try again in 15 minutes."));
-        assertTrue(messages.contains(
-                "freedriverSmsTooManyTries=Too many tries. Enter your phone number to get a new code."));
+        assertTrue(messages.contains("freedriverSmsCodeExpiry=Your code works for 5 minutes."));
+        assertTrue(messages.contains("freedriverSmsExpired=That code expired. Send a new code."));
+        assertTrue(messages.contains("freedriverSmsTooManyCodes=Too many wrong codes. Send a new code."));
         assertFalse(messages.contains("unavailable for this account"));
         assertFalse(messages.contains("allowlist"));
 

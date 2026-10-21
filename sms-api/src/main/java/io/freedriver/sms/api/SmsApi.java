@@ -27,7 +27,11 @@ public interface SmsApi {
     @PhoneRateLimited(PhoneRateLimited.Kind.SEND)
     SentResponse send(@Valid @NotNull SendRequest request);
 
-    /** Answers {@code verified} when the code matches; any rejected code is {@code CodeRejectedException}. */
+    /**
+     * Answers {@code verified} when the code matches. A rejected code throws
+     * {@code CodeRejectedException}. The check after the fifth attempt throws
+     * {@code TooManyAttemptsException}.
+     */
     @POST
     @Path("/verify")
     @PhoneRateLimited(PhoneRateLimited.Kind.CODE_CHECK)
