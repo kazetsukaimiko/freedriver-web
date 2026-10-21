@@ -53,6 +53,14 @@ public class OtpService {
     }
 
     /**
+     * Texts a code to a number that already has an agreement and is not on the list yet.
+     * The invite page sends the code before the number is listed.
+     */
+    public SendOutcome sendAgreed(String phone) {
+        return sender.get().sendCode(phone);
+    }
+
+    /**
      * Checks a code for a listed number. Throws {@link CodeRejectedException} for an unlisted number
      * while the provider is answering, a malformed code, or a code the provider rejects (wrong,
      * expired or none pending), and {@link SenderUnavailableException} when the provider errors or
@@ -70,6 +78,21 @@ public class OtpService {
             }
             throw new CodeRejectedException();
         }
+        check(phone, code);
+    }
+
+    /**
+     * Checks a code for a number that agreed on the invite page and is not on the list yet.
+     * The attempt limit and the provider expiry are the same as {@link #verify}.
+     */
+    public void verifyAgreed(String phone, String code) {
+        if (code == null || !CODE.matcher(code).matches()) {
+            throw new CodeRejectedException();
+        }
+        check(phone, code);
+    }
+
+    private void check(String phone, String code) {
         long started = System.nanoTime();
         CheckOutcome outcome = sender.get().checkCode(phone, code);
         Duration elapsed = Duration.ofNanos(System.nanoTime() - started);

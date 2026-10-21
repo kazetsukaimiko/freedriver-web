@@ -3,6 +3,7 @@ package io.freedriver.app.phones;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.freedriver.app.invites.InviteUpstreamException;
+import io.freedriver.app.invites.InviteWording;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -13,7 +14,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 /** Calls the sms service. The shared secret never goes to the browser. */
 @ApplicationScoped
@@ -68,6 +71,75 @@ public class HttpSmsPhoneList implements SmsPhoneList {
     public void requireSharedSecret() {
         // The blank-secret refusal stays in send. A null request does not open a connection.
         send(null);
+    }
+
+    @Override
+    public InviteText sendInviteCode(String phone, UUID inviteId) {
+        HttpResponse<String> response = call(HttpRequest.newBuilder(URI.create(base + "/sms/invite/send"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body(Map.of(
+                        "phone", phone,
+                        "wording", InviteWording.TEXT,
+                        "inviteId", inviteId.toString())))));
+        return switch (response.statusCode()) {
+            case 200 -> InviteText.SENT;
+            case 409 -> InviteText.ALREADY_LISTED;
+            case 429 -> InviteText.LIMITED;
+            default -> InviteText.UNAVAILABLE;
+        };
+    }
+
+    @Override
+    public InviteCheck checkInviteCode(String phone, String code) {
+        HttpResponse<String> response = call(HttpRequest.newBuilder(URI.create(base + "/sms/invite/verify"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body(Map.of("phone", phone, "code", code)))));
+        return switch (response.statusCode()) {
+            case 200 -> InviteCheck.APPROVED;
+            case 400 -> InviteCheck.WRONG;
+            case 429 -> InviteCheck.LIMITED;
+            default -> InviteCheck.UNAVAILABLE;
+        };
+    }
+
+    @Override
+    public boolean addInvited(String phone, String name, String username) {
+        HttpResponse<String> response = call(HttpRequest.newBuilder(URI.create(base + "/sms/phones/add"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body(Map.of(
+                        "phone", phone, "name", name, "username", username, "role", "dashboard")))));
+        if (response.statusCode() / 100 != 2) {
+            throw new InviteUpstreamException("sms add answered " + response.statusCode());
+        }
+        try {
+            return json.readTree(response.body()).path("added").asBoolean(false);
+        } catch (Exception e) {
+            throw new InviteUpstreamException("sms add was not readable", e);
+        }
+    }
+
+    private String body(Map<String, String> fields) {
+        try {
+            return json.writeValueAsString(fields);
+        } catch (Exception e) {
+            throw new InviteUpstreamException("sms body was not writable", e);
+        }
+    }
+
+    /** Like {@link #send}, but a non-2xx status is returned so the caller can tell the answers apart. */
+    private HttpResponse<String> call(HttpRequest.Builder request) {
+        if (secret == null || secret.isBlank()) {
+            throw new InviteUpstreamException("sms shared secret is unset");
+        }
+        try {
+            return http.send(request
+                            .header("X-Freedriver-Sms-Secret", secret)
+                            .timeout(Duration.ofSeconds(5))
+                            .build(),
+                    HttpResponse.BodyHandlers.ofString());
+        } catch (Exception e) {
+            throw new InviteUpstreamException("sms phone list failed", e);
+        }
     }
 
     private HttpResponse<String> send(HttpRequest.Builder request) {

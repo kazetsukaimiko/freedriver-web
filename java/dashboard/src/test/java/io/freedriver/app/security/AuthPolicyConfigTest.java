@@ -40,6 +40,8 @@ class AuthPolicyConfigTest {
         assertTrue(auth.contains("quarkus.http.auth.permission.invites.policy=authenticated"));
         assertTrue(auth.contains("quarkus.http.auth.permission.invite-use.paths=/api/invites/use"));
         assertTrue(auth.contains("quarkus.http.auth.permission.invite-use.policy=permit"));
+        assertTrue(auth.contains("quarkus.http.auth.permission.invite-redeem.paths=/api/invites/redeem,/api/invites/redeem/*"));
+        assertTrue(auth.contains("quarkus.http.auth.permission.invite-redeem.policy=permit"));
         assertTrue(auth.contains("quarkus.http.auth.permission.phones.paths=/api/phones,/api/phones/*"));
         assertTrue(auth.contains("quarkus.http.auth.permission.phones.policy=authenticated"));
         assertTrue(auth.contains("freedriver.appliances.rate-limit.permits=30"));
@@ -68,6 +70,9 @@ class AuthPolicyConfigTest {
         assertEquals("authenticated", config.getValue("quarkus.http.auth.permission.invites.policy", String.class));
         assertEquals("/api/invites/use", config.getValue("quarkus.http.auth.permission.invite-use.paths", String.class));
         assertEquals("permit", config.getValue("quarkus.http.auth.permission.invite-use.policy", String.class));
+        assertEquals("/api/invites/redeem,/api/invites/redeem/*",
+                config.getValue("quarkus.http.auth.permission.invite-redeem.paths", String.class));
+        assertEquals("permit", config.getValue("quarkus.http.auth.permission.invite-redeem.policy", String.class));
         assertEquals(
                 "/api/phones,/api/phones/*",
                 config.getValue("quarkus.http.auth.permission.phones.paths", String.class));

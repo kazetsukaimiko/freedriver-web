@@ -59,7 +59,15 @@ final class PhoneSignInPolicy {
         return GROUP.equals(group.getName()) && group.getParentId() == null;
     }
 
-    private static boolean privileged(RoleModel role) {
+    static boolean holdsAdminRole(UserModel user) {
+        try {
+            return RoleUtils.getDeepUserRoleMappings(user).stream().anyMatch(PhoneSignInPolicy::privileged);
+        } catch (RuntimeException ex) {
+            return true;
+        }
+    }
+
+    static boolean privileged(RoleModel role) {
         if (PORTAL_ADMIN.equals(role.getName())) {
             return true;
         }
