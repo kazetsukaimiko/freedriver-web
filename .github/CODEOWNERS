@@ -1,3 +1,8 @@
 /.github/ @kazetsukaimiko
 /.github/scripts/grok_review.py @kazetsukaimiko
 /.github/grok-security-prompt.md @kazetsukaimiko
+/sms-model/ @kazetsukaimiko
+/sms-api/ @kazetsukaimiko
+/sms-client/ @kazetsukaimiko
+/pom.xml @kazetsukaimiko
+/.mvn/wrapper/ @kazetsukaimiko
