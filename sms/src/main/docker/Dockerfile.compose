@@ -17,11 +17,17 @@ COPY java/agent-dispatcher-model/pom.xml java/agent-dispatcher-model/pom.xml
 COPY java/agent-dispatcher-api/pom.xml java/agent-dispatcher-api/pom.xml
 COPY java/agent-dispatcher/pom.xml java/agent-dispatcher/pom.xml
 COPY java/device-daemon/pom.xml java/device-daemon/pom.xml
+COPY sms-model/pom.xml sms-model/pom.xml
+COPY sms-api/pom.xml sms-api/pom.xml
+COPY sms-client/pom.xml sms-client/pom.xml
 COPY sms/pom.xml sms/pom.xml
+COPY sms-model/src sms-model/src
+COPY sms-api/src sms-api/src
+COPY sms-client/src sms-client/src
 COPY sms/src sms/src
 
 ARG BUILD_NUMBER=1.0.0-SNAPSHOT
-RUN mvn -B -pl sms -DskipTests \
+RUN mvn -B -pl sms -am -DskipTests \
       -Dquarkus.application.version="${BUILD_NUMBER}" \
       package
 

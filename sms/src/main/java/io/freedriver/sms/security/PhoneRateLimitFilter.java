@@ -1,11 +1,12 @@
 package io.freedriver.sms.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.freedriver.sms.api.ErrorResponse;
-import io.freedriver.sms.api.OtpSendRequest;
-import io.freedriver.sms.api.SendRequest;
-import io.freedriver.sms.api.SentResponse;
-import io.freedriver.sms.api.VerifyRequest;
+import io.freedriver.sms.api.PhoneRateLimited;
+import io.freedriver.sms.model.ErrorResponse;
+import io.freedriver.sms.model.OtpSendRequest;
+import io.freedriver.sms.model.SendRequest;
+import io.freedriver.sms.model.SentResponse;
+import io.freedriver.sms.model.VerifyRequest;
 import io.freedriver.sms.phones.ConsentLedger;
 import io.freedriver.sms.phones.ConsentPurpose;
 import io.freedriver.sms.phones.PhoneDirectory;

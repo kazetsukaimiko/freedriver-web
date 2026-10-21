@@ -1,6 +1,6 @@
 package io.freedriver.sms.api.rs.ext;
 
-import io.freedriver.sms.api.ErrorResponse;
+import io.freedriver.sms.model.ErrorResponse;
 import io.freedriver.sms.security.RateLimitedException;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
