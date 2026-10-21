@@ -97,7 +97,8 @@ jobs:
 
       - name: Name the Keycloak provider commit
         if: github.ref == 'refs/heads/main'
-        run: echo "Keycloak provider source commit: ${GITHUB_SHA}" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "Keycloak provider source commit: ${GITHUB_SHA}" >> "$GITHUB_STEP_SUMMARY"
 
       # Tag only after SSH deploy succeeds, and only on main (not PRs / other refs).
       - name: Tag successful deploy
