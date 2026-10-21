@@ -265,7 +265,7 @@ def java_string(source, marker):
     return "".join(bytes(p, "utf-8").decode("unicode_escape") for p in parts)
 
 spi = Path("keycloak/sms-otp-spi/src/main/java/io/freedriver/keycloak/sms/SignInAgreement.java").read_text()
-sms = Path("sms/src/main/java/io/freedriver/sms/validation/SignInAgreementWording.java").read_text()
+sms = Path("sms-model/src/main/java/io/freedriver/sms/validation/SignInAgreementWording.java").read_text()
 spi_text = java_string(spi, "WORDING =")
 sms_text = java_string(sms, "String TEXT =")
 if not spi_text or spi_text != sms_text:
