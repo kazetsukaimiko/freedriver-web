@@ -15,7 +15,10 @@
 # Mosquitto afterwards to load the ACL.
 # TLS: self-signed and Let's Encrypt share server.crt/server.key.
 # scripts/sync-mosquitto-le-cert.sh replaces them in place after Caddy
-# issues mqtt.freedriver.io.
+# issues mqtt.freedriver.io. That pair is the public listener (container
+# 8884, published as host 8883). The unpublished listener (container 8883,
+# DNS:mosquitto) is internal.crt/internal.key, signed by
+# /opt/freedriver-secrets/mqtt-internal/ca.crt. The CA private key is not kept.
 set -euo pipefail
 
 SECRETS=/opt/freedriver-secrets/mosquitto
@@ -255,6 +258,12 @@ else
   fi
 fi
 
+# Unpublished listener. Does not touch server.crt/server.key. Does not keep
+# the CA private key. live-commands stays false; this does not start the API.
+MQTT_INTERNAL_DIR="${MQTT_INTERNAL_DIR:-/opt/freedriver-secrets/mqtt-internal}" \
+MQTT_SECRETS_DIR="$SECRETS" \
+  "${SCRIPT_DIR}/issue-mqtt-internal-cert.sh"
+
 if [[ -n "$INSTANCE_ID" ]]; then
   apply_instance_acl "$INSTANCE_ID" "$ACL_TEMPLATE" "${SECRETS}/acl"
   if [[ -n "$ACL_OUT" ]]; then
@@ -273,17 +282,19 @@ find "$SECRETS" -type f -exec chown "root:${GROUP}" {} +
 find "$SECRETS" -type f -exec chmod 640 {} +
 
 # Broker uid 1883 enters the secrets dir (root:1883 750) and owns
-# passwd/TLS/ACL. server.key is 0600. Plaintext *.pass stay
-# root:lonewatt-techops 640.
+# passwd/TLS/ACL. server.key and internal.key are 0600. Plaintext *.pass stay
+# root:lonewatt-techops 640. The internal CA key is not in this directory.
 chown "root:1883" "$SECRETS"
 chmod 750 "$SECRETS"
-for f in passwd server.crt server.key acl; do
+for f in passwd server.crt server.key internal.crt internal.key acl; do
   if [[ -e "${SECRETS}/${f}" ]]; then
     chown 1883:1883 "${SECRETS}/${f}"
   fi
 done
 [[ -e "${SECRETS}/server.key" ]] && chmod 0600 "${SECRETS}/server.key"
+[[ -e "${SECRETS}/internal.key" ]] && chmod 0600 "${SECRETS}/internal.key"
 [[ -e "${SECRETS}/server.crt" ]] && chmod 0640 "${SECRETS}/server.crt"
+[[ -e "${SECRETS}/internal.crt" ]] && chmod 0640 "${SECRETS}/internal.crt"
 [[ -e "${SECRETS}/passwd" ]] && chmod 0640 "${SECRETS}/passwd"
 [[ -e "${SECRETS}/acl" ]] && chmod 0640 "${SECRETS}/acl"
 for f in autonomy.pass api.pass; do
@@ -297,4 +308,6 @@ chown 1883:1883 "$STORAGE"
 chmod 750 "$STORAGE"
 
 echo "Mosquitto secrets in ${SECRETS}; persistence in ${STORAGE}."
-echo "Sysadmin still needs ${CN} A → 138.197.90.42. Compose binds 8883 only (no 1883)."
+echo "Internal CA certificate is /opt/freedriver-secrets/mqtt-internal/ca.crt. The CA private key is not kept."
+echo "Host 8883 publishes container 8884 (Let's Encrypt). Container 8883 is unpublished (DNS:mosquitto). No 1883."
+echo "Sysadmin still needs ${CN} A → 138.197.90.42."

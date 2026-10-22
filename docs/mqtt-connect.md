@@ -47,7 +47,10 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
 ## Broker
 
 - Image: `eclipse-mosquitto:2.1.2-alpine`
-- Listener: MQTTS on 8883 (`protocol mqtt`). Compose publishes host port 8883, reachable from any address because the home IP is dynamic; broker passwords and exact-topic ACLs guard it.
+- Two MQTTS listeners (`protocol mqtt`). Mosquitto has no SNI, so each socket has one certificate.
+  - Container port 8883 is not published. The API dials hostname `mosquitto` on that port. The certificate SAN is `DNS:mosquitto` only, signed by `/opt/freedriver-secrets/mqtt-internal/ca.crt`.
+  - Container port 8884 is published as host `8883`. That certificate is Let's Encrypt for `DNS:mqtt.freedriver.io` only.
+- Host port 8883 stays reachable from any address because the home IP is dynamic. Broker passwords and exact-topic ACLs guard it. `allow_anonymous false`, the password file, and the ACL apply to both listeners. Do not set `listener_allow_anonymous true`. Port 1883 stays closed.
 - Sysadmin still needs `mqtt.freedriver.io` A → `138.197.90.42`.
 - Auth: every client logs in with a broker password (`allow_anonymous false`). v1 has one house, which shares broker users `autonomy` and `api`. Each later instance gets its own autonomy user.
 - Persistence: `/opt/freedriver-storage/mosquitto`.
@@ -61,8 +64,11 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
 | `/opt/freedriver-secrets/mosquitto/api.pass` | api password |
 | `/opt/freedriver-secrets/mosquitto/passwd` | hashed broker passwd file |
 | `/opt/freedriver-secrets/mosquitto/acl` | **live** exact-topic ACL (Techops apply) |
-| `/opt/freedriver-secrets/mosquitto/server.crt` | TLS cert |
-| `/opt/freedriver-secrets/mosquitto/server.key` | TLS key |
+| `/opt/freedriver-secrets/mosquitto/server.crt` | Public listener certificate (Let's Encrypt `DNS:mqtt.freedriver.io`) |
+| `/opt/freedriver-secrets/mosquitto/server.key` | Public listener key (mode 0600, owner 1883) |
+| `/opt/freedriver-secrets/mosquitto/internal.crt` | Unpublished listener leaf (`DNS:mosquitto` only) |
+| `/opt/freedriver-secrets/mosquitto/internal.key` | Unpublished listener key (mode 0600, owner 1883) |
+| `/opt/freedriver-secrets/mqtt-internal/ca.crt` | Internal CA certificate that signed `internal.crt`. The CA private key is not kept. This path is not mounted into the API here. |
 
 ## Topics and ACL
 
@@ -75,13 +81,17 @@ The ACL grants exact topics only, one pair per instance:
 
 Publishers set retain=false on both topics; retain is a publisher setting.
 
-## Let's Encrypt on 8883 (Techops)
+## Let's Encrypt on host 8883 (Techops)
 
-Let's Encrypt is live on `mqtt.freedriver.io:8883`. Caddy issues the name via the 404 stub (HTTP-01). The `mosquitto-cert-sync` sidecar copies that cert onto `/opt/freedriver-secrets/mosquitto/server.{crt,key}` and SIGHUPs mosquitto through the shared PID namespace. Manual: `scripts/sync-mosquitto-le-cert.sh`. Re-running provision keeps the live pair in place.
+Let's Encrypt is the public listener: host `mqtt.freedriver.io:8883` maps to container port 8884. Caddy issues the name via the 404 stub (HTTP-01). The `mosquitto-cert-sync` sidecar copies that cert onto `/opt/freedriver-secrets/mosquitto/server.{crt,key}` only and SIGHUPs mosquitto through the shared PID namespace. It does not write `internal.crt` or `internal.key`. Manual: `scripts/sync-mosquitto-le-cert.sh`. Re-running provision keeps the live public pair in place.
+
+The unpublished listener is a different certificate. `scripts/issue-mqtt-internal-cert.sh` (also run from `scripts/provision-mosquitto.sh`) writes `/opt/freedriver-secrets/mqtt-internal/ca.crt` and the `internal.crt` / `internal.key` pair. The CA private key is deleted in the same run. Do not mount `ca.crt` until that file exists. A missing bind-mount source becomes a directory. This change does not mount it into the API.
+
+Run the issuer on the VPS before the broker restarts onto the two-listener config. If `internal.crt` is missing, Mosquitto will not start, and host 8883 stops with it.
 
 ## Quarkus
 
-On the compose network, Quarkus connects to hostname `mosquitto` port 8883; `mqtt.freedriver.io` is the name for public/home clients. Instance ids come from `FREEDRIVER_MQTT_INSTANCE_IDS`. Password is `FREEDRIVER_MQTT_API_PASSWORD`.
+On the compose network, Quarkus connects to hostname `mosquitto` port 8883. That socket presents `DNS:mosquitto`, not the public Let's Encrypt leaf. `mqtt.freedriver.io:8883` is the name for public and home clients. This repo does not mount the internal CA into the API and does not turn `freedriver.appliances.live-commands` on. Instance ids come from `FREEDRIVER_MQTT_INSTANCE_IDS`. Password is `FREEDRIVER_MQTT_API_PASSWORD`.
 
 Compose injects OIDC on the `dashboard` service only (not the image, not the SPA):
 

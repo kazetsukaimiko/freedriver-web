@@ -1,5 +1,7 @@
 #!/bin/sh
-# Copy Caddy's issued mqtt.freedriver.io cert+key onto Mosquitto MQTTS 8883.
+# Copy Caddy's issued mqtt.freedriver.io cert+key onto the public Mosquitto
+# listener (server.crt and server.key, container 8884, host 8883).
+# Does not write internal.crt, internal.key, or the internal CA.
 #
 # Caddy stores certs under /data/caddy/certificates/<issuer>/<name>/.
 # This script is the Techops renew hook: the compose sidecar runs --watch
@@ -119,8 +121,8 @@ key_matches_cert() {
 }
 
 drop_selfsigned_leftovers() {
-  # Removes renamed copies of earlier pairs so server.crt and server.key are
-  # the one cert and key in DEST_DIR.
+  # Removes renamed copies of the public pair only. internal.crt and
+  # internal.key belong to the unpublished listener and stay in DEST_DIR.
   rm -f \
     "${DEST_DIR}/server.crt.selfsigned" \
     "${DEST_DIR}/server.key.selfsigned" \
