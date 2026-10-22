@@ -331,22 +331,29 @@ def plan_next(executions: list, root_flow: str, config_key: str) -> dict:
                     "op": "error",
                     "message": "conditional second factor has a nested flow; not deleting it",
                 }
-        dest_children = children_of(parents, mfa)
-        if len(dest_children) < len(source_children):
-            source_child = executions[source_children[len(dest_children)]]
-            return {
-                "op": "create-execution",
-                "parent": MFA,
-                "provider": source_child.get("providerId"),
-            }
-        for offset, (source_index, dest_index) in enumerate(zip(source_children, dest_children)):
+        # Keycloak lists executions by priority. A new conditional-user-configured
+        # step keeps priority 10 while the steps added after it get 1, 2, 3, so
+        # list order is not copy order. Match on providerId, then set priority.
+        dest_by_provider: dict[str, list[int]] = {}
+        for child in children_of(parents, mfa):
+            dest_by_provider.setdefault(executions[child].get("providerId"), []).append(child)
+        for source_index in source_children:
+            provider = executions[source_index].get("providerId")
+            if not dest_by_provider.get(provider):
+                return {
+                    "op": "create-execution",
+                    "parent": MFA,
+                    "provider": provider,
+                }
+        for offset, source_index in enumerate(source_children):
             source_exec = executions[source_index]
-            dest_exec = executions[dest_index]
-            if dest_exec.get("providerId") != source_exec.get("providerId"):
+            matches = dest_by_provider.get(source_exec.get("providerId")) or []
+            if len(matches) != 1:
                 return {
                     "op": "error",
                     "message": "second factor child does not match the copied flow",
                 }
+            dest_exec = executions[matches[0]]
             desired_priority = (offset + 1) * 10
             if (
                 dest_exec.get("requirement") != source_exec.get("requirement")
@@ -750,6 +757,42 @@ def self_test() -> None:
     cloned = plan_next(mfa_source, "browser-freedriver", "route")
     if cloned.get("op") != "create-flow" or cloned.get("alias") != MFA:
         fail("planner must keep the conditional second factor before deleting forms")
+    reordered = json.loads(json.dumps(mfa_source))
+    insert_at = next(index for index, execution in enumerate(reordered) if execution.get("id") == "forms")
+    reordered[insert_at:insert_at] = [
+        {
+            "id": "new-2fa",
+            "displayName": MFA,
+            "requirement": "DISABLED",
+            "authenticationFlow": True,
+            "level": 2,
+            "priority": 2,
+        },
+        {
+            "id": "new-otp",
+            "providerId": "auth-otp-form",
+            "requirement": "DISABLED",
+            "authenticationFlow": False,
+            "level": 3,
+            "priority": 1,
+        },
+        {
+            "id": "new-cond",
+            "providerId": "conditional-user-configured",
+            "requirement": "REQUIRED",
+            "authenticationFlow": False,
+            "level": 3,
+            "priority": 10,
+        },
+    ]
+    repair = plan_next(reordered, "browser-freedriver", "route")
+    if (
+        repair.get("op") != "set-execution"
+        or repair.get("id") != "new-otp"
+        or repair.get("requirement") != "ALTERNATIVE"
+        or repair.get("priority") != 20
+    ):
+        fail("planner must repair second-factor priority instead of stopping")
     profile = {"attributes": [{"name": "username", "validations": {"length": {"min": 3}}}]}
     if not apply_username_rule(profile):
         fail("username rule must be added")
