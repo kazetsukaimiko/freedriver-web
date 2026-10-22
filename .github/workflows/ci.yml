@@ -282,7 +282,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo mkdir -p /opt/freedriver-secrets
-          printf '%s\n' '# ci placeholder, not a Twilio credential' | sudo tee /opt/freedriver-secrets/twilio-verify.env >/dev/null
+          printf '%s\n' '# placeholder for compose interpolation' | sudo tee /opt/freedriver-secrets/twilio-verify.env >/dev/null
           dummy="$RUNNER_TEMP/freedriver-ci.env"
           cat > "$dummy" <<'EOF'
           BUILD_NUMBER=ci

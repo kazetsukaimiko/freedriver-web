@@ -72,9 +72,9 @@ The live command route is blocked on [#25](https://github.com/kazetsukaimiko/fre
 
 ## Deploy
 
-Push or merge to `main`, or run the **Deploy** workflow. The runner builds every image this compose file builds, pushes those images to GHCR, and only then pulls them on the VPS and rsyncs this repo to `/opt/freedriver-web`. A failed image build stops before that pull and before that rsync, so the VPS is left as it was. The VPS then runs `docker compose --env-file /opt/freedriver-secrets/.env -f docker-compose.yml -f docker-compose.ghcr.yml up -d --no-build` and does not build. `${VAR}` interpolation reads the secrets file, not a `.env` in the git tree.
+Push or merge to `main`, or run the **Deploy** workflow. The runner builds every image this compose file builds, pushes those images to GHCR, and only then pulls them on the VPS and rsyncs this repo to `/opt/freedriver-web`. A failed image build stops before that pull and before that rsync, so the VPS is left as it was. The VPS then runs `docker compose --env-file /opt/freedriver-secrets/.env -f docker-compose.yml -f docker-compose.ghcr.yml up -d --no-build`. `${VAR}` interpolation reads the secrets file, not a `.env` in the git tree.
 
-`docker-compose.ghcr.yml` holds the production image names. Local `docker compose` does not load it.
+`docker-compose.ghcr.yml` holds the production image names.
 
 Pull requests run the `prod-image` check: the full dashboard image from `java/dashboard/src/main/docker/Dockerfile.compose` with `--build-arg BUILD_NUMBER=ci`, the cert-sync image, and `docker compose config` against a dummy env file.
 

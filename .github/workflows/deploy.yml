@@ -52,8 +52,7 @@ jobs:
             exit 1
           fi
 
-      # Placeholder values satisfy compose interpolation on the runner.
-      # They are not build args and they are not the production secrets.
+      # Placeholder values satisfy compose interpolation on the runner only.
       - name: Build images on the runner
         run: |
           set -euo pipefail
@@ -62,7 +61,7 @@ jobs:
             exit 1
           fi
           sudo mkdir -p /opt/freedriver-secrets
-          printf '%s\n' '# deploy placeholder, not a Twilio credential' | sudo tee /opt/freedriver-secrets/twilio-verify.env >/dev/null
+          printf '%s\n' '# placeholder for compose interpolation' | sudo tee /opt/freedriver-secrets/twilio-verify.env >/dev/null
           envfile="$RUNNER_TEMP/freedriver-deploy-build.env"
           # Placeholders only. Keep the file unreadable to other users on the runner.
           (umask 077; cat > "$envfile" <<EOF
@@ -163,7 +162,7 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
-      # First contact with the VPS. Source on the VPS is not changed here.
+      # First contact with the VPS: pull the images. Rsync is the next step.
       - name: Pull images on the VPS
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -188,8 +187,7 @@ jobs:
             [ -n "$image" ] || continue
             pulls="${pulls}docker pull $(printf '%q' "$image")"$'\n'
           done < "$RUNNER_TEMP/freedriver-images.txt"
-          # The job token is the docker password only. It is not written to a file.
-          # logout runs even when a pull fails.
+          # The job token is the docker password on stdin. logout runs on exit.
           ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "bash -s" <<EOF
@@ -244,7 +242,7 @@ jobs:
             export SOURCE_COMMIT=unknown
           fi
           echo "Keycloak provider source commit: ${SOURCE_COMMIT}"
-          # Images were pulled before this rsync. Do not build and do not pull again.
+          # Images are already on the VPS. Start them with --no-build --pull never.
           docker compose --env-file /opt/freedriver-secrets/.env \
             -f docker-compose.yml -f docker-compose.ghcr.yml \
             up -d --no-build --pull never
