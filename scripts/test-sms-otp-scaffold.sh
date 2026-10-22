@@ -275,9 +275,33 @@ fi
 if ! grep -q 'Storage mode for /opt/freedriver-storage/sms' .github/workflows/deploy.yml; then
   fail "deploy must check the sms data directory mode"
 fi
-if ! grep -q -- '--build' .github/workflows/deploy.yml; then
-  fail "deploy must rebuild images, including keycloak and sms"
-fi
+python3 - <<'PY'
+from pathlib import Path
+text = Path(".github/workflows/deploy.yml").read_text()
+overlay = Path("docker-compose.ghcr.yml").read_text()
+marks = [
+    'build "$service"',
+    "Push images to GHCR",
+    "Pull images on the VPS",
+    "rsync -az",
+    "--no-build",
+]
+positions = []
+for mark in marks:
+    at = text.find(mark)
+    if at < 0:
+        raise SystemExit(f"deploy.yml missing {mark}")
+    positions.append(at)
+if positions != sorted(positions):
+    raise SystemExit("deploy must build, push, and pull before rsync")
+for line in text.splitlines():
+    if "--build" in line and "--no-build" not in line:
+        raise SystemExit("deploy must not build images on the VPS")
+for name in ("keycloak", "sms"):
+    if f"freedriver-web/{name}:" not in overlay:
+        raise SystemExit(f"deploy must build and push {name}")
+print("deploy builds keycloak and sms on the runner before rsync")
+PY
 
 python3 - <<'PY'
 import re

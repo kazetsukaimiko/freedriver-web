@@ -16,6 +16,7 @@ jobs:
     environment: production
     permissions:
       contents: write
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -51,19 +52,162 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy over SSH
+      # Placeholder values satisfy compose interpolation on the runner only.
+      - name: Build images on the runner
+        run: |
+          set -euo pipefail
+          if [ -z "${NEW_VERSION}" ]; then
+            echo "NEW_VERSION is empty; refusing to build"
+            exit 1
+          fi
+          sudo mkdir -p /opt/freedriver-secrets
+          printf '%s\n' '# placeholder for compose interpolation' | sudo tee /opt/freedriver-secrets/twilio-verify.env >/dev/null
+          envfile="$RUNNER_TEMP/freedriver-deploy-build.env"
+          # Placeholders only. Keep the file unreadable to other users on the runner.
+          (umask 077; cat > "$envfile" <<EOF
+          BUILD_NUMBER=${NEW_VERSION}
+          SOURCE_COMMIT=${GITHUB_SHA}
+          QUARKUS_OIDC_CREDENTIALS_SECRET=ci-not-a-secret
+          KC_DB_PASSWORD=ci-not-a-secret
+          KC_BOOTSTRAP_ADMIN_PASSWORD=ci-not-a-secret
+          GF_SECURITY_ADMIN_PASSWORD=ci-not-a-secret
+          FREEDRIVER_SMS_DAILY_SEND_CAP=1
+          EOF
+          )
+          ENV_FILE="$envfile" \
+            IMAGE_LIST="$RUNNER_TEMP/freedriver-images.txt" \
+            BUILD_LIST="$RUNNER_TEMP/freedriver-build-services.txt" \
+            python3 - <<'PY'
+          import json, os, subprocess
+          env = os.environ["ENV_FILE"]
+          cmd = [
+              "docker", "compose", "--env-file", env,
+              "-f", "docker-compose.yml", "-f", "docker-compose.ghcr.yml",
+              "config", "--format", "json",
+          ]
+          cfg = json.loads(subprocess.check_output(cmd, text=True))
+          prefix = "ghcr.io/kazetsukaimiko/freedriver-web/"
+          build_names = []
+          images = []
+          for name, svc in cfg["services"].items():
+              image = svc.get("image")
+              if not image:
+                  raise SystemExit(f"{name} has no image")
+              images.append(image)
+              if image.startswith(prefix):
+                  build = svc.get("build")
+                  dockerfile = build.get("dockerfile") if isinstance(build, dict) else ""
+                  if not dockerfile:
+                      raise SystemExit(f"{name} is tagged for GHCR but has no Dockerfile")
+                  build_names.append(name)
+          if not build_names:
+              raise SystemExit("no GHCR images to build")
+          images.sort(key=lambda item: (not item.startswith(prefix), item))
+          with open(os.environ["IMAGE_LIST"], "w", encoding="utf-8") as handle:
+              handle.write("\n".join(images) + "\n")
+          with open(os.environ["BUILD_LIST"], "w", encoding="utf-8") as handle:
+              handle.write("\n".join(sorted(build_names)) + "\n")
+          print("services:", " ".join(sorted(build_names)))
+          PY
+          while IFS= read -r service; do
+            [ -n "$service" ] || continue
+            docker compose --env-file "$envfile" \
+              -f docker-compose.yml -f docker-compose.ghcr.yml \
+              build "$service"
+          done < "$RUNNER_TEMP/freedriver-build-services.txt"
+
+      - name: Push images to GHCR
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GHCR_TOKEN}" ]; then
+            echo "GITHUB_TOKEN is empty; refusing to push"
+            exit 1
+          fi
+          if [ ! -s "$RUNNER_TEMP/freedriver-build-services.txt" ]; then
+            echo "build list is empty; refusing to push"
+            exit 1
+          fi
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          envfile="$RUNNER_TEMP/freedriver-deploy-build.env"
+          while IFS= read -r service; do
+            [ -n "$service" ] || continue
+            docker compose --env-file "$envfile" \
+              -f docker-compose.yml -f docker-compose.ghcr.yml \
+              push "$service"
+          done < "$RUNNER_TEMP/freedriver-build-services.txt"
+          docker logout ghcr.io
+          touch "$RUNNER_TEMP/freedriver-images-pushed"
+          {
+            echo "### Images pushed before the VPS was contacted"
+            echo
+            while IFS= read -r image; do
+              case "$image" in
+                ghcr.io/*) echo "- \`$image\`" ;;
+              esac
+            done < "$RUNNER_TEMP/freedriver-images.txt"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install deploy SSH key
+        env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
         run: |
+          set -euo pipefail
           install -d -m 700 ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy
           chmod 600 ~/.ssh/deploy
           printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
+      # First contact with the VPS: pull the images. Rsync is the next step.
+      - name: Pull images on the VPS
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ ! -f "$RUNNER_TEMP/freedriver-images-pushed" ]; then
+            echo "images were not pushed; refusing to contact the VPS"
+            exit 1
+          fi
+          if [ ! -s "$RUNNER_TEMP/freedriver-images.txt" ]; then
+            echo "image list is empty; refusing to contact the VPS"
+            exit 1
+          fi
+          if [ -z "${GHCR_TOKEN}" ]; then
+            echo "GITHUB_TOKEN is empty; refusing to contact the VPS"
+            exit 1
+          fi
+          pulls=""
+          while IFS= read -r image; do
+            [ -n "$image" ] || continue
+            pulls="${pulls}docker pull $(printf '%q' "$image")"$'\n'
+          done < "$RUNNER_TEMP/freedriver-images.txt"
+          # The job token is the docker password on stdin. logout runs on exit.
+          ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "bash -s" <<EOF
+          set -euo pipefail
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          printf '%s\n' $(printf '%q' "$GHCR_TOKEN") | docker login ghcr.io -u $(printf '%q' "$GITHUB_ACTOR") --password-stdin
+          ${pulls}
+          EOF
+          touch "$RUNNER_TEMP/freedriver-images-pulled"
+
+      - name: Rsync and start containers
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          set -euo pipefail
+          if [ ! -f "$RUNNER_TEMP/freedriver-images-pulled" ]; then
+            echo "images were not pulled; refusing to rsync"
+            exit 1
+          fi
           rsync -az --delete \
             --exclude '.git/' \
             --exclude '.github/' \
@@ -101,6 +245,10 @@ jobs:
             exit 1
           fi
           cd /opt/freedriver-web
+          if [ ! -f docker-compose.ghcr.yml ]; then
+            echo "missing docker-compose.ghcr.yml; refusing to build on the VPS"
+            exit 1
+          fi
           build_number="$(tr -d '[:space:]' < BUILD_NUMBER)"
           if [ -f .source-commit ]; then
             source_commit="$(tr -d '[:space:]' < .source-commit)"
@@ -119,15 +267,17 @@ jobs:
           # Stamp and source commit travel in this file. The sudoers rule passes no caller environment.
           umask 077
           printf 'BUILD_NUMBER=%s\nSOURCE_COMMIT=%s\n' "$build_number" "$source_commit" > .build-number.env
-          # --build rebuilds every image, including keycloak (SPI jar and theme) and sms.
+          # Images are already on the VPS. Start them with --no-build --pull never.
           sudo -n /usr/bin/docker compose \
             --env-file /opt/freedriver-secrets/.env \
             --env-file .build-number.env \
-            up -d --pull always --build
+            -f docker-compose.yml -f docker-compose.ghcr.yml \
+            up -d --no-build --pull never
           sudo -n /usr/bin/docker compose \
             --env-file /opt/freedriver-secrets/.env \
             --env-file .build-number.env \
-            up -d --force-recreate --no-deps caddy
+            -f docker-compose.yml -f docker-compose.ghcr.yml \
+            up -d --force-recreate --no-deps --no-build --pull never caddy
           REMOTE
 
       - name: Name the Keycloak provider commit

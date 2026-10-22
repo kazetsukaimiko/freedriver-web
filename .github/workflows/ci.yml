@@ -251,8 +251,8 @@ jobs:
           npm ci
           npm test
 
-  # Same Maven package the VPS runs in `docker compose --build` (Deploy), so
-  # prod-build failures such as ArC validation are caught before merge (#116).
+  # Full dashboard image, cert-sync image, and compose config (#116, #118).
+  # A failure here stops the pull request before Deploy can reach the VPS.
   prod-image:
     runs-on: ubuntu-latest
     if: github.repository == 'kazetsukaimiko/freedriver-web'
@@ -262,5 +262,80 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Build prod image path (Dockerfile.compose build stage)
-        run: docker build -f java/dashboard/src/main/docker/Dockerfile.compose --target build .
+      - name: Build the full dashboard image
+        run: |
+          set -euo pipefail
+          docker build \
+            -f java/dashboard/src/main/docker/Dockerfile.compose \
+            --build-arg BUILD_NUMBER=ci \
+            .
+
+      - name: Build the cert-sync image
+        run: |
+          set -euo pipefail
+          docker build \
+            -f scripts/mosquitto-cert-sync.Dockerfile \
+            -t freedriver-mosquitto-cert-sync:ci \
+            scripts
+
+      - name: Compose config against a dummy env file
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /opt/freedriver-secrets
+          printf '%s\n' '# placeholder for compose interpolation' | sudo tee /opt/freedriver-secrets/twilio-verify.env >/dev/null
+          dummy="$RUNNER_TEMP/freedriver-ci.env"
+          cat > "$dummy" <<'EOF'
+          BUILD_NUMBER=ci
+          SOURCE_COMMIT=ci
+          QUARKUS_OIDC_CREDENTIALS_SECRET=ci-not-a-secret
+          KC_DB_PASSWORD=ci-not-a-secret
+          KC_BOOTSTRAP_ADMIN_PASSWORD=ci-not-a-secret
+          GF_SECURITY_ADMIN_PASSWORD=ci-not-a-secret
+          FREEDRIVER_SMS_DAILY_SEND_CAP=1
+          EOF
+          docker compose --env-file "$dummy" config --quiet
+          docker compose --env-file "$dummy" -f docker-compose.yml -f docker-compose.ghcr.yml config --quiet
+          DUMMY_ENV="$dummy" python3 - <<'PY'
+          import json, os, subprocess
+          env = os.environ["DUMMY_ENV"]
+          expect = [
+              "agent-dispatcher",
+              "dashboard",
+              "docker-logs-proxy",
+              "keycloak",
+              "mosquitto-cert-sync",
+              "sms",
+          ]
+
+          def config(*files):
+              cmd = ["docker", "compose", "--env-file", env]
+              for path in files:
+                  cmd.extend(["-f", path])
+              cmd.extend(["config", "--format", "json"])
+              return json.loads(subprocess.check_output(cmd, text=True))
+
+          base = config("docker-compose.yml")
+          prod = config("docker-compose.yml", "docker-compose.ghcr.yml")
+          built = sorted(name for name, svc in base["services"].items() if "build" in svc)
+          if built != expect:
+              raise SystemExit(f"built services changed: {built}")
+          prefix = "ghcr.io/kazetsukaimiko/freedriver-web/"
+          for name in expect:
+              image = prod["services"][name].get("image", "")
+              if not image.startswith(prefix) or not image.endswith(":ci"):
+                  raise SystemExit(f"bad prod image for {name}: {image}")
+              build = prod["services"][name].get("build")
+              dockerfile = build.get("dockerfile") if isinstance(build, dict) else ""
+              if not dockerfile:
+                  raise SystemExit(f"overlay dropped the Dockerfile for {name}")
+              policy = prod["services"][name].get("pull_policy")
+              if policy not in ("missing", "if_not_present"):
+                  raise SystemExit(f"{name} pull_policy is {policy!r}, want missing")
+              base_image = base["services"][name].get("image") or ""
+              if "ghcr.io" in base_image:
+                  raise SystemExit(f"base compose must not name a GHCR image for {name}")
+          for name in ("keycloak", "sms"):
+              if base["services"][name].get("pull_policy") != "build":
+                  raise SystemExit(f"local {name} pull_policy must stay build")
+          print("compose config ok")
+          PY
