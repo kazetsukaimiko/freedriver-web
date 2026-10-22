@@ -1,0 +1,26 @@
+# Production image names for Deploy. The runner builds these, pushes them to
+# GHCR, and the VPS pulls them. Local `docker compose` does not load this file,
+# so a laptop build does not pull or push.
+#
+# pull_policy is missing: Deploy pulls the stamp tag before `up`, and `up`
+# must not build on the VPS. The base file keeps pull_policy build for
+# keycloak and sms so a local `up` still builds those images.
+services:
+  dashboard:
+    image: ghcr.io/kazetsukaimiko/freedriver-web/dashboard:${BUILD_NUMBER:-1.0.0-SNAPSHOT}
+    pull_policy: missing
+  agent-dispatcher:
+    image: ghcr.io/kazetsukaimiko/freedriver-web/agent-dispatcher:${BUILD_NUMBER:-1.0.0-SNAPSHOT}
+    pull_policy: missing
+  keycloak:
+    image: ghcr.io/kazetsukaimiko/freedriver-web/keycloak:${BUILD_NUMBER:-1.0.0-SNAPSHOT}
+    pull_policy: missing
+  sms:
+    image: ghcr.io/kazetsukaimiko/freedriver-web/sms:${BUILD_NUMBER:-1.0.0-SNAPSHOT}
+    pull_policy: missing
+  docker-logs-proxy:
+    image: ghcr.io/kazetsukaimiko/freedriver-web/docker-logs-proxy:${BUILD_NUMBER:-1.0.0-SNAPSHOT}
+    pull_policy: missing
+  mosquitto-cert-sync:
+    image: ghcr.io/kazetsukaimiko/freedriver-web/mosquitto-cert-sync:${BUILD_NUMBER:-1.0.0-SNAPSHOT}
+    pull_policy: missing

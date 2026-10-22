@@ -23,6 +23,9 @@ services:
       dockerfile: java/dashboard/src/main/docker/Dockerfile.compose
       args:
         BUILD_NUMBER: ${BUILD_NUMBER:-1.0.0-SNAPSHOT}
+      # Links the GHCR package to this repo when Deploy pushes the image.
+      labels:
+        org.opencontainers.image.source: https://github.com/kazetsukaimiko/freedriver-web
     restart: unless-stopped
     environment:
       QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver
@@ -49,6 +52,8 @@ services:
       dockerfile: java/agent-dispatcher/src/main/docker/Dockerfile.compose
       args:
         BUILD_NUMBER: ${BUILD_NUMBER:-1.0.0-SNAPSHOT}
+      labels:
+        org.opencontainers.image.source: https://github.com/kazetsukaimiko/freedriver-web
     restart: unless-stopped
     environment:
       QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver
@@ -64,6 +69,8 @@ services:
       args:
         # Deploy writes this from the checkout SHA. Not a secret.
         SOURCE_COMMIT: ${SOURCE_COMMIT:-unknown}
+      labels:
+        org.opencontainers.image.source: https://github.com/kazetsukaimiko/freedriver-web
     pull_policy: build
     restart: unless-stopped
     command: start
@@ -112,6 +119,8 @@ services:
       dockerfile: sms/src/main/docker/Dockerfile.compose
       args:
         BUILD_NUMBER: ${BUILD_NUMBER:-1.0.0-SNAPSHOT}
+      labels:
+        org.opencontainers.image.source: https://github.com/kazetsukaimiko/freedriver-web
     pull_policy: build
     restart: unless-stopped
     # Twilio Verify credentials (#170), see docs/sms-otp.md.
@@ -199,6 +208,8 @@ services:
     # A read-only socket mount does not stop API calls.
     build:
       context: ./observability/docker-logs-proxy
+      labels:
+        org.opencontainers.image.source: https://github.com/kazetsukaimiko/freedriver-web
     restart: unless-stopped
     user: "0"
     read_only: true
@@ -268,6 +279,8 @@ services:
     build:
       context: ./scripts
       dockerfile: mosquitto-cert-sync.Dockerfile
+      labels:
+        org.opencontainers.image.source: https://github.com/kazetsukaimiko/freedriver-web
     restart: unless-stopped
     user: "0"
     pid: "service:mosquitto"

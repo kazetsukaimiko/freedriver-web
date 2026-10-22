@@ -72,9 +72,13 @@ The live command route is blocked on [#25](https://github.com/kazetsukaimiko/fre
 
 ## Deploy
 
-Push or merge to `main`, or run the **Deploy** workflow. GitHub Actions rsyncs this repo to `/opt/freedriver-web` and runs `docker compose --env-file /opt/freedriver-secrets/.env up -d` so `${VAR}` interpolation reads the secrets file, not a `.env` in the git tree.
+Push or merge to `main`, or run the **Deploy** workflow. The runner builds every image this compose file builds, pushes those images to GHCR, and only then pulls them on the VPS and rsyncs this repo to `/opt/freedriver-web`. A failed image build stops before that pull and before that rsync, so the VPS is left as it was. The VPS then runs `docker compose --env-file /opt/freedriver-secrets/.env -f docker-compose.yml -f docker-compose.ghcr.yml up -d --no-build` and does not build. `${VAR}` interpolation reads the secrets file, not a `.env` in the git tree.
 
-The compose image build compiles `mqtt-contract`, `mqtt`, and `mqtt-paho` from this repo (no GitHub Packages pin). Do not commit a PAT or pass a token as a Docker ARG/ENV.
+`docker-compose.ghcr.yml` holds the production image names. Local `docker compose` does not load it.
+
+Pull requests run the `prod-image` check: the full dashboard image from `java/dashboard/src/main/docker/Dockerfile.compose` with `--build-arg BUILD_NUMBER=ci`, the cert-sync image, and `docker compose config` against a dummy env file.
+
+The image build compiles `mqtt-contract`, `mqtt`, and `mqtt-paho` from this repo (no GitHub Packages pin). Do not commit a PAT or pass a token as a Docker ARG/ENV.
 
 ### Build number
 
@@ -82,9 +86,9 @@ A successful `main` deploy stamps `YEAR-MONTH_rBUILD_NUM` (UTC year-month + `git
 
 That string is:
 
-1. Written to `BUILD_NUMBER` (rsynced; not committed) and passed as the Compose `dashboard` build arg
-2. Baked into the image: Maven `versions:set` in the Docker builder (git POM stays `1.0.0-SNAPSHOT`) plus `-Dquarkus.application.version`
-3. Annotated-tagged on `GITHUB_SHA` **after** SSH deploy succeeds (not on PRs)
+1. Written to `BUILD_NUMBER` (rsynced; not committed), used as the GHCR image tag, and passed as the Compose build arg
+2. Baked into the image on the runner, before the VPS is contacted: Maven `versions:set` in the Docker builder (git POM stays `1.0.0-SNAPSHOT`) plus `-Dquarkus.application.version`
+3. Annotated-tagged on `GITHUB_SHA` **after** the VPS is up (not on PRs)
 4. Exposed for UX [#49](https://github.com/kazetsukaimiko/freedriver-web/issues/49) at public `GET /api/build` → `{"build":"2026-08_r45"}`
 
 Local `./mvnw` and Compose builds without `BUILD_NUMBER` report `1.0.0-SNAPSHOT`. Read the stamp from `/api/build` (or `quarkus.application.version`); do not put MQTT or port 8883 in webui.
