@@ -74,9 +74,8 @@ jobs:
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
             'bash -s' <<'REMOTE'
           set -euo pipefail
-          # The deploy account owns the rsync target and may sudo only
-          # /usr/bin/docker compose. Storage dirs are prepared on the host.
-          # Do not create or chown them, and do not touch Mosquitto data.
+          # The deploy account owns the rsync target. Passwordless sudo is
+          # /usr/bin/docker compose only. Storage directories are prepared on the host.
           for spec in \
             "472:472 /opt/freedriver-storage/grafana" \
             "10001:10001 /opt/freedriver-storage/loki" \
@@ -117,7 +116,7 @@ jobs:
             exit 1
           fi
           echo "Keycloak provider source commit: ${source_commit}"
-          # Stamp and source commit travel in this file. sudoers keeps setenv off.
+          # Stamp and source commit travel in this file. The sudoers rule passes no caller environment.
           umask 077
           printf 'BUILD_NUMBER=%s\nSOURCE_COMMIT=%s\n' "$build_number" "$source_commit" > .build-number.env
           # --build rebuilds every image, including keycloak (SPI jar and theme) and sms.

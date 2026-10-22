@@ -72,7 +72,7 @@ The live command route is blocked on [#25](https://github.com/kazetsukaimiko/fre
 
 ## Deploy
 
-Push or merge to `main`, or run the **Deploy** workflow. GitHub Actions rsyncs this repo to `/opt/freedriver-web` as the dedicated user in `DEPLOY_USER`. That account owns `/opt/freedriver-web`. It is not in the `docker` group and it cannot read `/opt/freedriver-secrets`. Passwordless sudo is only `/usr/bin/docker compose`, so Compose runs as root and can read `/opt/freedriver-secrets/.env`. The build stamp and the Keycloak provider source commit are passed in a second env file, `.build-number.env`, written on the host after rsync. Grafana, Loki, Prometheus, Mosquitto, and SMS storage directories must already exist with their expected owners. SMS stays mode `700`. The deploy checks that and does not create or chown them.
+Push or merge to `main`, or run the **Deploy** workflow. GitHub Actions rsyncs this repo to `/opt/freedriver-web` as the dedicated user in `DEPLOY_USER`. That account owns `/opt/freedriver-web`. Passwordless sudo is `/usr/bin/docker compose` only, so Compose runs as root and reads `/opt/freedriver-secrets/.env`. The build stamp and the Keycloak provider source commit travel in `.build-number.env`, written on the host after rsync. The deploy checks that the Grafana, Loki, Prometheus, Mosquitto, and SMS storage directories exist with their expected owners, and that SMS is mode `700`.
 
 The compose image build compiles `mqtt-contract`, `mqtt`, and `mqtt-paho` from this repo (no GitHub Packages pin). Do not commit a PAT or pass a token as a Docker ARG/ENV.
 
