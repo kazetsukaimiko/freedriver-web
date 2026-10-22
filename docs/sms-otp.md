@@ -52,7 +52,7 @@ Compose passes `SMS_OTP_SHARED_SECRET` from `/opt/freedriver-secrets/.env` to `s
 
 Compose also requires `FREEDRIVER_SMS_DAILY_SEND_CAP` from that file and passes it only to `sms`. There is no production default. `.env.example` holds the placeholder `20` and a comment. A missing cap stops sms at startup.
 
-The sms service mounts `/opt/freedriver-storage/sms` at `/deployments/data`. Deploy creates that directory and gives it to uid 185, the image user, so agreement records survive restarts. Deploy's `docker compose up -d --build` rebuilds the Keycloak image (the SPI jar and the login theme) along with sms.
+The sms service mounts `/opt/freedriver-storage/sms` at `/deployments/data`. Deploy creates that directory and gives it to uid 185, the image user, so agreement records survive restarts. Deploy builds the Keycloak image (the SPI jar and the login theme) and the sms image on the runner, then pulls them onto the VPS.
 
 The Twilio Verify credentials reach `sms` only, from `/opt/freedriver-secrets/twilio-verify.env` through a required `env_file` ([#170](https://github.com/kazetsukaimiko/freedriver-web/issues/170)). The variables are `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET` and `TWILIO_VERIFY_SERVICE_SID`. Sysadmin writes the file, `root:lonewatt-techops` mode 640. Placeholders: `secrets/twilio-verify.env.example`.
 
