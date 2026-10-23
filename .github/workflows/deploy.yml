@@ -162,12 +162,16 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
-      # First contact with the VPS: pull the images. Rsync is the next step.
+      # First contact with the VPS: pull the images. The live tree is rsynced next.
+      # The deploy account is not in the docker group. Passwordless sudo is
+      # /usr/bin/docker compose only, so that account's client cannot pull.
+      # Stage outside the live tree. A failed pull leaves the live tree unchanged.
+      # The job token stays on the runner. These GHCR packages are public, and
+      # root's compose has no separate registry login.
       - name: Pull images on the VPS
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           if [ ! -f "$RUNNER_TEMP/freedriver-images-pushed" ]; then
@@ -178,24 +182,61 @@ jobs:
             echo "image list is empty; refusing to contact the VPS"
             exit 1
           fi
-          if [ -z "${GHCR_TOKEN}" ]; then
-            echo "GITHUB_TOKEN is empty; refusing to contact the VPS"
+          if [ -z "${NEW_VERSION}" ]; then
+            echo "NEW_VERSION is empty; refusing to contact the VPS"
             exit 1
           fi
-          pulls=""
-          while IFS= read -r image; do
-            [ -n "$image" ] || continue
-            pulls="${pulls}docker pull $(printf '%q' "$image")"$'\n'
-          done < "$RUNNER_TEMP/freedriver-images.txt"
-          # The job token is the docker password on stdin. logout runs on exit.
+          if [[ ! "$NEW_VERSION" =~ ^[0-9]{4}-[0-9]{2}_r[0-9]+$ ]]; then
+            echo "NEW_VERSION is not a deploy stamp"
+            exit 1
+          fi
+          if [[ ! "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "GITHUB_SHA is not a git sha"
+            exit 1
+          fi
+          stage_dir="$(ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            'printf %s "$HOME/deploy-stage"')"
+          if [[ ! "$stage_dir" =~ ^/[A-Za-z0-9._/-]+/deploy-stage$ ]] || [[ "$stage_dir" == *..* ]]; then
+            echo "staging path is not an absolute deploy-stage directory"
+            exit 1
+          fi
           ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "bash -s" <<EOF
+            "mkdir -p -m 700 $(printf '%q' "$stage_dir") && chmod 700 $(printf '%q' "$stage_dir")"
+          rsync -az --delete \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            -e "ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes" \
+            ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${stage_dir}/"
+          ssh -i ~/.ssh/deploy -o IdentitiesOnly=yes \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "bash -s -- $(printf '%q' "$NEW_VERSION") $(printf '%q' "$GITHUB_SHA")" <<'REMOTE'
           set -euo pipefail
-          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
-          printf '%s\n' $(printf '%q' "$GHCR_TOKEN") | docker login ghcr.io -u $(printf '%q' "$GITHUB_ACTOR") --password-stdin
-          ${pulls}
-          EOF
+          build_number="$1"
+          source_commit="$2"
+          if [[ ! "$build_number" =~ ^[0-9]{4}-[0-9]{2}_r[0-9]+$ ]]; then
+            echo "BUILD_NUMBER is not a deploy stamp"
+            exit 1
+          fi
+          if [[ ! "$source_commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "SOURCE_COMMIT is not a git sha"
+            exit 1
+          fi
+          cd "$HOME/deploy-stage"
+          if [ ! -f docker-compose.ghcr.yml ]; then
+            echo "missing docker-compose.ghcr.yml; refusing to pull on the VPS"
+            exit 1
+          fi
+          umask 077
+          printf 'BUILD_NUMBER=%s\nSOURCE_COMMIT=%s\n' "$build_number" "$source_commit" > .build-number.env
+          # Pull every service image, including tags already present. Do not start containers.
+          sudo -n /usr/bin/docker compose \
+            --env-file /opt/freedriver-secrets/.env \
+            --env-file .build-number.env \
+            -f docker-compose.yml -f docker-compose.ghcr.yml \
+            pull --policy always
+          REMOTE
           touch "$RUNNER_TEMP/freedriver-images-pulled"
 
       - name: Rsync and start containers
