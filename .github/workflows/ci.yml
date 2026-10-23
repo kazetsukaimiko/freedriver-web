@@ -25,15 +25,44 @@ jobs:
         with:
           distribution: temurin
           java-version: "23"
-          cache: maven
           server-id: github
           server-username: GITHUB_ACTOR
           server-password: GITHUB_TOKEN
 
+      # setup-java cache: maven saves at the end of every job, including a pull
+      # request, and that post step is not the test result. Restore here instead.
+      # The Packages credential is written to ~/.m2/settings.xml, which is not a
+      # cached path. A miss or a cache-service error does not fail the job.
+      - name: Restore Maven repository and build cache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.m2/wrapper
+            ~/.m2/build-cache
+          key: freedriver-maven-v1-${{ github.sha }}
+          restore-keys: |
+            freedriver-maven-v1-
+
       - name: Tests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./mvnw -B test
+        run: |
+          set -euo pipefail
+          # Only a push to the default branch may record a successful test.
+          # A pull request does not write that record. pull_request_target is
+          # not a trigger of this workflow; the same condition would refuse it.
+          skip_save=true
+          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            skip_save=false
+          fi
+          echo "maven build cache skipSave=${skip_save}"
+          ./mvnw -B test \
+            -Dmaven.build.cache.enabled=true \
+            -Dmaven.build.cache.remote.enabled=false \
+            -Dmaven.build.cache.remote.save.enabled=false \
+            -Dmaven.build.cache.skipSave="${skip_save}"
 
       - name: Mosquitto ACL template is not the live compose mount
         run: |
@@ -190,12 +219,88 @@ jobs:
 
       - name: Keycloak SMS OTP SPI tests
         run: |
-          ./mvnw -B -C -pl sms-client -am package -DskipTests
-          ./mvnw -B -C -pl sms-client -am install -DskipTests
-          ./mvnw -B -f keycloak/sms-otp-spi/pom.xml -Dsource.commit=ci package
+          set -euo pipefail
+          skip_save=true
+          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            skip_save=false
+          fi
+          # package/install skip tests. Do not let that replace a green test entry.
+          ./mvnw -B -C -pl sms-client -am package -DskipTests \
+            -Dmaven.build.cache.enabled=true \
+            -Dmaven.build.cache.remote.enabled=false \
+            -Dmaven.build.cache.remote.save.enabled=false \
+            -Dmaven.build.cache.skipSave=true
+          ./mvnw -B -C -pl sms-client -am install -DskipTests \
+            -Dmaven.build.cache.enabled=true \
+            -Dmaven.build.cache.remote.enabled=false \
+            -Dmaven.build.cache.remote.save.enabled=false \
+            -Dmaven.build.cache.skipSave=true
+          ./mvnw -B -f keycloak/sms-otp-spi/pom.xml -Dsource.commit=ci package \
+            -Dmaven.build.cache.enabled=true \
+            -Dmaven.build.cache.remote.enabled=false \
+            -Dmaven.build.cache.remote.save.enabled=false \
+            -Dmaven.build.cache.skipSave="${skip_save}"
           ./scripts/check-sms-otp-provider-jar.sh \
             keycloak/sms-otp-spi/target/freedriver-sms-otp-spi-1.0.0-SNAPSHOT.jar \
             ci
+
+      - name: Maven cache does not contain the Packages credential
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          token = os.environ["GITHUB_TOKEN"].encode()
+          home = Path.home()
+          roots = [
+              home / ".m2" / "repository",
+              home / ".m2" / "wrapper",
+              home / ".m2" / "build-cache",
+          ]
+          settings = home / ".m2" / "settings.xml"
+          for root in roots:
+              if not root.exists():
+                  continue
+              if settings.exists():
+                  try:
+                      settings.resolve().relative_to(root.resolve())
+                  except ValueError:
+                      pass
+                  else:
+                      raise SystemExit(f"settings.xml is inside {root.name}")
+              for path in root.rglob("*"):
+                  if not path.is_file() or path.is_symlink():
+                      continue
+                  previous = b""
+                  with path.open("rb") as handle:
+                      while True:
+                          chunk = handle.read(1024 * 1024)
+                          if not chunk:
+                              break
+                          if token in previous + chunk:
+                              raise SystemExit(
+                                  f"Packages credential was written into the Maven cache ({path.name})"
+                              )
+                          previous = chunk[-(len(token) - 1) :] if len(token) > 1 else b""
+          print("Maven cache paths do not contain the Packages credential or settings.xml")
+          PY
+
+      # Save is separate from restore so a pull request cannot write the cache
+      # the default branch restores. Failure to save does not change the test result.
+      - name: Save Maven repository and build cache
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.m2/wrapper
+            ~/.m2/build-cache
+          key: freedriver-maven-v1-${{ github.sha }}
 
       - name: VPS image must not bake a Packages token
         run: |
@@ -221,12 +326,19 @@ jobs:
           MONTH="$(date -u +%m)"
           NEW_VERSION="${YEAR}-${MONTH}_r${{ github.run_number }}"
           echo "Publishing freedriver-mqtt-contract as ${NEW_VERSION}"
+          # Version rewrite and deploy are not a test result. Do not cache them.
           ./mvnw -B --no-transfer-progress \
+            -Dmaven.build.cache.enabled=false \
+            -Dmaven.build.cache.remote.enabled=false \
+            -Dmaven.build.cache.remote.save.enabled=false \
             org.codehaus.mojo:versions-maven-plugin:2.21.0:set \
             -DnewVersion="${NEW_VERSION}" \
             -DgenerateBackupPoms=false \
             -DprocessAllModules=true
-          ./mvnw -B --no-transfer-progress -pl mqtt-contract -am deploy -DskipTests
+          ./mvnw -B --no-transfer-progress -pl mqtt-contract -am deploy -DskipTests \
+            -Dmaven.build.cache.enabled=false \
+            -Dmaven.build.cache.remote.enabled=false \
+            -Dmaven.build.cache.remote.save.enabled=false
 
   webui:
     runs-on: ubuntu-latest
