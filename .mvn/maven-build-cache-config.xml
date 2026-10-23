@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cache xmlns="http://maven.apache.org/BUILD-CACHE-CONFIG/1.2.0"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://maven.apache.org/BUILD-CACHE-CONFIG/1.2.0 https://maven.apache.org/xsd/build-cache-config-1.2.0.xsd">
+  <configuration>
+    <!-- Off unless CI passes -Dmaven.build.cache.enabled=true. -->
+    <enabled>false</enabled>
+    <hashAlgorithm>SHA-256</hashAlgorithm>
+    <validateXml>true</validateXml>
+    <!-- No remote cache. Pull requests and main must not share one. -->
+    <remote enabled="false" saveToRemote="false"/>
+    <local>
+      <maxBuildsCached>3</maxBuildsCached>
+    </local>
+  </configuration>
+  <input>
+    <global>
+      <!--
+        Sources, resources, and test resources are already in the default scan.
+        These paths are the rest of the module key. A missing relative path is
+        ignored, so each module picks up the ancestor that exists at its depth.
+        Reactor dependencies are part of the key through the extension's
+        dependency checksum, which includes that module's own key.
+      -->
+      <includes>
+        <include>pom.xml</include>
+        <include>../pom.xml</include>
+        <include>../../pom.xml</include>
+        <include>../bom/pom.xml</include>
+        <include>../../java/bom/pom.xml</include>
+        <include>../mvnw</include>
+        <include>../../mvnw</include>
+        <include>../.mvn/wrapper/maven-wrapper.properties</include>
+        <include>../../.mvn/wrapper/maven-wrapper.properties</include>
+        <include>../.mvn/extensions.xml</include>
+        <include>../../.mvn/extensions.xml</include>
+        <include>../.mvn/maven-build-cache-config.xml</include>
+        <include>../../.mvn/maven-build-cache-config.xml</include>
+        <include>../.github/workflows/ci.yml</include>
+        <include>../../.github/workflows/ci.yml</include>
+      </includes>
+      <excludes>
+        <exclude>target</exclude>
+      </excludes>
+    </global>
+  </input>
+  <executionControl>
+    <reconcile>
+      <plugins>
+        <!-- A cached run that skipped tests or ignored failures is not a successful test. -->
+        <plugin artifactId="maven-surefire-plugin" goal="test">
+          <reconciles>
+            <reconcile propertyName="skip" skipValue="true"/>
+            <reconcile propertyName="skipExec" skipValue="true"/>
+            <reconcile propertyName="skipTests" skipValue="true"/>
+            <reconcile propertyName="testFailureIgnore" skipValue="true"/>
+          </reconciles>
+        </plugin>
+      </plugins>
+    </reconcile>
+  </executionControl>
+</cache>
