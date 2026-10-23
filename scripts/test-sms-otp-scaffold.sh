@@ -294,6 +294,15 @@ for mark in marks:
     positions.append(at)
 if positions != sorted(positions):
     raise SystemExit("deploy must build, push, and pull before rsync")
+pull = text.split("Pull images on the VPS", 1)[1].split("Rsync and start containers", 1)[0]
+if "docker pull" in pull or "docker login" in pull:
+    raise SystemExit("deploy must pull with compose, not the account docker client")
+if "pull --policy always" not in pull:
+    raise SystemExit("deploy must pull with compose --policy always")
+if "deploy-stage" not in pull:
+    raise SystemExit("deploy must stage the pull outside the live tree")
+if "/opt/freedriver-web/" in pull:
+    raise SystemExit("the pull step must not rsync the live tree")
 for line in text.splitlines():
     if "--build" in line and "--no-build" not in line:
         raise SystemExit("deploy must not build images on the VPS")
