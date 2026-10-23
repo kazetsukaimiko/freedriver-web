@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
 import { SIGN_OUT_PATH, apiFetch } from './api'
 import { Brand } from './Brand'
 import { BuildStamp } from './BuildStamp'
@@ -20,6 +20,16 @@ const pages = new Map<string, Page>([
   [CHANGELOG_PATH, 'changelog'],
   [PHONES_PATH, 'phones'],
 ])
+
+type PrimaryItem = { to: string; label: string; page: Page }
+
+function primaryNavItems(portalAdmin: boolean): PrimaryItem[] {
+  const items: PrimaryItem[] = [{ to: '/', label: 'Dashboard', page: 'dashboard' }]
+  if (portalAdmin) {
+    items.push({ to: PHONES_PATH, label: 'Phone sign-in', page: 'phones' })
+  }
+  return items
+}
 const SPLASH_KEY = 'freedriver.splash.seen'
 
 function shouldPlaySplash() {
@@ -70,7 +80,11 @@ function App() {
   const [search, setSearch] = useState(() => window.location.search)
   const [signingOut, setSigningOut] = useState(false)
   const [portalAdmin, setPortalAdmin] = useState(false)
+  const [navOpen, setNavOpen] = useState(false)
   const navBrand = useRef<HTMLAnchorElement>(null)
+  const navMenu = useRef<HTMLDivElement>(null)
+  const navButton = useRef<HTMLButtonElement>(null)
+  const navMenuId = useId()
 
   useEffect(() => {
     if (splash === 'playing') {
@@ -137,10 +151,37 @@ function App() {
     const onPop = () => {
       setPath(window.location.pathname)
       setSearch(window.location.search)
+      setNavOpen(false)
     }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
+
+  useEffect(() => {
+    if (!navOpen) {
+      return
+    }
+    const menu = navMenu.current
+    function onPointerDown(event: PointerEvent) {
+      if (menu?.contains(event.target as Node)) {
+        return
+      }
+      setNavOpen(false)
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') {
+        return
+      }
+      setNavOpen(false)
+      navButton.current?.focus()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [navOpen])
 
   useEffect(() => {
     if (!signingOut) {
@@ -158,9 +199,13 @@ function App() {
 
   const page: Page = pages.get(path) ?? 'not-found'
   const hrefFor = (to: string) => to + search
+  const primaryNav = primaryNavItems(portalAdmin)
+  const currentPrimary = primaryNav.find((item) => item.page === page)
+  const menuLabel = currentPrimary?.label ?? 'Menu'
 
   function go(event: MouseEvent<HTMLAnchorElement>, to: string) {
     event.preventDefault()
+    setNavOpen(false)
     const next = hrefFor(to)
     if (window.location.pathname === to && window.location.search === search) {
       return
@@ -189,22 +234,33 @@ function App() {
           <Brand />
         </a>
         <nav aria-label="Primary">
-          <a
-            className={page === 'dashboard' ? 'nav-item is-current' : 'nav-item'}
-            href={hrefFor('/')}
-            onClick={(event) => go(event, '/')}
-          >
-            Dashboard
-          </a>
-          {portalAdmin && (
-            <a
-              className={page === 'phones' ? 'nav-item is-current' : 'nav-item'}
-              href={hrefFor(PHONES_PATH)}
-              onClick={(event) => go(event, PHONES_PATH)}
+          <div className="nav-menu" ref={navMenu}>
+            <button
+              ref={navButton}
+              type="button"
+              className="nav-menu-button"
+              aria-expanded={navOpen}
+              aria-controls={navMenuId}
+              data-current={currentPrimary ? 'true' : 'false'}
+              onClick={() => setNavOpen((open) => !open)}
             >
-              Phone sign-in
-            </a>
-          )}
+              {menuLabel}
+              <span className="nav-menu-caret" aria-hidden="true" />
+            </button>
+            <div id={navMenuId} className="nav-menu-list" hidden={!navOpen}>
+              {primaryNav.map((item) => (
+                <a
+                  key={item.to}
+                  className={item.page === page ? 'nav-item is-current' : 'nav-item'}
+                  href={hrefFor(item.to)}
+                  aria-current={item.page === page ? 'page' : undefined}
+                  onClick={(event) => go(event, item.to)}
+                >
+                  {item.label}
+                </a>
+              ))}
+            </div>
+          </div>
         </nav>
         <a
           className="sign-out"
