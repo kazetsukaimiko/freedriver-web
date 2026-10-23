@@ -72,7 +72,7 @@ The live command route is blocked on [#25](https://github.com/kazetsukaimiko/fre
 
 ## Deploy
 
-Push or merge to `main`, or run the **Deploy** workflow. The runner builds every image this compose file builds, pushes those images to GHCR, and only then pulls them on the VPS and rsyncs this repo to `/opt/freedriver-web`. A failed image build stops before that pull and before that rsync, so the VPS is left as it was. The VPS then runs `docker compose --env-file /opt/freedriver-secrets/.env -f docker-compose.yml -f docker-compose.ghcr.yml up -d --no-build`. `${VAR}` interpolation reads the secrets file, not a `.env` in the git tree.
+Push or merge to `main`, or run the **Deploy** workflow. The runner builds every image this compose file builds, pushes those images to GHCR, and only then pulls them on the VPS and rsyncs this repo to `/opt/freedriver-web` as the dedicated user in `DEPLOY_USER`. A failed image build stops before that pull and before that rsync, so the VPS is left as it was. That account owns `/opt/freedriver-web`. Passwordless sudo is `/usr/bin/docker compose` only, so Compose runs as root and reads `/opt/freedriver-secrets/.env`. The VPS then runs `sudo /usr/bin/docker compose --env-file /opt/freedriver-secrets/.env --env-file .build-number.env -f docker-compose.yml -f docker-compose.ghcr.yml up -d --no-build`. The build stamp and the Keycloak provider source commit travel in `.build-number.env`, written on the host after rsync. The deploy checks that the Grafana, Loki, Prometheus, Mosquitto, and SMS storage directories exist with their expected owners, and that SMS is mode `700`. `${VAR}` interpolation reads the secrets file, not a `.env` in the git tree.
 
 `docker-compose.ghcr.yml` holds the production image names.
 

@@ -269,11 +269,11 @@ fi
 if ! grep -q 'java/pom.xml' sms/src/main/docker/Dockerfile.compose; then
   fail "sms image build must see the reactor poms"
 fi
-if ! grep -q 'mkdir -p /opt/freedriver-storage/grafana /opt/freedriver-storage/loki /opt/freedriver-storage/prometheus /opt/freedriver-storage/mosquitto /opt/freedriver-storage/sms' .github/workflows/deploy.yml; then
-  fail "deploy must mkdir the sms data directory"
+if ! grep -q '185:0 /opt/freedriver-storage/sms' .github/workflows/deploy.yml; then
+  fail "deploy must check the sms data directory owner"
 fi
-if ! grep -q 'chown 185:0 /opt/freedriver-storage/sms' .github/workflows/deploy.yml; then
-  fail "deploy must give the sms data directory to uid 185"
+if ! grep -q 'Storage mode for /opt/freedriver-storage/sms' .github/workflows/deploy.yml; then
+  fail "deploy must check the sms data directory mode"
 fi
 python3 - <<'PY'
 from pathlib import Path
