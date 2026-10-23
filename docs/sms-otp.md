@@ -86,7 +86,7 @@ The send step saves the normalized E.164 phone as a server-side auth note. Verif
 
 After that match, the SPI finds users by the `phone` attribute and signs in only when exactly one of them passes `PhoneSignInPolicy`: enabled, the attribute normalized like the typed number equals the verified number, and a direct member of the top-level group `phone-sign-in`. No match, more than one match, a policy refusal, or a lookup error is a wrong code.
 
-`PhoneSignInPolicy` still refuses a user whose effective roles (direct, group and composite) include a realm or client role named `portal-admin` or any `realm-management` client role, and refuses on any lookup error. Those privileged accounts sign in with the password flow and its MFA ([#27](https://github.com/kazetsukaimiko/freedriver-web/issues/27)). The sign-in page shows that outcome as a wrong code.
+That allow covers every role the user holds: `portal-admin`, a `realm-management` client role, a role from a group or a composite, and a client role whose client cannot be read. A lookup error refuses, and the sign-in page shows that outcome as a wrong code.
 
 ## Techops steps
 

@@ -59,8 +59,7 @@ public final class SmsOtpAuthenticatorFactory implements AuthenticatorFactory {
     public String getHelpText() {
         return "Phone + SMS code via http://sms:8080 using SMS_OTP_SHARED_SECRET. "
                 + "Runs as an Alternative beside the password form. "
-                + "Signs in members of the phone-sign-in group whose phone attribute matches "
-                + "and who hold no portal-admin or realm-management role.";
+                + "Signs in members of the phone-sign-in group whose phone attribute matches.";
     }
 
     @Override

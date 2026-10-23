@@ -1,27 +1,21 @@
 package io.freedriver.keycloak.sms;
 
-import org.keycloak.models.ClientModel;
-import org.keycloak.models.Constants;
 import org.keycloak.models.GroupModel;
-import org.keycloak.models.RoleModel;
 import org.keycloak.models.UserModel;
-import org.keycloak.models.utils.RoleUtils;
 
 import java.util.regex.Pattern;
 
 /**
  * Account checks that run after sms verifies a code. Phone sign-in succeeds for an
  * enabled user whose {@code phone} attribute equals the verified number and who is a
- * direct member of the top-level group {@code phone-sign-in}. It denies a user whose
- * effective roles (direct, group and composite) include a realm or client role named
- * {@code portal-admin} or any {@code realm-management} client role, and it denies on
- * any exception during the lookup.
+ * direct member of the top-level group {@code phone-sign-in}, including when
+ * that user holds {@code portal-admin} or a {@code realm-management} role.
+ * Any exception during the lookup denies.
  */
 final class PhoneSignInPolicy {
 
     static final String PHONE_ATTRIBUTE = "phone";
     static final String GROUP = "phone-sign-in";
-    static final String PORTAL_ADMIN = "portal-admin";
 
     private static final Pattern PHONE = Pattern.compile("^\\+[1-9][0-9]{7,14}$");
     private static final Pattern SEPARATORS = Pattern.compile("[\\s().-]");
@@ -46,10 +40,7 @@ final class PhoneSignInPolicy {
             if (!validPhone(phone) || !phone.equals(normalizePhone(verifiedPhone))) {
                 return false;
             }
-            if (user.getGroupsStream().noneMatch(PhoneSignInPolicy::isSignInGroup)) {
-                return false;
-            }
-            return RoleUtils.getDeepUserRoleMappings(user).stream().noneMatch(PhoneSignInPolicy::privileged);
+            return user.getGroupsStream().anyMatch(PhoneSignInPolicy::isSignInGroup);
         } catch (RuntimeException ex) {
             return false;
         }
@@ -57,25 +48,5 @@ final class PhoneSignInPolicy {
 
     private static boolean isSignInGroup(GroupModel group) {
         return GROUP.equals(group.getName()) && group.getParentId() == null;
-    }
-
-    static boolean holdsAdminRole(UserModel user) {
-        try {
-            return RoleUtils.getDeepUserRoleMappings(user).stream().anyMatch(PhoneSignInPolicy::privileged);
-        } catch (RuntimeException ex) {
-            return true;
-        }
-    }
-
-    static boolean privileged(RoleModel role) {
-        if (PORTAL_ADMIN.equals(role.getName())) {
-            return true;
-        }
-        if (!role.isClientRole()) {
-            return false;
-        }
-        // A client role with an unreadable client counts as privileged.
-        return !(role.getContainer() instanceof ClientModel client)
-                || Constants.REALM_MANAGEMENT_CLIENT_ID.equals(client.getClientId());
     }
 }

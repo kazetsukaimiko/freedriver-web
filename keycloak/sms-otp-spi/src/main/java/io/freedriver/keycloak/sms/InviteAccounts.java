@@ -1,5 +1,7 @@
 package io.freedriver.keycloak.sms;
 
+import org.keycloak.models.ClientModel;
+import org.keycloak.models.Constants;
 import org.keycloak.models.GroupModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -22,6 +24,7 @@ final class InviteAccounts {
 
     static final String PHONE = "phone";
     static final String GROUP = "phone-sign-in";
+    private static final String PORTAL_ADMIN = "portal-admin";
 
     private static final Logger LOG = Logger.getLogger(InviteAccounts.class.getName());
 
@@ -75,7 +78,7 @@ final class InviteAccounts {
         if (user == null || !user.isEnabled() || !phone.equals(user.getFirstAttribute(PHONE))) {
             return false;
         }
-        if (PhoneSignInPolicy.holdsAdminRole(user)) {
+        if (holdsAdminRole(user)) {
             return false;
         }
         return user.getGroupsStream().allMatch(group -> isSignInGroup(group) || GROUP.equals(group.getName())
@@ -94,7 +97,7 @@ final class InviteAccounts {
                 .toList();
         List<String> adminRoles = new ArrayList<>();
         for (RoleModel role : RoleUtils.getDeepUserRoleMappings(user)) {
-            if (PhoneSignInPolicy.privileged(role)) {
+            if (privileged(role)) {
                 adminRoles.add(role.getName());
             }
         }
@@ -114,6 +117,26 @@ final class InviteAccounts {
             }
         }
         throw new InviteAccountException(503);
+    }
+
+    private static boolean holdsAdminRole(UserModel user) {
+        try {
+            return RoleUtils.getDeepUserRoleMappings(user).stream().anyMatch(InviteAccounts::privileged);
+        } catch (RuntimeException ex) {
+            return true;
+        }
+    }
+
+    private static boolean privileged(RoleModel role) {
+        if (PORTAL_ADMIN.equals(role.getName())) {
+            return true;
+        }
+        if (!role.isClientRole()) {
+            return false;
+        }
+        // A client role with an unreadable client counts as privileged.
+        return !(role.getContainer() instanceof ClientModel client)
+                || Constants.REALM_MANAGEMENT_CLIENT_ID.equals(client.getClientId());
     }
 
     /** At most the last four digits. */
