@@ -71,7 +71,7 @@ class PhoneSignInPolicyTest {
     }
 
     @Test
-    void allowsMatchingPhoneGroupMemberWithoutAdminRoles() {
+    void allowsMatchingPhoneGroupMember() {
         assertTrue(PhoneSignInPolicy.allows(user, PHONE));
     }
 
@@ -127,60 +127,60 @@ class PhoneSignInPolicyTest {
     }
 
     @Test
-    void deniesPortalAdminRealmRole() {
+    void allowsPortalAdminRealmRole() {
         roles.add(realmRole("portal-admin"));
-        assertFalse(PhoneSignInPolicy.allows(user, PHONE));
+        assertTrue(PhoneSignInPolicy.allows(user, PHONE));
     }
 
     @Test
-    void deniesPortalAdminClientRole() {
+    void allowsPortalAdminClientRole() {
         roles.add(clientRole("portal-admin", client("freedriver-api")));
-        assertFalse(PhoneSignInPolicy.allows(user, PHONE));
+        assertTrue(PhoneSignInPolicy.allows(user, PHONE));
     }
 
     @Test
-    void deniesAnyRealmManagementClientRole() {
+    void allowsAnyRealmManagementClientRole() {
         roles.add(clientRole("view-users", client("realm-management")));
-        assertFalse(PhoneSignInPolicy.allows(user, PHONE));
+        assertTrue(PhoneSignInPolicy.allows(user, PHONE));
     }
 
     @Test
-    void deniesPortalAdminHeldThroughAGroup() {
+    void allowsPortalAdminHeldThroughAGroup() {
         GroupModel admins = group("admins", null);
         RoleModel portalAdmin = realmRole("portal-admin");
         when(admins.getRoleMappingsStream()).thenAnswer(inv -> Stream.of(portalAdmin));
         groups.add(admins);
-        assertFalse(PhoneSignInPolicy.allows(user, PHONE));
+        assertTrue(PhoneSignInPolicy.allows(user, PHONE));
     }
 
     @Test
-    void deniesRealmManagementHeldThroughAComposite() {
+    void allowsRealmManagementHeldThroughAComposite() {
         RoleModel composite = realmRole("house-plus");
         RoleModel manageUsers = clientRole("manage-users", client("realm-management"));
         when(composite.isComposite()).thenReturn(true);
         when(composite.getCompositesStream()).thenAnswer(inv -> Stream.of(manageUsers));
         roles.add(composite);
-        assertFalse(PhoneSignInPolicy.allows(user, PHONE));
+        assertTrue(PhoneSignInPolicy.allows(user, PHONE));
     }
 
     @Test
-    void deniesClientRoleWithUnreadableClient() {
+    void allowsClientRoleWithUnreadableClient() {
         RoleModel orphan = mock(RoleModel.class);
         when(orphan.getName()).thenReturn("something");
         when(orphan.isClientRole()).thenReturn(true);
         when(orphan.getContainer()).thenReturn(null);
         roles.add(orphan);
-        assertFalse(PhoneSignInPolicy.allows(user, PHONE));
+        assertTrue(PhoneSignInPolicy.allows(user, PHONE));
     }
 
     @Test
-    void deniesWhenAnyLookupThrows() {
+    void deniesWhenGroupOrPhoneLookupThrows() {
         when(user.getGroupsStream()).thenThrow(new IllegalStateException("store down"));
         assertFalse(PhoneSignInPolicy.allows(user, PHONE));
 
         allowedUser();
         when(user.getRoleMappingsStream()).thenThrow(new IllegalStateException("store down"));
-        assertFalse(PhoneSignInPolicy.allows(user, PHONE));
+        assertTrue(PhoneSignInPolicy.allows(user, PHONE));
 
         allowedUser();
         when(user.getFirstAttribute("phone")).thenThrow(new IllegalStateException("store down"));
