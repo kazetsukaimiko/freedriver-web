@@ -68,7 +68,7 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
 | `/opt/freedriver-secrets/mosquitto/server.key` | Public listener key (mode 0600, owner 1883) |
 | `/opt/freedriver-secrets/mosquitto/internal.crt` | Unpublished listener leaf (`DNS:mosquitto` only) |
 | `/opt/freedriver-secrets/mosquitto/internal.key` | Unpublished listener key (mode 0600, owner 1883) |
-| `/opt/freedriver-secrets/mqtt-internal/ca.crt` | Internal CA certificate that signed `internal.crt`. The CA private key is not kept. This path is not mounted into the API here. |
+| `/opt/freedriver-secrets/mqtt-internal/ca.crt` | Internal CA certificate that signed `internal.crt`. The CA private key is not kept. The dashboard mounts this file read-only. |
 
 ## Topics and ACL
 
