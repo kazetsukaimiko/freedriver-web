@@ -47,8 +47,8 @@ services:
     # of the secrets directory. 1883 is the acl group and 1001 is the api.pass
     # group, so uid 185 can read those two mode 770 files.
     group_add:
-      - "1883"
-      - "1001"
+      - 1883
+      - 1001
     volumes:
       - /opt/freedriver-storage/invites:/deployments/data/invites
       - /opt/freedriver-secrets/mqtt-internal/ca.crt:/opt/freedriver-secrets/mqtt-internal/ca.crt:ro

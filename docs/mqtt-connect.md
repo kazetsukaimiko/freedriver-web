@@ -91,7 +91,7 @@ Run the issuer on the VPS before the broker restarts onto the two-listener confi
 
 ## Quarkus
 
-On the compose network, Quarkus connects to hostname `mosquitto` port 8883. That socket presents `DNS:mosquitto`, not the public Let's Encrypt leaf. `mqtt.freedriver.io:8883` is the name for public and home clients. Prod mounts `/opt/freedriver-secrets/mqtt-internal/ca.crt` into the API and does not turn `freedriver.appliances.live-commands` on. Instance ids come from `FREEDRIVER_MQTT_INSTANCE_IDS` when that is set. When it is blank, prod reads them from the host ACL `/opt/freedriver-secrets/mosquitto/acl` (`freedriver/v1/<uuid>/appliances` lines only). Password is `FREEDRIVER_MQTT_API_PASSWORD` when that is set, otherwise `/opt/freedriver-secrets/mosquitto/api.pass`. The id and the password stay in those host files. They are not in git.
+On the compose network, Quarkus connects to hostname `mosquitto` port 8883. That socket presents `DNS:mosquitto`, not the public Let's Encrypt leaf. `mqtt.freedriver.io:8883` is the name for public and home clients. Prod mounts `/opt/freedriver-secrets/mqtt-internal/ca.crt` into the API. Instance ids come from `FREEDRIVER_MQTT_INSTANCE_IDS` when that is set, otherwise from `freedriver/v1/<uuid>/appliances` lines in `/opt/freedriver-secrets/mosquitto/acl`. Password is `FREEDRIVER_MQTT_API_PASSWORD` when that is set, otherwise `/opt/freedriver-secrets/mosquitto/api.pass`.
 
 Compose injects OIDC on the `dashboard` service only (not the image, not the SPA):
 

@@ -114,7 +114,7 @@ freedriver.appliances.mock=false
 freedriver.appliances.live-commands=false
 ```
 
-Sign-in is on. The practice list is off. The signed-in dashboard shows broker state for the instance ids in `/opt/freedriver-secrets/mosquitto/acl`. The api password is `/opt/freedriver-secrets/mosquitto/api.pass`. Neither value is in git. `live-commands` stays false, so the portal subscribes to state and does not publish commands.
+Sign-in is on. Host-file precedence for that state is in [mqtt-connect.md](mqtt-connect.md#quarkus).
 
 `./mvnw -pl java/dashboard -am quarkus:dev` runs **mock-autonomy** in-process on the same `ApplianceControl` bus (`%dev`): `/api/hello` and `/api/health` return 200, and `/api/appliances` serves the mock event source (one Cabin instance, six named appliances).
 
