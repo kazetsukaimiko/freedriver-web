@@ -26,8 +26,10 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Live MQTT adapter on the same CDI bus as {@link MockAutonomy}.
- * Connects and subscribes to appliance state when {@code freedriver.mqtt.instance-ids} is set.
- * Command publishing stays behind {@code live-commands}. Logs on {@code io.freedriver.mqtt}.
+ * Connects and subscribes to appliance state when instance ids are set, from
+ * {@code freedriver.mqtt.instance-ids} or the host file behind it.
+ * Command publishing stays behind {@code live-commands}. A failed state connection
+ * does not stop the portal. Logs on {@code io.freedriver.mqtt}.
  */
 @ApplicationScoped
 public class MqttLiveClient {
@@ -82,7 +84,10 @@ public class MqttLiveClient {
             }
         } catch (RuntimeException e) {
             stop();
-            throw e;
+            if (appliances.liveCommands()) {
+                throw e;
+            }
+            MqttLog.connectFailed();
         }
     }
 

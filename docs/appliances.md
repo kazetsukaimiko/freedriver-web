@@ -96,7 +96,7 @@ Map and command are fail-closed (status table above). CSRF protection is the `X-
 
 ## Production safety
 
-Default / prod properties:
+Default profile:
 
 ```
 freedriver.appliances.enabled=false
@@ -106,7 +106,15 @@ quarkus.oidc.enabled=false
 %prod.quarkus.oidc.enabled=true
 ```
 
-With sign-in on, the appliances API still returns 404 in prod and sends nothing to the house. The two appliance flags change only after #27 closes.
+Prod profile (`application-prod.properties`):
+
+```
+freedriver.appliances.enabled=true
+freedriver.appliances.mock=false
+freedriver.appliances.live-commands=false
+```
+
+Sign-in is on. Host-file precedence for that state is in [mqtt-connect.md](mqtt-connect.md#quarkus).
 
 `./mvnw -pl java/dashboard -am quarkus:dev` runs **mock-autonomy** in-process on the same `ApplianceControl` bus (`%dev`): `/api/hello` and `/api/health` return 200, and `/api/appliances` serves the mock event source (one Cabin instance, six named appliances).
 
@@ -118,7 +126,7 @@ Authorization stays **on** in `%dev` (`quarkus.security.auth.enabled-in-dev-mode
 
 `%test` uses `@TestSecurity`.
 
-Live MQTT is `io.freedriver:freedriver-mqtt` plus `freedriver-mqtt-paho`. The app CDI adapter (`MqttLiveClient`) talks to the same `ApplianceControl` bus, connects when `freedriver.mqtt.instance-ids` is set, and fails startup when `live-commands` and `mock` are both true. `MqttBrokers` requires a docker-network host (`freedriver.io` names throw), port 8883, TLS, and exact topics. `freedriver.mqtt` is a mapped object (host, port, tls, username, trust-certificate). Host and env vars: [mqtt-connect.md](mqtt-connect.md#quarkus).
+Live MQTT is `io.freedriver:freedriver-mqtt` plus `freedriver-mqtt-paho`. The app CDI adapter (`MqttLiveClient`) talks to the same `ApplianceControl` bus, connects when `freedriver.mqtt.instance-ids` is set or, if that is blank, when the host instance-id file names an appliances topic. Startup still fails when `live-commands` and `mock` are both true. A failed state connection does not stop the portal. `MqttBrokers` requires a docker-network host (`freedriver.io` names throw), port 8883, TLS, and exact topics. `freedriver.mqtt` is a mapped object (host, port, tls, username, trust-certificate). Host and env vars: [mqtt-connect.md](mqtt-connect.md#quarkus).
 
 App MQTT logs use the logger `io.freedriver.mqtt`. No line includes a password, a payload, or an exception message. State logs appear when `freedriver.mqtt.instance-ids` is set. Command logs stay behind `live-commands`, which stays false.
 

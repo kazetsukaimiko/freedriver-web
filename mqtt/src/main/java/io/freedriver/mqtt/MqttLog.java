@@ -18,6 +18,14 @@ public final class MqttLog {
     private MqttLog() {
     }
 
+    public static void connectFailed() {
+        warn("mqtt connect failed reason=connect-failed");
+    }
+
+    public static void configUnreadable(String name) {
+        warn("mqtt config unreadable name=" + oneLine(name, "-") + " reason=read-failed");
+    }
+
     public static void connecting(String host, int port) {
         info("mqtt connecting host=" + oneLine(host, "-") + " port=" + port);
     }

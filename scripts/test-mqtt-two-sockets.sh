@@ -52,8 +52,12 @@ if '"8883:8884"' not in mosquitto:
     raise SystemExit("host 8883 must publish container 8884")
 if re.search(r'^\s+-\s+.*mqtt-internal', mosquitto, re.M) or re.search(r'^\s+-\s+.*ca\.crt', mosquitto, re.M):
     raise SystemExit("do not mount the internal CA into mosquitto")
-if re.search(r'^\s+-\s+.*mqtt-internal', dashboard, re.M) or re.search(r'^\s+-\s+.*ca\.crt', dashboard, re.M):
-    raise SystemExit("do not mount ca.crt into the API")
+ca_lines = [line.strip() for line in dashboard.splitlines() if "ca.crt" in line or "mqtt-internal" in line]
+allowed_ca = "- /opt/freedriver-secrets/mqtt-internal/ca.crt:/opt/freedriver-secrets/mqtt-internal/ca.crt:ro"
+if ca_lines != [allowed_ca]:
+    raise SystemExit("the API may mount only the read-only internal ca.crt")
+if "internal.key" in dashboard or "internal.crt" in dashboard:
+    raise SystemExit("do not mount the internal leaf into the API")
 if re.search(r'"1883:|"1883', compose):
     raise SystemExit("do not open 1883")
 
@@ -126,7 +130,7 @@ if "internal.crt" not in sync or "server.crt" not in sync:
     raise SystemExit("sync script lost its public-pair target")
 if re.search(r"DEST_DIR\}/internal|DEST_DIR\}/ca", sync):
     raise SystemExit("sync must not write the internal pair or the CA")
-print("config: two sockets, no API CA mount, live-commands off")
+print("config: two sockets, API trusts only ca.crt, live-commands off")
 PY
 
 SECRETS="${WORKDIR}/mosquitto"
