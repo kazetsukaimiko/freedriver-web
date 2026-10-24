@@ -85,13 +85,13 @@ Publishers set retain=false on both topics; retain is a publisher setting.
 
 Let's Encrypt is the public listener: host `mqtt.freedriver.io:8883` maps to container port 8884. Caddy issues the name via the 404 stub (HTTP-01). The `mosquitto-cert-sync` sidecar copies that cert onto `/opt/freedriver-secrets/mosquitto/server.{crt,key}` only and SIGHUPs mosquitto through the shared PID namespace. It does not write `internal.crt` or `internal.key`. Manual: `scripts/sync-mosquitto-le-cert.sh`. Re-running provision keeps the live public pair in place.
 
-The unpublished listener is a different certificate. `scripts/issue-mqtt-internal-cert.sh` (also run from `scripts/provision-mosquitto.sh`) writes `/opt/freedriver-secrets/mqtt-internal/ca.crt` and the `internal.crt` / `internal.key` pair. The CA private key is deleted in the same run. Do not mount `ca.crt` until that file exists. A missing bind-mount source becomes a directory. This change does not mount it into the API.
+The unpublished listener is a different certificate. `scripts/issue-mqtt-internal-cert.sh` (also run from `scripts/provision-mosquitto.sh`) writes `/opt/freedriver-secrets/mqtt-internal/ca.crt` and the `internal.crt` / `internal.key` pair. The CA private key is deleted in the same run. The dashboard mounts only `ca.crt`, and only once that file exists. A missing bind-mount source becomes a directory. The API mount does not include `internal.key`.
 
 Run the issuer on the VPS before the broker restarts onto the two-listener config. If `internal.crt` is missing, Mosquitto will not start, and host 8883 stops with it.
 
 ## Quarkus
 
-On the compose network, Quarkus connects to hostname `mosquitto` port 8883. That socket presents `DNS:mosquitto`, not the public Let's Encrypt leaf. `mqtt.freedriver.io:8883` is the name for public and home clients. This repo does not mount the internal CA into the API and does not turn `freedriver.appliances.live-commands` on. Instance ids come from `FREEDRIVER_MQTT_INSTANCE_IDS`. Password is `FREEDRIVER_MQTT_API_PASSWORD`.
+On the compose network, Quarkus connects to hostname `mosquitto` port 8883. That socket presents `DNS:mosquitto`, not the public Let's Encrypt leaf. `mqtt.freedriver.io:8883` is the name for public and home clients. Prod mounts `/opt/freedriver-secrets/mqtt-internal/ca.crt` into the API and does not turn `freedriver.appliances.live-commands` on. Instance ids come from `FREEDRIVER_MQTT_INSTANCE_IDS` when that is set. When it is blank, prod reads them from the host ACL `/opt/freedriver-secrets/mosquitto/acl` (`freedriver/v1/<uuid>/appliances` lines only). Password is `FREEDRIVER_MQTT_API_PASSWORD` when that is set, otherwise `/opt/freedriver-secrets/mosquitto/api.pass`. The id and the password stay in those host files. They are not in git.
 
 Compose injects OIDC on the `dashboard` service only (not the image, not the SPA):
 

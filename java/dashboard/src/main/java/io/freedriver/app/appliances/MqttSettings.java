@@ -5,7 +5,6 @@ import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 import io.smallrye.config.WithName;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -31,26 +30,25 @@ public interface MqttSettings {
 
     Optional<String> password();
 
+    /** Host file. Used only when {@link #password()} is blank. */
+    @WithName("password-file")
+    Optional<String> passwordFile();
+
     @WithName("instance-ids")
     Optional<String> instanceIds();
+
+    /**
+     * Host file of instance ids, or a broker ACL whose appliances topics name them.
+     * Used only when {@link #instanceIds()} is blank. The id is not in git.
+     */
+    @WithName("instance-ids-file")
+    Optional<String> instanceIdsFile();
 
     default MqttEndpoint endpoint() {
         return new MqttEndpoint(host(), port(), tls(), username());
     }
 
     default List<UUID> instances() {
-        String raw = instanceIds().orElse("").strip();
-        if (raw.isEmpty()) {
-            return List.of();
-        }
-        List<UUID> out = new ArrayList<>();
-        for (String part : raw.split(",")) {
-            String id = part.strip();
-            if (id.isEmpty()) {
-                continue;
-            }
-            out.add(UUID.fromString(id));
-        }
-        return List.copyOf(out);
+        return MqttHouseIds.instances(instanceIds().orElse(""), instanceIdsFile().orElse(""));
     }
 }

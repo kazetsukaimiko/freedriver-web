@@ -62,7 +62,7 @@ Phone + code sign-in for house users. The `sms` service and the Keycloak `freedr
 
 ## Appliances API
 
-`GET/POST /api/appliances` is implemented against **mock-autonomy** on the same `ApplianceControl` bus for `quarkus:dev` and CI. The browser is REST only. Production has sign-in on, keeps the route disabled (404), and keeps MQTT disconnected. Integration contract: [`docs/appliances.md`](docs/appliances.md). Autonomy MQTT how-to: [`docs/autonomy-mqtt.md`](docs/autonomy-mqtt.md).
+`GET/POST /api/appliances` is implemented against **mock-autonomy** on the same `ApplianceControl` bus for `quarkus:dev` and CI. The browser is REST only. Production sign-in stays on, the practice list is off, and the dashboard subscribes to broker state for the instance ids in the host ACL `/opt/freedriver-secrets/mosquitto/acl`. The api password is `/opt/freedriver-secrets/mosquitto/api.pass`. Neither value is in git. `freedriver.appliances.live-commands` stays false, so production does not publish commands. Integration contract: [`docs/appliances.md`](docs/appliances.md). Autonomy MQTT how-to: [`docs/autonomy-mqtt.md`](docs/autonomy-mqtt.md).
 
 The live command route is blocked on [#25](https://github.com/kazetsukaimiko/freedriver-web/issues/25) and Security sign-off on [#27](https://github.com/kazetsukaimiko/freedriver-web/issues/27).
 

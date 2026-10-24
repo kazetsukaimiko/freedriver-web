@@ -20,9 +20,16 @@ public class MqttConnectionProducer {
         if (settings.instances().isEmpty()) {
             return new IdleMqttConnection();
         }
+        String password = settings.password().orElse("").strip();
+        if (password.isEmpty()) {
+            password = MqttHouseIds.password(settings.passwordFile().orElse(""));
+        }
+        if (password.isEmpty()) {
+            return new IdleMqttConnection();
+        }
         return new PahoMqttConnection(
                 settings.endpoint(),
-                settings.password().orElse(""),
+                password,
                 Path.of(settings.trustCertificate()));
     }
 

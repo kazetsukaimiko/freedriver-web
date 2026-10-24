@@ -40,8 +40,20 @@ services:
     env_file:
       - path: /opt/freedriver-secrets/keycloak-freedriver-invite.env
         required: false
+    depends_on:
+      - mosquitto
+    # The instance id is the appliances topic in the host ACL. The api password
+    # is the host password file. Neither value is in git. Do not mount the rest
+    # of the secrets directory. 1883 is the acl group and 1001 is the api.pass
+    # group, so uid 185 can read those two mode 770 files.
+    group_add:
+      - "1883"
+      - "1001"
     volumes:
       - /opt/freedriver-storage/invites:/deployments/data/invites
+      - /opt/freedriver-secrets/mqtt-internal/ca.crt:/opt/freedriver-secrets/mqtt-internal/ca.crt:ro
+      - /opt/freedriver-secrets/mosquitto/acl:/opt/freedriver-secrets/mosquitto/acl:ro
+      - /opt/freedriver-secrets/mosquitto/api.pass:/opt/freedriver-secrets/mosquitto/api.pass:ro
     expose:
       - "8080"
 
