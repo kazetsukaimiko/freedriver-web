@@ -20,6 +20,7 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
     private final List<String> usernames = new CopyOnWriteArrayList<>();
     private InviteText sendResult = InviteText.SENT;
     private InviteCheck checkResult = InviteCheck.APPROVED;
+    private RuntimeException listFailure;
 
     public void add(PhoneRow row) {
         rows.add(row);
@@ -29,8 +30,15 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
         return List.copyOf(removed);
     }
 
+    public void failList(RuntimeException failure) {
+        this.listFailure = failure;
+    }
+
     @Override
     public List<PhoneRow> list() {
+        if (listFailure != null) {
+            throw listFailure;
+        }
         return List.copyOf(rows);
     }
 
@@ -107,5 +115,6 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
         usernames.clear();
         sendResult = InviteText.SENT;
         checkResult = InviteCheck.APPROVED;
+        listFailure = null;
     }
 }

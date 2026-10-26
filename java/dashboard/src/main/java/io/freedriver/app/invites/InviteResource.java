@@ -1,5 +1,8 @@
 package io.freedriver.app.invites;
 
+import io.freedriver.app.phones.PhoneRow;
+import io.freedriver.app.phones.SmsPhoneList;
+import io.freedriver.app.phones.UsPhones;
 import io.freedriver.dashboard.api.RateLimited;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
@@ -11,13 +14,13 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 
+import java.util.Map;
 import java.util.UUID;
 
 /**
- * Portal-admin invite links. Creating one does not put a number on the phone list.
- * The code is returned once, in the URL fragment of the link.
+ * Portal-admin invites. Create takes a phone number and does not mint a code.
+ * A code already in the store still lists, cancels, and redeems until it expires.
  */
 @Path("/api/invites")
 @RolesAllowed("portal-admin")
@@ -25,14 +28,12 @@ import java.util.UUID;
 public class InviteResource {
 
     private final InviteStore store;
-    private final String publicBase;
+    private final SmsPhoneList sms;
 
     @Inject
-    public InviteResource(InviteStore store,
-                          @ConfigProperty(name = "freedriver.public-base-url",
-                                  defaultValue = "https://app.freedriver.io") String publicBase) {
+    public InviteResource(InviteStore store, SmsPhoneList sms) {
         this.store = store;
-        this.publicBase = publicBase.endsWith("/") ? publicBase.substring(0, publicBase.length() - 1) : publicBase;
+        this.sms = sms;
     }
 
     @GET
@@ -44,9 +45,15 @@ public class InviteResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @RateLimited("invites")
     public Response create(CreateInvite request) {
-        InviteStore.Created created = store.create(request == null ? null : request.name());
-        String link = publicBase + "/invite/#" + created.code();
-        return Response.status(201).entity(new InviteCreated(created.invite(), link)).build();
+        String raw = request == null || request.phone() == null ? null : request.phone().strip();
+        String phone = UsPhones.canonical(raw).orElse(null);
+        if (phone == null) {
+            return Response.status(400).entity(Map.of("reason", "phone")).build();
+        }
+        if (listed(phone)) {
+            return Response.status(409).entity(Map.of("reason", "listed")).build();
+        }
+        return Response.status(201).entity(Map.of()).build();
     }
 
     @POST
@@ -59,9 +66,16 @@ public class InviteResource {
         return Response.noContent().build();
     }
 
-    public record CreateInvite(String name) {
+    private boolean listed(String phone) {
+        for (PhoneRow row : sms.list()) {
+            String stored = row.phone() == null ? "" : row.phone().strip();
+            if (phone.equals(UsPhones.canonical(stored).orElse(stored))) {
+                return true;
+            }
+        }
+        return false;
     }
 
-    public record InviteCreated(InviteView invite, String link) {
+    public record CreateInvite(String phone) {
     }
 }
