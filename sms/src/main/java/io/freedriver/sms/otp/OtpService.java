@@ -47,8 +47,8 @@ public class OtpService {
 
     /**
      * Texts a code when the number is on the list. An unlisted number gets no provider call and no
-     * phone-list or agreement record. The send time is recorded either way. On the seeded number's
-     * first sign-in, the agreement wording shown is stored first, and no code is sent when it
+     * phone-list or agreement record. The send time is recorded either way. When a listed number
+     * has no agreement yet, the wording shown is stored first, and no code is sent when it
      * cannot be stored.
      */
     public void send(String phone, Optional<String> agreementShown) {
