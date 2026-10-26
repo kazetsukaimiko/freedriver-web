@@ -11,7 +11,7 @@ import java.time.ZoneOffset;
 
 /**
  * Service-wide cap per UTC day on sends that reach the provider, on top of the per-number limits.
- * When it is reached, no more codes are sent until the next UTC day and the service logs an error.
+ * When it is reached, no more texts are sent until the next UTC day and the service logs an error.
  */
 @ApplicationScoped
 public class DailySendCap {
@@ -44,7 +44,7 @@ public class DailySendCap {
         if (used >= cap) {
             if (!announced) {
                 announced = true;
-                LOG.errorf("SMS daily send cap of %d reached for %s UTC. No codes will be sent until 00:00 UTC.", cap, today);
+                LOG.errorf("SMS daily send cap of %d reached for %s UTC. No texts will be sent until 00:00 UTC.", cap, today);
             }
             return false;
         }

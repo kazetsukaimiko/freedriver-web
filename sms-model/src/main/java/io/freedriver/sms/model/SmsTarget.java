@@ -9,4 +9,8 @@ public record SmsTarget(SendType type, String phone) {
     public static SmsTarget otp(String phone) {
         return new SmsTarget(SendType.OTP, phone);
     }
+
+    public static SmsTarget invite(String phone) {
+        return new SmsTarget(SendType.INVITE, phone);
+    }
 }

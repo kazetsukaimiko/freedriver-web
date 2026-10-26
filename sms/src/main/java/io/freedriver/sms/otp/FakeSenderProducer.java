@@ -1,5 +1,6 @@
 package io.freedriver.sms.otp;
 
+import io.freedriver.sms.invite.FakeInvitationSender;
 import io.freedriver.sms.phones.ConsentLedger;
 import io.quarkus.arc.lookup.LookupIfProperty;
 import io.quarkus.arc.profile.IfBuildProfile;
@@ -19,5 +20,12 @@ public class FakeSenderProducer {
     @LookupIfProperty(name = "freedriver.sms.sender", stringValue = "fake")
     FakeSmsSender fakeSender(ConsentLedger consents) {
         return new FakeSmsSender(consents, Clock.systemUTC());
+    }
+
+    @Produces
+    @Singleton
+    @LookupIfProperty(name = "freedriver.sms.sender", stringValue = "fake")
+    FakeInvitationSender fakeInvitation() {
+        return new FakeInvitationSender();
     }
 }

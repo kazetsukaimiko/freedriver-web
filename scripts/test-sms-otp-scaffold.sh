@@ -94,8 +94,8 @@ fi
 if grep -q 'twilio-verify.env.example' docker-compose.yml; then
   fail "compose must not reference the Twilio example file"
 fi
-if [[ "$(grep -v '^#' secrets/twilio-verify.env.example)" != "$(printf '%s=\n' TWILIO_ACCOUNT_SID TWILIO_API_KEY_SID TWILIO_API_KEY_SECRET TWILIO_VERIFY_SERVICE_SID)" ]]; then
-  fail "Twilio example file holds the four names with empty values"
+if [[ "$(grep -v '^#' secrets/twilio-verify.env.example)" != "$(printf '%s=\n' TWILIO_ACCOUNT_SID TWILIO_API_KEY_SID TWILIO_API_KEY_SECRET TWILIO_VERIFY_SERVICE_SID TWILIO_MESSAGING_FROM)" ]]; then
+  fail "Twilio example file holds the credential names with empty values"
 fi
 if grep -RInE '^TWILIO_[A-Z_]+=.+' \
   --exclude-dir .git --exclude-dir target \

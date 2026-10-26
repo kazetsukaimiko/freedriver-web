@@ -1,5 +1,5 @@
 package io.freedriver.app.invites;
 
-/** The invite name is missing or longer than 40 characters. */
+/** The create body is not a usable invite. */
 public class BadInviteException extends RuntimeException {
 }

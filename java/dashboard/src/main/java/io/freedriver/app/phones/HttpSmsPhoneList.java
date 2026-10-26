@@ -103,6 +103,18 @@ public class HttpSmsPhoneList implements SmsPhoneList {
     }
 
     @Override
+    public Invitation sendInvitation(String phone) {
+        HttpResponse<String> response = call(HttpRequest.newBuilder(URI.create(base + "/sms/invite/text"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body(Map.of("phone", phone)))));
+        return switch (response.statusCode()) {
+            case 200, 201 -> Invitation.SENT;
+            case 429 -> Invitation.LIMITED;
+            default -> Invitation.UNAVAILABLE;
+        };
+    }
+
+    @Override
     public boolean addInvited(String phone, String name, String username) {
         HttpResponse<String> response = call(HttpRequest.newBuilder(URI.create(base + "/sms/phones/add"))
                 .header("Content-Type", "application/json")

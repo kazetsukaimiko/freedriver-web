@@ -32,11 +32,23 @@ public interface SmsPhoneList {
         throw new UnsupportedOperationException();
     }
 
+    /**
+     * Sends one invitation text to the number. The agreement log is left unchanged.
+     * One call places one Messages API send.
+     */
+    default Invitation sendInvitation(String phone) {
+        throw new UnsupportedOperationException();
+    }
+
     enum InviteText {
         SENT, ALREADY_LISTED, LIMITED, UNAVAILABLE
     }
 
     enum InviteCheck {
         APPROVED, WRONG, LIMITED, UNAVAILABLE
+    }
+
+    enum Invitation {
+        SENT, LIMITED, UNAVAILABLE
     }
 }

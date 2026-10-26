@@ -13,7 +13,7 @@ import org.jboss.logging.Logger;
 import java.time.Duration;
 import java.util.function.Function;
 
-/** Builds the Twilio Verify sender from the environment. Runs at startup; makes no Twilio call. */
+/** Builds the Twilio senders from the environment. Runs at startup; makes no Twilio call. */
 @ApplicationScoped
 public class TwilioSenderProducer {
 
@@ -37,5 +37,25 @@ public class TwilioSenderProducer {
         }
         LOG.info("Twilio credentials loaded");
         return new TwilioVerifySender(credentials, endpoint, timeout, consents);
+    }
+
+    @Produces
+    @Singleton
+    @LookupIfProperty(name = "freedriver.sms.sender", stringValue = "twilio", lookupIfMissing = true)
+    TwilioMessagesSender twilioMessages(SmsConfig config, Config raw) {
+        TwilioCredentials credentials = TwilioCredentials.load(
+                name -> raw.getOptionalValue(name, String.class).orElse(null));
+        String from = TwilioMessagesSender.fromNumber(
+                raw.getOptionalValue(TwilioMessagesSender.FROM, String.class).orElse(null));
+        Duration timeout = config.twilio().timeout();
+        if (timeout.isZero() || timeout.isNegative()) {
+            throw new IllegalStateException("freedriver.sms.twilio.timeout must be positive");
+        }
+        if (from == null) {
+            LOG.info(TwilioMessagesSender.FROM + " is unset. An invitation text answers unavailable.");
+        } else {
+            LOG.info("Invitation sender configured");
+        }
+        return new TwilioMessagesSender(credentials, from, timeout);
     }
 }

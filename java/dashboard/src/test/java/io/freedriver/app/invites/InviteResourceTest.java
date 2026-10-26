@@ -63,6 +63,7 @@ class InviteResourceTest {
         given().when().get("/api/invites").then().statusCode(200).body("invites.size()", org.hamcrest.Matchers.is(1));
         given().when().get("/api/phones").then().statusCode(200).body("phones.size()", org.hamcrest.Matchers.is(0));
         assertTrue(sms.removed().isEmpty());
+        assertTrue(sms.invitations().isEmpty());
         assertTrue(keycloak.removed().isEmpty());
     }
 
@@ -120,6 +121,7 @@ class InviteResourceTest {
     void anonymous_admin_routes_need_a_session() {
         given().when().get("/api/invites").then().statusCode(401);
         given().contentType(ContentType.JSON).body("{\"name\":\"Mom\"}").post("/api/invites").then().statusCode(401);
+        given().contentType(ContentType.JSON).body("{\"phone\":\"+15555550123\"}").post("/api/invites").then().statusCode(401);
         given().when().get("/api/phones").then().statusCode(401);
         given().contentType(ContentType.JSON).body("{\"phone\":\"+15555550123\"}")
                 .post("/api/phones/remove").then().statusCode(401);
@@ -130,6 +132,7 @@ class InviteResourceTest {
     void a_non_admin_is_refused() {
         given().when().get("/api/invites").then().statusCode(403);
         given().contentType(ContentType.JSON).body("{\"name\":\"Mom\"}").post("/api/invites").then().statusCode(403);
+        given().contentType(ContentType.JSON).body("{\"phone\":\"+15555550123\"}").post("/api/invites").then().statusCode(403);
     }
 
     @Test
@@ -158,6 +161,49 @@ class InviteResourceTest {
             statuses.add(csrf().body("{\"name\":\"Person " + i + "\"}").post("/api/invites").statusCode());
         }
         assertEquals(List.of(201, 201, 201, 201, 201, 201, 201, 201, 429), statuses);
+    }
+
+    @Test
+    @TestSecurity(user = "invite-phone", roles = {"portal-admin"})
+    void phone_create_sends_one_invitation_text_and_leaves_the_agreement_unwritten() {
+        Response created = csrf().body("{\"phone\":\"+15555550123\"}").post("/api/invites");
+        created.then().statusCode(201)
+                .body("sent.type", org.hamcrest.Matchers.is("invite"))
+                .body("sent.phone", org.hamcrest.Matchers.is("+15555550123"));
+        assertEquals(List.of("+15555550123"), sms.invitations());
+        assertTrue(sms.agreements().isEmpty());
+        assertTrue(sms.sent().isEmpty());
+        assertTrue(store.open().isEmpty());
+        assertTrue(keycloak.created().isEmpty());
+        given().when().get("/api/phones").then().statusCode(200).body("phones.size()", org.hamcrest.Matchers.is(0));
+    }
+
+    @Test
+    @TestSecurity(user = "invite-fail", roles = {"portal-admin"})
+    void a_bad_phone_and_a_failed_text_send_nothing_further() {
+        csrf().body("{\"phone\":\"555\"}").post("/api/invites").then().statusCode(400);
+        assertTrue(sms.invitations().isEmpty());
+        assertTrue(store.open().isEmpty());
+
+        sms.invitationResult(io.freedriver.app.phones.SmsPhoneList.Invitation.UNAVAILABLE);
+        csrf().body("{\"phone\":\"+15555550123\"}").post("/api/invites")
+                .then().statusCode(502).body("error", org.hamcrest.Matchers.is("unavailable"));
+        assertEquals(List.of("+15555550123"), sms.invitations());
+        assertTrue(sms.agreements().isEmpty());
+        assertTrue(store.open().isEmpty());
+        assertTrue(keycloak.created().isEmpty());
+    }
+
+    @Test
+    @TestSecurity(user = "invite-text", roles = {"portal-admin"})
+    void invitation_texts_count_against_the_invite_rate_limit() {
+        List<Integer> statuses = new ArrayList<>();
+        for (int i = 0; i < 9; i++) {
+            String phone = "+1555555%04d".formatted(3000 + i);
+            statuses.add(csrf().body("{\"phone\":\"" + phone + "\"}").post("/api/invites").statusCode());
+        }
+        assertEquals(List.of(201, 201, 201, 201, 201, 201, 201, 201, 429), statuses);
+        assertEquals(8, sms.invitations().size());
     }
 
     private static io.restassured.specification.RequestSpecification csrf() {

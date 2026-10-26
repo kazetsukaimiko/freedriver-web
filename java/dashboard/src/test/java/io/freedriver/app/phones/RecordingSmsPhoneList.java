@@ -18,8 +18,10 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
     private final List<UUID> agreements = new CopyOnWriteArrayList<>();
     private final List<PhoneRow> added = new CopyOnWriteArrayList<>();
     private final List<String> usernames = new CopyOnWriteArrayList<>();
+    private final List<String> invitations = new CopyOnWriteArrayList<>();
     private InviteText sendResult = InviteText.SENT;
     private InviteCheck checkResult = InviteCheck.APPROVED;
+    private Invitation invitationResult = Invitation.SENT;
 
     public void add(PhoneRow row) {
         rows.add(row);
@@ -68,6 +70,14 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
         return List.copyOf(usernames);
     }
 
+    public List<String> invitations() {
+        return List.copyOf(invitations);
+    }
+
+    public void invitationResult(Invitation result) {
+        this.invitationResult = result;
+    }
+
     @Override
     public InviteText sendInviteCode(String phone, UUID inviteId) {
         sent.add(phone);
@@ -84,6 +94,12 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
             return InviteCheck.WRONG;
         }
         return checkResult;
+    }
+
+    @Override
+    public Invitation sendInvitation(String phone) {
+        invitations.add(phone);
+        return invitationResult;
     }
 
     @Override
@@ -105,7 +121,9 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
         agreements.clear();
         added.clear();
         usernames.clear();
+        invitations.clear();
         sendResult = InviteText.SENT;
         checkResult = InviteCheck.APPROVED;
+        invitationResult = Invitation.SENT;
     }
 }
