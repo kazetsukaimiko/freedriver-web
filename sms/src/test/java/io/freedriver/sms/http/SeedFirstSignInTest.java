@@ -148,7 +148,7 @@ class SeedFirstSignInTest {
 
     @Test
     @Order(6)
-    void the_agreement_is_stored_only_for_the_seeded_number() {
+    void a_listed_number_stores_the_shown_wording_and_an_unlisted_number_does_not() {
         String listed = TestNumbers.fresh();
         directory.add(new PhoneEntry(listed, "Guest", "guest.user", "dashboard", Instant.now()));
         String unlisted = TestNumbers.fresh();
@@ -156,9 +156,18 @@ class SeedFirstSignInTest {
         SmsCalls.sendAgreeing(listed, TestNumbers.WORDING).statusCode(200);
         SmsCalls.sendAgreeing(unlisted, TestNumbers.WORDING).statusCode(200);
 
-        assertEquals(0, sender.deliveries());
-        assertEquals(List.of(), consents.history(listed));
+        assertEquals(1, sender.deliveries());
+        assertTrue(sender.pendingCode(listed).isPresent());
+        assertTrue(sender.pendingCode(unlisted).isEmpty());
+        List<ConsentRecord> listedHistory = consents.history(listed);
+        assertEquals(1, listedHistory.size());
+        assertEquals(TestNumbers.WORDING, listedHistory.getFirst().wording());
+        assertEquals(ConsentSource.SIGN_IN_FORM, listedHistory.getFirst().source());
         assertEquals(List.of(), consents.history(unlisted));
+
+        SmsCalls.sendAgreeing(listed, TestNumbers.WORDING).statusCode(200);
+        assertEquals(1, consents.history(listed).size());
+        assertEquals(2, sender.deliveries());
     }
 
     @Test

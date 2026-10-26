@@ -57,6 +57,7 @@ class PhoneUsernameRouterTest {
     };
 
     private final Map<String, String> notes = new HashMap<>();
+    private final Map<String, Object> formAttributes = new HashMap<>();
     private final List<String> written = new ArrayList<>();
     private final Map<Response, String> pages = new IdentityHashMap<>();
     private final List<LogRecord> records = new ArrayList<>();
@@ -129,7 +130,11 @@ class PhoneUsernameRouterTest {
     private LoginFormsProvider newForm() {
         LoginFormsProvider[] self = new LoginFormsProvider[1];
         self[0] = mock(LoginFormsProvider.class, inv -> switch (inv.getMethod().getName()) {
-            case "setAttribute", "setError" -> self[0];
+            case "setAttribute" -> {
+                formAttributes.put(inv.getArgument(0), inv.getArgument(1));
+                yield self[0];
+            }
+            case "setError" -> self[0];
             case "createForm" -> {
                 Response response = mock(Response.class);
                 pages.put(response, inv.getArgument(0));
@@ -212,6 +217,7 @@ class PhoneUsernameRouterTest {
         router.authenticate(context);
         assertEquals("challenge", outcome);
         assertEquals(PhoneUsernameRouter.TEMPLATE, pages.get(shown));
+        assertEquals(SignInAgreement.WORDING, formAttributes.get(SmsOtpAuthenticator.ATTR_AGREEMENT));
         assertTrue(records.isEmpty());
         assertNoUserAndNoSession();
     }
@@ -304,6 +310,25 @@ class PhoneUsernameRouterTest {
         assertTrue(form.contains("name=\"username\""));
         assertTrue(form.contains("freedriverPhoneUsernameLabel"));
         assertTrue(form.contains("freedriverPhoneUsernameContinue"));
+        assertTrue(form.contains("id=\"freedriver-sms-agreement\""));
+        assertTrue(form.contains("${freedriverSmsAgreement}"));
+        assertTrue(form.contains("phone-fragment.js"));
+        assertFalse(form.contains("By tapping Send code"));
+        assertFalse(form.contains("name=\"send\""));
+        assertFalse(form.contains("freedriverSmsSend"));
+        assertTrue(form.indexOf("name=\"username\"") < form.indexOf("id=\"freedriver-sms-agreement\""));
+        assertTrue(form.indexOf("id=\"freedriver-sms-agreement\"") < form.indexOf("freedriverPhoneUsernameContinue"));
+
+        String script = repoText(
+                "keycloak/themes/freedriver/login/resources/js/phone-fragment.js",
+                "../themes/freedriver/login/resources/js/phone-fragment.js",
+                "themes/freedriver/login/resources/js/phone-fragment.js");
+        assertTrue(script.contains("location.hash"));
+        assertTrue(script.contains("sessionStorage"));
+        assertTrue(script.contains("freedriver.login.phone"));
+        assertTrue(script.contains("freedriver-phone-username-form"));
+        assertFalse(script.contains("location.search"));
+        assertFalse(script.contains("URLSearchParams"));
 
         String messages = repoText(
                 "keycloak/themes/freedriver/login/messages/messages_en.properties",
