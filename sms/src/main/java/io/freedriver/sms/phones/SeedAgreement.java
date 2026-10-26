@@ -11,8 +11,8 @@ import java.time.Clock;
 import java.util.Optional;
 
 /**
- * The seeded number's sign-in agreement, given on its first sign-in: the sign-in page shows the
- * wording and Send code stores it. Invited numbers agree on the invite page instead.
+ * Sign-in agreement for a listed number that has none yet. The login form shows the wording
+ * and Continue stores it before the code is sent. An unlisted number is not recorded here.
  */
 @ApplicationScoped
 public class SeedAgreement {
@@ -36,18 +36,20 @@ public class SeedAgreement {
         this.clock = clock;
     }
 
-    /** True for the seeded number while it is on the list and has no sign-in agreement on record. */
+    /** True while {@code phone} is on the list and has no sign-in agreement on record. */
     public boolean awaited(String phone) {
-        return seedPhone.filter(phone::equals).isPresent()
-                && directory.find(phone).isPresent()
+        return directory.find(phone).isPresent()
                 && !consents.hasAgreed(phone, ConsentPurpose.SIGN_IN_CODES);
     }
 
     /** Stores the agreement with the wording shown; false, logged with the number masked, when it could not be stored. */
     public boolean record(String phone, String wording) {
+        ConsentSource source = seedPhone.filter(phone::equals).isPresent()
+                ? ConsentSource.SEEDED_FIRST_SIGN_IN
+                : ConsentSource.SIGN_IN_FORM;
         try {
             consents.record(new ConsentRecord(phone, ConsentPurpose.SIGN_IN_CODES, wording,
-                    ConsentSource.SEEDED_FIRST_SIGN_IN, clock.instant()));
+                    source, clock.instant()));
             return true;
         } catch (UncheckedIOException e) {
             LOG.errorf("Sign-in agreement for %s not stored, so no code was sent: %s", PhoneMask.mask(phone),

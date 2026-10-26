@@ -99,6 +99,24 @@ class SignInRequiredTest {
         assertTrue(redirectUri(location).endsWith("/login"), location);
     }
 
+    @Test
+    void sign_in_link_stays_on_this_host_and_does_not_open_keycloak() {
+        String body = given()
+                .redirects().follow(false)
+                .when().get("/sign-in")
+                .then()
+                .statusCode(200)
+                .header("Referrer-Policy", "no-referrer")
+                .header("Cache-Control", "no-store")
+                .extract().asString();
+        assertTrue(body.contains("location.hash"), body);
+        assertTrue(body.contains("sessionStorage"), body);
+        assertTrue(body.contains("freedriver.login.phone"), body);
+        assertTrue(body.contains("location.replace(\"/login"), body);
+        assertTrue(!body.contains("location.search"), body);
+        assertTrue(!body.contains("?"), body);
+    }
+
     private static String redirectUri(String location) {
         for (String pair : location.substring(location.indexOf('?') + 1).split("&")) {
             if (pair.startsWith("redirect_uri=")) {
