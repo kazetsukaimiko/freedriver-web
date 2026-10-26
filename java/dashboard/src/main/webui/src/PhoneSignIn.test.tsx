@@ -73,6 +73,40 @@ it('shows the one-time link after a named invite is created', async () => {
   expect(new Headers(post?.[1].headers).get('X-CSRF-Token')).toBe('csrf-1')
 })
 
+it('shows the masked number and remove still sends the full number', async () => {
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url === '/api/phones/remove' && init?.method === 'POST') {
+      return new Response(null, { status: 204 })
+    }
+    if (url === '/api/phones') {
+      return Response.json({
+        phones: [
+          {
+            phone: '+15555550123',
+            name: 'Mom',
+            role: 'dashboard',
+            addedAt: '2026-10-20T12:00:00Z',
+            consentedAt: null,
+            lastSignIn: null,
+          },
+        ],
+      })
+    }
+    if (url === '/api/invites') {
+      return Response.json({ invites: [], csrfToken: 'csrf-1' })
+    }
+    return new Response(null, { status: 404 })
+  })
+  vi.stubGlobal('confirm', () => true)
+  render(<PhoneSignIn />)
+  expect(await screen.findByText('***0123')).toBeTruthy()
+  expect(screen.queryByText('(555) 555-0123')).toBeNull()
+  expect(screen.queryByText('+15555550123')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
+  const post = fetchMock.mock.calls.find((call) => call[0] === '/api/phones/remove')
+  expect(JSON.parse(String(post?.[1].body))).toEqual({ phone: '+15555550123' })
+})
+
 it('keeps an invite when the cancel confirmation is dismissed', async () => {
   fetchMock.mockImplementation(async (url: string) => {
     if (url === '/api/phones') {

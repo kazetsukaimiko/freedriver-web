@@ -67,6 +67,33 @@ class InviteResourceTest {
     }
 
     @Test
+    @TestSecurity(user = "invite-phone", roles = {"portal-admin"})
+    void create_lists_the_number_then_creates_the_user_and_remove_undoes_it() {
+        Response created = csrf().body("{\"phone\":\"+15555550123\"}").post("/api/invites");
+        created.then().statusCode(201);
+        String body = created.asString();
+        assertEquals("***0123", created.path("phone"));
+        assertFalse(body.contains("555555"));
+        assertFalse(body.contains("link"));
+        assertTrue(store.open().isEmpty());
+        assertEquals(List.of("whitelist", "attach"), sms.steps());
+        assertEquals(List.of("+15555550123"), keycloak.created());
+        assertEquals(List.of(RecordingPhoneSignIn.USERNAME), sms.usernames());
+        given().when().get("/api/phones").then().statusCode(200).body("phones.size()", org.hamcrest.Matchers.is(1));
+
+        csrf().body("{\"phone\":\"+15555550123\"}").post("/api/invites").then().statusCode(409);
+        assertEquals(List.of("+15555550123"), keycloak.created());
+
+        csrf().body("{\"phone\":\"5555550123\"}").post("/api/invites").then().statusCode(400);
+        csrf().body("{\"phone\":\"+441234567890\"}").post("/api/invites").then().statusCode(400);
+
+        csrf().body("{\"phone\":\"+15555550123\"}").post("/api/phones/remove").then().statusCode(204);
+        assertEquals(List.of("+15555550123"), sms.removed());
+        assertEquals(List.of("+15555550123"), keycloak.removed());
+        given().when().get("/api/phones").then().body("phones.size()", org.hamcrest.Matchers.is(0));
+    }
+
+    @Test
     @TestSecurity(user = "yuni", roles = {"portal-admin"})
     void one_invite_is_used_once_including_two_concurrent_callers() throws Exception {
         String code = codeOf(csrf().body("{\"name\":\"Mom\"}").post("/api/invites"));

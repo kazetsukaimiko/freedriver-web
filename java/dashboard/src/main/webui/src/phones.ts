@@ -27,12 +27,13 @@ export type PhonePage =
   | { status: 'denied' }
   | { status: 'error' }
 
+/** Last four digits. The remove call still uses the full number. */
 export function displayPhone(e164: string) {
-  const digits = e164.replace(/\D/g, '').slice(-10)
-  if (digits.length !== 10) {
-    return e164
+  const digits = e164.replace(/\D/g, '')
+  if (digits.length < 4) {
+    return '***'
   }
-  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+  return `***${digits.slice(-4)}`
 }
 
 export function when(iso: string) {
