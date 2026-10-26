@@ -42,6 +42,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -321,7 +322,30 @@ class SmsOtpAuthenticatorTest {
         assertEquals("123456", verifyRequests.getFirst().code());
         verify(context).setUser(user);
         verify(users, never()).getUserByUsername(any(), any());
+        verify(users, never()).addUser(any(), any());
         assertNull(notes.get(SmsOtpAuthenticator.NOTE_PHONE));
+    }
+
+    @Test
+    void openingTheLinkAgainSignsInTheSameUser() {
+        sendResponsePhone = PHONE;
+        notes.put(PhoneUsernameRouter.NOTE_ROUTE, PhoneUsernameRouter.ROUTE_PHONE);
+        notes.put(PhoneUsernameRouter.NOTE_NUMBER, PHONE);
+        authenticator.authenticate(context);
+        assertPage(SmsOtpAuthenticator.CODE_TEMPLATE, null);
+        verifyReplies.add(new Scripted(200, null, null, PHONE));
+        post("code", "123456");
+        assertEquals("success", outcome);
+
+        notes.put(PhoneUsernameRouter.NOTE_ROUTE, PhoneUsernameRouter.ROUTE_PHONE);
+        notes.put(PhoneUsernameRouter.NOTE_NUMBER, PHONE);
+        authenticator.authenticate(context);
+        assertPage(SmsOtpAuthenticator.CODE_TEMPLATE, null);
+        verifyReplies.add(new Scripted(200, null, null, PHONE));
+        post("code", "123456");
+        assertEquals("success", outcome);
+        verify(context, times(2)).setUser(user);
+        verify(users, never()).addUser(any(), any());
     }
 
     @Test

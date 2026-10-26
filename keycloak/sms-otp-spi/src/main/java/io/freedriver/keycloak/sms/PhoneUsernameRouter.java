@@ -51,7 +51,9 @@ public final class PhoneUsernameRouter implements Authenticator {
 
     @Override
     public void authenticate(AuthenticationFlowContext context) {
-        context.challenge(context.form().createForm(TEMPLATE));
+        context.challenge(context.form()
+                .setAttribute(SmsOtpAuthenticator.ATTR_AGREEMENT, SignInAgreement.WORDING)
+                .createForm(TEMPLATE));
     }
 
     @Override

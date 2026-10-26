@@ -39,7 +39,7 @@ import java.lang.reflect.Method;
  * <ul>
  * <li>Sends: a per-number window, past which the request throws {@link RateLimitedException}. Then the
  * service-wide daily cap, which counts only sends that reach the provider (listed numbers with an
- * agreement on file, or the seeded number's first sign-in carrying its agreement). Once the cap is reached, those sends get the same {@code sent} answer every
+ * agreement on file, or a listed number's first sign-in carrying its agreement). Once the cap is reached, those sends get the same {@code sent} answer every
  * other number gets, and no provider call.</li>
  * <li>Code checks: a per-number count of wrong codes. The slot is taken when the check starts, so
  * parallel guesses stop at the limit. A wrong code keeps the slot. A successful check clears the
@@ -154,7 +154,7 @@ public class PhoneRateLimitFilter implements ContainerRequestFilter, ContainerRe
 
     /**
      * Whether this send would reach the provider: the number is on the phone list and has a
-     * sign-in agreement on file, or it is the seeded number's first sign-in and the request carries
+     * sign-in agreement on file, or it is a listed number's first sign-in and the request carries
      * the agreement. Only those sends count against the daily cap. This decides counting only; the
      * sender's own agreement check still guards the provider call.
      */
