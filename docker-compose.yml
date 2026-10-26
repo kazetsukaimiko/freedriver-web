@@ -101,7 +101,7 @@ services:
       # Shared secret the phone OTP SPI sends to http://sms:8080.
       SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
-      # Password is not passed. The temporary bootstrap admin is not kept.
+      # The permanent master admin from the provision script is the admin account for this service.
     depends_on:
       keycloak-db:
         condition: service_healthy
