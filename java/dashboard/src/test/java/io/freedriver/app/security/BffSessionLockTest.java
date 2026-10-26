@@ -21,7 +21,7 @@ class BffSessionLockTest {
                 "src/main/resources/META-INF/services/org.eclipse.microprofile.config.spi.ConfigSource"));
         assertEquals("io.freedriver.app.security.AuthPolicyConfigSource", loader.trim());
         assertFalse(application.contains("quarkus.config.locations"));
-        assertTrue(application.contains("quarkus.quinoa.ignored-path-prefixes=/api,/q,/login,/logout"));
+        assertTrue(application.contains("quarkus.quinoa.ignored-path-prefixes=/api,/q,/login,/logout,/sign-in"));
         assertFalse(application.contains("quarkus.oidc."));
         assertFalse(application.contains("quarkus.http.auth.permission."));
         assertFalse(application.contains("freedriver.appliances.rate-limit."));
