@@ -1,6 +1,6 @@
-# Plain-text changelog. No markdown symbols. Each release is the sequential
-# build number (annotated tag message) and a UTC date, then group names, then
-# "- " entries. A blank line separates releases. #151.
+# The changelog is plain text. Each release begins with its build number (the
+# annotated tag message) and a UTC date, then group names, then lines that start
+# with "- ". A blank line separates releases.
 [changelog]
 header = ""
 # Rendered once per tag. git-cliff joins those renders newest first.
