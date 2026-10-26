@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the pinned git-cliff binary into .tools/bin. Not committed.
+# Install the pinned git-cliff binary into .tools/bin. Git ignores .tools.
 set -euo pipefail
 
 VERSION="2.14.2"

@@ -82,7 +82,7 @@ The image build compiles `mqtt-contract`, `mqtt`, and `mqtt-paho` from this repo
 
 ### Build number
 
-A successful `main` deploy stamps `MAJOR.MINOR.PATCH`. `fix` bumps the patch, `feat` the minor, and a breaking change the major. Any other commit bumps the patch, so the deploy still has a tag. The first version, when no version tag exists yet, is `1.0.0`. Example: `1.2.0`. Not `YEAR-MONTH_rBUILD_NUM`. Not `1.0.<run>`.
+A successful `main` deploy stamps `MAJOR.MINOR.PATCH`. `fix` bumps the patch, `feat` the minor, and a breaking change the major. Any other commit bumps the patch, so the deploy still has a tag. The first version, when no version tag exists yet, is `1.0.0`. Example: `1.2.0`.
 
 That string is the git version tag, and it is the portal build stamp:
 
@@ -91,7 +91,7 @@ That string is the git version tag, and it is the portal build stamp:
 3. Annotated-tagged on `GITHUB_SHA` **after** the VPS is up (not on PRs). The tag message is the sequential build number `YEAR-MONTH_rRUN` (UTC year-month + the Deploy run number)
 4. Exposed for UX [#49](https://github.com/kazetsukaimiko/freedriver-web/issues/49) at public `GET /api/build` → `{"build":"1.2.0"}`
 
-The sequential build number is the first line of each changelog release, for example `2026-10_r60 (2026-10-03)`, and it is on the GitHub release page. It is not the portal stamp. `mqtt-contract` published from `main` keeps `YEAR-MONTH_rBUILD_NUM`.
+The sequential build number is the first line of each changelog release, for example `2026-10_r60 (2026-10-03)`, and it is on the GitHub release page. `mqtt-contract` published from `main` keeps `YEAR-MONTH_rBUILD_NUM`.
 
 Deploy checks out full history, runs git-cliff, and writes `java/dashboard/src/main/resources/changelog/CHANGELOG.md` before the image build. That file is not committed. [#151](https://github.com/kazetsukaimiko/freedriver-web/issues/151) [#152](https://github.com/kazetsukaimiko/freedriver-web/issues/152).
 

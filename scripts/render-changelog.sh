@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Write the plain-text changelog the image packages. The file is not committed.
+# Write the plain-text changelog the image packages. Git ignores the generated file.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

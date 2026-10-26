@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install pinned commitlint into .tools/commitlint. Not committed.
+# Install pinned commitlint into .tools/commitlint. Git ignores .tools.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

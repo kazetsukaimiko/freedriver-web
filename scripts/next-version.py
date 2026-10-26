@@ -3,7 +3,7 @@
 
 fix and every other commit since the newest semver tag bump the patch.
 feat bumps the minor. A "!" or a BREAKING CHANGE footer bumps the major.
-No semver tag yet prints 1.0.0. YEAR-MONTH_rN tags are not versions.
+The first MAJOR.MINOR.PATCH tag, when none exist yet, is 1.0.0.
 """
 
 import re

@@ -26,9 +26,7 @@ jobs:
       - name: Record the Keycloak provider source commit
         run: printf '%s\n' "$GITHUB_SHA" > .source-commit
 
-      # Portal stamp and git tag are MAJOR.MINOR.PATCH. The tag message is the
-      # sequential build number, which the changelog header and the release page use.
-      # Git poms stay 1.0.0-SNAPSHOT for local builds.
+      # Write BUILD_NUMBER and the changelog, then build the images.
       - name: Stamp the version and write the changelog
         run: |
           set -euo pipefail

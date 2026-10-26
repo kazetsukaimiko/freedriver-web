@@ -1,6 +1,6 @@
 name: Publish SMS
 
-# Release tags only. Version tags are MAJOR.MINOR.PATCH and do not match this filter.
+# SMS package tags match sms/YYYY-MM_rN.
 # Actions ? and + quantify the preceding character, so ???? is not a valid tag filter.
 on:
   push:
