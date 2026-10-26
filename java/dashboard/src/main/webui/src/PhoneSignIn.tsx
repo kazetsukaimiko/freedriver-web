@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { apiFetch, goToSignIn } from './api'
 import { Denied } from './Dashboard'
+import { canonicalPhone } from './invitePhone'
 import {
   EMPTY_INVITES,
   EMPTY_NUMBERS,
-  ENTER_NAME,
+  ENTER_PHONE,
+  INVITE_SENT,
   displayPhone,
+  inviteFailureReason,
   loadPhonePage,
   when,
   type OpenInvite,
@@ -21,11 +24,10 @@ type View =
 
 export function PhoneSignIn() {
   const [view, setView] = useState<View>({ kind: 'loading' })
-  const [creating, setCreating] = useState(false)
-  const [name, setName] = useState('')
-  const [nameError, setNameError] = useState('')
-  const [link, setLink] = useState<{ name: string; href: string } | null>(null)
-  const [copied, setCopied] = useState(false)
+  const [phone, setPhone] = useState('')
+  const [phoneError, setPhoneError] = useState('')
+  const [notice, setNotice] = useState('')
+  const busy = useRef(false)
 
   function reload() {
     return loadPhonePage().then((result) => {
@@ -94,33 +96,59 @@ export function PhoneSignIn() {
   }
 
   async function createInvite() {
-    const label = name.trim()
-    if (!label) {
-      setNameError(ENTER_NAME)
+    if (busy.current) {
       return
     }
-    setNameError('')
-    const response = await apiFetch('/api/invites', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-Token': view.kind === 'ready' ? view.csrfToken : '',
-      },
-      body: JSON.stringify({ name: label }),
-    })
-    if (signIn(response)) {
+    const canonical = canonicalPhone(phone.trim())
+    if (!canonical) {
+      setPhoneError(ENTER_PHONE)
+      setNotice('')
       return
     }
-    if (!response.ok) {
-      setNameError(ENTER_NAME)
+    busy.current = true
+    setPhoneError('')
+    setNotice('')
+    try {
+      const response = await apiFetch('/api/invites', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': view.kind === 'ready' ? view.csrfToken : '',
+        },
+        body: JSON.stringify({ phone: canonical }),
+      })
+      if (signIn(response)) {
+        return
+      }
+      if (!response.ok) {
+        let body: unknown = null
+        try {
+          body = await response.json()
+        } catch {
+          body = null
+        }
+        setPhoneError(inviteFailureReason(body))
+        return
+      }
+      setPhone('')
+      setNotice(INVITE_SENT)
+      await reload()
+    } finally {
+      busy.current = false
+    }
+  }
+
+  function submitInvite(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    void createInvite()
+  }
+
+  function submitOnEnter(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== 'Enter') {
       return
     }
-    const body = (await response.json()) as { link: string; invite: { name: string } }
-    setLink({ name: body.invite.name, href: body.link })
-    setCreating(false)
-    setName('')
-    setCopied(false)
-    await reload()
+    event.preventDefault()
+    event.currentTarget.form?.requestSubmit()
   }
 
   async function cancelInvite(invite: OpenInvite) {
@@ -155,59 +183,31 @@ export function PhoneSignIn() {
     await reload()
   }
 
-  async function copyLink() {
-    if (!link) {
-      return
-    }
-    await navigator.clipboard.writeText(link.href)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 2000)
-  }
-
   return (
     <main className="content phone-sign-in">
       <div className="phone-sign-in-head">
         <h1>Phone sign-in</h1>
-        <button type="button" onClick={() => setCreating(true)}>
-          Create invite
-        </button>
       </div>
 
-      {creating && (
-        <section className="card">
-          <h2>Create invite</h2>
+      <section className="card">
+        <h2>Create invite</h2>
+        <form onSubmit={submitInvite}>
           <label>
-            Name
+            Phone number
             <input
-              value={name}
-              maxLength={40}
-              placeholder="Mom"
-              onChange={(event) => setName(event.target.value)}
+              value={phone}
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="(555) 555-0123"
+              onChange={(event) => setPhone(event.target.value)}
+              onKeyDown={submitOnEnter}
             />
           </label>
-          {nameError && <p>{nameError}</p>}
-          <button type="button" onClick={() => void createInvite()}>
-            Create invite link
-          </button>
-        </section>
-      )}
-
-      {link && (
-        <section className="card" aria-label={`Invite link for ${link.name}`}>
-          <h2>Invite link for {link.name}</h2>
-          <input readOnly value={link.href} aria-label="Invite link" />
-          <button type="button" onClick={() => void copyLink()}>
-            {copied ? 'Copied' : 'Copy'}
-          </button>
-          <p>
-            Send this link to {link.name}. It works once and expires in 72 hours. This link is shown only now, so
-            copy it before you close this panel.
-          </p>
-          <button type="button" onClick={() => setLink(null)}>
-            Done
-          </button>
-        </section>
-      )}
+          {phoneError && <p role="alert">{phoneError}</p>}
+          {notice && <p role="status">{notice}</p>}
+          <button type="submit">Create invite</button>
+        </form>
+      </section>
 
       <section className="card">
         <h2>Phone numbers</h2>
