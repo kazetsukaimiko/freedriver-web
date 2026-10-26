@@ -336,6 +336,23 @@ if "${freedriverSmsAgreement}" not in phone or 'id="freedriver-sms-agreement"' n
 if not (phone.index('name="phone"') < phone.index('id="freedriver-sms-agreement"') < phone.index('id="freedriver-sms-send"')):
     raise SystemExit("agreement wording sits directly above the Send code button")
 
+router = Path("keycloak/themes/freedriver/login/freedriver-phone-username.ftl").read_text()
+if "By tapping Send code" in router:
+    raise SystemExit("agreement wording must not be copied into the theme")
+if "${freedriverSmsAgreement}" not in router or 'id="freedriver-sms-agreement"' not in router:
+    raise SystemExit("router page shows the shared agreement wording")
+if "freedriverSmsSend" in router or 'name="send"' in router:
+    raise SystemExit("router page has a separate Send code button")
+if not (router.index('name="username"') < router.index('id="freedriver-sms-agreement"') < router.index("freedriverPhoneUsernameContinue")):
+    raise SystemExit("agreement wording sits above Continue")
+fragment = Path("keycloak/themes/freedriver/login/resources/js/phone-fragment.js").read_text()
+if "phone-fragment.js" not in router:
+    raise SystemExit("router page does not load the fragment script")
+if "location.hash" not in fragment or "sessionStorage" not in fragment or "freedriver.login.phone" not in fragment:
+    raise SystemExit("fragment script does not keep the number")
+if "location.search" in fragment or "URLSearchParams" in fragment:
+    raise SystemExit("fragment script reads the query")
+
 code = Path("keycloak/themes/freedriver/login/freedriver-sms-code.ftl").read_text()
 if "disabled" in code.lower():
     raise SystemExit("verify stays enabled")
