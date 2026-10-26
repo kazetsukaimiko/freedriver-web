@@ -225,13 +225,16 @@ jobs:
             skip_save=false
           fi
           # package/install skip tests. Do not let that replace a green test entry.
+          # A test-phase cache hit restores target/classes as the project artifact.
+          # The jar is written, install does not see a file, and the build stops.
+          # Keep the cache off here so sms-model is packaged and installed.
           ./mvnw -B -C -pl sms-client -am package -DskipTests \
-            -Dmaven.build.cache.enabled=true \
+            -Dmaven.build.cache.enabled=false \
             -Dmaven.build.cache.remote.enabled=false \
             -Dmaven.build.cache.remote.save.enabled=false \
             -Dmaven.build.cache.skipSave=true
           ./mvnw -B -C -pl sms-client -am install -DskipTests \
-            -Dmaven.build.cache.enabled=true \
+            -Dmaven.build.cache.enabled=false \
             -Dmaven.build.cache.remote.enabled=false \
             -Dmaven.build.cache.remote.save.enabled=false \
             -Dmaven.build.cache.skipSave=true
