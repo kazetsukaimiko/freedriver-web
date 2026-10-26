@@ -16,6 +16,7 @@ class AnonymousDocumentRedirectTest {
     @Test
     void signed_in_document_stays() {
         assertFalse(AnonymousDocumentRedirect.shouldRedirect(true, "GET", "/", null, false));
+        assertFalse(AnonymousDocumentRedirect.shouldRedirect(true, "GET", "/sign-in", null, true));
     }
 
     @Test
@@ -40,6 +41,8 @@ class AnonymousDocumentRedirectTest {
         assertFalse(AnonymousDocumentRedirect.isSpaDocument("/q/health"));
         assertFalse(AnonymousDocumentRedirect.isSpaDocument("/assets/freedriver/pages/freedriver-denied.png"));
         assertFalse(AnonymousDocumentRedirect.isSpaDocument("/login"));
+        assertFalse(AnonymousDocumentRedirect.isSpaDocument("/sign-in"));
+        assertFalse(AnonymousDocumentRedirect.isSpaDocument("/sign-in/"));
         assertFalse(AnonymousDocumentRedirect.isSpaDocument("/logout"));
         assertFalse(AnonymousDocumentRedirect.isSpaDocument("/favicon.png"));
         assertFalse(AnonymousDocumentRedirect.isSpaDocument("/index.js"));
