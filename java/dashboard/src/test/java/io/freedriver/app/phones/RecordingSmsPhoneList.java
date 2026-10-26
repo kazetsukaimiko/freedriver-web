@@ -22,6 +22,7 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
     private InviteText sendResult = InviteText.SENT;
     private InviteCheck checkResult = InviteCheck.APPROVED;
     private Invitation invitationResult = Invitation.SENT;
+    private RuntimeException listFailure;
 
     public void add(PhoneRow row) {
         rows.add(row);
@@ -31,8 +32,15 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
         return List.copyOf(removed);
     }
 
+    public void failList(RuntimeException failure) {
+        this.listFailure = failure;
+    }
+
     @Override
     public List<PhoneRow> list() {
+        if (listFailure != null) {
+            throw listFailure;
+        }
         return List.copyOf(rows);
     }
 
@@ -125,5 +133,6 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
         sendResult = InviteText.SENT;
         checkResult = InviteCheck.APPROVED;
         invitationResult = Invitation.SENT;
+        listFailure = null;
     }
 }

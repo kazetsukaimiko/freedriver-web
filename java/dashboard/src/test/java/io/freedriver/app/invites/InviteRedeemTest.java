@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.freedriver.app.phones.PhoneRow;
 import io.freedriver.app.phones.RecordingPhoneSignIn;
 import io.freedriver.app.phones.RecordingSmsPhoneList;
-import io.freedriver.app.security.CsrfFilter;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.TestProfile;
 import io.quarkus.test.security.TestSecurity;
@@ -160,18 +159,7 @@ class InviteRedeemTest {
                 .post("/api/invites/redeem/resend");
     }
 
-    private String invite(String name) throws Exception {
-        Response created = csrf().body(json.writeValueAsString(Map.of("name", name))).post("/api/invites");
-        created.then().statusCode(201);
-        String link = created.path("link");
-        return link.substring(link.indexOf('#') + 1);
-    }
-
-    private io.restassured.specification.RequestSpecification csrf() {
-        Response get = given().when().get("/api/invites");
-        get.then().statusCode(200);
-        return given().contentType(ContentType.JSON)
-                .cookie(CsrfFilter.COOKIE, get.cookie(CsrfFilter.COOKIE))
-                .header(CsrfFilter.HEADER, get.path("csrfToken"));
+    private String invite(String name) {
+        return store.create(name).code();
     }
 }

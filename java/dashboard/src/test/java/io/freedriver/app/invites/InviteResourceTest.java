@@ -25,8 +25,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
@@ -50,27 +52,73 @@ class InviteResourceTest {
 
     @Test
     @TestSecurity(user = "yuni", roles = {"portal-admin"})
-    void create_shows_the_link_once_and_lists_no_number() {
-        Response created = csrf().body("{\"name\":\" Mom \"}").post("/api/invites");
-        created.then().statusCode(201);
-        String link = created.path("link");
-        assertTrue(link.startsWith("https://app.freedriver.io/invite/#"));
-        String code = link.substring(link.indexOf('#') + 1);
-        assertEquals(43, code.length());
-        assertFalse(store.fileContains(code));
-        assertEquals("Mom", created.path("invite.name"));
-
-        given().when().get("/api/invites").then().statusCode(200).body("invites.size()", org.hamcrest.Matchers.is(1));
-        given().when().get("/api/phones").then().statusCode(200).body("phones.size()", org.hamcrest.Matchers.is(0));
-        assertTrue(sms.removed().isEmpty());
-        assertTrue(sms.invitations().isEmpty());
+    void create_from_a_phone_does_not_mint_a_link() {
+        Response created = csrf().body("{\"phone\":\" (555) 555-0123 \"}").post("/api/invites");
+        created.then().statusCode(201)
+                .body("sent.type", is("invite"))
+                .body("sent.phone", is("+15555550123"));
+        assertNull(created.path("link"));
+        assertNoProviderBody(created);
+        assertTrue(store.open().isEmpty());
+        given().when().get("/api/invites").then().statusCode(200).body("invites.size()", is(0));
+        given().when().get("/api/phones").then().statusCode(200).body("phones.size()", is(0));
+        assertEquals(List.of("+15555550123"), sms.invitations());
+        assertTrue(sms.sent().isEmpty());
+        assertTrue(sms.added().isEmpty());
+        assertTrue(keycloak.created().isEmpty());
         assertTrue(keycloak.removed().isEmpty());
     }
 
     @Test
     @TestSecurity(user = "yuni", roles = {"portal-admin"})
+    void a_name_does_not_mint_a_link() {
+        Response created = csrf().body("{\"name\":\"Mom\"}").post("/api/invites");
+        created.then().statusCode(400).body("reason", is("phone"));
+        assertNoProviderBody(created);
+        assertTrue(store.open().isEmpty());
+    }
+
+    @Test
+    @TestSecurity(user = "yuni", roles = {"portal-admin"})
+    void a_listed_number_is_refused_at_create() {
+        sms.add(new PhoneRow("+15555550123", "Mom", "dashboard", Instant.parse("2026-10-01T00:00:00Z"), null, null));
+        Response created = csrf().body("{\"phone\":\"5555550123\"}").post("/api/invites");
+        created.then().statusCode(409).body("reason", is("listed"));
+        assertNoProviderBody(created);
+        assertTrue(store.open().isEmpty());
+        assertTrue(sms.sent().isEmpty());
+        assertTrue(sms.added().isEmpty());
+        assertTrue(keycloak.created().isEmpty());
+        given().when().get("/api/phones").then().body("phones.size()", is(1));
+    }
+
+    @Test
+    @TestSecurity(user = "yuni", roles = {"portal-admin"})
+    void an_upstream_failure_hides_the_provider_body() {
+        sms.failList(new InviteUpstreamException("Twilio 21211 Keycloak error body +15555550123"));
+        Response created = csrf().body("{\"phone\":\"+15555550123\"}").post("/api/invites");
+        created.then().statusCode(502).body("error", is("unavailable"));
+        assertNoProviderBody(created);
+        assertFalse(created.asString().contains("+15555550123"));
+        assertTrue(store.open().isEmpty());
+    }
+
+    @Test
+    @TestSecurity(user = "yuni", roles = {"portal-admin"})
+    void an_existing_link_still_works_until_it_expires() {
+        InviteStore.Created existing = store.create("Mom");
+        given().when().get("/api/invites").then().statusCode(200)
+                .body("invites.size()", is(1))
+                .body("invites[0].name", is("Mom"));
+        given().contentType(ContentType.JSON).body("{\"code\":\"" + existing.code() + "\"}")
+                .post("/api/invites/use").then().statusCode(200).body("used", is(true));
+        given().when().get("/api/invites").then().body("invites.size()", is(0));
+    }
+
+    @Test
+    @TestSecurity(user = "yuni", roles = {"portal-admin"})
     void one_invite_is_used_once_including_two_concurrent_callers() throws Exception {
-        String code = codeOf(csrf().body("{\"name\":\"Mom\"}").post("/api/invites"));
+        String code = store.create("Mom").code();
         CountDownLatch start = new CountDownLatch(1);
         ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
@@ -90,23 +138,22 @@ class InviteResourceTest {
             pool.shutdownNow();
         }
         given().contentType(ContentType.JSON).body("{\"code\":\"" + code + "\"}")
-                .post("/api/invites/use").then().statusCode(409).body("used", org.hamcrest.Matchers.is(false));
-        given().when().get("/api/invites").then().body("invites.size()", org.hamcrest.Matchers.is(0));
+                .post("/api/invites/use").then().statusCode(409).body("used", is(false));
+        given().when().get("/api/invites").then().body("invites.size()", is(0));
     }
 
     @Test
     @TestSecurity(user = "yuni", roles = {"portal-admin"})
     void expired_and_cancelled_invites_fail_the_same_update() {
-        String expired = codeOf(csrf().body("{\"name\":\"Mom\"}").post("/api/invites"));
+        String expired = store.create("Mom").code();
         store.clock(Clock.fixed(Instant.now().plus(Duration.ofHours(72)), ZoneOffset.UTC));
         given().contentType(ContentType.JSON).body("{\"code\":\"" + expired + "\"}")
                 .post("/api/invites/use").then().statusCode(409);
 
         store.clock(Clock.systemUTC());
-        Response created = csrf().body("{\"name\":\"Dad\"}").post("/api/invites");
-        String id = created.path("invite.id");
-        String code = codeOf(created);
-        csrf().post("/api/invites/" + id + "/cancel").then().statusCode(204);
+        InviteStore.Created created = store.create("Dad");
+        csrf().post("/api/invites/" + created.invite().id() + "/cancel").then().statusCode(204);
+        String code = created.code();
         given().contentType(ContentType.JSON).body("{\"code\":\"" + code + "\"}")
                 .post("/api/invites/use").then().statusCode(409);
     }
@@ -114,7 +161,7 @@ class InviteResourceTest {
     @Test
     void anonymous_invite_use_stays_open() {
         given().contentType(ContentType.JSON).body("{\"code\":\"nope\"}")
-                .post("/api/invites/use").then().statusCode(409).body("used", org.hamcrest.Matchers.is(false));
+                .post("/api/invites/use").then().statusCode(409).body("used", is(false));
     }
 
     @Test
@@ -138,8 +185,8 @@ class InviteResourceTest {
     @Test
     @TestSecurity(user = "yuni", roles = {"portal-admin"})
     void create_without_csrf_is_refused() {
-        given().contentType(ContentType.JSON).body("{\"name\":\"Mom\"}").post("/api/invites")
-                .then().statusCode(400).body(org.hamcrest.Matchers.is("{}"));
+        given().contentType(ContentType.JSON).body("{\"phone\":\"+15555550123\"}").post("/api/invites")
+                .then().statusCode(400).body(is("{}"));
         assertTrue(store.open().isEmpty());
     }
 
@@ -150,7 +197,7 @@ class InviteResourceTest {
         csrf().body("{\"phone\":\"+15555550123\"}").post("/api/phones/remove").then().statusCode(204);
         assertEquals(List.of("+15555550123"), sms.removed());
         assertEquals(List.of("+15555550123"), keycloak.removed());
-        given().when().get("/api/phones").then().body("phones.size()", org.hamcrest.Matchers.is(0));
+        given().when().get("/api/phones").then().body("phones.size()", is(0));
     }
 
     @Test
@@ -158,9 +205,18 @@ class InviteResourceTest {
     void invite_creates_hit_the_app_rate_limit() {
         List<Integer> statuses = new ArrayList<>();
         for (int i = 0; i < 9; i++) {
-            statuses.add(csrf().body("{\"name\":\"Person " + i + "\"}").post("/api/invites").statusCode());
+            String phone = "+1555555" + String.format("%04d", i);
+            statuses.add(csrf().body("{\"phone\":\"" + phone + "\"}").post("/api/invites").statusCode());
         }
         assertEquals(List.of(201, 201, 201, 201, 201, 201, 201, 201, 429), statuses);
+        assertTrue(store.open().isEmpty());
+    }
+
+    private static void assertNoProviderBody(Response response) {
+        String body = response.asString();
+        assertFalse(body.contains("/invite/#"));
+        assertFalse(body.contains("Twilio"));
+        assertFalse(body.contains("Keycloak"));
     }
 
     @Test
@@ -212,11 +268,5 @@ class InviteResourceTest {
         return given().contentType(ContentType.JSON)
                 .cookie(CsrfFilter.COOKIE, get.cookie(CsrfFilter.COOKIE))
                 .header(CsrfFilter.HEADER, get.path("csrfToken"));
-    }
-
-    private static String codeOf(Response created) {
-        created.then().statusCode(201);
-        String link = created.path("link");
-        return link.substring(link.indexOf('#') + 1);
     }
 }
