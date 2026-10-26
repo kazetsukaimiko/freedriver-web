@@ -1,0 +1,56 @@
+name: Release
+
+# Version tags only. Deploy pushes MAJOR.MINOR.PATCH after the VPS is up.
+# Sequential YEAR-MONTH_rN tags and sms/* tags do not match.
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    if: github.repository == 'kazetsukaimiko/freedriver-web'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Require a version tag
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re, sys
+          tag = os.environ["GITHUB_REF_NAME"]
+          if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", tag):
+              sys.exit(f"not a version tag: {tag}")
+          PY
+
+      - name: Install git-cliff
+        run: ./scripts/install-git-cliff.sh
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TZ: UTC
+        run: |
+          set -euo pipefail
+          notes="$RUNNER_TEMP/release-notes.txt"
+          .tools/bin/git-cliff --config cliff.toml --latest -o "$notes"
+          python3 - "$notes" <<'PY'
+          import pathlib, sys
+          path = pathlib.Path(sys.argv[1])
+          path.write_text(path.read_text().strip() + "\n")
+          PY
+          tag="$GITHUB_REF_NAME"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --notes-file "$notes"
+          else
+            gh release create "$tag" --title "$tag" --notes-file "$notes"
+          fi

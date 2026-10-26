@@ -1,6 +1,8 @@
 .env
 .source-commit
 BUILD_NUMBER
+.tools/
+java/dashboard/src/main/resources/changelog/CHANGELOG.md
 settings.xml
 mqtt-contract/target/
 mqtt-contract/.flattened-pom.xml

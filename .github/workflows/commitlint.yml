@@ -1,0 +1,47 @@
+name: Commitlint
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  commitlint:
+    runs-on: ubuntu-latest
+    if: github.repository == 'kazetsukaimiko/freedriver-web'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22.14.0"
+
+      - name: Install commitlint and git-cliff
+        run: |
+          set -euo pipefail
+          ./scripts/install-commitlint.sh
+          ./scripts/install-git-cliff.sh
+
+      - name: Convention tests
+        run: |
+          set -euo pipefail
+          ./scripts/test-commitlint.sh
+          ./scripts/test-next-version.sh
+          ./scripts/test-changelog.sh
+
+      - name: Lint the pull request title and description
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          python3 scripts/pr-commit-message.py > "$RUNNER_TEMP/commit.txt"
+          .tools/commitlint/node_modules/.bin/commitlint \
+            --config commitlint.config.js \
+            --edit "$RUNNER_TEMP/commit.txt" \
+            --verbose

@@ -10,8 +10,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
 /**
- * The changelog packaged in the app jar at {@value #RESOURCE}. The release job (#151) writes the
- * file to that classpath path. It sits outside {@code META-INF/resources}, so Quarkus never serves
+ * The changelog packaged in the app jar at {@value #RESOURCE}. The release job (#151) writes
+ * plain text to that classpath path. It sits outside {@code META-INF/resources}, so Quarkus never serves
  * it as a static file; {@code GET /api/changelog} is the one way to read it.
  */
 @ApplicationScoped

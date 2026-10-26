@@ -10,7 +10,7 @@ import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
 
-/** Serves src/test/resources/changelog/CHANGELOG.md, the test copy of the file the release job packages. */
+/** Serves src/test/resources/changelog/CHANGELOG.md, a stand-in for the packaged file. */
 @QuarkusTest
 class ChangelogResourceTest {
 

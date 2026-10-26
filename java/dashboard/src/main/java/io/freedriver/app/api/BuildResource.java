@@ -9,7 +9,8 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
  * Public read-only stamp for the UX badge (#49).
- * Main deploys bake YEAR-MONTH_rBUILD_NUM into {@code quarkus.application.version}.
+ * Main deploys bake MAJOR.MINOR.PATCH into {@code quarkus.application.version}.
+ * That string is the git version tag.
  */
 @ApplicationScoped
 @Path("/api/build")
