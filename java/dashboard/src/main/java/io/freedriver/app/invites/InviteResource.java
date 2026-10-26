@@ -1,5 +1,6 @@
 package io.freedriver.app.invites;
 
+import io.freedriver.app.phones.UsPhones;
 import io.freedriver.dashboard.api.RateLimited;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
@@ -11,14 +12,14 @@ import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * Portal-admin invites. A name still mints one link and does not list a number.
- * A phone lists the number, then creates the Keycloak user, and does not mint a link.
+ * Portal-admin invites. Create takes a phone number, lists it, then creates the Keycloak user.
+ * It does not mint a code. A name alone does not mint one either.
+ * A code already in the store still lists, cancels, and redeems until it expires.
  */
 @Path("/api/invites")
 @RolesAllowed("portal-admin")
@@ -27,16 +28,11 @@ public class InviteResource {
 
     private final InviteStore store;
     private final PhoneInviteCreate phones;
-    private final String publicBase;
 
     @Inject
-    public InviteResource(InviteStore store,
-                          PhoneInviteCreate phones,
-                          @ConfigProperty(name = "freedriver.public-base-url",
-                                  defaultValue = "https://app.freedriver.io") String publicBase) {
+    public InviteResource(InviteStore store, PhoneInviteCreate phones) {
         this.store = store;
         this.phones = phones;
-        this.publicBase = publicBase.endsWith("/") ? publicBase.substring(0, publicBase.length() - 1) : publicBase;
     }
 
     @GET
@@ -48,12 +44,12 @@ public class InviteResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @RateLimited("invites")
     public Response create(CreateInvite request) {
-        if (request != null && request.phone() != null) {
-            return listed(phones.create(request.phone(), request.name()));
+        String raw = request == null || request.phone() == null ? null : request.phone().strip();
+        String phone = UsPhones.canonical(raw).orElse(null);
+        if (phone == null) {
+            return Response.status(400).entity(Map.of("reason", "phone")).build();
         }
-        InviteStore.Created created = store.create(request == null ? null : request.name());
-        String link = publicBase + "/invite/#" + created.code();
-        return Response.status(201).entity(new InviteCreated(created.invite(), link)).build();
+        return listed(phones.create(phone, request.name()));
     }
 
     private static Response listed(PhoneInviteCreate.Result result) {
@@ -63,7 +59,11 @@ public class InviteResource {
                     .entity(Map.of("phone", listed.maskedPhone()))
                     .build();
             case PhoneInviteCreate.Result.Rejected rejected -> {
-                Object body = rejected.status() == 502 ? Map.of("error", "unavailable") : Map.of();
+                Object body = switch (rejected.status()) {
+                    case 409 -> Map.of("reason", "listed");
+                    case 502 -> Map.of("error", "unavailable");
+                    default -> Map.of("reason", "phone");
+                };
                 yield Response.status(rejected.status()).type(MediaType.APPLICATION_JSON_TYPE).entity(body).build();
             }
         };
@@ -80,8 +80,5 @@ public class InviteResource {
     }
 
     public record CreateInvite(String name, String phone) {
-    }
-
-    public record InviteCreated(InviteView invite, String link) {
     }
 }

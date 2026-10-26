@@ -22,6 +22,7 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
     private final java.util.Set<String> pending = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private InviteText sendResult = InviteText.SENT;
     private InviteCheck checkResult = InviteCheck.APPROVED;
+    private RuntimeException listFailure;
 
     public void add(PhoneRow row) {
         rows.add(row);
@@ -31,8 +32,15 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
         return List.copyOf(removed);
     }
 
+    public void failList(RuntimeException failure) {
+        this.listFailure = failure;
+    }
+
     @Override
     public List<PhoneRow> list() {
+        if (listFailure != null) {
+            throw listFailure;
+        }
         return List.copyOf(rows);
     }
 
@@ -139,5 +147,6 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
         pending.clear();
         sendResult = InviteText.SENT;
         checkResult = InviteCheck.APPROVED;
+        listFailure = null;
     }
 }
