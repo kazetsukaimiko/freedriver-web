@@ -1,5 +1,6 @@
 package io.freedriver.app.invites;
 
+import io.freedriver.app.api.LoginLinks;
 import io.freedriver.app.phones.UsPhones;
 import io.freedriver.dashboard.api.RateLimited;
 import jakarta.annotation.security.RolesAllowed;
@@ -18,8 +19,9 @@ import java.util.UUID;
 
 /**
  * Portal-admin invites. Create takes a phone number, lists it, then creates the Keycloak user.
- * It does not mint a code. A name alone does not mint one either.
- * A code already in the store still lists, cancels, and redeems until it expires.
+ * It does not mint a code, send a text, or record the sign-in agreement.
+ * The response carries the login link. A code already in the store still lists, cancels, and
+ * redeems until it expires.
  */
 @Path("/api/invites")
 @RolesAllowed("portal-admin")
@@ -28,11 +30,13 @@ public class InviteResource {
 
     private final InviteStore store;
     private final PhoneInviteCreate phones;
+    private final LoginLinks links;
 
     @Inject
-    public InviteResource(InviteStore store, PhoneInviteCreate phones) {
+    public InviteResource(InviteStore store, PhoneInviteCreate phones, LoginLinks links) {
         this.store = store;
         this.phones = phones;
+        this.links = links;
     }
 
     @GET
@@ -49,14 +53,14 @@ public class InviteResource {
         if (phone == null) {
             return Response.status(400).entity(Map.of("reason", "phone")).build();
         }
-        return listed(phones.create(phone, request.name()));
+        return listed(phone, phones.create(phone, request.name()));
     }
 
-    private static Response listed(PhoneInviteCreate.Result result) {
+    private Response listed(String phone, PhoneInviteCreate.Result result) {
         return switch (result) {
             case PhoneInviteCreate.Result.Listed listed -> Response.status(201)
                     .type(MediaType.APPLICATION_JSON_TYPE)
-                    .entity(Map.of("phone", listed.maskedPhone()))
+                    .entity(Map.of("phone", listed.maskedPhone(), "link", links.url(phone)))
                     .build();
             case PhoneInviteCreate.Result.Rejected rejected -> {
                 Object body = switch (rejected.status()) {
