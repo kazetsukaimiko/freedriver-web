@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "5875e12be7ac4ed37209dfdc1a7c25784f0824f3",
+  "always-update": true,
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "changelog-path": "java/dashboard/src/main/resources/changelog/CHANGELOG.md",
+      "version-file": "version.txt",
+      "skip-github-release": true
+    }
+  }
+}
