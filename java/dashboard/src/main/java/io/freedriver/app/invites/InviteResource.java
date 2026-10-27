@@ -1,7 +1,5 @@
 package io.freedriver.app.invites;
 
-import io.freedriver.app.phones.PhoneRow;
-import io.freedriver.app.phones.SmsPhoneList;
 import io.freedriver.app.phones.UsPhones;
 import io.freedriver.dashboard.api.RateLimited;
 import jakarta.annotation.security.RolesAllowed;
@@ -19,7 +17,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Portal-admin invites. Create takes a phone number and does not mint a code.
+ * Portal-admin invites. Create takes a phone number, lists it, then creates the Keycloak user.
+ * It does not mint a code. A name alone does not mint one either.
  * A code already in the store still lists, cancels, and redeems until it expires.
  */
 @Path("/api/invites")
@@ -28,12 +27,12 @@ import java.util.UUID;
 public class InviteResource {
 
     private final InviteStore store;
-    private final SmsPhoneList sms;
+    private final PhoneInviteCreate phones;
 
     @Inject
-    public InviteResource(InviteStore store, SmsPhoneList sms) {
+    public InviteResource(InviteStore store, PhoneInviteCreate phones) {
         this.store = store;
-        this.sms = sms;
+        this.phones = phones;
     }
 
     @GET
@@ -50,10 +49,24 @@ public class InviteResource {
         if (phone == null) {
             return Response.status(400).entity(Map.of("reason", "phone")).build();
         }
-        if (listed(phone)) {
-            return Response.status(409).entity(Map.of("reason", "listed")).build();
-        }
-        return Response.status(201).entity(Map.of()).build();
+        return listed(phones.create(phone, request.name()));
+    }
+
+    private static Response listed(PhoneInviteCreate.Result result) {
+        return switch (result) {
+            case PhoneInviteCreate.Result.Listed listed -> Response.status(201)
+                    .type(MediaType.APPLICATION_JSON_TYPE)
+                    .entity(Map.of("phone", listed.maskedPhone()))
+                    .build();
+            case PhoneInviteCreate.Result.Rejected rejected -> {
+                Object body = switch (rejected.status()) {
+                    case 409 -> Map.of("reason", "listed");
+                    case 502 -> Map.of("error", "unavailable");
+                    default -> Map.of("reason", "phone");
+                };
+                yield Response.status(rejected.status()).type(MediaType.APPLICATION_JSON_TYPE).entity(body).build();
+            }
+        };
     }
 
     @POST
@@ -66,16 +79,6 @@ public class InviteResource {
         return Response.noContent().build();
     }
 
-    private boolean listed(String phone) {
-        for (PhoneRow row : sms.list()) {
-            String stored = row.phone() == null ? "" : row.phone().strip();
-            if (phone.equals(UsPhones.canonical(stored).orElse(stored))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    public record CreateInvite(String phone) {
+    public record CreateInvite(String name, String phone) {
     }
 }

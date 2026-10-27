@@ -54,16 +54,45 @@ class InviteResourceTest {
     @TestSecurity(user = "yuni", roles = {"portal-admin"})
     void create_from_a_phone_does_not_mint_a_link() {
         Response created = csrf().body("{\"phone\":\" (555) 555-0123 \"}").post("/api/invites");
-        created.then().statusCode(201).body(is("{}"));
+        created.then().statusCode(201);
+        assertEquals("***0123", created.path("phone"));
         assertNull(created.path("link"));
         assertNoProviderBody(created);
+        assertFalse(created.asString().contains("555555"));
         assertTrue(store.open().isEmpty());
         given().when().get("/api/invites").then().statusCode(200).body("invites.size()", is(0));
-        given().when().get("/api/phones").then().statusCode(200).body("phones.size()", is(0));
+        given().when().get("/api/phones").then().statusCode(200).body("phones.size()", is(1));
         assertTrue(sms.sent().isEmpty());
-        assertTrue(sms.added().isEmpty());
-        assertTrue(keycloak.created().isEmpty());
+        assertEquals(List.of("whitelist", "attach"), sms.steps());
+        assertEquals(List.of("+15555550123"), keycloak.created());
         assertTrue(keycloak.removed().isEmpty());
+    }
+
+    @Test
+    @TestSecurity(user = "invite-phone", roles = {"portal-admin"})
+    void create_lists_the_number_then_creates_the_user_and_remove_undoes_it() {
+        Response created = csrf().body("{\"phone\":\"+15555550123\"}").post("/api/invites");
+        created.then().statusCode(201);
+        String body = created.asString();
+        assertEquals("***0123", created.path("phone"));
+        assertFalse(body.contains("555555"));
+        assertFalse(body.contains("link"));
+        assertTrue(store.open().isEmpty());
+        assertEquals(List.of("whitelist", "attach"), sms.steps());
+        assertEquals(List.of("+15555550123"), keycloak.created());
+        assertEquals(List.of(RecordingPhoneSignIn.USERNAME), sms.usernames());
+        given().when().get("/api/phones").then().statusCode(200).body("phones.size()", org.hamcrest.Matchers.is(1));
+
+        csrf().body("{\"phone\":\"+15555550123\"}").post("/api/invites").then().statusCode(409);
+        assertEquals(List.of("+15555550123"), keycloak.created());
+
+        csrf().body("{\"phone\":\"5555550123\"}").post("/api/invites").then().statusCode(409);
+        csrf().body("{\"phone\":\"+441234567890\"}").post("/api/invites").then().statusCode(400);
+
+        csrf().body("{\"phone\":\"+15555550123\"}").post("/api/phones/remove").then().statusCode(204);
+        assertEquals(List.of("+15555550123"), sms.removed());
+        assertEquals(List.of("+15555550123"), keycloak.removed());
+        given().when().get("/api/phones").then().body("phones.size()", org.hamcrest.Matchers.is(0));
     }
 
     @Test

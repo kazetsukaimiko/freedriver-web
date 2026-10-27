@@ -1,5 +1,6 @@
 package io.freedriver.sms.http;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.freedriver.sms.phones.ConsentLedger;
 import io.freedriver.sms.phones.ConsentPurpose;
 import io.freedriver.sms.phones.ConsentRecord;
@@ -67,6 +68,24 @@ public class PhoneListResource {
         return new Added(added);
     }
 
+    /** Lists a number before its Keycloak user exists. The role is always {@code dashboard}. */
+    @POST
+    @Path("whitelist")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Added whitelist(@Valid @NotNull WhitelistPhone request) {
+        String name = request.name() == null ? null : request.name().strip();
+        boolean added = directory.whitelist(request.phone(), name == null || name.isEmpty() ? null : name);
+        return new Added(added);
+    }
+
+    /** Records the username of the user created for a listed number. */
+    @POST
+    @Path("attach")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Attached attach(@Valid @NotNull AttachUser request) {
+        return new Attached(directory.attachUsername(request.phone(), request.username()));
+    }
+
     private Instant consentedAt(String phone) {
         return consents.history(phone).stream()
                 .filter(record -> record.purpose() == ConsentPurpose.SIGN_IN_CODES)
@@ -101,5 +120,17 @@ public class PhoneListResource {
     }
 
     public record Added(boolean added) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record WhitelistPhone(@UsPhoneNumber String phone, @Size(max = 40) String name) {
+    }
+
+    public record AttachUser(
+            @UsPhoneNumber String phone,
+            @NotBlank @Pattern(regexp = "inv[0-9a-f]{32}") String username) {
+    }
+
+    public record Attached(boolean attached) {
     }
 }

@@ -20,8 +20,9 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
- * Takes a user out of the {@code phone-sign-in} group with the invite service account.
- * That account cannot grant {@code portal-admin}. This class never asks it to.
+ * Phone-sign-in membership through the invite service account.
+ * That account cannot grant {@code portal-admin}. This class sends only the phone.
+ * The invite-account resource grants {@code dashboard} itself.
  */
 @ApplicationScoped
 public class KeycloakPhoneSignIn implements PhoneSignInDirectory {
@@ -107,6 +108,9 @@ public class KeycloakPhoneSignIn implements PhoneSignInDirectory {
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
         HttpResponse<String> response = send(request);
+        if (response.statusCode() == 409) {
+            throw new PhoneAlreadyExists();
+        }
         if (response.statusCode() / 100 != 2) {
             throw new InviteUpstreamException("invite account create answered " + response.statusCode());
         }
