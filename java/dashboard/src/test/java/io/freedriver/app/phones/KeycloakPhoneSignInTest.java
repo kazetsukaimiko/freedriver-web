@@ -159,6 +159,34 @@ class KeycloakPhoneSignInTest {
     }
 
     @Test
+    void a_second_user_is_a_conflict_and_the_body_is_not_kept() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/realms/freedriver/protocol/openid-connect/token", exchange -> {
+            byte[] token = "{\"access_token\":\"tok\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, token.length);
+            exchange.getResponseBody().write(token);
+            exchange.close();
+        });
+        server.createContext("/realms/freedriver/freedriver-invite/users", exchange -> {
+            byte[] response = "{}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(409, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            String auth = "http://127.0.0.1:" + server.getAddress().getPort() + "/realms/freedriver";
+            KeycloakPhoneSignIn client = new KeycloakPhoneSignIn(
+                    new ObjectMapper(), auth, "freedriver-invite", "secret-value");
+            PhoneAlreadyExists error = assertThrows(PhoneAlreadyExists.class,
+                    () -> client.createPhoneSignInUser("+15555550123"));
+            assertFalse(error.getMessage().contains("555"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void blank_secret_does_not_call_keycloak() {
         KeycloakPhoneSignIn client = new KeycloakPhoneSignIn(
                 new ObjectMapper(), "http://127.0.0.1:9/realms/freedriver", "freedriver-invite", " ");

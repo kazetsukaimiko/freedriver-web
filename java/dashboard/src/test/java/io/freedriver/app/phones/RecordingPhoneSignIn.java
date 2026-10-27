@@ -5,6 +5,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Test double for the invite service account. Records who left {@code phone-sign-in}. */
 @Mock
@@ -15,6 +16,7 @@ public class RecordingPhoneSignIn implements PhoneSignInDirectory {
 
     private final List<String> removed = new CopyOnWriteArrayList<>();
     private final List<String> created = new CopyOnWriteArrayList<>();
+    private final AtomicBoolean conflict = new AtomicBoolean();
 
     public List<String> removed() {
         return List.copyOf(removed);
@@ -30,8 +32,15 @@ public class RecordingPhoneSignIn implements PhoneSignInDirectory {
         return true;
     }
 
+    public void conflict(boolean value) {
+        conflict.set(value);
+    }
+
     @Override
     public Created createPhoneSignInUser(String phone) {
+        if (conflict.get()) {
+            throw new PhoneAlreadyExists();
+        }
         created.add(phone);
         return new Created(USERNAME, List.of("phone-sign-in"), List.of());
     }
@@ -39,5 +48,6 @@ public class RecordingPhoneSignIn implements PhoneSignInDirectory {
     public void clear() {
         removed.clear();
         created.clear();
+        conflict.set(false);
     }
 }

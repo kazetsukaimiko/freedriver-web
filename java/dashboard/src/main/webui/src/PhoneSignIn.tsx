@@ -6,7 +6,8 @@ import {
   EMPTY_INVITES,
   EMPTY_NUMBERS,
   ENTER_PHONE,
-  INVITE_SENT,
+  INVITE_FAILED,
+  acceptLoginLink,
   displayPhone,
   inviteFailureReason,
   loadPhonePage,
@@ -26,7 +27,7 @@ export function PhoneSignIn() {
   const [view, setView] = useState<View>({ kind: 'loading' })
   const [phone, setPhone] = useState('')
   const [phoneError, setPhoneError] = useState('')
-  const [notice, setNotice] = useState('')
+  const [openLink, setOpenLink] = useState<string | null>(null)
   const busy = useRef(false)
 
   function reload() {
@@ -102,12 +103,10 @@ export function PhoneSignIn() {
     const canonical = canonicalPhone(phone.trim())
     if (!canonical) {
       setPhoneError(ENTER_PHONE)
-      setNotice('')
       return
     }
     busy.current = true
     setPhoneError('')
-    setNotice('')
     try {
       const response = await apiFetch('/api/invites', {
         method: 'POST',
@@ -130,8 +129,19 @@ export function PhoneSignIn() {
         setPhoneError(inviteFailureReason(body))
         return
       }
+      let body: unknown = null
+      try {
+        body = await response.json()
+      } catch {
+        body = null
+      }
+      const link = acceptLoginLink(linkField(body))
       setPhone('')
-      setNotice(INVITE_SENT)
+      if (!link) {
+        setPhoneError(INVITE_FAILED)
+      } else {
+        setOpenLink(link)
+      }
       await reload()
     } finally {
       busy.current = false
@@ -204,7 +214,6 @@ export function PhoneSignIn() {
             />
           </label>
           {phoneError && <p role="alert">{phoneError}</p>}
-          {notice && <p role="status">{notice}</p>}
           <button type="submit">Create invite</button>
         </form>
       </section>
@@ -227,21 +236,31 @@ export function PhoneSignIn() {
               </tr>
             </thead>
             <tbody>
-              {view.phones.map((row) => (
-                <tr key={row.phone}>
-                  <td>{row.name}</td>
-                  <td>{displayPhone(row.phone)}</td>
-                  <td>{row.role}</td>
-                  <td>{row.consentedAt ? `Consented ${when(row.consentedAt)}` : 'Waiting for consent'}</td>
-                  <td>{when(row.addedAt)}</td>
-                  <td>{row.lastSignIn ? when(row.lastSignIn) : '—'}</td>
-                  <td>
-                    <button type="button" className="danger" onClick={() => void removePhone(row)}>
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {view.phones.map((row) => {
+                const link = row.lastSignIn == null ? acceptLoginLink(row.loginLink) : null
+                return (
+                  <tr key={row.phone}>
+                    <td>{row.name}</td>
+                    <td>{displayPhone(row.phone)}</td>
+                    <td>{row.role}</td>
+                    <td>{row.consentedAt ? `Consented ${when(row.consentedAt)}` : 'Waiting for consent'}</td>
+                    <td>{when(row.addedAt)}</td>
+                    <td>{row.lastSignIn ? when(row.lastSignIn) : '—'}</td>
+                    <td>
+                      <div className="phone-row-actions">
+                        {link && (
+                          <button type="button" onClick={() => setOpenLink(link)}>
+                            Login link
+                          </button>
+                        )}
+                        <button type="button" className="danger" onClick={() => void removePhone(row)}>
+                          Remove
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}
@@ -266,7 +285,64 @@ export function PhoneSignIn() {
           </ul>
         )}
       </section>
+      {openLink && <LoginLinkModal url={openLink} onClose={() => setOpenLink(null)} />}
     </main>
+  )
+}
+
+function linkField(body: unknown): unknown {
+  if (!body || typeof body !== 'object') {
+    return null
+  }
+  return (body as { link?: unknown }).link
+}
+
+function LoginLinkModal({ url, onClose }: { url: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false)
+  const copyButton = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    copyButton.current?.focus()
+    function onKey(event: globalThis.KeyboardEvent) {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+    } catch {
+      setCopied(false)
+    }
+  }
+
+  return (
+    <div className="login-link-backdrop" onClick={onClose}>
+      <div
+        className="login-link-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="login-link-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h2 id="login-link-title">Login link</h2>
+        <p>Copy this link and send it to them.</p>
+        <input readOnly value={url} aria-label="Login link" />
+        <div className="login-link-actions">
+          <button ref={copyButton} type="button" onClick={() => void copy()}>
+            {copied ? 'Copied' : 'Copy link'}
+          </button>
+          <button type="button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 

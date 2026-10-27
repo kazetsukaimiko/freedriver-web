@@ -5,8 +5,7 @@ export const EMPTY_NUMBERS = 'No phone numbers yet. Create an invite to let some
 export const EMPTY_INVITES = 'No open invites.'
 export const ENTER_PHONE = 'Enter a 10-digit US phone number.'
 export const ALREADY_LISTED = 'That number is already on the list.'
-export const INVITE_FAILED = 'The invitation could not be sent.'
-export const INVITE_SENT = 'The invitation was sent.'
+export const INVITE_FAILED = 'The number could not be added.'
 
 const STABLE_REASONS: Record<string, string> = {
   phone: ENTER_PHONE,
@@ -29,6 +28,23 @@ export function inviteFailureReason(body: unknown): string {
   return INVITE_FAILED
 }
 
+/** The login link from create. The number stays in the fragment, so a query is not a link. */
+export function acceptLoginLink(link: unknown): string | null {
+  if (typeof link !== 'string' || link.length === 0) {
+    return null
+  }
+  let url: URL
+  try {
+    url = new URL(link)
+  } catch {
+    return null
+  }
+  if (url.username !== '' || url.password !== '' || url.search !== '' || url.pathname !== '/sign-in' || url.hash.length < 2) {
+    return null
+  }
+  return link
+}
+
 export type PhoneRow = {
   phone: string
   name: string
@@ -36,6 +52,7 @@ export type PhoneRow = {
   addedAt: string
   consentedAt: string | null
   lastSignIn: string | null
+  loginLink?: string | null
 }
 
 export type OpenInvite = {
@@ -51,12 +68,13 @@ export type PhonePage =
   | { status: 'denied' }
   | { status: 'error' }
 
+/** Last four digits. The remove call still uses the full number. */
 export function displayPhone(e164: string) {
-  const digits = e164.replace(/\D/g, '').slice(-10)
-  if (digits.length !== 10) {
-    return e164
+  const digits = e164.replace(/\D/g, '')
+  if (digits.length < 4) {
+    return '***'
   }
-  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+  return `***${digits.slice(-4)}`
 }
 
 export function when(iso: string) {
