@@ -430,6 +430,16 @@ if "add-roles" in invite_body:
     raise SystemExit("invite setup must not grant roles with add-roles")
 if "map-roles" in invite_body or "impersonate" in invite_body:
     raise SystemExit("invite permissions must not include map-roles or impersonate")
+accounts = Path("keycloak/sms-otp-spi/src/main/java/io/freedriver/keycloak/sms/InviteAccounts.java").read_text()
+resource = Path("keycloak/sms-otp-spi/src/main/java/io/freedriver/keycloak/sms/InviteAccountResource.java").read_text()
+if "user.grantRole(dashboard)" not in accounts or accounts.count("grantRole(") != 1:
+    raise SystemExit("dashboard role is set only in InviteAccounts")
+if "credential" in accounts.lower():
+    raise SystemExit("invite account create must not set a password")
+if "portal-admin" not in accounts or "REALM_MANAGEMENT_CLIENT_ID" not in accounts:
+    raise SystemExit("InviteAccounts must still refuse portal-admin and realm-management")
+if "map-roles" in resource or "role-mappings" in resource or "add-roles" in resource:
+    raise SystemExit("invite-account resource must not gain a general role grant")
 if 'update "${path}/${perm_id}"' not in script:
     raise SystemExit("existing invite permission must be updated")
 if re.search(r'"(view|view-members|manage-members)"', script):

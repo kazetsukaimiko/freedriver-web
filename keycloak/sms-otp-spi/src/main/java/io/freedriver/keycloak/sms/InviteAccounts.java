@@ -17,13 +17,16 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Creates the Keycloak user for an invite. The user gets the {@code phone} attribute and a direct
- * membership in the top-level {@code phone-sign-in} group. This class never grants a role.
+ * Creates the Keycloak user for an invite. The user gets the {@code phone} attribute, direct
+ * membership in the top-level {@code phone-sign-in} group, and the realm role {@code dashboard}.
+ * No password. A phone that already belongs to a user is refused. This class never grants
+ * {@code portal-admin} or a realm-management role.
  */
 final class InviteAccounts {
 
     static final String PHONE = "phone";
     static final String GROUP = "phone-sign-in";
+    static final String DASHBOARD = "dashboard";
     private static final String PORTAL_ADMIN = "portal-admin";
 
     private static final Logger LOG = Logger.getLogger(InviteAccounts.class.getName());
@@ -39,8 +42,8 @@ final class InviteAccounts {
                 .searchForUserByUserAttributeStream(realm, PHONE, phone)
                 .filter(user -> phone.equals(user.getFirstAttribute(PHONE)))
                 .toList();
-        if (found.size() > 1) {
-            LOG.log(Level.WARNING, "Invite account refused for {0}: more than one user", mask(phone));
+        if (!found.isEmpty()) {
+            LOG.log(Level.WARNING, "Invite account refused for {0}: phone already has a user", mask(phone));
             throw new InviteAccountException(409);
         }
         GroupModel group = session.groups().getGroupByName(realm, null, GROUP);
@@ -48,30 +51,37 @@ final class InviteAccounts {
             LOG.log(Level.SEVERE, "phone-sign-in group was not found");
             throw new InviteAccountException(503);
         }
-        if (found.size() == 1) {
-            UserModel existing = found.get(0);
-            if (!acceptable(existing, phone)) {
-                LOG.log(Level.WARNING, "Invite account refused for {0}: user is not a plain phone-sign-in member", mask(phone));
-                throw new InviteAccountException(409);
-            }
-            if (existing.getGroupsStream().noneMatch(InviteAccounts::isSignInGroup)) {
-                existing.joinGroup(group);
-            }
-            LOG.log(Level.INFO, "Invite account already present for {0}", mask(phone));
-            return created(existing);
+        RoleModel dashboard = realm.getRole(DASHBOARD);
+        if (dashboard == null || dashboard.isClientRole() || !DASHBOARD.equals(dashboard.getName())) {
+            LOG.log(Level.SEVERE, "dashboard role was not found");
+            throw new InviteAccountException(503);
         }
         String username = username(session, realm, random);
         UserModel user = session.users().addUser(realm, username);
         user.setEnabled(true);
         user.setSingleAttribute(PHONE, phone);
         user.joinGroup(group);
-        if (!acceptable(user, phone) || user.getGroupsStream().filter(InviteAccounts::isSignInGroup).count() != 1) {
+        try {
+            if (!acceptable(user, phone) || user.getGroupsStream().filter(InviteAccounts::isSignInGroup).count() != 1) {
+                throw new InviteAccountException(409);
+            }
+            user.grantRole(dashboard);
+            boolean admin = holdsAdminRole(user);
+            if (admin || !user.hasRole(dashboard)) {
+                throw new InviteAccountException(admin ? 409 : 503);
+            }
+            Created created = created(user);
+            LOG.log(Level.INFO, "Invite account created for {0}", mask(phone));
+            return created;
+        } catch (InviteAccountException e) {
             session.users().removeUser(realm, user);
             LOG.log(Level.WARNING, "Invite account rolled back for {0}", mask(phone));
-            throw new InviteAccountException(409);
+            throw e;
+        } catch (RuntimeException e) {
+            session.users().removeUser(realm, user);
+            LOG.log(Level.WARNING, "Invite account rolled back for {0}", mask(phone));
+            throw new InviteAccountException(503);
         }
-        LOG.log(Level.INFO, "Invite account created for {0}", mask(phone));
-        return created(user);
     }
 
     private static boolean acceptable(UserModel user, String phone) {

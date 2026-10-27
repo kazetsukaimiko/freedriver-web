@@ -1,10 +1,12 @@
 package io.freedriver.sms.http;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import io.freedriver.sms.phones.ConsentLedger;
 import io.freedriver.sms.phones.ConsentPurpose;
 import io.freedriver.sms.phones.ConsentRecord;
 import io.freedriver.sms.phones.PhoneDirectory;
 import io.freedriver.sms.phones.PhoneEntry;
+import io.freedriver.sms.phones.SignInTimes;
 import io.freedriver.sms.validation.UsPhoneNumber;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -34,6 +36,8 @@ public class PhoneListResource {
     PhoneDirectory directory;
     @Inject
     ConsentLedger consents;
+    @Inject
+    SignInTimes signIns;
 
     @GET
     public PhoneList list() {
@@ -45,7 +49,7 @@ public class PhoneListResource {
                         entry.role(),
                         entry.addedAt(),
                         consentedAt(entry.phone()),
-                        null))
+                        signIns.last(entry.phone())))
                 .toList();
         return new PhoneList(phones);
     }
@@ -54,7 +58,11 @@ public class PhoneListResource {
     @Path("remove")
     @Consumes(MediaType.APPLICATION_JSON)
     public Removed remove(@Valid @NotNull RemovePhone request) {
-        return new Removed(directory.remove(request.phone()));
+        boolean removed = directory.remove(request.phone());
+        if (removed) {
+            signIns.forget(request.phone());
+        }
+        return new Removed(removed);
     }
 
     /** Puts an invited number on the list after its code is verified. Role is {@code dashboard} only. */
@@ -65,6 +73,24 @@ public class PhoneListResource {
         boolean added = directory.add(new PhoneEntry(
                 request.phone(), request.name(), request.username(), request.role(), Instant.now()));
         return new Added(added);
+    }
+
+    /** Lists a number before its Keycloak user exists. The role is always {@code dashboard}. */
+    @POST
+    @Path("whitelist")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Added whitelist(@Valid @NotNull WhitelistPhone request) {
+        String name = request.name() == null ? null : request.name().strip();
+        boolean added = directory.whitelist(request.phone(), name == null || name.isEmpty() ? null : name);
+        return new Added(added);
+    }
+
+    /** Records the username of the user created for a listed number. */
+    @POST
+    @Path("attach")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Attached attach(@Valid @NotNull AttachUser request) {
+        return new Attached(directory.attachUsername(request.phone(), request.username()));
     }
 
     private Instant consentedAt(String phone) {
@@ -101,5 +127,17 @@ public class PhoneListResource {
     }
 
     public record Added(boolean added) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record WhitelistPhone(@UsPhoneNumber String phone, @Size(max = 40) String name) {
+    }
+
+    public record AttachUser(
+            @UsPhoneNumber String phone,
+            @NotBlank @Pattern(regexp = "inv[0-9a-f]{32}") String username) {
+    }
+
+    public record Attached(boolean attached) {
     }
 }
