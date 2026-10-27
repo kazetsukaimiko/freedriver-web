@@ -1,13 +1,13 @@
 name: Publish SMS
 
-# Release tags only. Deploy stamps stay YYYY-MM_rN and do not match this filter.
-# Actions ? and + quantify the preceding character, so ???? is not a valid tag filter.
+# Publishes sms-model, sms-api, and sms-client for a tag sms/YEAR-MONTH_rBUILD.
+# Each digit is written out because Actions uses ? and + as quantifiers on the preceding character.
 on:
   push:
     tags:
       - "sms/[0-9][0-9][0-9][0-9]-[0-9][0-9]_r[0-9]+"
 
-# Read-only except the publish job below. No environment. No repository secrets.
+# Workflow token permission is contents: read. The publish job adds packages: write.
 permissions:
   contents: read
 
@@ -59,7 +59,7 @@ jobs:
           server-username: GITHUB_ACTOR
           server-password: GITHUB_TOKEN
 
-      # versions:set stays in this workspace. Git poms remain 1.0.0-SNAPSHOT.
+      # versions:set rewrites the workspace poms to VERSION for this job's package step.
       - name: Set the release version and package the client artifacts
         run: |
           set -euo pipefail
