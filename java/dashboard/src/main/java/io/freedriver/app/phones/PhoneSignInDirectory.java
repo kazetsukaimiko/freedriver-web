@@ -9,8 +9,10 @@ public interface PhoneSignInDirectory {
     boolean removeFromPhoneSignIn(String phone);
 
     /**
-     * Creates the user with the phone attribute and membership in {@code phone-sign-in}.
-     * The service account grants no role. {@code adminRoles} is empty when the user holds none.
+     * Creates the user with the phone attribute, membership in {@code phone-sign-in}, and the
+     * realm role {@code dashboard}. The invite-account resource grants that role. This caller
+     * does not grant a role. {@code adminRoles} is empty when the user holds neither
+     * {@code portal-admin} nor a realm-management role.
      */
     default Created createPhoneSignInUser(String phone) {
         throw new UnsupportedOperationException();

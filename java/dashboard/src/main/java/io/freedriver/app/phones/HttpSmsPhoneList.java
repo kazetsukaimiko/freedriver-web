@@ -13,6 +13,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -127,6 +128,41 @@ public class HttpSmsPhoneList implements SmsPhoneList {
             return json.readTree(response.body()).path("added").asBoolean(false);
         } catch (Exception e) {
             throw new InviteUpstreamException("sms add was not readable", e);
+        }
+    }
+
+    @Override
+    public boolean whitelist(String phone, String name) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("phone", phone);
+        if (name != null && !name.isBlank()) {
+            fields.put("name", name);
+        }
+        HttpResponse<String> response = call(HttpRequest.newBuilder(URI.create(base + "/sms/phones/whitelist"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body(fields))));
+        if (response.statusCode() / 100 != 2) {
+            throw new InviteUpstreamException("sms whitelist answered " + response.statusCode());
+        }
+        try {
+            return json.readTree(response.body()).path("added").asBoolean(false);
+        } catch (Exception e) {
+            throw new InviteUpstreamException("sms whitelist was not readable", e);
+        }
+    }
+
+    @Override
+    public boolean attachUsername(String phone, String username) {
+        HttpResponse<String> response = call(HttpRequest.newBuilder(URI.create(base + "/sms/phones/attach"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body(Map.of("phone", phone, "username", username)))));
+        if (response.statusCode() / 100 != 2) {
+            throw new InviteUpstreamException("sms attach answered " + response.statusCode());
+        }
+        try {
+            return json.readTree(response.body()).path("attached").asBoolean(false);
+        } catch (Exception e) {
+            throw new InviteUpstreamException("sms attach was not readable", e);
         }
     }
 

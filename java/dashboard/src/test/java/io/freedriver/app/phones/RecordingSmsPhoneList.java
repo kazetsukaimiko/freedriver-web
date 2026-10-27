@@ -19,6 +19,8 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
     private final List<PhoneRow> added = new CopyOnWriteArrayList<>();
     private final List<String> usernames = new CopyOnWriteArrayList<>();
     private final List<String> invitations = new CopyOnWriteArrayList<>();
+    private final List<String> steps = new CopyOnWriteArrayList<>();
+    private final java.util.Set<String> pending = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private InviteText sendResult = InviteText.SENT;
     private InviteCheck checkResult = InviteCheck.APPROVED;
     private Invitation invitationResult = Invitation.SENT;
@@ -86,6 +88,10 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
         this.invitationResult = result;
     }
 
+    public List<String> steps() {
+        return List.copyOf(steps);
+    }
+
     @Override
     public InviteText sendInviteCode(String phone, UUID inviteId) {
         sent.add(phone);
@@ -122,6 +128,30 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
         return true;
     }
 
+    @Override
+    public boolean whitelist(String phone, String name) {
+        steps.add("whitelist");
+        if (rows.stream().anyMatch(row -> row.phone().equals(phone))) {
+            return false;
+        }
+        String label = name == null || name.isBlank() ? "***" + phone.substring(phone.length() - 4) : name;
+        PhoneRow row = new PhoneRow(phone, label, "dashboard", java.time.Instant.EPOCH, null, null);
+        rows.add(row);
+        added.add(row);
+        pending.add(phone);
+        return true;
+    }
+
+    @Override
+    public boolean attachUsername(String phone, String username) {
+        steps.add("attach");
+        if (!pending.remove(phone) || username == null || !username.matches("inv[0-9a-f]{32}")) {
+            return false;
+        }
+        usernames.add(username);
+        return true;
+    }
+
     public void clear() {
         removed.clear();
         rows.clear();
@@ -130,6 +160,8 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
         added.clear();
         usernames.clear();
         invitations.clear();
+        steps.clear();
+        pending.clear();
         sendResult = InviteText.SENT;
         checkResult = InviteCheck.APPROVED;
         invitationResult = Invitation.SENT;

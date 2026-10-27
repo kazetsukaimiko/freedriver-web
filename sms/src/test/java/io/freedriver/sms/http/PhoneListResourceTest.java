@@ -11,6 +11,7 @@ import java.time.Instant;
 import static io.freedriver.sms.support.SmsCalls.SECRET;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
 @QuarkusTest
@@ -36,5 +37,39 @@ class PhoneListResourceTest {
         given().header("X-Freedriver-Sms-Secret", SECRET).contentType("application/json")
                 .body("{\"phone\":\"" + phone + "\"}").post("/sms/phones/remove")
                 .then().statusCode(200).body("removed", is(false));
+    }
+
+    @Test
+    void whitelist_stores_dashboard_and_a_masked_name_then_attach_sets_the_username() {
+        String phone = "+15555550123";
+        directory.remove(phone);
+        String username = "inv" + "ab".repeat(16);
+
+        given().header("X-Freedriver-Sms-Secret", SECRET).contentType("application/json")
+                .body("{\"phone\":\"" + phone + "\",\"role\":\"portal-admin\"}")
+                .post("/sms/phones/whitelist")
+                .then().statusCode(200).body("added", is(true));
+        assertEquals("***0123", directory.find(phone).orElseThrow().name());
+        assertEquals("dashboard", directory.find(phone).orElseThrow().role());
+        assertEquals("pending", directory.find(phone).orElseThrow().username());
+        assertFalse(directory.find(phone).orElseThrow().name().contains("555555"));
+
+        given().header("X-Freedriver-Sms-Secret", SECRET).contentType("application/json")
+                .body("{\"phone\":\"" + phone + "\"}")
+                .post("/sms/phones/whitelist")
+                .then().statusCode(200).body("added", is(false));
+
+        given().header("X-Freedriver-Sms-Secret", SECRET).contentType("application/json")
+                .body("{\"phone\":\"" + phone + "\",\"username\":\"" + username + "\"}")
+                .post("/sms/phones/attach")
+                .then().statusCode(200).body("attached", is(true));
+        assertEquals(username, directory.find(phone).orElseThrow().username());
+        assertEquals("dashboard", directory.find(phone).orElseThrow().role());
+
+        given().header("X-Freedriver-Sms-Secret", SECRET).contentType("application/json")
+                .body("{\"phone\":\"+1555555012\"}")
+                .post("/sms/phones/whitelist")
+                .then().statusCode(400);
+        directory.remove(phone);
     }
 }
