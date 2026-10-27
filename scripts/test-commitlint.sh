@@ -29,14 +29,14 @@ check() {
   fi
 }
 
-check pass "ci(ci): enforce conventional commits" $'Generate the changelog in CI.\n\nRefs: #151'
+check pass "ci(ci): enforce conventional commits" $'Check the pull request title.\n\nRefs: #151'
 
 check pass "feat(dashboard)!: change the switch" $'Ids move.\n\nBREAKING CHANGE: the switch id changed\nRefs: #151'
 
 check fail "ci: missing scope" $'Refs: #151'
 check fail "style(ci): not a type" $'Refs: #151'
 check fail "ci(nope): unknown scope" $'Refs: #151'
-check fail "ci(ci): missing the card" "Generate the changelog."
+check fail "ci(ci): missing the card" "Check the pull request title."
 check fail "feat(dashboard)!: missing the footer" $'Ids move.\n\nRefs: #151'
 check fail "feat(dashboard): footer without bang" $'BREAKING CHANGE: the switch id changed\n\nRefs: #151'
 

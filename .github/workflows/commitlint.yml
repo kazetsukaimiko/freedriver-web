@@ -21,18 +21,15 @@ jobs:
         with:
           node-version: "22.14.0"
 
-      - name: Install commitlint and git-cliff
+      - name: Install commitlint
         run: |
           set -euo pipefail
           ./scripts/install-commitlint.sh
-          ./scripts/install-git-cliff.sh
 
       - name: Convention tests
         run: |
           set -euo pipefail
           ./scripts/test-commitlint.sh
-          ./scripts/test-next-version.sh
-          ./scripts/test-changelog.sh
 
       - name: Lint the pull request title and description
         env:
