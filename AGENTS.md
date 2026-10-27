@@ -32,7 +32,7 @@ When kaze approves, merge. Leave the pull request open when kaze's review says t
 
 ## Merge and deploy
 
-A normal merge to `main` does not start Deploy. Deploy starts when the Release pull request merges, and when someone runs the Deploy workflow. After Deploy starts, watch GitHub Actions until it succeeds. What that workflow does, and how the build stamp is formed, is in the README under [Deploy](README.md#deploy) and [Build number](README.md#build-number).
+Deploy starts only when the Release pull request merges or when the Deploy workflow is run manually. After Deploy starts, watch GitHub Actions until it succeeds. What that workflow does, and how the build stamp is formed, is in the README under [Deploy](README.md#deploy) and [Build number](README.md#build-number).
 
 ## Confirm the running version
 
