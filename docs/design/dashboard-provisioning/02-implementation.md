@@ -1,6 +1,6 @@
 # Implementation
 
-How document 1 is built. Names below are the names in that document. The code that builds this design is a later pull request.
+How document 1 is built. Names below are the names in that document.
 
 `InstanceView` in `java/dashboard-model` stays the appliance snapshot. `ProvisionedInstance` is the new view.
 
@@ -63,7 +63,7 @@ New files:
 | `java/dashboard/src/main/java/io/freedriver/app/instances/BrokerAllow.java` | Port `HouseProvision` calls. Methods accept and return `InstanceAllow`, `InstanceAllowResult`, and `InstanceAllowRollback`. |
 | `java/dashboard/src/main/java/io/freedriver/app/appliances/MqttBrokerAllow.java` | That port on a short-lived `PahoMqttConnection` with the admin login, the trust certificate `MqttSettings` already uses, and `MqttBrokers.assertLiveBroker`. |
 
-`MqttLiveClient` keeps reading ids from `freedriver.mqtt.instance-ids` and `instance-ids-file`. Broker process config is #317 and #319. The live-house re-key is #321.
+`MqttLiveClient` keeps reading ids from `freedriver.mqtt.instance-ids` and `instance-ids-file`.
 
 The allow publish is one dynamic-security `commands` array on `$CONTROL/dynamic-security/v1`:
 

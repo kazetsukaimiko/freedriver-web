@@ -1,8 +1,6 @@
 # Interfaces, contracts, and code flow
 
-Dashboard provisioning of one Autonomy house. A portal-admin creates the house from Instances. House provision mints the instance id and that house's broker secret, the broker allow stage allows that house, and the instance store keeps the house after the broker allows it. The operator copies the secret from the page.
-
-Plugin load, the two listeners, and the live-house re-key stay on #317 and #321. This flow is the dashboard side: the page, the mint, the allow for one new house, and the store.
+Dashboard provisioning of one Autonomy house. A portal-admin creates the house from Instances. House provision mints the instance id and that house's broker secret, the broker allow stage allows that house, and the instance store keeps the house after the broker allows it. The operator copies the secret from the page. The flow is the page, the mint, the allow for one new house, and the store.
 
 `instanceId` is the house key already used on topics. `InstanceView.instanceName` stays the appliance tab label from MQTT state. The optional list name here is `label`.
 
