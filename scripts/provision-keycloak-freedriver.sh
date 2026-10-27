@@ -21,7 +21,7 @@
 # admin permissions let that account add and remove phone-sign-in members.
 # The realm admin creates users. Realm-management roles remain on the realm admin.
 #
-# Run as root/sudo on the VPS. Idempotent. New password users get the
+# Run as root, or as a member of the allowed group, on the VPS. Idempotent. New password users get the
 # UPDATE_PASSWORD required action and choose their own password.
 set -euo pipefail
 
@@ -43,12 +43,23 @@ PHONE_ATTRIBUTE=phone
 DEFAULT_ROLES="default-roles-${REALM}"
 PHONE_ROLE=dashboard
 
+# Non-root may run only as a member of $GROUP (the group that can read the
+# techops password file). Root may always run. PROVISION_ALLOW_NON_ROOT=1
+# remains the throwaway-realm escape and still cannot target this production
+# container.
+in_allowed_group() {
+  if id -Gn | tr ' ' '\n' | grep -Fxq -- "$GROUP"; then
+    return 0
+  fi
+  return 1
+}
+
 if [[ "${PROVISION_ALLOW_NON_ROOT:-}" == "1" && "$CONTAINER" == "freedriver-web-keycloak-1" ]]; then
   echo "PROVISION_ALLOW_NON_ROOT cannot target the production Keycloak container." >&2
   exit 1
 fi
-if [[ "$(id -u)" -ne 0 && "${PROVISION_ALLOW_NON_ROOT:-}" != "1" ]]; then
-  echo "Run as root (sudo)." >&2
+if [[ "$(id -u)" -ne 0 && "${PROVISION_ALLOW_NON_ROOT:-}" != "1" ]] && ! in_allowed_group; then
+  echo "Run as root, or as a member of the allowed group." >&2
   exit 1
 fi
 if [[ "${PROVISION_ALLOW_NON_ROOT:-}" == "1" ]]; then
