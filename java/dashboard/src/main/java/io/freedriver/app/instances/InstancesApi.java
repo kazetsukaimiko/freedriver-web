@@ -9,7 +9,7 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
+import org.jboss.resteasy.reactive.ResponseStatus;
 
 /**
  * Portal-admin house provision. {@code @Size} on {@link CreateInstance#label()} is the
@@ -28,7 +28,8 @@ public interface InstancesApi {
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed("portal-admin")
     @RateLimited("instances")
-    Response create(CreateInstance request);
+    @ResponseStatus(201)
+    ProvisionedInstance create(CreateInstance request);
 
     @POST
     @Path("{instanceId}/open")
