@@ -1,8 +1,8 @@
 name: Deploy
 
-# A push to main is limited to the files the Release pull request commits.
-# release-merge then requires that push to be the release-please merge.
-# workflow_dispatch still deploys the chosen ref. The stamp stays YEAR-MONTH_rN.
+# Push runs when main changes version.txt, the release-please manifest, or the changelog.
+# release-merge sets deploy when the head branch is release-please--branches--.
+# workflow_dispatch deploys the ref chosen for the run.
 on:
   push:
     branches: [main]
@@ -13,9 +13,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Release merges and manual runs share one group. Any other push uses its
-  # own group so it cannot cancel a deploy. workflow_dispatch is first so
-  # the commits context is not read.
+  # Release merges and manual runs share the deploy-freedriver group and cancel an older run in that group.
+  # Every other push gets its own group. workflow_dispatch is evaluated before the commits context.
   group: ${{ (github.event_name == 'workflow_dispatch' || contains(toJSON(github.event.commits), 'release-please--branches--')) && 'deploy-freedriver' || format('deploy-skip-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' || contains(toJSON(github.event.commits), 'release-please--branches--') }}
 
@@ -37,8 +36,8 @@ jobs:
         run: |
           set -euo pipefail
           deploy=false
-          # Merge commits name the head branch. Squash and rebase merges do
-          # not, so the commit's pull request is the second check.
+          # A merge commit message contains the head branch name.
+          # A squash or rebase merge is identified from the pull request head ref.
           if printf '%s\n' "$COMMIT_MESSAGE" | grep -F -q 'release-please--branches--'; then
             deploy=true
           else
@@ -54,7 +53,7 @@ jobs:
           if [ "$deploy" = true ]; then
             echo "Release pull request merge; Deploy will run"
           else
-            echo "Not a Release pull request merge; Deploy will not run"
+            echo "deploy output is false"
           fi
 
   deploy:
