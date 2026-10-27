@@ -32,7 +32,7 @@ When kaze approves, merge. Leave the pull request open when kaze's review says t
 
 ## Merge and deploy
 
-After the merge, watch GitHub Actions until the **Deploy** workflow succeeds. What that workflow does, and how the build stamp is formed, is in the README under [Deploy](README.md#deploy) and [Build number](README.md#build-number).
+Deploy starts when the Release pull request merges or when the Deploy workflow is run manually. After Deploy starts, watch GitHub Actions until it succeeds. What that workflow does, and how the build stamp is formed, is in the README under [Deploy](README.md#deploy) and [Build number](README.md#build-number).
 
 ## Confirm the running version
 
