@@ -33,6 +33,7 @@ class MqttLogTest {
             MqttLog.commandSent("cmd-1", INSTANCE, "hallway", true, "ka\nze");
             MqttLog.commandUnacknowledged("cmd-1", INSTANCE, "hallway", true, "kaze", 5000);
             MqttLog.commandFailed("cmd-1", INSTANCE);
+            MqttLog.house(INSTANCE, "created");
             MqttLog.connectFailed();
             MqttLog.configUnreadable("instance-ids\napi-pass");
 
@@ -53,6 +54,7 @@ class MqttLogTest {
                     + " appliance=hallway state=true user=kaze timeoutMs=5000"), all);
             assertTrue(all.contains("mqtt command failed commandId=cmd-1 instance=" + INSTANCE
                     + " reason=publish-failed"), all);
+            assertTrue(all.contains("mqtt house instance=" + INSTANCE + " outcome=created"), all);
             assertTrue(all.contains("mqtt connect failed reason=connect-failed"), all);
             assertTrue(all.contains("mqtt config unreadable name=instance-idsapi-pass reason=read-failed"), all);
             assertFalse(all.contains("secret-value"), all);
