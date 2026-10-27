@@ -22,7 +22,10 @@ class HouseRepositoryTest {
         public Map<String, String> getConfigOverrides() {
             return Map.of(
                     "quarkus.mongodb.devservices.enabled", "true",
-                    "quarkus.mongodb.devservices.image-name", "mongo:8.0");
+                    "quarkus.mongodb.devservices.image-name", "mongo:8.0",
+                    // Same workaround as the compose service. Without it, mongo:8.0
+                    // exits before it accepts connections on the CI kernel.
+                    "quarkus.mongodb.devservices.container-env.GLIBC_TUNABLES", "glibc.pthread.rseq=1");
         }
     }
 
