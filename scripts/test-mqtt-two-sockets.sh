@@ -68,15 +68,19 @@ for raw in Path("mosquitto/mosquitto.conf").read_text().splitlines():
         conf_lines.append(stripped)
 if any("listener_allow_anonymous" in line for line in conf_lines):
     raise SystemExit("do not set listener_allow_anonymous")
-if any(line == "per_listener_settings true" for line in conf_lines):
-    raise SystemExit("do not enable per_listener_settings")
+if any(line == "per_listener_settings true" or line.startswith("per_listener_settings ") for line in conf_lines):
+    raise SystemExit("do not set per_listener_settings")
+if any(line.startswith("password_file ") or line.startswith("acl_file ") for line in conf_lines):
+    raise SystemExit("stock config must not set password_file or acl_file")
 first_listener = next(i for i, line in enumerate(conf_lines) if line.startswith("listener "))
 globals_ = conf_lines[:first_listener]
 for required in (
     "allow_anonymous false",
-    "password_file /mosquitto/config/secrets/passwd",
-    "acl_file /mosquitto/config/secrets/acl",
     "persistence true",
+    "retain_available false",
+    "plugin /usr/lib/mosquitto_dynamic_security.so",
+    "plugin_opt_config_file /mosquitto/data/dynamic-security.json",
+    "plugin_opt_password_init_file /mosquitto/config/secrets/dynsec-password-init",
 ):
     if required not in globals_:
         raise SystemExit(f"missing global setting before listeners: {required}")
@@ -360,6 +364,14 @@ run_broker_handshake() {
     echo "mosquitto did not open 8883 and 8884" >&2
     exit 1
   fi
+  if [[ -e "${WORKDIR}/data/dynamic-security.json" || -e "${WORKDIR}/data/dynamic-security.json.pw" ]]; then
+    echo "a missing dynamic-security file must not be created on start" >&2
+    exit 1
+  fi
+  if ! grep -q "Unable to get initial password" <<<"$logs"; then
+    echo "missing password-init file must block the default admin user" >&2
+    exit 1
+  fi
   local ip
   ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$docker_name")"
   if [[ -z "$ip" ]]; then
@@ -421,13 +433,8 @@ chmod 777 "${WORKDIR}/data" "$SECRETS"
 # (leaf key mode 0600, owner 1883). This does not change the issuer.
 if docker info >/dev/null 2>&1; then
   docker pull eclipse-mosquitto:2.1.2-alpine >/dev/null
-  # Password file so allow_anonymous false has a password source. The
-  # password is a fixture and is not printed.
-  docker run --rm \
-    -v "${SECRETS}:/mosquitto/config/secrets" \
-    eclipse-mosquitto:2.1.2-alpine \
-    mosquitto_passwd -c -b /mosquitto/config/secrets/passwd api fixture-not-printed >/dev/null
-  printf '%s\n' 'user api' 'topic read probe' > "${SECRETS}/acl"
+  # No password file and no ACL file. The stock config loads dynamic security.
+  # The password-init path stays absent so a missing JSON cannot mint admin.
   # Host-side probes cannot read a 0640 file owned by 1883. Keep a copy
   # of the public certificate for those probes. The broker still reads
   # the secrets-dir file.
@@ -437,18 +444,14 @@ if docker info >/dev/null 2>&1; then
     -v "${SECRETS}:/mosquitto/config/secrets" \
     eclipse-mosquitto:2.1.2-alpine \
     -c 'chown 1883:1883 \
-      /mosquitto/config/secrets/passwd \
-      /mosquitto/config/secrets/acl \
       /mosquitto/config/secrets/server.crt \
       /mosquitto/config/secrets/server.key \
       /mosquitto/config/secrets/internal.crt \
       /mosquitto/config/secrets/internal.key \
       && chmod 0600 \
-      /mosquitto/config/secrets/passwd \
       /mosquitto/config/secrets/server.key \
       /mosquitto/config/secrets/internal.key \
       && chmod 0640 \
-      /mosquitto/config/secrets/acl \
       /mosquitto/config/secrets/server.crt \
       /mosquitto/config/secrets/internal.crt'
   run_broker_handshake

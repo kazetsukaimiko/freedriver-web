@@ -72,6 +72,9 @@ class DefaultProfileSafetyTest {
         assertTrue(prod.contains("freedriver.appliances.mock-refresh=false"));
         assertTrue(prod.contains("freedriver.mqtt.instance-ids-file=/opt/freedriver-secrets/mosquitto/acl"));
         assertTrue(prod.contains("freedriver.mqtt.password-file=/opt/freedriver-secrets/mosquitto/api.pass"));
+        assertTrue(prod.contains("freedriver.mqtt.dynsec-username=freedriver-dynsec"));
+        assertTrue(prod.contains("freedriver.mqtt.dynsec-password-file=/opt/freedriver-secrets/mosquitto/dynsec-admin.pass"));
+        assertFalse(prod.stream().anyMatch(line -> line.startsWith("freedriver.mqtt.dynsec-password=")));
         assertEquals(1, prod.stream().filter(line -> line.startsWith("freedriver.appliances.mock=")).count());
         assertFalse(prod.stream().anyMatch(line -> line.startsWith("freedriver.appliances.live-commands=true")));
         assertFalse(prod.stream().anyMatch(line -> line.startsWith("freedriver.appliances.mock=true")));

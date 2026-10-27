@@ -17,7 +17,7 @@ Long-term, **freedriver-web owns minting `instanceId`**. For v1, Techops applies
 
 ## First-house apply (Techops only)
 
-The live ACL is `/opt/freedriver-secrets/mosquitto/acl`. `mosquitto.conf` reads it as `acl_file /mosquitto/config/secrets/acl` through the existing `/opt/freedriver-secrets/mosquitto` bind. Git keeps the template, `mosquitto/acl.template`, with `__INSTANCE_ID__` in its topic lines.
+Git keeps the template, `mosquitto/acl.template`, with `__INSTANCE_ID__` in its topic lines. `mosquitto.conf` does not read that file and does not set `password_file` or `acl_file`. It loads `/usr/lib/mosquitto_dynamic_security.so` for both listeners. Clients live in `/mosquitto/data/dynamic-security.json` on the writable data volume. The password-init path in that config is not created by this repo, so a missing dynamic-security file cannot mint the built-in admin user.
 
 Copy-paste apply (Techops, root/sudo), with `__INSTANCE_ID__` replaced by the first-house instanceId:
 
@@ -36,9 +36,9 @@ That **one write** puts exact topics into `/opt/freedriver-secrets/mosquitto/acl
 
 The live ACL sits outside the deploy checkout (`/opt/freedriver-web`), so deploys leave it as applied.
 
-**Techops runs the script, then restarts mosquitto** to load the ACL. Deploy creates and chowns `/opt/freedriver-storage/mosquitto` (uid 1883). CI runs `--acl-only` into a temp file.
+The apply script still writes the secrets ACL. `mosquitto.conf` does not load it. The dashboard provision call creates the house on the dynamic-security plugin. Deploy creates and chowns `/opt/freedriver-storage/mosquitto` (uid 1883). CI runs `--acl-only` into a temp file.
 
-The script is idempotent: existing pass and cert files stay in place. The broker starts once the secrets ACL exists.
+The script is idempotent: existing pass and cert files stay in place. The broker starts from `mosquitto.conf`. That file does not point at the password file or the ACL file.
 
 ## Autonomy connect
 
@@ -50,9 +50,9 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
 - Two MQTTS listeners (`protocol mqtt`). Mosquitto has no SNI, so each socket has one certificate.
   - Container port 8883 is not published. The API dials hostname `mosquitto` on that port. The certificate SAN is `DNS:mosquitto` only, signed by `/opt/freedriver-secrets/mqtt-internal/ca.crt`.
   - Container port 8884 is published as host `8883`. That certificate is Let's Encrypt for `DNS:mqtt.freedriver.io` only.
-- Host port 8883 stays reachable from any address because the home IP is dynamic. Broker passwords and exact-topic ACLs guard it. `allow_anonymous false`, the password file, and the ACL apply to both listeners. Do not set `listener_allow_anonymous true`. Port 1883 stays closed.
+- Host port 8883 stays reachable from any address because the home IP is dynamic. Broker passwords and exact-topic dynamic-security ACLs guard it. `allow_anonymous false`. Dynamic security applies to both listeners. Do not set `per_listener_settings` or `listener_allow_anonymous`. Do not set `password_file` or `acl_file`. Port 1883 stays closed.
 - Sysadmin still needs `mqtt.freedriver.io` A → `138.197.90.42`.
-- Auth: every client logs in with a broker password (`allow_anonymous false`). v1 has one house, which shares broker users `autonomy` and `api`. Each later instance gets its own autonomy user.
+- Auth: every client logs in with a broker password (`allow_anonymous false`). The provision call creates `autonomy-<uuid>` for one house. That user may publish `freedriver/v1/<uuid>/appliances` and subscribe to `freedriver/v1/<uuid>/commands`. The `api` user may read that appliances topic and publish that commands topic. Topics are exact. Neither user can use `$CONTROL/dynamic-security/v1`. The dynamic-security admin secret stays in server configuration and is not shown on the Instances page.
 - Persistence: `/opt/freedriver-storage/mosquitto`.
 - Command-live arrives with #27.
 
@@ -60,10 +60,12 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
 
 | Path | What |
 | --- | --- |
-| `/opt/freedriver-secrets/mosquitto/autonomy.pass` | autonomy password |
+| `/opt/freedriver-secrets/mosquitto/autonomy.pass` | legacy single-house file. A provisioned house uses the generated autonomy secret. |
 | `/opt/freedriver-secrets/mosquitto/api.pass` | api password |
-| `/opt/freedriver-secrets/mosquitto/passwd` | hashed broker passwd file |
-| `/opt/freedriver-secrets/mosquitto/acl` | **live** exact-topic ACL (Techops apply) |
+| `/opt/freedriver-secrets/mosquitto/dynsec-admin.pass` | dynamic-security admin secret. Server configuration. Not in git. Not shown on the Instances page. |
+| `/opt/freedriver-storage/mosquitto/dynamic-security.json` | dynamic-security clients on the data volume. Not in git. |
+| `/opt/freedriver-secrets/mosquitto/passwd` | not loaded by `mosquitto.conf` |
+| `/opt/freedriver-secrets/mosquitto/acl` | template apply output. Not loaded by `mosquitto.conf`. |
 | `/opt/freedriver-secrets/mosquitto/server.crt` | Public listener certificate (Let's Encrypt `DNS:mqtt.freedriver.io`) |
 | `/opt/freedriver-secrets/mosquitto/server.key` | Public listener key (mode 0600, owner 1883) |
 | `/opt/freedriver-secrets/mosquitto/internal.crt` | Unpublished listener leaf (`DNS:mosquitto` only) |

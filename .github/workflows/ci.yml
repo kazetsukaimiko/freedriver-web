@@ -82,8 +82,24 @@ jobs:
             echo "compose must not bind-mount the git ACL file"
             exit 1
           fi
-          if ! grep -Eq '^acl_file /mosquitto/config/secrets/acl$' mosquitto/mosquitto.conf; then
-            echo "acl_file must point at the secrets mount, not a git-mounted ACL"
+          if grep -Eq '^(password_file|acl_file) ' mosquitto/mosquitto.conf; then
+            echo "stock config must not point at a password file or an ACL file"
+            exit 1
+          fi
+          if grep -Eq '^per_listener_settings ' mosquitto/mosquitto.conf; then
+            echo "per_listener_settings stays unset"
+            exit 1
+          fi
+          if ! grep -Eq '^plugin /usr/lib/mosquitto_dynamic_security.so$' mosquitto/mosquitto.conf; then
+            echo "stock config must load the dynamic-security plugin"
+            exit 1
+          fi
+          if ! grep -Eq '^plugin_opt_config_file /mosquitto/data/dynamic-security.json$' mosquitto/mosquitto.conf; then
+            echo "dynamic-security file must be on the writable data volume"
+            exit 1
+          fi
+          if ! grep -Eq '^plugin_opt_password_init_file /mosquitto/config/secrets/dynsec-password-init$' mosquitto/mosquitto.conf; then
+            echo "password-init path must stay a file this repo does not create"
             exit 1
           fi
           if grep -E 'CHECKOUT_ACL|/opt/freedriver-web/mosquitto/acl' scripts/provision-mosquitto.sh; then

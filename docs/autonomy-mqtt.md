@@ -18,7 +18,7 @@ MQTT v1 types live in `io.freedriver:freedriver-mqtt-contract` (`io.freedriver.m
 | --- | --- | --- |
 | Host | `mqtt.freedriver.io:8883` | compose hostname `mosquitto:8883` |
 | TLS | MQTTS, public Let's Encrypt certificate | MQTTS, internal certificate `DNS:mosquitto` only |
-| User | `autonomy` (this instance only) | `api` (exact topics for this instance) |
+| User | `autonomy-<instanceId>` (this instance only) | `api` (exact topics for this instance) |
 | Auth | broker password | broker password |
 
 ### TLS
@@ -27,7 +27,7 @@ Let's Encrypt is live on `mqtt.freedriver.io:8883` (host port 8883, the public l
 
 ### Passwords
 
-Broker passwords live on the VPS at `/opt/freedriver-secrets/mosquitto/*.pass` (`autonomy.pass`, `api.pass`). **Ask Techops** for `autonomy.pass` and the first-house instanceId (or read that path), and connect once Techops has applied the ACL.
+The house autonomy password is the secret from the dashboard provision call. Techops installs that secret on the home host. The api password stays in server configuration. The dynamic-security admin secret stays in server configuration and is not shown on the Instances page. Ask Techops for the house secret and the instance id.
 
 ## Topics
 
@@ -39,8 +39,8 @@ Use these exact topics:
 
 | | Topic | Publisher | Subscriber | QoS | Retain |
 | --- | --- | --- | --- | --- | --- |
-| A (state) | `freedriver/v1/__INSTANCE_ID__/appliances` | that instance's `autonomy` | `api` | 1 | **false** |
-| B (commands) | `freedriver/v1/__INSTANCE_ID__/commands` | `api` | that instance's `autonomy` | 1 | **false** |
+| A (state) | `freedriver/v1/__INSTANCE_ID__/appliances` | that instance's `autonomy-<instanceId>` | `api` | 1 | **false** |
+| B (commands) | `freedriver/v1/__INSTANCE_ID__/commands` | `api` | that instance's `autonomy-<instanceId>` | 1 | **false** |
 
 QoS 1 is a client convention, and retain is a publisher setting. retain=false keeps every map Quarkus sees live, because Quarkus liveness is receive-time.
 

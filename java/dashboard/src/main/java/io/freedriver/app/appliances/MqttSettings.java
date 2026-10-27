@@ -34,6 +34,24 @@ public interface MqttSettings {
     @WithName("password-file")
     Optional<String> passwordFile();
 
+    /**
+     * Dynamic-security admin username. Not {@code admin}. No default in the main profile.
+     * Environment: {@code FREEDRIVER_MQTT_DYNSEC_USERNAME}.
+     */
+    @WithName("dynsec-username")
+    Optional<String> dynsecUsername();
+
+    /**
+     * Dynamic-security admin secret. Server configuration only.
+     * Environment: {@code FREEDRIVER_MQTT_DYNSEC_PASSWORD}. Never returned with a house.
+     */
+    @WithName("dynsec-password")
+    Optional<String> dynsecPassword();
+
+    /** Host file. Used only when {@link #dynsecPassword()} is blank. The file is not in git. */
+    @WithName("dynsec-password-file")
+    Optional<String> dynsecPasswordFile();
+
     @WithName("instance-ids")
     Optional<String> instanceIds();
 
