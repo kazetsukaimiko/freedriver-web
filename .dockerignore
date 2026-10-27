@@ -1,6 +1,7 @@
 # Root build context for keycloak, sms, dashboard, and agent-dispatcher.
 # Secret env files never enter an image build. Local Maven output neither.
 .git
+.tools
 **/target
 secrets
 **/*.env

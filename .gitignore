@@ -1,6 +1,7 @@
 .env
 .source-commit
 BUILD_NUMBER
+.tools/
 settings.xml
 mqtt-contract/target/
 mqtt-contract/.flattened-pom.xml
