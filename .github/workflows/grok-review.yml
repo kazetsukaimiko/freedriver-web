@@ -1,9 +1,9 @@
 name: Grok review
 
-# Reviews PRs from branches in this repository. Runs main's reviewer script and prompts
-# under pull_request_target in the main-only grok-review environment. The PR head is
-# fetched into pr/ as data: symlinks check out as plain files, and no code from the PR
-# runs in either job.
+# Same-repository pull request review (#64). pull_request_target runs main's
+# grok_review.py and prompts in the grok-review environment. The head is fetched
+# into pr/ with core.symlinks false, so each symlink is a plain file, and both
+# jobs execute that main script.
 on:
   pull_request_target:
     branches: [main]
@@ -27,7 +27,6 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      # tarmojussila/xai-code-review is hunk-only and must not be used (#64).
       - name: Checkout main's reviewer script and prompt
         uses: actions/checkout@v5
         with:
@@ -71,7 +70,6 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      # tarmojussila/xai-code-review is hunk-only and must not be used (#64).
       - name: Checkout main's reviewer script and prompt
         uses: actions/checkout@v5
         with:
