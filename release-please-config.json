@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "always-update": true,
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "changelog-path": "java/dashboard/src/main/resources/changelog/CHANGELOG.md",
+      "version-file": "version.txt",
+      "skip-github-release": true
+    }
+  }
+}
