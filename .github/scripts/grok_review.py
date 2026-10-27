@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""Advisory xAI PR reviewer: full files + one-level-out neighbors, not hunk-only.
+"""Advisory xAI pull-request reviewer for freedriver-web.
 
-The marketplace action tarmojussila/xai-code-review is hunk-only and must not be used.
-Run it from a checkout of the PR head with enough git history to diff against the base.
-The workflow runs main's copy of this script and prompt. GROK_REVIEW_PROMPT, or
---prompt, is the prompt path. GROK_REVIEW_MODE, or --mode, is engineering or
-security. Files are read only when they resolve inside the working directory.
-Both modes post a COMMENT review. Engineering mode exits 0 after posting.
-Security mode exits 1 after posting when the verdict line is request-changes or
-a finding line is Severity: block. HTTP 429 and an empty choices body are tried
-three times (the first call plus two retries). The comment then says the review
-did not run, and the process exits 0.
+Runs from a checkout of the PR head with enough history to diff the base.
+The workflow executes main's copy of this file. GROK_REVIEW_PROMPT or --prompt
+is the prompt path. GROK_REVIEW_MODE or --mode is engineering or security.
+Reads stay inside the working directory. The review pack is the full changed
+files plus one-level-out neighbors. Both modes post a COMMENT review.
+Engineering exits 0 after posting. Security exits 1 when the verdict line is
+request-changes or a finding line is Severity: block. An HTTP 429 or an empty
+choices body is tried three times, then the process posts the did-not-run
+banner and exits 0.
 """
 
 from __future__ import annotations
@@ -88,7 +87,7 @@ DID_NOT_RUN = {
 
 
 class ModelRetry(Exception):
-    """xAI returned HTTP 429. The caller retries, then posts that the review did not run."""
+    """xAI returned HTTP 429. The caller retries, then posts the did-not-run banner."""
 
 
 def die(message: str, code: int = 1) -> None:
@@ -271,7 +270,7 @@ def build_pack(
     listing = "\n".join(f"{status}\t{path}" for status, path in changed) or "(no files)"
     parts = [
         "You have a git checkout of the PR head and can treat the files below as the tree.\n",
-        "The diff is the starting point, not the boundary. Review from the FULL files and neighbors.\n\n",
+        "The diff is the starting point. Review from the FULL files and neighbors.\n\n",
         f"PR title: {title}\n",
         f"PR body:\n{body or '(empty)'}\n\n",
         f"Base: {base_sha}\nHead: {head_sha}\n\n",
@@ -451,7 +450,7 @@ def cmd_review(mode: str) -> None:
     if not api_key:
         die(
             "Repository secret XAI_API_KEY is missing. "
-            "kaze must add it from https://console.x.ai (do not invent a key)."
+            "kaze adds it from https://console.x.ai."
         )
     model = os.environ.get("XAI_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
     token = require_env("GITHUB_TOKEN")
@@ -524,7 +523,7 @@ def expect_prompt_rejected(path: Path, mode: str) -> None:
 
 
 def cmd_self_test() -> None:
-    """Prove neighbor walking, prompt locks, and the security verdict parser. No network."""
+    """Checks neighbor walking, prompt locks, and the security verdict parser on local files."""
     load_prompt(ENGINEERING_MODE)
     security_prompt = Path(".github/grok-security-prompt.md")
     engineering_prompt = Path(".github/grok-review-prompt.md")
@@ -625,12 +624,12 @@ def main() -> None:
     parser.add_argument(
         "--pack-only",
         action="store_true",
-        help="Print the full-file + neighbor pack and exit (no API calls).",
+        help="Print the full-file and neighbor pack, then exit before any API call.",
     )
     parser.add_argument(
         "--self-test",
         action="store_true",
-        help="Check prompt lock + neighbor walking; no network.",
+        help="Check the prompt lock and neighbor walking on local files.",
     )
     args = parser.parse_args()
     if args.prompt:

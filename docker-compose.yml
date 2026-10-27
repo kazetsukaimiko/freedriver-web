@@ -34,6 +34,8 @@ services:
       SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
       FREEDRIVER_SMS_BASE_URL: http://sms:8080
       FREEDRIVER_INVITES_DIR: /deployments/data/invites
+      # No credential in the default. A password, if one is set later, comes from the env file.
+      QUARKUS_MONGODB_CONNECTION_STRING: ${QUARKUS_MONGODB_CONNECTION_STRING:-mongodb://mongodb:27017/freedriver}
     # Invite service account (#172). The provision script writes this file.
     # Do not also interpolate FREEDRIVER_INVITE_CLIENT_SECRET here: that would
     # override the file. Prod startup still fails when the secret is blank.
@@ -41,7 +43,10 @@ services:
       - path: /opt/freedriver-secrets/keycloak-freedriver-invite.env
         required: false
     depends_on:
-      - mosquitto
+      mosquitto:
+        condition: service_started
+      mongodb:
+        condition: service_healthy
     # Read-only host files for broker state. 1883 is the acl group and 1001
     # is the api.pass group, so uid 185 can read those mode 770 files.
     group_add:
@@ -101,7 +106,6 @@ services:
       # Shared secret the phone OTP SPI sends to http://sms:8080.
       SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?KC_BOOTSTRAP_ADMIN_PASSWORD is required}
     depends_on:
       keycloak-db:
         condition: service_healthy
@@ -120,6 +124,28 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # Instances collection. No host port. The image entrypoint starts as root
+  # only to chown the bind mount, then drops to the mongodb user.
+  mongodb:
+    image: mongo:8.0
+    restart: unless-stopped
+    user: "0"
+    # The image ships rseq=0 and then exits on kernels 6.19 through 7.0.13
+    # (SERVER-121912). rseq=1 is the startup workaround and replaces that default.
+    environment:
+      GLIBC_TUNABLES: glibc.pthread.rseq=1
+    volumes:
+      - /opt/freedriver-storage/mongodb:/data/db
+    expose:
+      - "27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    mem_limit: 512m
 
   # Internal OTP service. Keycloak calls http://sms:8080 on the compose
   # network. HTTP contract and limits: docs/sms-otp.md.
