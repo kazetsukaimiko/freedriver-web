@@ -5,6 +5,7 @@ import io.freedriver.sms.SmsConfig;
 import io.freedriver.sms.model.VerifyFailure;
 import io.freedriver.sms.phones.PhoneDirectory;
 import io.freedriver.sms.phones.SeedAgreement;
+import io.freedriver.sms.phones.SignInTimes;
 import io.freedriver.sms.security.PhoneRateLimiter;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -30,18 +31,20 @@ public class OtpService {
     private final ProviderOutage outage;
     private final VerificationLedger ledger;
     private final PhoneRateLimiter limiter;
+    private final SignInTimes signIns;
     private final Duration retryAfter;
 
     @Inject
     public OtpService(PhoneDirectory directory, ActiveSender sender, SeedAgreement seedAgreement,
                       ProviderOutage outage, VerificationLedger ledger, PhoneRateLimiter limiter,
-                      SmsConfig config) {
+                      SignInTimes signIns, SmsConfig config) {
         this.directory = directory;
         this.sender = sender;
         this.seedAgreement = seedAgreement;
         this.outage = outage;
         this.ledger = ledger;
         this.limiter = limiter;
+        this.signIns = signIns;
         this.retryAfter = config.rateLimit().window();
     }
 
@@ -144,6 +147,14 @@ public class OtpService {
             case APPROVED -> {
                 ledger.clear(phone);
                 outage.answered();
+                // The accepted code is the sign-in the phones page can see. A missed write leaves the login link up.
+                if (directory.find(phone).isPresent()) {
+                    try {
+                        signIns.record(phone);
+                    } catch (RuntimeException e) {
+                        LOG.warnf("Sign-in time was not stored for %s", PhoneMask.mask(phone));
+                    }
+                }
             }
             case WRONG_CODE -> {
                 outage.answered();

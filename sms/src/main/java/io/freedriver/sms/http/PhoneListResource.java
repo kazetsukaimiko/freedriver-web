@@ -6,6 +6,7 @@ import io.freedriver.sms.phones.ConsentPurpose;
 import io.freedriver.sms.phones.ConsentRecord;
 import io.freedriver.sms.phones.PhoneDirectory;
 import io.freedriver.sms.phones.PhoneEntry;
+import io.freedriver.sms.phones.SignInTimes;
 import io.freedriver.sms.validation.UsPhoneNumber;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -35,6 +36,8 @@ public class PhoneListResource {
     PhoneDirectory directory;
     @Inject
     ConsentLedger consents;
+    @Inject
+    SignInTimes signIns;
 
     @GET
     public PhoneList list() {
@@ -46,7 +49,7 @@ public class PhoneListResource {
                         entry.role(),
                         entry.addedAt(),
                         consentedAt(entry.phone()),
-                        null))
+                        signIns.last(entry.phone())))
                 .toList();
         return new PhoneList(phones);
     }
@@ -55,7 +58,11 @@ public class PhoneListResource {
     @Path("remove")
     @Consumes(MediaType.APPLICATION_JSON)
     public Removed remove(@Valid @NotNull RemovePhone request) {
-        return new Removed(directory.remove(request.phone()));
+        boolean removed = directory.remove(request.phone());
+        if (removed) {
+            signIns.forget(request.phone());
+        }
+        return new Removed(removed);
     }
 
     /** Puts an invited number on the list after its code is verified. Role is {@code dashboard} only. */

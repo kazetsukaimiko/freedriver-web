@@ -19,3 +19,42 @@
   text-align: left;
   padding: 0.4rem 0.6rem 0.4rem 0;
 }
+
+.phone-row-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.login-link-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.login-link-modal {
+  width: min(36rem, calc(100% - 2rem));
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.25rem 1.35rem;
+  border: 1px solid #2a2a2a;
+  border-radius: 0.6rem;
+  background: #181818;
+}
+
+.login-link-modal h2,
+.login-link-modal p {
+  margin: 0;
+}
+
+.login-link-modal input {
+  width: 100%;
+  font: inherit;
+}
+
+.login-link-actions {
+  display: flex;
+  gap: 0.5rem;
+}

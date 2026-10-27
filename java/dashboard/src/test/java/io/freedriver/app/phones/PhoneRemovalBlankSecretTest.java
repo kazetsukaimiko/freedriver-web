@@ -1,6 +1,7 @@
 package io.freedriver.app.phones;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.freedriver.app.api.LoginLinks;
 import io.freedriver.app.invites.InviteUpstreamException;
 import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.Test;
@@ -37,7 +38,7 @@ class PhoneRemovalBlankSecretTest {
                 keycloak.incrementAndGet();
                 return true;
             };
-            PhoneRemovalResource resource = new PhoneRemovalResource(sms, directory);
+            PhoneRemovalResource resource = new PhoneRemovalResource(sms, directory, new LoginLinks("https://app.freedriver.io"));
             InviteUpstreamException error = assertThrows(InviteUpstreamException.class,
                     () -> resource.remove(new PhoneRemovalResource.RemovePhone("+15555550123")),
                     "secret [" + secret + "]");
@@ -60,7 +61,7 @@ class PhoneRemovalBlankSecretTest {
             keycloak.incrementAndGet();
             return true;
         };
-        PhoneRemovalResource resource = new PhoneRemovalResource(sms, directory);
+        PhoneRemovalResource resource = new PhoneRemovalResource(sms, directory, new LoginLinks("https://app.freedriver.io"));
         Response response = resource.remove(new PhoneRemovalResource.RemovePhone("+15555550123"));
         try {
             assertEquals(204, response.getStatus());

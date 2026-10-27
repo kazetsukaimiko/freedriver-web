@@ -1,9 +1,11 @@
 package io.freedriver.app.invites;
 
+import io.freedriver.app.api.SignInLink;
 import io.freedriver.app.phones.PhoneRow;
 import io.freedriver.app.phones.RecordingPhoneSignIn;
 import io.freedriver.app.phones.RecordingSmsPhoneList;
 import io.freedriver.app.security.CsrfFilter;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.TestProfile;
 import io.quarkus.test.security.TestSecurity;
@@ -13,6 +15,7 @@ import jakarta.inject.Inject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -26,6 +29,7 @@ import java.util.concurrent.Future;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -41,6 +45,9 @@ class InviteResourceTest {
     RecordingSmsPhoneList sms;
     @Inject
     RecordingPhoneSignIn keycloak;
+    @Inject
+    @ConfigProperty(name = "freedriver.public-base-url")
+    String publicBaseUrl;
 
     @BeforeEach
     void reset() {
@@ -52,17 +59,21 @@ class InviteResourceTest {
 
     @Test
     @TestSecurity(user = "yuni", roles = {"portal-admin"})
-    void create_from_a_phone_does_not_mint_a_link() {
+    void create_returns_the_login_link_and_does_not_text_or_record_agreement() {
         Response created = csrf().body("{\"phone\":\" (555) 555-0123 \"}").post("/api/invites");
         created.then().statusCode(201);
         assertEquals("***0123", created.path("phone"));
-        assertNull(created.path("link"));
+        assertLoginLink(created, "+15555550123");
         assertNoProviderBody(created);
-        assertFalse(created.asString().contains("555555"));
         assertTrue(store.open().isEmpty());
-        given().when().get("/api/invites").then().statusCode(200).body("invites.size()", is(0));
-        given().when().get("/api/phones").then().statusCode(200).body("phones.size()", is(1));
         assertTrue(sms.sent().isEmpty());
+        assertTrue(sms.agreements().isEmpty());
+        assertNull(sms.list().getFirst().consentedAt());
+        given().when().get("/api/invites").then().statusCode(200).body("invites.size()", is(0));
+        given().when().get("/api/phones").then().statusCode(200)
+                .body("phones.size()", is(1))
+                .body("phones[0].loginLink", is(SignInLink.url(publicBaseUrl, "+15555550123")))
+                .body("phones[0].lastSignIn", nullValue());
         assertEquals(List.of("whitelist", "attach"), sms.steps());
         assertEquals(List.of("+15555550123"), keycloak.created());
         assertTrue(keycloak.removed().isEmpty());
@@ -73,10 +84,8 @@ class InviteResourceTest {
     void create_lists_the_number_then_creates_the_user_and_remove_undoes_it() {
         Response created = csrf().body("{\"phone\":\"+15555550123\"}").post("/api/invites");
         created.then().statusCode(201);
-        String body = created.asString();
         assertEquals("***0123", created.path("phone"));
-        assertFalse(body.contains("555555"));
-        assertFalse(body.contains("link"));
+        assertLoginLink(created, "+15555550123");
         assertTrue(store.open().isEmpty());
         assertEquals(List.of("whitelist", "attach"), sms.steps());
         assertEquals(List.of("+15555550123"), keycloak.created());
@@ -102,6 +111,20 @@ class InviteResourceTest {
         created.then().statusCode(400).body("reason", is("phone"));
         assertNoProviderBody(created);
         assertTrue(store.open().isEmpty());
+    }
+
+    @Test
+    @TestSecurity(user = "yuni", roles = {"portal-admin"})
+    void the_login_link_is_gone_after_the_first_sign_in() {
+        sms.add(new PhoneRow("+15555550123", "Mom", "dashboard", Instant.parse("2026-10-01T00:00:00Z"), null, null));
+        sms.add(new PhoneRow("+15555550199", "Dad", "dashboard", Instant.parse("2026-10-02T00:00:00Z"),
+                Instant.parse("2026-10-02T00:00:00Z"), Instant.parse("2026-10-03T00:00:00Z")));
+        given().when().get("/api/phones").then().statusCode(200)
+                .body("phones.size()", is(2))
+                .body("phones[0].loginLink", is(SignInLink.url(publicBaseUrl, "+15555550123")))
+                .body("phones[0].lastSignIn", nullValue())
+                .body("phones[1].loginLink", nullValue())
+                .body("phones[1].lastSignIn", is("2026-10-03T00:00:00Z"));
     }
 
     @Test
@@ -234,6 +257,17 @@ class InviteResourceTest {
         }
         assertEquals(List.of(201, 201, 201, 201, 201, 201, 201, 201, 429), statuses);
         assertTrue(store.open().isEmpty());
+    }
+
+    private void assertLoginLink(Response response, String phone) {
+        String link = response.path("link");
+        assertEquals(SignInLink.url(publicBaseUrl, phone), link);
+        URI uri = URI.create(link);
+        assertEquals(URI.create(publicBaseUrl).getHost(), uri.getHost());
+        assertEquals("/sign-in", uri.getPath());
+        assertNull(uri.getQuery());
+        assertEquals(phone, uri.getFragment());
+        assertFalse(link.contains("/invite/"));
     }
 
     private static void assertNoProviderBody(Response response) {
