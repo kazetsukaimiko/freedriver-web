@@ -33,13 +33,13 @@ Paths under `java/dashboard/src/main/java/io/freedriver/app/instances/`:
 | --- | --- |
 | `InstancesApi.java` | JAX-RS interface. Path `/api/instances`. `@RolesAllowed("portal-admin")` on each method. `@Valid` and `@Size(max = ApplianceSchemas.NAME_MAX)` on `CreateInstance.label`. `@RateLimited("instances")` on create. |
 | `InstancesResource.java` | `@ApplicationScoped` implementation of that interface. Returns `InstanceList` and `ProvisionedInstance`. Throws the domain exceptions below. |
-| `HouseProvision.java` | Plain service. Mints the id and the secret, calls broker allow, then the store. Returns `InstanceRecord` or throws a domain exception. |
+| `HouseProvision.java` | Plain service. Mints the id and the secret, calls broker allow, then the store. Returns `House` or throws a domain exception. |
 | `InvalidLabelException.java` | Label failed the contract. |
 | `BrokerRefusedException.java` | The allow or the following insert failed. |
 | `InstanceNotFoundException.java` | Open's lookup was empty. |
 | `InstanceFailureMapper.java` | Maps those three exceptions to `InstanceFailure` and the HTTP status in document 1. |
 
-`InstancesApi` carries the JAX-RS, validation, role, and rate-limit annotations. `InstancesResource` is the application-scoped implementation. `HouseProvision` returns `InstanceRecord` or throws a domain exception. The role check lives on `InstancesApi`. The rate limit lives on the existing `RateLimitedFilter`, keyed by the authenticated subject, bucket `instances`.
+`InstancesApi` carries the JAX-RS, validation, role, and rate-limit annotations. `InstancesResource` is the application-scoped implementation. `HouseProvision` returns `House` or throws a domain exception. The role check lives on `InstancesApi`. The rate limit lives on the existing `RateLimitedFilter`, keyed by the authenticated subject, bucket `instances`.
 
 `CsrfFilter` in `java/dashboard/src/main/java/io/freedriver/app/security/CsrfFilter.java` already requires `X-CSRF-Token` on `POST /api/invites` and writes `csrfToken` onto `InviteList`. The change treats `POST /api/instances` as a command path and writes `csrfToken` onto an `InstanceList` from `GET /api/instances`.
 
@@ -87,18 +87,14 @@ The client subscribes to `$CONTROL/dynamic-security/v1/response` and keeps the r
 
 ### Instance store
 
-`java/dashboard/pom.xml` gains `quarkus-mongodb-panache`. The version comes from the Quarkus BOM already imported by that pom. The dependency is on the dashboard module.
+`House` and `HouseRepository` already sit in `io.freedriver.app.instances`. `java/dashboard/pom.xml` already depends on `quarkus-mongodb-panache`. `docker-compose.yml` already runs `mongodb` from `mongo:8.0`, with data at `/opt/freedriver-storage/mongodb`, and the dashboard already takes `QUARKUS_MONGODB_CONNECTION_STRING`. `application.properties` already sets `quarkus.mongodb.database` to `freedriver`, leaves Dev Services off, and keeps `org.mongodb.driver` at WARN.
 
-| Path | Role |
-| --- | --- |
-| `java/dashboard/src/main/java/io/freedriver/app/instances/InstanceRecord.java` | Panache Mongo entity. Collection `instances`. Identity `instanceId`. Fields are the document 1 record. |
-| `java/dashboard/src/main/java/io/freedriver/app/instances/InstanceStore.java` | Insert and find for `HouseProvision`. |
+| Path | Now | Change |
+| --- | --- | --- |
+| `java/dashboard/src/main/java/io/freedriver/app/instances/House.java` | Panache entity for collection `instances`. Fields `id`, `label`, `autonomyUsername`, `brokerSecret`. `toString` omits `brokerSecret`. | House provision fills `autonomyUsername` with `id`. The fields stay these four. |
+| `java/dashboard/src/main/java/io/freedriver/app/instances/HouseRepository.java` | `save` and `load`. `lowercaseUuid` requires the canonical lowercase form. | Gains `list`, returning every `House`, for the list handoff. |
 
-`application.properties` maps `quarkus.mongodb.connection-string` to `FREEDRIVER_MONGODB_CONNECTION_STRING`. Production supplies the variable. The string is the credential's home.
-
-`docker-compose.yml` gains a `mongodb` service on the compose network. The image is the official `mongo` image pinned to a patch tag in that file. Its data directory is `/opt/freedriver-storage/mongodb`. `dashboard` reaches it by the compose service name and `depends_on` it. `docker-compose.ghcr.yml` lists the images this repo builds; the MongoDB image is upstream.
-
-The round-trip test runs in `java/dashboard/src/test/java/io/freedriver/app/instances/InstanceStoreTest.java` against the MongoDB the Quarkus test extension starts.
+`HouseRepositoryTest` already saves and loads one house and checks that `toString` omits the secret. The list method's assertion joins that class.
 
 ## How document 1 is built
 
@@ -118,9 +114,9 @@ The round-trip test runs in `java/dashboard/src/test/java/io/freedriver/app/inst
 
 `InstancesResource` and `HouseProvision` are the stage. `InstancesApi` is the edge.
 
-The create handoff reaches `HouseProvision` after `@RolesAllowed`, `CsrfFilter`, and `@RateLimited("instances")`. `HouseProvision` trims `label`, mints `instanceId` and `brokerSecret`, and builds `InstanceAllow`. It calls `BrokerAllow`, then `InstanceStore` when `InstanceAllowResult.allowed` is true.
+The create handoff reaches `HouseProvision` after `@RolesAllowed`, `CsrfFilter`, and `@RateLimited("instances")`. `HouseProvision` trims `label`, mints `id` and `brokerSecret`, and builds `InstanceAllow`. It calls `BrokerAllow`, then `HouseRepository.save` when `InstanceAllowResult.allowed` is true.
 
-`InvalidLabelException`, `BrokerRefusedException`, and `InstanceNotFoundException` leave the resource as those types. `InstanceFailureMapper` writes `InstanceFailure`. The resource returns `ProvisionedInstance` on success, including `autonomyUsername` equal to the stored `instanceId`.
+`InvalidLabelException`, `BrokerRefusedException`, and `InstanceNotFoundException` leave the resource as those types. `InstanceFailureMapper` writes `InstanceFailure`. The resource returns `ProvisionedInstance` on success, with `instanceId` and `autonomyUsername` taken from `House.id`.
 
 `InstancesResourceTest` lives at `java/dashboard/src/test/java/io/freedriver/app/instances/InstancesResourceTest.java`. It passes when a `portal-admin` create with a stub allow and a stub store returns `ProvisionedInstance`, a refused allow leaves the stub store as it started, a label past 64 characters returns cause `label` before the stub broker is invoked, and any other role receives 403.
 
@@ -134,10 +130,10 @@ The create handoff reaches `HouseProvision` after `@RolesAllowed`, `CsrfFilter`,
 
 ### Stage 4, Instance store
 
-`InstanceStore` and `InstanceRecord` are the stage. `HouseProvision` inserts one record after `allowed` is true and reads records for list and open.
+`HouseRepository` and `House` are the stage. `HouseProvision` calls `save` after `allowed` is true, `list` for the list handoff, and `load` for open.
 
-The insert is the document 1 handoff of `InstanceRecord`. A duplicate `instanceId` or a Mongo failure throws, and `HouseProvision` treats that as `BrokerRefusedException` after rollback. List returns every record as `InstanceSummary` in `InstanceList`, newest mint first. Open returns one record or an empty result, and `InstancesResource` throws `InstanceNotFoundException` on empty.
+The insert is the document 1 handoff of `House`. A duplicate `id` or a Mongo failure throws, and `HouseProvision` treats that as `BrokerRefusedException` after rollback. List maps each `House` to an `InstanceSummary`. Open returns one house or an empty result, and `InstancesResource` throws `InstanceNotFoundException` on empty.
 
-`InstanceStoreTest` passes when a saved record loads with the same `instanceId`, `label`, `autonomyUsername`, and `brokerSecret`.
+`HouseRepositoryTest` already passes when a saved house loads with the same `id`, `label`, `autonomyUsername`, and `brokerSecret`, and when `toString` omits the secret.
 
 At that point the four stages match the handoffs in document 1.

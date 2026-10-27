@@ -7,9 +7,9 @@ Dashboard provisioning of one Autonomy house. A portal-admin creates the house f
 ## Stages
 
 1. **Instances page.** Owns the portal-admin create form, the list, the opened house, and the copy control. It sends `CreateInstance` and `OpenInstance` to house provision and renders `InstanceList`, `ProvisionedInstance`, and `InstanceFailure`.
-2. **House provision.** Owns the portal-admin gate for this flow, the mint of `instanceId` and `brokerSecret`, and the order of the later stages. It calls broker allow, then writes the instance store when the allow succeeds.
+2. **House provision.** Owns the portal-admin gate for this flow, the mint of `House.id` and `brokerSecret`, and the order of the later stages. It calls broker allow, then writes the instance store when the allow succeeds.
 3. **Broker allow.** Owns one allow exchange for a new house: `InstanceAllow`, `InstanceAllowResult`, and `InstanceAllowRollback`. It uses the admin login from server configuration. The autonomy user and the api user are the subjects of the grants.
-4. **Instance store.** Owns the `instances` collection. A document is an `InstanceRecord`. The store writes a record when house provision hands it one, and it returns a record on list and on open.
+4. **Instance store.** Owns the `instances` collection. A document is a `House`. The store writes a house when house provision hands it one, and it returns a house on list and on open.
 
 ## Types
 
@@ -46,7 +46,7 @@ From house provision to the Instances page.
 
 | Field | Contract |
 | --- | --- |
-| instances | The stored houses as `InstanceSummary`, newest mint first. |
+| instances | The stored houses as `InstanceSummary`. `instanceId` is `House.id`. |
 | csrfToken | The CSRF token for the following create. The page sends it back as `X-CSRF-Token`. |
 
 ### ProvisionedInstance
@@ -124,16 +124,16 @@ From house provision to broker allow. Sent when `partial` is true.
 
 The rollback removes that autonomy user, that autonomy role, and that house's grants on the api role. The api user remains.
 
-### InstanceRecord
+### House
 
-From house provision to the instance store, and from the store back to house provision.
+From house provision to the instance store, and from the store back to house provision. This is the document `House` already stores.
 
 | Field | Contract |
 | --- | --- |
-| instanceId | Document identity. Lowercase canonical UUID. |
+| id | Document identity. Lowercase canonical UUID. `HouseRepository.lowercaseUuid` accepts this form. |
 | label | Optional list name. |
-| autonomyUsername | Equal to `instanceId`. |
-| brokerSecret | The secret returned on `ProvisionedInstance`. |
+| autonomyUsername | House provision sets this to the same string as `id`. |
+| brokerSecret | The secret returned on `ProvisionedInstance`. `House.toString` omits this field. |
 
 ## Messages
 
@@ -154,7 +154,7 @@ The list, open, and create handoffs below are direct. Each one carries the named
 3. House provision mints `instanceId` with `UUID.randomUUID()` (lowercase canonical, version 4) and mints `brokerSecret`. `autonomyUsername` is that `instanceId` string. A minted id that is already stored is minted once more. A second collision ends the flow as `InstanceFailure` cause `broker`, before broker allow and before the store.
 4. House provision hands `InstanceAllow` to broker allow. The message is the allow publish.
 5. Broker allow hands `InstanceAllowResult` back. `allowed` true advances the flow. `allowed` false with `partial` true sends `InstanceAllowRollback`, then ends as `InstanceFailure` cause `broker`. `allowed` false with `partial` false ends as `InstanceFailure` cause `broker` with the store unchanged.
-6. On `allowed` true, house provision hands `InstanceRecord` to the instance store. The store insert is the next step.
+6. On `allowed` true, house provision hands `House` to the instance store. The store insert is the next step.
 7. A store insert that fails sends `InstanceAllowRollback` and ends as `InstanceFailure` cause `broker`. The operator receives that failure. The collection stays as it was before this create.
 8. A store insert that succeeds hands `ProvisionedInstance` to the page. The page shows `instanceId` and `brokerSecret` for copy.
 
@@ -164,7 +164,7 @@ The Instances page asks house provision for the list. House provision reads the 
 
 ### Open
 
-The Instances page hands `OpenInstance` to house provision. House provision reads one `InstanceRecord` and hands back `ProvisionedInstance`. An unknown id ends as `InstanceFailure` cause `missing`. The caller holds `portal-admin`.
+The Instances page hands `OpenInstance` to house provision. House provision reads one `House` and hands back `ProvisionedInstance`, with `instanceId` set from `House.id`. An unknown id ends as `InstanceFailure` cause `missing`. The caller holds `portal-admin`.
 
 ### Copy
 
