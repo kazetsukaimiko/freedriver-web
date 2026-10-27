@@ -1,14 +1,14 @@
 # Interfaces, contracts, and code flow
 
-Dashboard provisioning of one Autonomy house. A portal-admin creates the house from Instances. House provision mints a lowercase uuid and a password, the Keycloak user stage creates the user whose username is that uuid, and the instance store keeps the house after Keycloak accepts that user. The page shows the password from that response. Opening the house again mints a new password and shows that password. The flow is the page, the mint, the Keycloak user, and the store.
+Dashboard provisioning of one Autonomy house. A portal-admin creates the house from Instances. House provision mints a lowercase uuid and a password. The Keycloak user stage creates the user in the group `mqtt-instance` whose username is that uuid. Keycloak holds the house. The page shows the password from that response once. Opening the house again resets the password and shows the new password. The previous password cannot be read back. The flow is the page, the mint, and the Keycloak user.
 
 `instanceId` is the house key already used on topics. `InstanceView.instanceName` stays the appliance tab label from MQTT state. The optional list name here is `label`.
 
 ## Stages
 
 1. **Instances page.** Owns the portal-admin create form, the list, the opened house, and the copy control. It sends `CreateInstance` and `OpenInstance` to house provision and renders `InstanceList`, `ProvisionedInstance`, and `InstanceFailure`. The copy control writes `instanceId` and `password` to the clipboard and leaves both visible in the opened row. The page ends at that copy.
-2. **House provision.** Owns the portal-admin gate for this flow, the mint of `House.id` and `password`, and the order of the later stages. It calls the Keycloak user stage, then writes the instance store when that stage returns `KeycloakUserResult`. On open it mints a new password and hands `ResetPassword` to the Keycloak user stage.
-3. **Keycloak user.** Owns the broker allow for one house. The allow is the Keycloak user whose username is the minted lowercase uuid, with the two topic attributes on that user and membership in `mqtt-instance`. Membership is the group. The topic grant is the user attributes `mqtt_publ_topic` and `mqtt_subs_topic`.
+2. **House provision.** Owns the portal-admin gate for this flow, the mint of the instance uuid and `password`, and the order of the Keycloak user stage. It calls that stage for create, for the list, and for open. On open it mints a new password and hands `ResetPassword` to the Keycloak user stage. The previous password is not read back.
+3. **Keycloak user.** Owns the house. The house is the Keycloak user in the group `mqtt-instance` whose username is the minted lowercase uuid. `label` is a user attribute. The topic grant is the user attributes `mqtt_publ_topic` and `mqtt_subs_topic`. The password is the Keycloak credential. Membership is the group.
 
    The broker image is `eclipse-mosquitto:2.1.2`. Acceptance is that `iotinga/mosquitto-oauth-plugin` loads on that version. Both listeners keep the certificate each one already presents, under the single auth setting the broker already uses for the pair. The plugin reads `mqtt_acl.publish` and `mqtt_acl.subscribe`. One client scope and its aggregate mappers fill those claims from `mqtt_publ_topic` and `mqtt_subs_topic`.
 
@@ -20,7 +20,7 @@ Dashboard provisioning of one Autonomy house. A portal-admin creates the house f
 
    `#321` mints a new instance uuid for the live house, creates the Keycloak user for that uuid, and installs that id and its password on hakobune. The id already in the live ACL stays on that ACL. `#321` is the cutover that starts the broker on the plugin, in the same change as that new uuid. The broker starts with the plugin loaded, and the password file stays in place until that start is the running broker.
 
-4. **Instance store.** Owns the `instances` collection. A document is a `House`. The store writes `id`, the optional `label`, `autonomyUsername`, and `keycloakUserId`. The password lives on the Keycloak credential and on `ProvisionedInstance`.
+Keycloak is the source of truth for the house. The Instances list is the users in `mqtt-instance`, read through the Keycloak Admin API. Create does not insert a Mongo document. The flow does not store `brokerSecret`. The flow does not store a `keycloakUserId` beside the user. `#318` shipped the `instances` collection. The collection stays, and this flow does not write it.
 
 ## Types
 
@@ -40,7 +40,7 @@ From the Instances page to house provision.
 
 | Field | Contract |
 | --- | --- |
-| instanceId | The stored house id. The edge parses it as a UUID. The stored form is lowercase canonical. |
+| instanceId | The username of a user in `mqtt-instance`. The edge parses it as a UUID. The form is lowercase canonical. |
 
 ### InstanceSummary
 
@@ -48,8 +48,8 @@ Carried inside `InstanceList`.
 
 | Field | Contract |
 | --- | --- |
-| instanceId | Lowercase canonical UUID. |
-| label | The stored label, or absent. |
+| instanceId | Lowercase canonical UUID. The Keycloak username. |
+| label | The `label` attribute, or absent. |
 
 ### InstanceList
 
@@ -57,7 +57,7 @@ From house provision to the Instances page.
 
 | Field | Contract |
 | --- | --- |
-| instances | The stored houses as `InstanceSummary`. `instanceId` is `House.id`. |
+| instances | The users in `mqtt-instance` as `InstanceSummary`. `instanceId` is the username. |
 | csrfToken | The CSRF token for the following create and open. The page sends it back as `X-CSRF-Token`. |
 
 ### ProvisionedInstance
@@ -67,8 +67,8 @@ From house provision to the Instances page after create and after open.
 | Field | Contract |
 | --- | --- |
 | instanceId | Lowercase canonical UUID. The topic segment and the Keycloak username. |
-| label | The stored label, or absent. |
-| password | The password house provision minted for this response. Create returns the password just set. Open returns the password just set. |
+| label | The `label` attribute, or absent. |
+| password | The password house provision minted for this response. Create returns the password just set, and the page shows it once. Open returns the password just set. The previous password cannot be read back. |
 
 `password` is 32 bytes from `SecureRandom`, encoded as unpadded URL-safe Base64, so it is one password token.
 
@@ -94,7 +94,8 @@ From house provision to the Keycloak user stage.
 | --- | --- |
 | instanceId | The minted lowercase UUID. |
 | username | Equal to `instanceId`. |
-| password | The minted password. |
+| label | Optional. The user attribute `label`. One value. Absent when blank. |
+| password | The minted password. Keycloak stores it as the user's credential. |
 | publishTopic | `ApplianceSchemas.appliancesTopic(instanceId)`. |
 | subscribeTopic | `ApplianceSchemas.commandsTopic(instanceId)`. |
 | group | `mqtt-instance`. |
@@ -103,14 +104,13 @@ From house provision to the Keycloak user stage.
 
 ### KeycloakUserResult
 
-From the Keycloak user stage to house provision. Returned when the user, both attributes, and `mqtt-instance` membership are all in place.
+From the Keycloak user stage to house provision. Returned when the user, both topic attributes, the `label` attribute when present, and `mqtt-instance` membership are all in place.
 
 | Field | Contract |
 | --- | --- |
-| keycloakUserId | The Keycloak user id from the create. |
 | username | Equal to `instanceId`. |
 
-A create that stops short of that trio deletes the user the stage just created. House provision then ends as `InstanceFailure` cause `broker`, and the store is unchanged.
+A create that stops short of the user, both topic attributes, and `mqtt-instance` membership deletes the user the stage just created. House provision then ends as `InstanceFailure` cause `broker`.
 
 ### ResetPassword
 
@@ -118,29 +118,10 @@ From house provision to the Keycloak user stage on open.
 
 | Field | Contract |
 | --- | --- |
-| keycloakUserId | The id stored on the house. |
-| password | The new password house provision just minted. Keycloak stores it as the user's credential. |
+| instanceId | The username of the user in `mqtt-instance`. |
+| password | The new password house provision just minted. Keycloak stores it as the user's credential and replaces the previous one. |
 
-Keycloak's answer carries the acceptance. The password in this table is the one the page shows. The previous credential is replaced.
-
-### DeleteKeycloakUser
-
-From house provision to the Keycloak user stage after a store insert fails.
-
-| Field | Contract |
-| --- | --- |
-| keycloakUserId | The id from `KeycloakUserResult`. |
-
-### House
-
-From house provision to the instance store, and from the store back to house provision.
-
-| Field | Contract |
-| --- | --- |
-| id | Document identity. Lowercase canonical UUID. `HouseRepository.lowercaseUuid` accepts this form. The Keycloak username is this string. |
-| label | Optional list name. |
-| autonomyUsername | The same string as `id`. |
-| keycloakUserId | The id from `KeycloakUserResult`. |
+Keycloak's answer carries the acceptance. The password in this table is the one the page shows. The previous credential is replaced. The previous password is not read back.
 
 ### MqttConnect
 
@@ -153,35 +134,33 @@ From the plugin to the broker client's token endpoint, at MQTT connect.
 
 ## Messages
 
-The page, house provision, and the instance store hand values directly. Keycloak is the message boundary: the Admin API for a house, and the token endpoint for a connection.
+The page and house provision hand values directly. Keycloak is the message boundary: the Admin API for a house, and the token endpoint for a connection.
 
 1. **KeycloakUser.** Direction: house provision to the Keycloak user stage. Payload: `KeycloakUser`. Sender: house provision. Receiver: the Keycloak Admin API, as the instances admin client. One create. The response that advances the flow is `KeycloakUserResult`.
-2. **ResetPassword.** Direction: house provision to the Keycloak user stage. Payload: `ResetPassword`. Sender: house provision. Receiver: the Keycloak Admin API, same admin client. One call on open. Acceptance advances the flow.
-3. **DeleteKeycloakUser.** Direction: house provision to the Keycloak user stage. Payload: `DeleteKeycloakUser`. Sender: house provision. Receiver: the Keycloak Admin API. Sent when the store insert fails after `KeycloakUserResult`. One attempt. The operator's outcome is `InstanceFailure` cause `broker`. The collection is the one from before this create. A failed delete leaves that Keycloak user in place, and the next create mints a new uuid.
+2. **ResetPassword.** Direction: house provision to the Keycloak user stage. Payload: `ResetPassword`. Sender: house provision. Receiver: the Keycloak Admin API, same admin client. One call on open. Acceptance advances the flow. The call replaces the credential and does not read the previous password.
+3. **mqtt-instance members.** Direction: house provision to the Keycloak user stage. Sender: house provision. Receiver: the Keycloak Admin API, same admin client. One read of the users in `mqtt-instance`. Each member is one `InstanceSummary`. The username is `instanceId`. The `label` attribute is `label`.
 4. **MqttConnect.** Direction: the plugin to the broker client's token endpoint. Payload: `MqttConnect`. Sender: the plugin, with the username and password from the MQTT connect. Receiver: the token endpoint. The broker client secret stays in server configuration. The access token carries `mqtt_acl.publish` and `mqtt_acl.subscribe` for that user. The plugin keeps those lists on the MQTT connection until disconnect.
 
-The list, open, and create handoffs below are direct. Each one carries the named type from one stage to the next.
+The create and open handoffs below are direct. Each one carries the named type from one stage to the next. The list handoff is the members read above.
 
 ## Handoffs
 
 ### Create
 
 1. The Instances page hands `CreateInstance` to house provision. The handoff advances when the caller holds `portal-admin`, the `X-CSRF-Token` header matches the CSRF cookie, and the rate limiter accepts that caller. Success is HTTP 201 with `ProvisionedInstance`.
-2. House provision trims `label`. A label of at most 64 characters continues. A longer label ends the flow as `InstanceFailure` cause `label`. The Keycloak user stage and the store run for a label that fits.
-3. House provision mints `instanceId` with `UUID.randomUUID()` (lowercase canonical, version 4) and mints `password`. A minted id that is already stored, or a username Keycloak already has, is minted once more. A second collision ends the flow as `InstanceFailure` cause `broker`. The Keycloak user stage runs for a free id.
+2. House provision trims `label`. A label of at most 64 characters continues. A longer label ends the flow as `InstanceFailure` cause `label`. The Keycloak user stage runs for a label that fits.
+3. House provision mints `instanceId` with `UUID.randomUUID()` (lowercase canonical, version 4) and mints `password`. A username Keycloak already has is minted once more. A second collision ends the flow as `InstanceFailure` cause `broker`. The Keycloak user stage runs for a free id.
 4. House provision hands `KeycloakUser` to the Keycloak user stage. The message is the Admin API create.
-5. The Keycloak user stage hands `KeycloakUserResult` back when the user, the two attributes, and `mqtt-instance` are in place. A refusal ends as `InstanceFailure` cause `broker`. The store insert runs after `KeycloakUserResult`.
-6. On `KeycloakUserResult`, house provision hands `House` to the instance store. The store insert is the next step.
-7. A store insert that fails sends `DeleteKeycloakUser` and ends as `InstanceFailure` cause `broker`. The operator receives that failure. The collection stays as it was before this create.
-8. A store insert that succeeds hands `ProvisionedInstance` to the page. The page shows `instanceId` and `password` for copy.
+5. The Keycloak user stage hands `KeycloakUserResult` back when the user, the topic attributes, the `label` attribute when present, and `mqtt-instance` are in place. A refusal ends as `InstanceFailure` cause `broker`.
+6. On `KeycloakUserResult`, house provision hands `ProvisionedInstance` to the page. The page shows `instanceId` and `password` for copy. That showing is the one time this password appears.
 
 ### List
 
-The Instances page asks house provision for the list. House provision reads the instance store and hands back `InstanceList`. The caller holds `portal-admin`. Success is HTTP 200. Summaries carry `instanceId` and `label`. `csrfToken` is on this response so create and open can send it.
+The Instances page asks house provision for the list. House provision reads the users in `mqtt-instance` through the Keycloak Admin API and hands back `InstanceList`. The caller holds `portal-admin`. Success is HTTP 200. Summaries carry `instanceId` and `label`. A summary does not carry `password`. `csrfToken` is on this response so create and open can send it.
 
 ### Open
 
-The Instances page hands `OpenInstance` to house provision. The handoff is `POST` and advances when the caller holds `portal-admin`, the `X-CSRF-Token` header matches the CSRF cookie, and the rate limiter accepts that caller. House provision loads one `House`. An empty load ends as `InstanceFailure` cause `missing`. A stored house whose `keycloakUserId` is blank ends the same way. A loaded house mints a new `password`, hands `ResetPassword` to the Keycloak user stage, and on acceptance hands `ProvisionedInstance` to the page. Success is HTTP 200. A refused reset ends as `InstanceFailure` cause `broker`, and the credential Keycloak already held stays the credential.
+The Instances page hands `OpenInstance` to house provision. The handoff is `POST` and advances when the caller holds `portal-admin`, the `X-CSRF-Token` header matches the CSRF cookie, and the rate limiter accepts that caller. House provision asks the Keycloak user stage for the user in `mqtt-instance` whose username is `instanceId`. An empty lookup ends as `InstanceFailure` cause `missing`. A found user mints a new `password`, hands `ResetPassword` to the Keycloak user stage, and on acceptance hands `ProvisionedInstance` to the page. The page shows that new password. The previous password cannot be read back. Success is HTTP 200. A refused reset ends as `InstanceFailure` cause `broker`, and the credential Keycloak already held stays the credential.
 
 ### Copy
 
@@ -189,7 +168,7 @@ The opened `ProvisionedInstance`, including the one just created, is what the op
 
 ### Connect
 
-A house client connects with `MqttConnect.username` equal to `instanceId` and the password from the page response that set it. The dashboard connects with the service account username and the service account password from server configuration. The plugin exchanges that pair at the token endpoint. The broker client issues the token when the user is in `mqtt-instance` or `portal-broker`. The plugin records the topic lists for the life of the MQTT connection. The dashboard's session subscribes and publishes for the houses in the instance store, under the one service account that can write every house's commands.
+A house client connects with `MqttConnect.username` equal to `instanceId` and the password from the page response that set it. The dashboard connects with the service account username and the service account password from server configuration. The plugin exchanges that pair at the token endpoint. The broker client issues the token when the user is in `mqtt-instance` or `portal-broker`. The plugin records the topic lists for the life of the MQTT connection. The dashboard's session subscribes and publishes for the users in `mqtt-instance`, under the one service account that can write every house's commands.
 
 ### Log line
 
