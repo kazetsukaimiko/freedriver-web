@@ -1,18 +1,72 @@
 name: Deploy
 
+# A push to main is limited to the files the Release pull request commits.
+# release-merge then requires that push to be the release-please merge.
+# workflow_dispatch still deploys the chosen ref. The stamp stays YEAR-MONTH_rN.
 on:
   push:
     branches: [main]
+    paths:
+      - version.txt
+      - .release-please-manifest.json
+      - java/dashboard/src/main/resources/changelog/CHANGELOG.md
   workflow_dispatch:
 
 concurrency:
-  group: deploy-freedriver
-  cancel-in-progress: true
+  # Release merges and manual runs share one group. Any other push uses its
+  # own group so it cannot cancel a deploy. workflow_dispatch is first so
+  # the commits context is not read.
+  group: ${{ (github.event_name == 'workflow_dispatch' || contains(toJSON(github.event.commits), 'release-please--branches--')) && 'deploy-freedriver' || format('deploy-skip-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' || contains(toJSON(github.event.commits), 'release-please--branches--') }}
 
 jobs:
-  deploy:
+  release-merge:
     runs-on: ubuntu-latest
-    if: github.repository == 'kazetsukaimiko/freedriver-web'
+    if: github.event_name == 'push' && github.repository == 'kazetsukaimiko/freedriver-web'
+    outputs:
+      deploy: ${{ steps.gate.outputs.deploy }}
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Detect the Release pull request merge
+        id: gate
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          deploy=false
+          # Merge commits name the head branch. Squash and rebase merges do
+          # not, so the commit's pull request is the second check.
+          if printf '%s\n' "$COMMIT_MESSAGE" | grep -F -q 'release-please--branches--'; then
+            deploy=true
+          else
+            refs="$(gh api --paginate \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+              --jq '.[].head.ref')"
+            if printf '%s\n' "$refs" | grep -F -q 'release-please--branches--'; then
+              deploy=true
+            fi
+          fi
+          echo "deploy=${deploy}" >> "$GITHUB_OUTPUT"
+          if [ "$deploy" = true ]; then
+            echo "Release pull request merge; Deploy will run"
+          else
+            echo "Not a Release pull request merge; Deploy will not run"
+          fi
+
+  deploy:
+    needs: release-merge
+    runs-on: ubuntu-latest
+    if: >-
+      !cancelled() &&
+      github.repository == 'kazetsukaimiko/freedriver-web' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        needs.release-merge.outputs.deploy == 'true'
+      )
     environment: production
     permissions:
       contents: write
