@@ -11,7 +11,7 @@
 # If any username matches the #155 phone grammar, it records the count and
 # does not insert the router.
 #
-# Run as root on the VPS after the Keycloak image with the SPI is up.
+# Run as root, or as a member of the allowed group, on the VPS after the Keycloak image with the SPI is up.
 # Idempotent.
 set -euo pipefail
 
@@ -37,8 +37,17 @@ if [[ "${1:-}" == "--check-executions" ]]; then
   exec python3 "$CHECK" "$@"
 fi
 
-if [[ "$(id -u)" -ne 0 ]]; then
-  echo "Run as root (sudo)." >&2
+# Non-root may run only as a member of lonewatt-techops. Root may always run.
+# GROUP above is the Keycloak group, not this Unix group.
+in_allowed_group() {
+  if id -Gn | tr ' ' '\n' | grep -Fxq -- "lonewatt-techops"; then
+    return 0
+  fi
+  return 1
+}
+
+if [[ "$(id -u)" -ne 0 ]] && ! in_allowed_group; then
+  echo "Run as root, or as a member of the allowed group." >&2
   exit 1
 fi
 

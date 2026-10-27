@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Provision Mosquitto MQTTS secrets, storage, and instance-scoped ACLs on the VPS.
-# Full provision runs as root/sudo. --acl-only runs as any user and is the
+# Full provision runs as root, or as a member of the allowed group. --acl-only runs as any user and is the
 # mode CI uses, writing to a temp file. Idempotent: existing pass and cert
 # files stay in place, and output reports password files by name.
 #
@@ -192,8 +192,17 @@ if [[ "$ACL_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
-if [[ "$(id -u)" -ne 0 ]]; then
-  echo "Run as root (sudo). Use --acl-only to substitute an ACL without root." >&2
+# Non-root may run the full provision only as a member of $GROUP.
+# --acl-only already returned and stays available to any user.
+in_allowed_group() {
+  if id -Gn | tr ' ' '\n' | grep -Fxq -- "$GROUP"; then
+    return 0
+  fi
+  return 1
+}
+
+if [[ "$(id -u)" -ne 0 ]] && ! in_allowed_group; then
+  echo "Run as root, or as a member of the allowed group. Use --acl-only to substitute an ACL without root." >&2
   exit 1
 fi
 
