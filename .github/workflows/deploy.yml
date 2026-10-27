@@ -24,8 +24,7 @@ jobs:
       - name: Record the Keycloak provider source commit
         run: printf '%s\n' "$GITHUB_SHA" > .source-commit
 
-      # Same scheme as autonomy mqtt-contract: YEAR-MONTH_rBUILD_NUM (UTC + github.run_number).
-      # Example: 2026-08_r45. Not semver. Git poms stay 1.0.0-SNAPSHOT for local builds.
+      # Deploy stamp is UTC YEAR-MONTH_r plus github.run_number, for example 2026-08_r45. This job writes that stamp.
       - name: Stamp YEAR-MONTH_rBUILD_NUM
         run: |
           NEW_VERSION="$(date -u +%Y-%m)_r${{ github.run_number }}"
@@ -52,7 +51,7 @@ jobs:
             exit 1
           fi
 
-      # Placeholder values satisfy compose interpolation on the runner only.
+      # Compose interpolation on the runner uses the placeholder env file below. umask 077 keeps that file private to the job.
       - name: Build images on the runner
         run: |
           set -euo pipefail
@@ -63,7 +62,6 @@ jobs:
           sudo mkdir -p /opt/freedriver-secrets
           printf '%s\n' '# placeholder for compose interpolation' | sudo tee /opt/freedriver-secrets/twilio-verify.env >/dev/null
           envfile="$RUNNER_TEMP/freedriver-deploy-build.env"
-          # Placeholders only. Keep the file unreadable to other users on the runner.
           (umask 077; cat > "$envfile" <<EOF
           BUILD_NUMBER=${NEW_VERSION}
           SOURCE_COMMIT=${GITHUB_SHA}
@@ -162,12 +160,7 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
-      # First contact with the VPS: pull the images. The live tree is rsynced next.
-      # The deploy account is not in the docker group. Passwordless sudo is
-      # /usr/bin/docker compose only, so that account's client cannot pull.
-      # Stage outside the live tree. A failed pull leaves the live tree unchanged.
-      # The job token stays on the runner. These GHCR packages are public, and
-      # root's compose has no separate registry login.
+      # Copies the tree to $HOME/deploy-stage. sudo /usr/bin/docker compose pulls the public GHCR packages there.
       - name: Pull images on the VPS
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -230,7 +223,7 @@ jobs:
           fi
           umask 077
           printf 'BUILD_NUMBER=%s\nSOURCE_COMMIT=%s\n' "$build_number" "$source_commit" > .build-number.env
-          # Pull every service image, including tags already present. Do not start containers.
+          # pull --policy always refreshes every service image, including tags already on the host.
           sudo -n /usr/bin/docker compose \
             --env-file /opt/freedriver-secrets/.env \
             --env-file .build-number.env \
@@ -259,8 +252,7 @@ jobs:
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
             'bash -s' <<'REMOTE'
           set -euo pipefail
-          # The deploy account owns the rsync target. Passwordless sudo is
-          # /usr/bin/docker compose only. Storage directories are prepared on the host.
+          # The deploy account owns /opt/freedriver-web. Storage directories are prepared on the host.
           for spec in \
             "472:472 /opt/freedriver-storage/grafana" \
             "10001:10001 /opt/freedriver-storage/loki" \
@@ -305,10 +297,10 @@ jobs:
             exit 1
           fi
           echo "Keycloak provider source commit: ${source_commit}"
-          # Stamp and source commit travel in this file. The sudoers rule passes no caller environment.
+          # sudo /usr/bin/docker compose reads BUILD_NUMBER and SOURCE_COMMIT from .build-number.env.
           umask 077
           printf 'BUILD_NUMBER=%s\nSOURCE_COMMIT=%s\n' "$build_number" "$source_commit" > .build-number.env
-          # Images are already on the VPS. Start them with --no-build --pull never.
+          # Starts the stack from the images the previous step pulled.
           sudo -n /usr/bin/docker compose \
             --env-file /opt/freedriver-secrets/.env \
             --env-file .build-number.env \
@@ -326,7 +318,7 @@ jobs:
         run: |
           echo "Keycloak provider source commit: ${GITHUB_SHA}" >> "$GITHUB_STEP_SUMMARY"
 
-      # Tag only after SSH deploy succeeds, and only on main (not PRs / other refs).
+      # Pushes an annotated tag of the deploy stamp after the SSH deploy on main.
       - name: Tag successful deploy
         if: github.ref == 'refs/heads/main'
         run: |

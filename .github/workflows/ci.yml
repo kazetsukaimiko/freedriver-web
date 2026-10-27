@@ -29,10 +29,9 @@ jobs:
           server-username: GITHUB_ACTOR
           server-password: GITHUB_TOKEN
 
-      # setup-java cache: maven saves at the end of every job, including a pull
-      # request, and that post step is not the test result. Restore here instead.
-      # The Packages credential is written to ~/.m2/settings.xml, which is not a
-      # cached path. A miss or a cache-service error does not fail the job.
+      # Restores ~/.m2/repository, ~/.m2/wrapper, and ~/.m2/build-cache.
+      # The Packages credential lives in ~/.m2/settings.xml.
+      # continue-on-error keeps the test step as the result when the cache misses.
       - name: Restore Maven repository and build cache
         continue-on-error: true
         uses: actions/cache/restore@v4
@@ -50,9 +49,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # Only a push to the default branch may record a successful test.
-          # A pull request does not write that record. pull_request_target is
-          # not a trigger of this workflow; the same condition would refuse it.
+          # skipSave is false on a push to main, which records that green test in the build cache.
           skip_save=true
           if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" ]]; then
             skip_save=false
@@ -104,9 +101,7 @@ jobs:
             'topic write freedriver/v1/home/appliances' \
             'topic read freedriver/v1/home/commands' \
             > "$leftover"
-          # Non-v4 UUID (version nibble 1) must be accepted. Same write must
-          # replace leftover home/. CI substitutes into a temp file only —
-          # never treat the repo template as the live ACL.
+          # Substitutes a version-nibble-1 UUID into the temp ACL and replaces leftover home/ topics in that write.
           ./scripts/provision-mosquitto.sh --acl-only \
             --instance-id 123e4567-e89b-12d3-a456-426614174000 \
             --acl-out "$leftover"
@@ -224,6 +219,7 @@ jobs:
           if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF}" == "refs/heads/main" ]]; then
             skip_save=false
           fi
+          # package and install set skipSave. The SPI package step records the cache entry on main.
           # package/install skip tests. Do not let that replace a green test entry.
           # A test-phase cache hit restores target/classes as the project artifact.
           # The jar is written, install does not see a file, and the build stops.
@@ -292,8 +288,8 @@ jobs:
           print("Maven cache paths do not contain the Packages credential or settings.xml")
           PY
 
-      # Save is separate from restore so a pull request cannot write the cache
-      # the default branch restores. Failure to save does not change the test result.
+      # Saves the Maven cache after a green push to main.
+      # continue-on-error leaves the test step as the result when the save fails.
       - name: Save Maven repository and build cache
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         continue-on-error: true
@@ -329,7 +325,7 @@ jobs:
           MONTH="$(date -u +%m)"
           NEW_VERSION="${YEAR}-${MONTH}_r${{ github.run_number }}"
           echo "Publishing freedriver-mqtt-contract as ${NEW_VERSION}"
-          # Version rewrite and deploy are not a test result. Do not cache them.
+          # Publishes mqtt-contract at the YEAR-MONTH_rRUN stamp with the build cache off.
           ./mvnw -B --no-transfer-progress \
             -Dmaven.build.cache.enabled=false \
             -Dmaven.build.cache.remote.enabled=false \
@@ -366,8 +362,7 @@ jobs:
           npm ci
           npm test
 
-  # Full dashboard image, cert-sync image, and compose config (#116, #118).
-  # A failure here stops the pull request before Deploy can reach the VPS.
+  # Builds the full dashboard image, the cert-sync image, and compose config on the pull request (#116, #118).
   prod-image:
     runs-on: ubuntu-latest
     if: github.repository == 'kazetsukaimiko/freedriver-web'

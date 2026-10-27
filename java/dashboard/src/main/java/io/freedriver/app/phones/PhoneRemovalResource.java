@@ -1,5 +1,6 @@
 package io.freedriver.app.phones;
 
+import io.freedriver.app.api.LoginLinks;
 import io.freedriver.dashboard.api.RateLimited;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
@@ -11,6 +12,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.regex.Pattern;
 
@@ -26,16 +28,32 @@ public class PhoneRemovalResource {
 
     private final SmsPhoneList sms;
     private final PhoneSignInDirectory keycloak;
+    private final LoginLinks links;
 
     @Inject
-    public PhoneRemovalResource(SmsPhoneList sms, PhoneSignInDirectory keycloak) {
+    public PhoneRemovalResource(SmsPhoneList sms, PhoneSignInDirectory keycloak, LoginLinks links) {
         this.sms = sms;
         this.keycloak = keycloak;
+        this.links = links;
     }
 
     @GET
     public PhoneList list() {
-        return new PhoneList(sms.list());
+        return new PhoneList(sms.list().stream().map(this::listed).toList());
+    }
+
+    /** The login link stays until the first recorded sign-in. A number that cannot be a link has none. */
+    private ListedPhone listed(PhoneRow row) {
+        String link = null;
+        if (row.lastSignIn() == null) {
+            try {
+                link = links.url(row.phone());
+            } catch (IllegalArgumentException ignored) {
+                link = null;
+            }
+        }
+        return new ListedPhone(row.phone(), row.name(), row.role(), row.addedAt(), row.consentedAt(),
+                row.lastSignIn(), link);
     }
 
     @POST
@@ -57,7 +75,17 @@ public class PhoneRemovalResource {
         return Response.noContent().build();
     }
 
-    public record PhoneList(List<PhoneRow> phones) {
+    public record PhoneList(List<ListedPhone> phones) {
+    }
+
+    public record ListedPhone(
+            String phone,
+            String name,
+            String role,
+            Instant addedAt,
+            Instant consentedAt,
+            Instant lastSignIn,
+            String loginLink) {
     }
 
     public record RemovePhone(String phone) {

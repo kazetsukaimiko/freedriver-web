@@ -32,6 +32,19 @@ public interface SmsPhoneList {
         throw new UnsupportedOperationException();
     }
 
+    /**
+     * Lists the number before the Keycloak user exists. Role is {@code dashboard}.
+     * {@code name} may be null. @return false when the number is already listed.
+     */
+    default boolean whitelist(String phone, String name) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** Stores the username created for a listed number. @return false when the row cannot take it. */
+    default boolean attachUsername(String phone, String username) {
+        throw new UnsupportedOperationException();
+    }
+
     enum InviteText {
         SENT, ALREADY_LISTED, LIMITED, UNAVAILABLE
     }

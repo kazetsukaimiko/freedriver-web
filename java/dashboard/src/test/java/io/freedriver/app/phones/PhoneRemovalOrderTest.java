@@ -1,5 +1,6 @@
 package io.freedriver.app.phones;
 
+import io.freedriver.app.api.LoginLinks;
 import io.freedriver.app.invites.InviteUpstreamException;
 import org.junit.jupiter.api.Test;
 
@@ -51,6 +52,6 @@ class PhoneRemovalOrderTest {
             public void requireSharedSecret() {
             }
         };
-        return new PhoneRemovalResource(sms, keycloak);
+        return new PhoneRemovalResource(sms, keycloak, new LoginLinks("https://app.freedriver.io"));
     }
 }

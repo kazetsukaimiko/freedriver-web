@@ -16,8 +16,9 @@ import org.keycloak.services.managers.AuthenticationManager;
 import java.security.SecureRandom;
 
 /**
- * Realm resource for the invite service account. It creates a phone user and does not grant roles.
- * The path is {@code /realms/{realm}/freedriver-invite/users}.
+ * Realm resource for the invite service account. It creates a phone user and grants only the
+ * realm role {@code dashboard}. It does not grant {@code portal-admin} or realm-management, and
+ * it has no general role grant. The path is {@code /realms/{realm}/freedriver-invite/users}.
  */
 public class InviteAccountResource {
 
