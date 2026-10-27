@@ -242,17 +242,43 @@ kcadm add-roles -r "$REALM" --uusername kazetsukai --rolename dashboard --rolena
 kcadm add-roles -r "$REALM" --uusername second --rolename dashboard >/dev/null
 echo "Assigned kazetsukai → dashboard + portal-admin; second → dashboard."
 
-# Dispatcher actors. The public client is for Grok and Tesla (authorization code + PKCE).
+# Dispatcher actors. The public client is authorization code + PKCE S256.
 # Confidential device clients are opt-in: set FREEDRIVER_DEVICE_CLIENTS to a space-separated
 # list of client ids. Secrets are written once and never printed. Do not export that list
 # on a casual re-run.
 ensure_role dispatcher
 ensure_role device
 
+# role-dispatcher hardcoded realm role dispatcher onto every token from this client.
+# A later run removes that mapper and does not recreate it. Other mappers stay as they are
+# when they already exist. User kaze is not given realm role dispatcher.
 ensure_mapper() {
   local client_uuid="$1"
   local name="$2"
   shift 2
+  local mapper_id
+  if [[ "$name" == "role-dispatcher" ]]; then
+    kcadm get "clients/${client_uuid}/protocol-mappers/models" -r "$REALM" > "$work/mappers.json"
+    mapper_id="$(python3 - "$work/mappers.json" "$name" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+if not isinstance(data, list):
+    sys.exit(3)
+wanted = sys.argv[2]
+ids = [item["id"] for item in data if isinstance(item, dict) and item.get("name") == wanted and item.get("id")]
+if len(ids) > 1:
+    sys.exit(2)
+print(ids[0] if ids else "", end="")
+PY
+)" || exit 1
+    if [[ -n "$mapper_id" ]]; then
+      kcadm delete "clients/${client_uuid}/protocol-mappers/models/${mapper_id}" -r "$REALM" >/dev/null
+      echo "Removed mapper ${name}."
+    else
+      echo "Mapper ${name} is absent."
+    fi
+    return
+  fi
   if kcadm get "clients/${client_uuid}/protocol-mappers/models" -r "$REALM" --fields name --format csv --noquotes \
       | sed '/^name$/d' | grep -qx "$name"; then
     echo "Mapper ${name} already exists."
@@ -266,6 +292,15 @@ ensure_mapper() {
 }
 
 DISPATCHER_CLIENT=freedriver-dispatcher
+# Exact Grok callback. The trailing slash is part of the value.
+DISPATCHER_REDIRECT_URI='https://grok.com/connectors-oauth-exchange-code/'
+DISPATCHER_REDIRECT_URIS="[\"${DISPATCHER_REDIRECT_URI}\"]"
+DISPATCHER_WEB_ORIGINS='["https://app.freedriver.io"]'
+if [[ "$DISPATCHER_REDIRECT_URIS" != '["https://grok.com/connectors-oauth-exchange-code/"]' ]] \
+    || [[ "$DISPATCHER_WEB_ORIGINS" != '["https://app.freedriver.io"]' ]]; then
+  echo "freedriver-dispatcher redirect or web origins are not the pinned values." >&2
+  exit 1
+fi
 DISPATCHER_UUID="$(kcadm get clients -r "$REALM" -q "clientId=${DISPATCHER_CLIENT}" --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
 if [[ -n "${DISPATCHER_UUID}" ]]; then
   echo "Client ${DISPATCHER_CLIENT} already exists."
@@ -281,8 +316,8 @@ else
     -s serviceAccountsEnabled=false \
     -s protocol=openid-connect \
     -s 'description=Public authorization-code + PKCE client for dispatcher actors. Does not mint tokens itself.' \
-    -s 'redirectUris=["https://app.freedriver.io/*","http://127.0.0.1/*","http://localhost/*"]' \
-    -s 'webOrigins=["https://app.freedriver.io","http://127.0.0.1","http://localhost"]' \
+    -s "redirectUris=${DISPATCHER_REDIRECT_URIS}" \
+    -s "webOrigins=${DISPATCHER_WEB_ORIGINS}" \
     -s 'attributes."pkce.code.challenge.method"=S256' >/dev/null
   DISPATCHER_UUID="$(kcadm get clients -r "$REALM" -q "clientId=${DISPATCHER_CLIENT}" --fields id --format csv --noquotes | csv_id)"
   echo "Created public client ${DISPATCHER_CLIENT}."
@@ -291,10 +326,11 @@ fi
 kcadm update "clients/${DISPATCHER_UUID}" -r "$REALM" \
   -s publicClient=true \
   -s standardFlowEnabled=true \
+  -s implicitFlowEnabled=false \
   -s directAccessGrantsEnabled=false \
   -s serviceAccountsEnabled=false \
-  -s 'redirectUris=["https://app.freedriver.io/*","http://127.0.0.1/*","http://localhost/*"]' \
-  -s 'webOrigins=["https://app.freedriver.io","http://127.0.0.1","http://localhost"]' \
+  -s "redirectUris=${DISPATCHER_REDIRECT_URIS}" \
+  -s "webOrigins=${DISPATCHER_WEB_ORIGINS}" \
   -s 'attributes."pkce.code.challenge.method"=S256' >/dev/null
 
 ensure_mapper "$DISPATCHER_UUID" actor-dispatcher \
@@ -305,9 +341,7 @@ ensure_mapper "$DISPATCHER_UUID" actor-dispatcher \
   -s 'config."id.token.claim"=true' \
   -s 'config."access.token.claim"=true' \
   -s 'config."userinfo.token.claim"=false'
-ensure_mapper "$DISPATCHER_UUID" role-dispatcher \
-  -s protocolMapper=oidc-hardcoded-role-mapper \
-  -s 'config."role"=dispatcher'
+ensure_mapper "$DISPATCHER_UUID" role-dispatcher
 
 ensure_device_client() {
   local id="$1"
