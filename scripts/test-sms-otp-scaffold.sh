@@ -70,8 +70,16 @@ if invite_env not in dash:
     raise SystemExit("dashboard loads the invite secret env file, and it is not required before provision")
 if "keycloak-freedriver-invite.env" in compose.replace(dash, ""):
     raise SystemExit("only dashboard loads the invite secret env file")
+instances_env = (
+    "      - path: /opt/freedriver-secrets/keycloak-freedriver-instances.env\n"
+    "        required: false\n"
+)
+if instances_env not in dash:
+    raise SystemExit("dashboard loads the instances admin secret env file, and it is not required before provision")
+if "keycloak-freedriver-instances.env" in compose.replace(dash, ""):
+    raise SystemExit("only dashboard loads the instances admin secret env file")
 if compose.count("\n    env_file:\n") != 2:
-    raise SystemExit("env_file is only the sms twilio file and the dashboard invite file")
+    raise SystemExit("env_file is only the sms twilio file and the dashboard secret files")
 if "TWILIO_" in compose.replace(block, ""):
     raise SystemExit("only sms receives TWILIO_ variables")
 if "sms-otp.env.example" in block or "sms-otp.env.example" in compose:
@@ -442,7 +450,7 @@ if "map-roles" in resource or "role-mappings" in resource or "add-roles" in reso
     raise SystemExit("invite-account resource must not gain a general role grant")
 if 'update "${path}/${perm_id}"' not in script:
     raise SystemExit("existing invite permission must be updated")
-if re.search(r'"(view|view-members|manage-members)"', script):
+if re.search(r'"(view|view-members|manage-members)"', invite_body):
     raise SystemExit("invite scopes must be manage-membership and manage-group-membership")
 print("phone role allow-list and invite permission scope")
 PY
@@ -469,6 +477,12 @@ if [[ "$(grep -v '^#' secrets/keycloak-freedriver-invite.env.example | grep -v '
 fi
 if ! grep -q 'Placeholder for the dashboard invite client' secrets/keycloak-freedriver-invite.env.example; then
   fail "invite example file must mark the assignment as a placeholder"
+fi
+if [[ "$(grep -v '^#' secrets/keycloak-freedriver-instances.env.example | grep -v '^$')" != "FREEDRIVER_INSTANCES_CLIENT_SECRET=" ]]; then
+  fail "instances example file holds one empty assignment"
+fi
+if ! grep -q 'Placeholder for the dashboard instances admin client' secrets/keycloak-freedriver-instances.env.example; then
+  fail "instances example file must mark the assignment as a placeholder"
 fi
 
 chmod +x scripts/test-invite-service-account.sh

@@ -94,6 +94,11 @@ public final class MqttLog {
                 + " reason=publish-failed");
     }
 
+    /** House provision. {@code outcome} is {@code created}, {@code reset}, or {@code refused}. No password. */
+    public static void house(UUID instanceId, String outcome) {
+        info("mqtt house instance=" + instanceId + " outcome=" + oneLine(outcome, "-"));
+    }
+
     private static void info(String message) {
         LOG.info(message);
     }

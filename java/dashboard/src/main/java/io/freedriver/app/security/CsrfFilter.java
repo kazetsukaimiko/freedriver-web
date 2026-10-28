@@ -1,5 +1,6 @@
 package io.freedriver.app.security;
 
+import io.freedriver.app.instances.InstanceList;
 import io.freedriver.app.invites.InviteList;
 import io.freedriver.dashboard.model.ApplianceMapResponse;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -80,6 +81,8 @@ public class CsrfFilter implements ContainerRequestFilter, ContainerResponseFilt
             response.setEntity(new ApplianceMapResponse(map.instances(), token(request, response)));
         } else if ("api/invites".equals(path) && response.getEntity() instanceof InviteList list) {
             response.setEntity(new InviteList(list.invites(), token(request, response)));
+        } else if ("api/instances".equals(path) && response.getEntity() instanceof InstanceList list) {
+            response.setEntity(new InstanceList(list.instances(), token(request, response)));
         }
     }
 
@@ -115,8 +118,10 @@ public class CsrfFilter implements ContainerRequestFilter, ContainerResponseFilt
     private static boolean commandPath(String path) {
         return path.startsWith("api/appliances/")
                 || "api/invites".equals(path)
+                || "api/instances".equals(path)
                 || "api/phones/remove".equals(path)
-                || (path.startsWith("api/invites/") && path.endsWith("/cancel"));
+                || (path.startsWith("api/invites/") && path.endsWith("/cancel"))
+                || (path.startsWith("api/instances/") && path.endsWith("/open"));
     }
 
     static String mint() {

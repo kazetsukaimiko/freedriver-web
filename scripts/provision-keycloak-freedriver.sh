@@ -21,6 +21,11 @@
 # admin permissions let that account add and remove phone-sign-in members.
 # The realm admin creates users. Realm-management roles remain on the realm admin.
 #
+# The instances admin client (#319) is freedriver-instances. Its service account
+# holds realm-management manage-users. The script writes that secret once to the
+# dashboard env file. It creates the top-level group mqtt-instance with no topic
+# attributes. Topic attributes belong on the house user, which the dashboard creates.
+#
 # Run as root, or as a member of the allowed group, on the VPS. Idempotent. New password users get the
 # UPDATE_PASSWORD required action and choose their own password.
 set -euo pipefail
@@ -29,6 +34,7 @@ CONTAINER="${KEYCLOAK_CONTAINER:-freedriver-web-keycloak-1}"
 TECHOPS_PASS_FILE="${TECHOPS_PASS_FILE:-/opt/freedriver-secrets/keycloak-techops.pass}"
 SECRET_FILE="${SECRET_FILE:-/opt/freedriver-secrets/keycloak-freedriver-api.secret}"
 INVITE_ENV_FILE="${INVITE_ENV_FILE:-/opt/freedriver-secrets/keycloak-freedriver-invite.env}"
+INSTANCES_ENV_FILE="${INSTANCES_ENV_FILE:-/opt/freedriver-secrets/keycloak-freedriver-instances.env}"
 SECRETS_ENV="${SECRETS_ENV:-/opt/freedriver-secrets/.env}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KCADM=/opt/keycloak/bin/kcadm.sh
@@ -611,7 +617,119 @@ PY
   echo "Invite service account manages phone-sign-in membership."
 }
 
+# House group and the instances admin client (#319). No topic attribute on the group.
+ensure_instances_admin() {
+  local client_uuid sa_user secret tmp group_id has_role
+  kcadm get groups -r "$REALM" -q search=mqtt-instance -q exact=true > "$work/mqtt-groups.json"
+  group_id="$(python3 - "$work/mqtt-groups.json" <<'PY'
+import json, sys
+groups = json.load(open(sys.argv[1], encoding="utf-8"))
+ids = [g["id"] for g in groups if g.get("name") == "mqtt-instance" and not g.get("parentId")]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+  if [[ -z "$group_id" ]]; then
+    kcadm create groups -r "$REALM" -s name=mqtt-instance >/dev/null
+    echo "Created group mqtt-instance."
+  else
+    echo "Group mqtt-instance already exists."
+  fi
+  kcadm get users/profile -r "$REALM" > "$work/house-profile.json"
+  if python3 - "$work/house-profile.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+profile = json.load(open(path, encoding="utf-8"))
+attributes = profile.setdefault("attributes", [])
+wanted = {"view": ["admin"], "edit": ["admin"]}
+changed = False
+for name in ("label", "mqtt_publ_topic", "mqtt_subs_topic"):
+    found = next((item for item in attributes if item.get("name") == name), None)
+    if found is None:
+        attributes.append({
+            "name": name,
+            "displayName": name,
+            "permissions": wanted,
+            "multivalued": False,
+        })
+        changed = True
+        continue
+    if found.get("permissions") != wanted or found.get("multivalued") is True:
+        found["permissions"] = wanted
+        found["multivalued"] = False
+        changed = True
+if changed:
+    json.dump(profile, open(path, "w", encoding="utf-8"))
+    sys.exit(0)
+sys.exit(1)
+PY
+  then
+    kcadm_stdin update users/profile -r "$REALM" -f - < "$work/house-profile.json" >/dev/null
+    echo "House user profile attributes are admin-only."
+  fi
+  client_uuid="$(kcadm get clients -r "$REALM" -q clientId=freedriver-instances --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
+  if [[ -z "$client_uuid" ]]; then
+    kcadm create clients -r "$REALM" \
+      -s clientId=freedriver-instances \
+      -s name='Freedriver instances' \
+      -s enabled=true \
+      -s publicClient=false \
+      -s clientAuthenticatorType=client-secret \
+      -s standardFlowEnabled=false \
+      -s implicitFlowEnabled=false \
+      -s directAccessGrantsEnabled=false \
+      -s serviceAccountsEnabled=true \
+      -s protocol=openid-connect \
+      -s 'description=Service account that provisions mqtt-instance houses. Secret stays on the dashboard container.' >/dev/null
+    client_uuid="$(kcadm get clients -r "$REALM" -q clientId=freedriver-instances --fields id --format csv --noquotes | csv_id)"
+    echo "Created confidential client freedriver-instances."
+  else
+    echo "Client freedriver-instances already exists."
+  fi
+  kcadm update "clients/${client_uuid}" -r "$REALM" \
+    -s publicClient=false \
+    -s standardFlowEnabled=false \
+    -s implicitFlowEnabled=false \
+    -s directAccessGrantsEnabled=false \
+    -s serviceAccountsEnabled=true \
+    -s fullScopeAllowed=false \
+    -s 'description=Service account that provisions mqtt-instance houses. Secret stays on the dashboard container.' >/dev/null
+  sa_user="$(kcadm get "clients/${client_uuid}/service-account-user" -r "$REALM" --fields id --format csv --noquotes | csv_id)"
+  kcadm get "users/${sa_user}/role-mappings" -r "$REALM" > "$work/instances-roles.json"
+  has_role="$(python3 - "$work/instances-roles.json" <<'PY'
+import json, sys
+mappings = json.load(open(sys.argv[1], encoding="utf-8"))
+client = (mappings.get("clientMappings") or {}).get("realm-management") or {}
+names = [role.get("name") for role in (client.get("mappings") or [])]
+print("yes" if "manage-users" in names else "no")
+PY
+)"
+  if [[ "$has_role" != "yes" ]]; then
+    kcadm add-roles -r "$REALM" --uid "$sa_user" --cclientid realm-management --rolename manage-users >/dev/null
+    echo "Granted manage-users to the instances service account."
+  fi
+  if [[ -e "$INSTANCES_ENV_FILE" ]]; then
+    echo "Instances client env file already exists; not rotating or rewriting it."
+  else
+    tmp="$(mktemp)"
+    chmod 600 "$tmp"
+    secret="$(kcadm get "clients/${client_uuid}/client-secret" -r "$REALM" --fields value --format csv --noquotes \
+      | sed '/^value$/d' | tr -d '\r' | awk 'NF { print; exit }')"
+    if [[ -z "$secret" || "$secret" == *" "* || "$secret" == *$'\n'* ]]; then
+      rm -f "$tmp"
+      unset secret
+      echo "Failed to read freedriver-instances client secret." >&2
+      exit 1
+    fi
+    printf 'FREEDRIVER_INSTANCES_CLIENT_SECRET=%s\n' "$secret" > "$tmp"
+    unset secret
+    own_secret "$tmp"
+    mv "$tmp" "$INSTANCES_ENV_FILE"
+    echo "Wrote instances client secret for the dashboard container (not printed)."
+  fi
+}
+
 ensure_invite_service_account
+ensure_instances_admin
 
 # Phone sign-in user kaze (#169). Checks run before the phone attribute is written.
 seed_phone="$(sed -n 's/^FREEDRIVER_SEED_PHONE=//p' "$SECRETS_ENV" 2>/dev/null | tail -n 1 \
