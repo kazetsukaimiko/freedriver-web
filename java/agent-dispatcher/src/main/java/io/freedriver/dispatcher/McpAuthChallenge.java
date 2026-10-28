@@ -35,7 +35,7 @@ public class McpAuthChallenge implements HttpAuthenticationMechanism {
     }
 
     private static boolean mcp(RoutingContext context) {
-        return McpProtectedResource.MCP_PATH.equals(context.normalizedPath())
-                || McpProtectedResource.MCP_PATH.equals(context.request().path());
+        return McpProtectedResource.isMcpPath(context.normalizedPath())
+                || McpProtectedResource.isMcpPath(context.request().path());
     }
 }

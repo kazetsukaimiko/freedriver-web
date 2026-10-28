@@ -63,6 +63,7 @@ class McpProtectedResourceTest {
         given().get("/api/dispatcher/devices").then().statusCode(401);
         given().post("/api/device/register").then().statusCode(401);
         given().get("/mcp").then().statusCode(401).header("WWW-Authenticate", is(McpProtectedResource.CHALLENGE));
+        given().get("/dispatch/mcp").then().statusCode(401).header("WWW-Authenticate", is(McpProtectedResource.CHALLENGE));
 
         String posted = given()
                 .contentType("application/json")
