@@ -18,6 +18,7 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -58,12 +59,14 @@ class McpBearerTest {
     }
 
     @Test
-    void good_token_is_204_without_set_cookie() {
+    void good_token_is_200_without_set_cookie() {
         String token = token("mcp-sub-good", Set.of("mcp-user"), McpPaths.AUDIENCE, McpPaths.CLIENT_ID, null, null);
         given().header("Authorization", "Bearer " + token)
                 .when().get("/autonomy/mcp")
                 .then()
-                .statusCode(204)
+                .statusCode(200)
+                .contentType("application/json")
+                .body("status", is("ok"))
                 .header("Set-Cookie", nullValue());
     }
 
@@ -190,7 +193,7 @@ class McpBearerTest {
             given().header("Authorization", "Bearer " + token)
                     .when().get("/autonomy/mcp")
                     .then()
-                    .statusCode(204);
+                    .statusCode(200);
         } finally {
             logger.removeHandler(handler);
         }

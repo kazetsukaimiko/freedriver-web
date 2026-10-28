@@ -7,6 +7,7 @@ import io.quarkus.test.security.SecurityAttribute;
 import org.junit.jupiter.api.Test;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.Matchers.nullValue;
 
 @QuarkusTest
@@ -32,7 +33,9 @@ class McpResourceTest {
     void mcp_user_reaches_the_path_without_set_cookie() {
         given().when().get("/autonomy/mcp")
                 .then()
-                .statusCode(204)
+                .statusCode(200)
+                .contentType("application/json")
+                .body("status", is("ok"))
                 .header("Set-Cookie", nullValue());
     }
 

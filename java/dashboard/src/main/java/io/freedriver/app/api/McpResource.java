@@ -1,25 +1,21 @@
 package io.freedriver.app.api;
 
-import jakarta.annotation.security.RolesAllowed;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.POST;
+import io.freedriver.dashboard.api.McpApi;
+import io.freedriver.dashboard.model.McpProbeResponse;
+import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.Path;
-import jakarta.ws.rs.core.Response;
 
-/**
- * Path that accepts the Grok MCP bearer. JSON-RPC tools are #111.
- */
+@ApplicationScoped
 @Path("/autonomy/mcp")
-@RolesAllowed("mcp-user")
-public class McpResource {
+public class McpResource implements McpApi {
 
-    @GET
-    public Response probeGet() {
-        return Response.noContent().build();
+    @Override
+    public McpProbeResponse probeGet() {
+        return new McpProbeResponse("ok");
     }
 
-    @POST
-    public Response probePost() {
-        return Response.noContent().build();
+    @Override
+    public McpProbeResponse probePost() {
+        return new McpProbeResponse("ok");
     }
 }
