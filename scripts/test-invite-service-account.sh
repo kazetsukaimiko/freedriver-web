@@ -241,6 +241,7 @@ PROVISION_ALLOW_NON_ROOT=1 \
   TECHOPS_PASS_FILE="$work/techops.pass" \
   SECRET_FILE="$work/secrets/api.secret" \
   INVITE_ENV_FILE="$work/secrets/invite.env" \
+  INSTANCES_ENV_FILE="$work/secrets/instances.env" \
   SECRETS_ENV="$work/secrets.env" \
   bash scripts/provision-keycloak-freedriver.sh
 
@@ -252,6 +253,38 @@ if grep -q 'FREEDRIVER_INVITE_CLIENT_SECRET' "$work/secrets/api.secret" "$work/s
   echo "invite secret leaked into another file" >&2
   exit 1
 fi
+if ! grep -q '^FREEDRIVER_INSTANCES_CLIENT_SECRET=.\+' "$work/secrets/instances.env"; then
+  echo "instances env file is missing a secret value" >&2
+  exit 1
+fi
+if grep -q 'FREEDRIVER_INSTANCES_CLIENT_SECRET' "$work/secrets/api.secret" "$work/secrets.env" "$work/secrets/invite.env"; then
+  echo "instances secret leaked into another file" >&2
+  exit 1
+fi
+instances_client="$(admin get clients -r freedriver -q clientId=freedriver-instances --fields id --format csv --noquotes | csv_id)"
+instances_sa="$(admin get "clients/${instances_client}/service-account-user" -r freedriver --fields id --format csv --noquotes | csv_id)"
+admin get "users/${instances_sa}/role-mappings" -r freedriver > "$work/instances-roles.json"
+python3 - "$work/instances-roles.json" <<'PY'
+import json, sys
+mappings = json.load(open(sys.argv[1], encoding="utf-8"))
+client = (mappings.get("clientMappings") or {}).get("realm-management") or {}
+names = [role.get("name") for role in (client.get("mappings") or [])]
+if "manage-users" not in names:
+    sys.exit("instances service account is missing manage-users")
+print("instances service account has manage-users")
+PY
+admin get groups -r freedriver -q search=mqtt-instance -q exact=true > "$work/mqtt-groups.json"
+python3 - "$work/mqtt-groups.json" <<'PY'
+import json, sys
+groups = json.load(open(sys.argv[1], encoding="utf-8"))
+houses = [group for group in groups if group.get("name") == "mqtt-instance" and not group.get("parentId")]
+if len(houses) != 1:
+    sys.exit("top-level mqtt-instance group was not found")
+attributes = houses[0].get("attributes") or {}
+if attributes:
+    sys.exit("mqtt-instance must not carry topic attributes")
+print("mqtt-instance has no topic attributes")
+PY
 
 python3 - "$work/secrets/invite.env" "$work/token-form" <<'PY'
 import sys
@@ -287,6 +320,7 @@ PROVISION_ALLOW_NON_ROOT=1 \
   TECHOPS_PASS_FILE="$work/techops.pass" \
   SECRET_FILE="$work/secrets/api.secret" \
   INVITE_ENV_FILE="$work/secrets/invite.env" \
+  INSTANCES_ENV_FILE="$work/secrets/instances.env" \
   SECRETS_ENV="$work/secrets.env" \
   bash scripts/provision-keycloak-freedriver.sh
 assert_invite_scopes
@@ -563,6 +597,7 @@ PROVISION_ALLOW_NON_ROOT=1 \
   TECHOPS_PASS_FILE="$work/techops.pass" \
   SECRET_FILE="$work/secrets/api.secret" \
   INVITE_ENV_FILE="$work/secrets/invite.env" \
+  INSTANCES_ENV_FILE="$work/secrets/instances.env" \
   SECRETS_ENV="$work/secrets.env" \
   bash scripts/provision-keycloak-freedriver.sh >"$work/second.out" 2>&1
 second=$?

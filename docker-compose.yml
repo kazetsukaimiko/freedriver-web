@@ -36,11 +36,14 @@ services:
       FREEDRIVER_INVITES_DIR: /deployments/data/invites
       # No credential in the default. A password, if one is set later, comes from the env file.
       QUARKUS_MONGODB_CONNECTION_STRING: ${QUARKUS_MONGODB_CONNECTION_STRING:-mongodb://mongodb:27017/freedriver}
-    # Invite service account (#172). The provision script writes this file.
-    # Do not also interpolate FREEDRIVER_INVITE_CLIENT_SECRET here: that would
-    # override the file. Prod startup still fails when the secret is blank.
+    # Invite service account (#172) and instances admin client (#319).
+    # The provision script writes these files. Do not also interpolate
+    # FREEDRIVER_INVITE_CLIENT_SECRET or FREEDRIVER_INSTANCES_CLIENT_SECRET here:
+    # that would override the file.
     env_file:
       - path: /opt/freedriver-secrets/keycloak-freedriver-invite.env
+        required: false
+      - path: /opt/freedriver-secrets/keycloak-freedriver-instances.env
         required: false
     depends_on:
       mosquitto:
