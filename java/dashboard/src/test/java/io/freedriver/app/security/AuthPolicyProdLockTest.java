@@ -105,6 +105,7 @@ class AuthPolicyProdLockTest {
         hostile.put("quarkus.oidc.tenant-enabled", "false");
         hostile.put("quarkus.oidc.*.tenant-enabled", "false");
         hostile.put("quarkus.oidc.backdoor.tenant-enabled", "false");
+        hostile.put("quarkus.oidc.mcp.tenant-enabled", "false");
         hostile.put("quarkus.oidc.evil.tenant-enabled", "true");
         hostile.put("quarkus.http.auth.permission.appliances.enabled", "false");
         hostile.put("quarkus.http.auth.permission.appliances.policy", "permit");
@@ -343,6 +344,7 @@ class AuthPolicyProdLockTest {
         values.put("quarkus.oidc.tenant-enabled", "false");
         values.put("quarkus.oidc.*.tenant-enabled", "false");
         values.put("quarkus.oidc.backdoor.tenant-enabled", "false");
+        values.put("quarkus.oidc.mcp.tenant-enabled", "false");
         values.put("quarkus.oidc.evil.tenant-enabled", "true");
         values.put("quarkus.oidc.evil.auth-server-url", "https://evil.example");
         values.put("quarkus.oidc.evil.tenant-paths", "/login");
@@ -394,6 +396,18 @@ class AuthPolicyProdLockTest {
         assertEquals(
                 "authenticated",
                 prod.getConfigValue("quarkus.http.auth.permission.logout.policy").getValue());
+        assertEquals(
+                "authenticated",
+                prod.getConfigValue("quarkus.http.auth.permission.mcp.policy").getValue());
+        assertEquals(
+                "/autonomy/mcp,/autonomy/mcp/*",
+                prod.getConfigValue("quarkus.http.auth.permission.mcp.paths").getValue());
+        assertEquals("true", prod.getConfigValue("quarkus.oidc.mcp.tenant-enabled").getValue());
+        assertEquals("service", prod.getConfigValue("quarkus.oidc.mcp.application-type").getValue());
+        assertEquals("freedriver-grok-mcp", prod.getConfigValue("quarkus.oidc.mcp.client-id").getValue());
+        assertEquals(
+                "https://app.freedriver.io/autonomy/mcp",
+                prod.getConfigValue("quarkus.oidc.mcp.token.audience").getValue());
         assertEquals("30", prod.getConfigValue("freedriver.appliances.rate-limit.permits").getValue());
         assertEquals("60s", prod.getConfigValue("freedriver.appliances.rate-limit.window").getValue());
         assertAbsent(prod, "quarkus.http.auth.permission.appliances.enabled");
@@ -415,6 +429,7 @@ class AuthPolicyProdLockTest {
                 prod.getConfigValue("quarkus.oidc.*.tenant-enabled").getConfigSourceName());
         assertAbsent(prod, "quarkus.oidc.backdoor.tenant-enabled");
         assertAbsent(prod, "quarkus.oidc.evil.tenant-enabled");
+        assertEquals("true", prod.getConfigValue("quarkus.oidc.mcp.tenant-enabled").getValue());
         assertEquals("false", prod.getConfigValue("quarkus.http.auth.permission.appliances.shared").getValue());
         assertEquals("false", prod.getConfigValue("quarkus.http.auth.permission.public.shared").getValue());
         assertEquals("false", prod.getConfigValue("quarkus.http.auth.permission.*.shared").getValue());
@@ -532,6 +547,8 @@ class AuthPolicyProdLockTest {
                     || "quarkus.oidc.*.tenant-enabled".equals(name)
                     || "quarkus.oidc.backdoor.tenant-enabled".equals(name)
                     || "quarkus.oidc.evil.tenant-enabled".equals(name)
+                    || "quarkus.oidc.mcp.tenant-enabled".equals(name)
+                    || "quarkus.http.auth.permission.mcp.policy".equals(name)
                     || "quarkus.oidc.credentials.secret".equals(name)
                     || "freedriver.appliances.rate-limit.permits".equals(name)
                     || "freedriver.appliances.rate-limit.window".equals(name)) {
