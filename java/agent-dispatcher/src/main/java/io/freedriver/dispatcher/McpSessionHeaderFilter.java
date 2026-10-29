@@ -20,7 +20,7 @@ public class McpSessionHeaderFilter implements ContainerResponseFilter {
     @Override
     public void filter(ContainerRequestContext request, ContainerResponseContext response) {
         String path = request.getUriInfo().getPath();
-        if (!"mcp".equals(path) && !"/mcp".equals(path)) {
+        if (!McpProtectedResource.isMcpPath(path)) {
             return;
         }
         String sessionId = session.get();

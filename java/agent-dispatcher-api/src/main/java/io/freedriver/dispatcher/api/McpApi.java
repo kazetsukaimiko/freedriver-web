@@ -11,7 +11,7 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 
-@Path("/mcp")
+@Path("/{mcpPath:mcp|dispatch/mcp}")
 public interface McpApi {
 
     String SESSION_HEADER = "MCP-Session-Id";

@@ -64,7 +64,7 @@ services:
     expose:
       - "8080"
 
-  # No host port. Caddy on app.freedriver.io sends /mcp, /api/dispatcher, and /api/device here.
+  # No host port. Caddy on app.freedriver.io sends /mcp, /dispatch/mcp, /api/dispatcher, and /api/device here.
   agent-dispatcher:
     build:
       context: .

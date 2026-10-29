@@ -44,7 +44,7 @@ Alloy tails Docker container logs into Loki (14 days). It does not mount the Doc
 
 The product app lives in `java/dashboard/`: Quarkus 3.38 (Java 23) with Quinoa serving a React TypeScript SPA. Shared Quarkus and Jackson versions live in `java/bom/`. It talks normal REST under `/api`. Auth is an OIDC BFF against Keycloak at `https://auth.freedriver.io`. It is on in the prod profile (`%prod.quarkus.oidc.enabled=true`) and off in the default, dev and test profiles, so the app starts locally with no secrets set. App details: [java/dashboard/README.md](java/dashboard/README.md).
 
-`java/agent-dispatcher/` is the device queue on the same host. Caddy sends `/api/dispatcher`, `/api/device`, and `/mcp` to that Compose service. OIDC is off there too. Contract: [`docs/device-dispatcher.md`](docs/device-dispatcher.md).
+`java/agent-dispatcher/` is the device queue on the same host. Caddy sends `/api/dispatcher`, `/api/device`, `/mcp`, and `/dispatch/mcp` to that Compose service. OIDC is on in the prod profile and off in the default, dev, and test profiles. Contract: [`docs/device-dispatcher.md`](docs/device-dispatcher.md).
 
 `java/device-daemon/` is the PC client of that device API. The jar runs on the PC. The base URL is fixed at `https://app.freedriver.io`.
 

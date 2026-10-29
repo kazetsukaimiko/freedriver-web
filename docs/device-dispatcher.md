@@ -2,7 +2,7 @@
 
 Home PCs run a headless Grok session when a dispatcher (the Grok app, the car, or the CLI) submits a job. This service is that in-memory queue. Keycloak issues the tokens. The device daemon on each PC starts Grok.
 
-Keycloak at `https://auth.freedriver.io/realms/freedriver` is the issuer. `quarkus.oidc.enabled` stays false until that client setup is applied. Anonymous callers receive 401, except the metadata GET below. A device token calls the device routes. A dispatcher token calls the dispatcher routes.
+Keycloak at `https://auth.freedriver.io/realms/freedriver` is the issuer. `%prod.quarkus.oidc.enabled` is true. The unprofiled property and the `%dev` and `%test` lines stay false. Anonymous callers receive 401, except the metadata GET below. A device token calls the device routes. A dispatcher token calls the dispatcher routes. Dispatcher calls require `azp=freedriver-dispatcher`. The service does not introspect tokens.
 
 The queue lives in memory for the life of the process. Postgres is the persistence step once bearer auth is on.
 
@@ -27,11 +27,11 @@ Assignment states: `queued` → `claimed` → `running` → `succeeded` | `faile
 
 ## Deploy
 
-Compose service `agent-dispatcher` has no host port. On `app.freedriver.io`, Caddy sends `/mcp`, `/mcp/*`, `/api/dispatcher`, `/api/dispatcher/*`, `/api/device`, and `/api/device/*` to `agent-dispatcher:8080`. Every other path stays on `dashboard:8080`.
+Compose service `agent-dispatcher` has no host port. On `app.freedriver.io`, Caddy sends `/mcp`, `/mcp/*`, `/dispatch/mcp`, `/dispatch/mcp/*`, `/api/dispatcher`, `/api/dispatcher/*`, `/api/device`, and `/api/device/*` to `agent-dispatcher:8080`. Every other path stays on `dashboard:8080`.
 
-`/mcp` is Streamable HTTP MCP for the `dispatcher` role. The tools are `list_devices`, `submit_job`, and `get_job`. They call this same queue. Legacy HTTP+SSE under `/mcp/` is not served. A session id is bound to the bearer token subject and is not itself a credential. Anonymous `GET` and `POST /mcp` receive 401 with `WWW-Authenticate: Bearer` and `resource_metadata="https://app.freedriver.io/api/dispatcher/oauth-protected-resource"`, and they do not run a tool. A token without the dispatcher role receives 403. `McpApi` in `agent-dispatcher-api` is the `/mcp` contract, beside the REST interfaces a RestEasy proxy client can call.
+`/dispatch/mcp` is Streamable HTTP MCP for the `dispatcher` role. `/mcp` is the same contract. The tools are `list_devices`, `submit_job`, and `get_job`. They call this same queue. Legacy HTTP+SSE under `/mcp/` is not served. A session id is bound to the bearer token subject and is not itself a credential. Anonymous `GET` and `POST` on `/dispatch/mcp` and `/mcp` receive 401 with `WWW-Authenticate: Bearer` and `resource_metadata="https://app.freedriver.io/api/dispatcher/oauth-protected-resource"`, and they do not run a tool. A token without the dispatcher role receives 403. `McpApi` in `agent-dispatcher-api` is the `/mcp` and `/dispatch/mcp` contract, beside the REST interfaces a RestEasy proxy client can call.
 
-`GET /api/dispatcher/oauth-protected-resource` is the only unauthenticated dispatcher response. It is OAuth protected-resource metadata and nothing else: `resource` is `https://app.freedriver.io/mcp`, `authorization_servers` is only `https://auth.freedriver.io/realms/freedriver`, and `bearer_methods_supported` is `header`. The document has no client secret and no devices, jobs, or prompts. `/mcp` and other dispatcher routes stay authenticated. This path is already under the Caddy dispatcher matcher. No new route is added.
+`GET /api/dispatcher/oauth-protected-resource` is the only unauthenticated dispatcher response. It is OAuth protected-resource metadata and nothing else: `resource` is `https://app.freedriver.io/dispatch/mcp`, `authorization_servers` is only `https://auth.freedriver.io/realms/freedriver`, and `bearer_methods_supported` is `header`. The document has no client secret and no devices, jobs, or prompts. `/dispatch/mcp`, `/mcp`, and other dispatcher routes stay authenticated.
 
 The device daemon in `java/device-daemon/` runs on the PC. It registers, heartbeats, long-polls, claims, and starts one headless `grok` process per winning text claim. The tool allowlist is local configuration and defaults to no tools. The prompt is written to a mode `0600` file and passed with `--prompt-file`. The client calls `https://app.freedriver.io/api/device/*` with TLS verification on, using its device client credentials. A user systemd unit in the module is what #213 installs on the PC. The local session timeout kills that child process. The 75 second queue deadline stays in `JobStore`.
 
