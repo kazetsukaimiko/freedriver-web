@@ -16,8 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Boots with the prod config profile, which loads {@code application-prod.properties}.
- * OIDC stays off here so the test does not call Keycloak. The host ACL is absent,
- * so the list is empty and nothing opens a broker.
+ * OIDC stays off here so the test does not call Keycloak. live-commands is on.
+ * The host ACL is absent, so the list is empty and nothing opens a broker.
  */
 @QuarkusTest
 @TestProfile(ProdMockAppliancesTest.ProdProfile.class)
@@ -48,7 +48,7 @@ class ProdMockAppliancesTest {
     void prod_profile_does_not_serve_the_practice_list_or_open_a_broker() {
         assertTrue(config.enabled());
         assertFalse(config.mock());
-        assertFalse(config.liveCommands());
+        assertTrue(config.liveCommands());
         assertFalse(config.mockRefresh());
         assertFalse(mqtt.connected());
         assertTrue(mqtt.subscriptions().isEmpty());
