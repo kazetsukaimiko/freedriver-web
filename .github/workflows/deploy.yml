@@ -77,10 +77,16 @@ jobs:
       - name: Record the Keycloak provider source commit
         run: printf '%s\n' "$GITHUB_SHA" > .source-commit
 
-      # Deploy stamp is UTC YEAR-MONTH_r plus github.run_number, for example 2026-08_r45. This job writes that stamp.
+      # Release PR writes YEAR-MONTH_rN to version.txt. Manual dispatch of a
+      # ref without that stamp falls back to UTC year-month plus run_number.
       - name: Stamp YEAR-MONTH_rBUILD_NUM
         run: |
-          NEW_VERSION="$(date -u +%Y-%m)_r${{ github.run_number }}"
+          file_stamp="$(tr -d '[:space:]' < version.txt || true)"
+          if [[ "$file_stamp" =~ ^[0-9]{4}-[0-9]{2}_r[0-9]+$ ]]; then
+            NEW_VERSION="$file_stamp"
+          else
+            NEW_VERSION="$(date -u +%Y-%m)_r${{ github.run_number }}"
+          fi
           echo "NEW_VERSION=${NEW_VERSION}" >> "$GITHUB_ENV"
           printf '%s\n' "$NEW_VERSION" > BUILD_NUMBER
           echo "Deploy stamp: ${NEW_VERSION}"

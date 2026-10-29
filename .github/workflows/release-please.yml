@@ -15,6 +15,35 @@ jobs:
     if: github.repository == 'kazetsukaimiko/freedriver-web'
     steps:
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           skip-github-release: true
+      # release-please writes a dummy semver. Rewrite the PR heading and
+      # version.txt to YEAR-MONTH_rN so the changelog matches /api/build.
+      - uses: actions/checkout@v5
+        if: ${{ steps.release.outputs.pr }}
+        with:
+          ref: release-please--branches--main
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Stamp YEAR-MONTH_rN on the Release pull request
+        if: ${{ steps.release.outputs.pr }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_JSON: ${{ steps.release.outputs.pr }}
+        run: |
+          set -euo pipefail
+          git ls-remote --tags origin \
+            | sed -n 's|.*/\(20[0-9][0-9]-[0-9][0-9]_r[0-9][0-9]*\)$|\1|p' \
+            > "$RUNNER_TEMP/stamps.txt"
+          if build="$(curl -fsS https://app.freedriver.io/api/build \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("build",""))')"; then
+            printf '%s\n' "$build" >> "$RUNNER_TEMP/stamps.txt"
+          fi
+          python3 scripts/stamp-release-pr.py \
+            --changelog java/dashboard/src/main/resources/changelog/CHANGELOG.md \
+            --version-file version.txt \
+            --known-stamps-file "$RUNNER_TEMP/stamps.txt" \
+            --write \
+            --commit-push \
+            --pr-json "$PR_JSON"

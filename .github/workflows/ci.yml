@@ -212,6 +212,9 @@ jobs:
       - name: SMS OTP scaffold is internal and fail-closed
         run: ./scripts/test-sms-otp-scaffold.sh
 
+      - name: Release stamp is YEAR-MONTH_rN
+        run: ./scripts/test-stamp-release-pr.sh
+
       - name: Keycloak SMS OTP SPI tests
         run: |
           set -euo pipefail
