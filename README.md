@@ -82,7 +82,7 @@ The image build compiles `mqtt-contract`, `mqtt`, and `mqtt-paho` from this repo
 
 ### Build number
 
-A successful `main` deploy stamps `YEAR-MONTH_rBUILD_NUM` (UTC year-month + `github.run_number`), same scheme as autonomy mqtt-contract. Example: `2026-08_r45`. Not semver. Not `1.0.<run>`.
+A successful `main` deploy stamps `YEAR-MONTH_rBUILD_NUM`. Example: `2026-08_r45`. Not semver. Not `1.0.<run>`. The Release pull request title, changelog heading, and `version.txt` use that stamp. Deploy reads it from `version.txt`. A manual dispatch of a ref whose `version.txt` is still dummy semver falls back to UTC year-month + `github.run_number`.
 
 That string is:
 
