@@ -1,0 +1,115 @@
+name: pr-notify-openbot
+
+# POST a signed OpenBot envelope on PR review submitted or PR closed.
+# Native GitHub webhook JSON is 400 on signal.openbot.run.
+# Same URL and signing secret as ci-notify-openbot.
+on:
+  pull_request_review:
+    types: [submitted]
+  pull_request:
+    types: [closed]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: POST OpenBot
+        env:
+          OPENBOT_WEBHOOK_URL: ${{ secrets.OPENBOT_WEBHOOK_URL }}
+          OPENBOT_SIGNING_SECRET: ${{ secrets.OPENBOT_SIGNING_SECRET }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 <<'PY'
+          import hashlib, hmac, json, os, sys, time, urllib.error, urllib.request, uuid
+          from datetime import datetime, timezone
+
+          url = os.environ.get("OPENBOT_WEBHOOK_URL", "")
+          secret = os.environ.get("OPENBOT_SIGNING_SECRET", "")
+          if not url or not secret:
+              print("missing OPENBOT_WEBHOOK_URL or OPENBOT_SIGNING_SECRET", file=sys.stderr)
+              sys.exit(2)
+
+          with open(os.environ["GITHUB_EVENT_PATH"], encoding="utf-8") as handle:
+              event = json.load(handle)
+          name = os.environ.get("GITHUB_EVENT_NAME") or ""
+          repo = os.environ.get("REPO") or ""
+          pr = event.get("pull_request") or {}
+          pr_user = pr.get("user") or {}
+          pr_author = pr_user.get("login")
+          pr_number = pr.get("number")
+          pr_url = pr.get("html_url")
+
+          if name == "pull_request_review":
+              review = event.get("review") or {}
+              reviewer = ((review.get("user") or {}).get("login")) or ""
+              if reviewer.endswith("[bot]") or reviewer in ("dependabot", "github-actions"):
+                  print(json.dumps({"skip": "bot-reviewer", "reviewer": reviewer}))
+                  sys.exit(0)
+              if reviewer and pr_author and reviewer == pr_author:
+                  print(json.dumps({"skip": "self-review", "reviewer": reviewer}))
+                  sys.exit(0)
+              payload_type = "pr-review-submitted"
+              data = {
+                  "repo": repo,
+                  "pr_number": pr_number,
+                  "pr_url": pr_url,
+                  "pr_author": pr_author,
+                  "reviewer": reviewer,
+                  "state": review.get("state") or "",
+                  "html_url": review.get("html_url") or pr_url,
+                  "merged": bool(pr.get("merged")),
+              }
+          elif name == "pull_request":
+              payload_type = "pr-closed"
+              data = {
+                  "repo": repo,
+                  "pr_number": pr_number,
+                  "pr_url": pr_url,
+                  "pr_author": pr_author,
+                  "actor": ((event.get("sender") or {}).get("login")) or "",
+                  "merged": bool(pr.get("merged")),
+                  "html_url": pr_url,
+              }
+          else:
+              print(json.dumps({"skip": "event", "name": name}))
+              sys.exit(0)
+
+          payload = {
+              "type": payload_type,
+              "occurredAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "data": data,
+          }
+          body = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode()
+          ts = str(int(time.time()))
+          delivery = "d" + uuid.uuid4().hex
+          mac = hmac.new(
+              secret.encode(),
+              f"{ts}.{delivery}.".encode() + body,
+              hashlib.sha256,
+          ).hexdigest()
+          post = urllib.request.Request(
+              url,
+              data=body,
+              method="POST",
+              headers={
+                  "Content-Type": "application/json",
+                  "x-openbot-timestamp": ts,
+                  "x-openbot-delivery-id": delivery,
+                  "x-openbot-signature": f"sha256={mac}",
+                  "User-Agent": "pr-notify-openbot",
+              },
+          )
+          try:
+              with urllib.request.urlopen(post, timeout=30) as resp:
+                  code = resp.status
+          except urllib.error.HTTPError as exc:
+              code = exc.code
+              print(exc.read()[:500], file=sys.stderr)
+          print(json.dumps({"status": code, "type": payload_type, "pr_author": pr_author, "merged": data.get("merged"), "state": data.get("state")}))
+          sys.exit(0 if code in (200, 202) else 2)
+          PY
