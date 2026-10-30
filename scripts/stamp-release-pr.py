@@ -101,7 +101,7 @@ def maybe_commit_and_title(root: Path, stamp: str, pr_number: str | None) -> Non
         git("push", cwd=root)
     if pr_number:
         subprocess.run(
-            ["gh", "pr", "edit", pr_number, "--title", f"chore(main): release {stamp}"],
+            ["gh", "pr", "edit", pr_number, "--title", f"chore(release): release {stamp}"],
             check=True,
         )
 

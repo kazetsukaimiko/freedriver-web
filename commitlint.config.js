@@ -22,10 +22,10 @@ const scopes = [
   'dispatcher',
   'docs',
   'keycloak',
-  'main',
   'mosquitto',
   'mqtt',
   'observability',
+  'release',
   'site',
   'sms',
   'webui',
@@ -50,7 +50,7 @@ module.exports = {
         'refs-footer': (parsed) => {
           const raw = normalized(parsed);
           const header = raw.split('\n', 1)[0];
-          if (/^chore\(main\): release 20[0-9]{2}-[0-9]{2}_r[0-9]+$/.test(header)) {
+          if (/^chore\(release\): release 20[0-9]{2}-[0-9]{2}_r[0-9]+$/.test(header)) {
             return [true];
           }
           const parts = raw.trim().split(/\n\n/);
