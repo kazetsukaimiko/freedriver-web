@@ -25,6 +25,7 @@ const scopes = [
   'mosquitto',
   'mqtt',
   'observability',
+  'release',
   'site',
   'sms',
   'webui',
@@ -47,7 +48,12 @@ module.exports = {
     {
       rules: {
         'refs-footer': (parsed) => {
-          const parts = normalized(parsed).trim().split(/\n\n/);
+          const raw = normalized(parsed);
+          const header = raw.split('\n', 1)[0];
+          if (/^chore\(release\): release 20[0-9]{2}-[0-9]{2}_r[0-9]+$/.test(header)) {
+            return [true];
+          }
+          const parts = raw.trim().split(/\n\n/);
           const tail = parts[parts.length - 1] || '';
           const ok = parts.length >= 2 && /^Refs: #\d+\s*$/m.test(tail);
           return [ok, 'description must carry a Refs: #<card> footer'];
