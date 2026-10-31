@@ -430,9 +430,13 @@ allowed = [
     {"name": "default-roles-freedriver"},
     {"name": "offline_access"},
     {"name": "uma_authorization"},
+    {"name": "grafana-viewer"},
+    {"name": "grafana-editor"},
+    {"name": "grafana-admin"},
 ]
 run(allowed, {}, True)
 run([{"name": "dashboard"}, {"name": "default-roles-freedriver"}], {}, True)
+run([{"name": "grafana-admin"}], {}, True)
 run([{"name": "portal-admin"}], {}, False)
 run([{"name": "changelog"}], {}, False)
 run(allowed + [{"name": "extra"}], {}, False)
@@ -509,6 +513,61 @@ fi
 if ! grep -q 'Placeholder for the dashboard instances admin client' secrets/keycloak-freedriver-instances.env.example; then
   fail "instances example file must mark the assignment as a placeholder"
 fi
+if [[ "$(grep -v '^#' secrets/keycloak-freedriver-grafana.env.example | grep -v '^$')" != "FREEDRIVER_GRAFANA_CLIENT_SECRET=" ]]; then
+  fail "grafana example file holds one empty assignment"
+fi
+if ! grep -q 'Placeholder for the Grafana OAuth client' secrets/keycloak-freedriver-grafana.env.example; then
+  fail "grafana example file must mark the assignment as a placeholder"
+fi
+if ! grep -q 'clientId="$GRAFANA_CLIENT"' scripts/provision-keycloak-freedriver.sh \
+    && ! grep -q 'clientId=freedriver-grafana' scripts/provision-keycloak-freedriver.sh; then
+  fail "provision script must create client freedriver-grafana"
+fi
+if ! grep -q "GRAFANA_CLIENT=freedriver-grafana" scripts/provision-keycloak-freedriver.sh; then
+  fail "provision script must set GRAFANA_CLIENT=freedriver-grafana"
+fi
+if ! grep -q "https://grafana.freedriver.io/login/generic_oauth" scripts/provision-keycloak-freedriver.sh; then
+  fail "provision script must pin the Grafana redirect URI"
+fi
+if grep -n 'GRAFANA_REDIRECT' scripts/provision-keycloak-freedriver.sh | grep -q '\*'; then
+  fail "Grafana redirect URI must not be a wildcard"
+fi
+if ! grep -q 'config."claim.name"=realm_access.roles' scripts/provision-keycloak-freedriver.sh; then
+  fail "Grafana mapper must put realm roles on realm_access.roles"
+fi
+if ! grep -q 'rolename grafana-admin' scripts/provision-keycloak-freedriver.sh; then
+  fail "provision script must assign grafana-admin"
+fi
+if grep -q 'rolename grafana-viewer' scripts/provision-keycloak-freedriver.sh \
+    || grep -q 'rolename grafana-editor' scripts/provision-keycloak-freedriver.sh; then
+  fail "this card must not assign grafana-viewer or grafana-editor"
+fi
+if [[ "$(grep -c 'GRAFANA_ENV_FILE=' scripts/test-invite-service-account.sh)" -lt 3 ]]; then
+  fail "invite throwaway provision must set GRAFANA_ENV_FILE on each run"
+fi
+python3 - <<'PY'
+from pathlib import Path
+script = Path("scripts/provision-keycloak-freedriver.sh").read_text()
+body = script.split("ensure_grafana_client() {", 1)[1]
+depth = 1
+kept = []
+for line in body.splitlines():
+    if line.strip() == "{":
+        depth += 1
+    elif line.strip() == "}":
+        depth -= 1
+        if depth == 0:
+            break
+    kept.append(line)
+grafana = "\n".join(kept)
+if "publicClient=true" in grafana:
+    raise SystemExit("freedriver-grafana must be confidential")
+if "serviceAccountsEnabled=true" in grafana:
+    raise SystemExit("freedriver-grafana is not a service account")
+if "*" in grafana.split("redirectUris", 1)[-1].split("\n", 1)[0]:
+    raise SystemExit("Grafana redirectUris line must not contain *")
+print("grafana client is confidential with a pinned redirect")
+PY
 
 python3 - <<'PY'
 from pathlib import Path

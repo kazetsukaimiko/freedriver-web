@@ -74,6 +74,7 @@ public class AnonymousDocumentRedirect {
         }
         if ("/api".equals(path) || path.startsWith("/api/")
                 || "/q".equals(path) || path.startsWith("/q/")
+                || "/autonomy".equals(path) || path.startsWith("/autonomy/")
                 || path.startsWith("/assets/")
                 || "/login".equals(path)
                 || "/sign-in".equals(path)

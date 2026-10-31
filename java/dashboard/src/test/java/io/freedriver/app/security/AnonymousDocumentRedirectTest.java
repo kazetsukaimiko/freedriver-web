@@ -37,6 +37,8 @@ class AnonymousDocumentRedirectTest {
     @Test
     void api_assets_login_and_static_are_not_documents() {
         assertFalse(AnonymousDocumentRedirect.isSpaDocument("/api/appliances"));
+        assertFalse(AnonymousDocumentRedirect.isSpaDocument("/autonomy/mcp"));
+        assertFalse(AnonymousDocumentRedirect.isSpaDocument("/autonomy/mcp/tools"));
         assertFalse(AnonymousDocumentRedirect.isSpaDocument("/api/hello"));
         assertFalse(AnonymousDocumentRedirect.isSpaDocument("/q/health"));
         assertFalse(AnonymousDocumentRedirect.isSpaDocument("/assets/freedriver/pages/freedriver-denied.png"));

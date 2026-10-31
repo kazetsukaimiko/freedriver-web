@@ -242,6 +242,7 @@ PROVISION_ALLOW_NON_ROOT=1 \
   SECRET_FILE="$work/secrets/api.secret" \
   INVITE_ENV_FILE="$work/secrets/invite.env" \
   INSTANCES_ENV_FILE="$work/secrets/instances.env" \
+  GRAFANA_ENV_FILE="$work/secrets/grafana.env" \
   SECRETS_ENV="$work/secrets.env" \
   bash scripts/provision-keycloak-freedriver.sh
 
@@ -259,6 +260,14 @@ if ! grep -q '^FREEDRIVER_INSTANCES_CLIENT_SECRET=.\+' "$work/secrets/instances.
 fi
 if grep -q 'FREEDRIVER_INSTANCES_CLIENT_SECRET' "$work/secrets/api.secret" "$work/secrets.env" "$work/secrets/invite.env"; then
   echo "instances secret leaked into another file" >&2
+  exit 1
+fi
+if ! grep -q '^FREEDRIVER_GRAFANA_CLIENT_SECRET=.\+' "$work/secrets/grafana.env"; then
+  echo "grafana env file is missing a secret value" >&2
+  exit 1
+fi
+if grep -q 'FREEDRIVER_GRAFANA_CLIENT_SECRET' "$work/secrets/api.secret" "$work/secrets.env" "$work/secrets/invite.env" "$work/secrets/instances.env"; then
+  echo "grafana secret leaked into another file" >&2
   exit 1
 fi
 instances_client="$(admin get clients -r freedriver -q clientId=freedriver-instances --fields id --format csv --noquotes | csv_id)"
@@ -321,6 +330,7 @@ PROVISION_ALLOW_NON_ROOT=1 \
   SECRET_FILE="$work/secrets/api.secret" \
   INVITE_ENV_FILE="$work/secrets/invite.env" \
   INSTANCES_ENV_FILE="$work/secrets/instances.env" \
+  GRAFANA_ENV_FILE="$work/secrets/grafana.env" \
   SECRETS_ENV="$work/secrets.env" \
   bash scripts/provision-keycloak-freedriver.sh
 assert_invite_scopes
@@ -598,6 +608,7 @@ PROVISION_ALLOW_NON_ROOT=1 \
   SECRET_FILE="$work/secrets/api.secret" \
   INVITE_ENV_FILE="$work/secrets/invite.env" \
   INSTANCES_ENV_FILE="$work/secrets/instances.env" \
+  GRAFANA_ENV_FILE="$work/secrets/grafana.env" \
   SECRETS_ENV="$work/secrets.env" \
   bash scripts/provision-keycloak-freedriver.sh >"$work/second.out" 2>&1
 second=$?
