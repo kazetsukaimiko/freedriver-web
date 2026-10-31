@@ -120,7 +120,7 @@ public final class SmsOtpAuthenticator implements Authenticator {
             context.challenge(phonePage(context, MSG_PHONE_INVALID));
             return;
         }
-        SmsOtpCalls.Result result = text(context, key, phone);
+        SmsOtpCalls.Result result = text(context, key, phone, false);
         if (result.outcome() == SmsOtpCalls.Outcome.RATE_LIMITED) {
             context.challenge(rateLimited(context, true, result.retryAfterSeconds()));
             return;
@@ -139,7 +139,7 @@ public final class SmsOtpAuthenticator implements Authenticator {
             context.challenge(codePage(context, null, null));
             return;
         }
-        SmsOtpCalls.Result result = text(context, key, phone);
+        SmsOtpCalls.Result result = text(context, key, phone, true);
         if (result.outcome() == SmsOtpCalls.Outcome.RATE_LIMITED) {
             context.challenge(rateLimited(context, false, result.retryAfterSeconds()));
             return;
@@ -152,9 +152,12 @@ public final class SmsOtpAuthenticator implements Authenticator {
     }
 
     /** Counts the send in the auth session, then asks sms to text the code. */
-    private SmsOtpCalls.Result text(AuthenticationFlowContext context, String key, String phone) {
+    private SmsOtpCalls.Result text(AuthenticationFlowContext context, String key, String phone, boolean resend) {
         session(context).setAuthNote(NOTE_SENDS, Integer.toString(count(context, NOTE_SENDS) + 1));
-        return client.send(key, phone);
+        String cid = SmsOtpLog.newCorrelationId();
+        SmsOtpCalls.Result result = client.send(key, phone, cid);
+        SmsOtpLog.send(resend, result.outcome(), phone, cid);
+        return result;
     }
 
     private void verify(AuthenticationFlowContext context, String key, String phone, String raw) {

@@ -12,6 +12,7 @@ import io.freedriver.sms.phones.ConsentSource;
 import io.freedriver.sms.support.Json;
 import io.freedriver.sms.support.LogCapture;
 import io.freedriver.sms.support.TestNumbers;
+import org.jboss.logging.MDC;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -99,6 +100,26 @@ class TwilioVerifySenderTest {
         String body = twilio.getAllServeEvents().getFirst().getRequest().getBodyAsString();
         assertFalse(body.toLowerCase().contains("customcode"), "sms never passes its own code");
         assertEquals(Set.of("To", "Channel"), formKeys(body));
+    }
+
+    @Test
+    void accepted_send_is_logged_with_last_two_masked_sid_and_cid() {
+        String phone = agreed();
+        String sid = "VE" + "a".repeat(28) + "cdef";
+        stubSend(201, "{\"sid\":\"" + sid + "\",\"status\":\"pending\"}");
+        MDC.put(TwilioVerifySender.MDC_CID, "abcd1234");
+        try (LogCapture logs = LogCapture.open()) {
+            assertEquals(SendOutcome.SENT, sender.sendCode(phone).outcome());
+            String out = logs.all();
+            String last2 = "***" + phone.substring(phone.length() - 2);
+            assertTrue(out.contains("Twilio accepted the code send to " + last2), out);
+            assertTrue(out.contains("sid=VE***cdef"), out);
+            assertTrue(out.contains("cid=abcd1234"), out);
+            assertFalse(out.contains(phone), out);
+            assertFalse(out.contains(sid), "full sid must not be logged: " + out);
+        } finally {
+            MDC.remove(TwilioVerifySender.MDC_CID);
+        }
     }
 
     @Test

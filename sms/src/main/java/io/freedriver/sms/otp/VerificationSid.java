@@ -15,6 +15,14 @@ public final class VerificationSid {
         return value != null && SID.matcher(value).matches();
     }
 
+    /** {@code VE***} plus the last four hex characters. Does not return a full sid. */
+    public static String maskForLog(String sid) {
+        if (!matches(sid)) {
+            return "-";
+        }
+        return "VE***" + sid.substring(sid.length() - 4);
+    }
+
     public static String random(SecureRandom random) {
         byte[] bytes = new byte[16];
         random.nextBytes(bytes);
