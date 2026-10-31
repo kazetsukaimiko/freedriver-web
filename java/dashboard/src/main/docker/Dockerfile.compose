@@ -30,7 +30,6 @@ COPY java/dashboard-api/src java/dashboard-api/src
 COPY java/dashboard/src java/dashboard/src
 
 ARG BUILD_NUMBER=1.0.0-SNAPSHOT
-# Bust a truncated BuildKit package layer.
 RUN set -eu; \
     mvn -B \
       org.codehaus.mojo:versions-maven-plugin:2.21.0:set \
