@@ -111,8 +111,10 @@ Prod profile (`application-prod.properties`):
 ```
 freedriver.appliances.enabled=true
 freedriver.appliances.mock=false
-freedriver.appliances.live-commands=false
+freedriver.appliances.live-commands=true
 ```
+
+Live commands are on in production (MVP). Startup refuses mock when live-commands is on.
 
 Sign-in is on. Host-file precedence for that state is in [mqtt-connect.md](mqtt-connect.md#quarkus).
 
@@ -128,7 +130,7 @@ Authorization stays **on** in `%dev` (`quarkus.security.auth.enabled-in-dev-mode
 
 Live MQTT is `io.freedriver:freedriver-mqtt` plus `freedriver-mqtt-paho`. The app CDI adapter (`MqttLiveClient`) talks to the same `ApplianceControl` bus, connects when `freedriver.mqtt.instance-ids` is set or, if that is blank, when the host instance-id file names an appliances topic. Startup still fails when `live-commands` and `mock` are both true. A failed state connection does not stop the portal. `MqttBrokers` requires a docker-network host (`freedriver.io` names throw), port 8883, TLS, and exact topics. `freedriver.mqtt` is a mapped object (host, port, tls, username, trust-certificate). Host and env vars: [mqtt-connect.md](mqtt-connect.md#quarkus).
 
-App MQTT logs use the logger `io.freedriver.mqtt`. No line includes a password, a payload, or an exception message. State logs appear when `freedriver.mqtt.instance-ids` is set. Command logs stay behind `live-commands`, which stays false.
+App MQTT logs use the logger `io.freedriver.mqtt`. No line includes a password, a payload, or an exception message. State logs appear when `freedriver.mqtt.instance-ids` is set. Command logs are on when live-commands is on (prod).
 
 - INFO `mqtt connecting`, `mqtt connected` (first session and every reconnect, from Paho `connectComplete`), and `mqtt disconnected reason=`.
 - INFO `mqtt resubscribed topics=` after every reconnect. A clean session drops broker subscriptions, so the stored topics are subscribed again off the Paho comms thread.
