@@ -58,7 +58,7 @@ Requires Java 23. Quinoa can install Node for the UI build. Open http://localhos
 
 ## SMS OTP scaffold
 
-Phone + code sign-in for house users. The `sms` service and the Keycloak `freedriver-sms-otp` authenticator share `SMS_OTP_SHARED_SECRET` from `/opt/freedriver-secrets/.env` on the VPS. Setup and flow steps: [docs/sms-otp.md](docs/sms-otp.md).
+Phone + code sign-in for house users. The `sms` service and the Keycloak `freedriver-sms-otp` authenticator share `SMS_OTP_SHARED_SECRET` from `/opt/freedriver-secrets/.env` on the VPS. `browser-freedriver` also offers WebAuthn passwordless as a later alternative after the phone/username form. Setup and flow steps: [docs/sms-otp.md](docs/sms-otp.md).
 
 ## Appliances API
 

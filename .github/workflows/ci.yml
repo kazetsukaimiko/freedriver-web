@@ -378,7 +378,7 @@ jobs:
       - name: Build the full dashboard image
         run: |
           set -euo pipefail
-          docker build \
+          docker build --no-cache \
             -f java/dashboard/src/main/docker/Dockerfile.compose \
             --build-arg BUILD_NUMBER=ci \
             .

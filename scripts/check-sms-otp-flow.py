@@ -3,8 +3,9 @@
 
 auth-cookie is the first top-level ALTERNATIVE. One top-level ALTERNATIVE
 subflow holds the router (REQUIRED), then a phone CONDITIONAL subflow and a
-username CONDITIONAL subflow. The check fails if auth-cookie is missing or if
-freedriver-phone-username-router is ahead of it.
+username CONDITIONAL subflow. webauthn-authenticator-passwordless is a later
+top-level ALTERNATIVE (priority 50), after that subflow. The check fails if
+auth-cookie is missing or if freedriver-phone-username-router is ahead of it.
 
 The phone grammar is the seven US forms plus the canonical +1 and ten digits
 from #155. It matches any US ten-digit number, not one fixed digit string.
@@ -24,6 +25,8 @@ ROUTER = "freedriver-phone-username-router"
 CONDITION = "freedriver-sms-route-condition"
 SMS = "freedriver-sms-otp"
 PASSWORD = "auth-username-password-form"
+WEBAUTHN = "webauthn-authenticator-passwordless"
+WEBAUTHN_ACTION = "webauthn-register-passwordless"
 
 TOP = "freedriver-phone-username"
 PHONE = "freedriver-phone-path"
@@ -33,6 +36,7 @@ MFA = "freedriver-username-2fa"
 COOKIE_PRIORITY = 0
 DISABLED_PRIORITY = 10
 TOP_PRIORITY = 40
+WEBAUTHN_PRIORITY = 50
 ROUTER_PRIORITY = 10
 PHONE_PRIORITY = 20
 USER_PRIORITY = 30
@@ -40,6 +44,15 @@ CONDITION_PRIORITY = 10
 SMS_PRIORITY = 20
 PASSWORD_PRIORITY = 20
 MFA_PRIORITY = 40
+
+PASSKEYS_POLICY = {
+    "webAuthnPolicyPasswordlessRpId": "auth.freedriver.io",
+    "webAuthnPolicyPasswordlessRpEntityName": "Freedriver",
+    "webAuthnPolicyPasswordlessRequireResidentKey": "Yes",
+    "webAuthnPolicyPasswordlessUserVerificationRequirement": "required",
+    "webAuthnPolicyPasswordlessAttestationConveyancePreference": "none",
+    "webAuthnPolicyPasswordlessPasskeysEnabled": False,
+}
 
 # Whole-string forms. [0-9]{10} is any ten digits, not a single example.
 PHONE_FORMS = (
@@ -143,6 +156,10 @@ def wanted_flags(executions: list, parents: list) -> list[bool]:
             break
     if cookie is not None:
         mark(cookie)
+
+    for index, execution in enumerate(executions):
+        if execution.get("level", 0) == 0 and execution.get("providerId") == WEBAUTHN:
+            mark(index)
 
     for index, execution in enumerate(executions):
         if execution.get("level", 0) != 0:
@@ -408,6 +425,9 @@ def plan_next(executions: list, root_flow: str, config_key: str) -> dict:
             continue
         return delete(subtree_root(index, parents, wanted))
 
+    if find_wanted(provider=WEBAUTHN) is None:
+        return {"op": "create-execution", "parent": root_flow, "provider": WEBAUTHN}
+
     expected = []
     cookie = find_wanted(provider=COOKIE)
     if cookie is not None and parents[cookie] is None:
@@ -422,6 +442,9 @@ def plan_next(executions: list, root_flow: str, config_key: str) -> dict:
         ):
             expected.append((index, "DISABLED", DISABLED_PRIORITY))
     expected.append((top, "ALTERNATIVE", TOP_PRIORITY))
+    webauthn = find_wanted(provider=WEBAUTHN)
+    if webauthn is not None and parents[webauthn] is None:
+        expected.append((webauthn, "ALTERNATIVE", WEBAUTHN_PRIORITY))
     expected.append((find_wanted(provider=ROUTER, parent=top), "REQUIRED", ROUTER_PRIORITY))
     expected.append((phone, "CONDITIONAL", PHONE_PRIORITY))
     expected.append((phone_cond, "REQUIRED", CONDITION_PRIORITY))
@@ -479,15 +502,31 @@ def validate(executions: list, config_key: str) -> None:
     top = tops[0]
     if top < cookie:
         fail("router is ahead of auth-cookie")
+    webauths = [
+        i
+        for i, execution in enumerate(executions)
+        if execution.get("providerId") == WEBAUTHN and execution.get("level", 0) == 0
+    ]
+    if not webauths:
+        fail("webauthn-authenticator-passwordless is missing")
+    if len(webauths) != 1:
+        fail("expected exactly one top-level webauthn-authenticator-passwordless")
+    webauthn = webauths[0]
+    if executions[webauthn].get("requirement") != "ALTERNATIVE":
+        fail("webauthn-authenticator-passwordless must be ALTERNATIVE")
+    if webauthn < top:
+        fail("webauthn-authenticator-passwordless is ahead of the phone-username subflow")
     for index in range(cookie + 1, top):
         execution = executions[index]
         if execution.get("level", 0) == 0 and execution.get("requirement") != "DISABLED":
             fail("an execution that can challenge is ahead of the phone-username subflow")
     for index, execution in enumerate(executions):
-        if execution.get("level", 0) != 0 or index in (cookie, top):
+        if execution.get("level", 0) != 0 or index in (cookie, top, webauthn):
             continue
         if execution.get("authenticationFlow") or execution.get("requirement") != "DISABLED":
-            fail("only auth-cookie and one subflow may run at the top level")
+            fail(
+                "only auth-cookie, the phone-username subflow, and webauthn-authenticator-passwordless may run at the top level"
+            )
 
     def child_named(parent: int, name: str) -> int:
         found = [i for i in children_of(parents, parent) if flow_name(executions[i]) == name]
@@ -572,6 +611,46 @@ def validate(executions: list, config_key: str) -> None:
         fail("freedriver-sms-otp must not be REQUIRED")
 
     print("phone username flow shape ok")
+
+
+def passkeys_policy_ok(realm: dict) -> bool:
+    if not isinstance(realm, dict):
+        fail("expected a realm document")
+    if realm.get("webAuthnPolicyPasswordlessPasskeysEnabled") is True:
+        return False
+    for key, value in PASSKEYS_POLICY.items():
+        if key == "webAuthnPolicyPasswordlessPasskeysEnabled":
+            if realm.get(key) is True:
+                return False
+            continue
+        if realm.get(key) != value:
+            return False
+    return True
+
+
+def passkeys_required_action_present(actions: list) -> bool:
+    if not isinstance(actions, list):
+        fail("expected a list of required actions")
+    return any(
+        item.get("alias") == WEBAUTHN_ACTION or item.get("providerId") == WEBAUTHN_ACTION
+        for item in actions
+        if isinstance(item, dict)
+    )
+
+
+def passkeys_required_action_ok(actions: list) -> bool:
+    if not isinstance(actions, list):
+        fail("expected a list of required actions")
+    matches = [
+        item
+        for item in actions
+        if isinstance(item, dict)
+        and (item.get("alias") == WEBAUTHN_ACTION or item.get("providerId") == WEBAUTHN_ACTION)
+    ]
+    if len(matches) != 1:
+        return False
+    action = matches[0]
+    return action.get("enabled") is True and action.get("defaultAction") is False
 
 
 def validate_browser_source(executions: list) -> None:
@@ -680,6 +759,10 @@ def self_test() -> None:
     validate(ok, "route")
     if plan_next(ok, "browser-freedriver", "route").get("op") != "done":
         fail("signed fixture must not need another plan step")
+    no_webauthn = [execution for execution in ok if execution.get("providerId") != WEBAUTHN]
+    added = plan_next(no_webauthn, "browser-freedriver", "route")
+    if added.get("op") != "create-execution" or added.get("provider") != WEBAUTHN:
+        fail("planner must add webauthn-authenticator-passwordless at the top level")
     source = load(str(root / "fixtures" / "sms-otp-flow-password-only.json"))
     first = plan_next(source, "browser-freedriver", "route")
     if first.get("op") != "create-flow" or first.get("alias") != TOP:
@@ -707,6 +790,28 @@ def self_test() -> None:
     expect_failure(ahead, "router is ahead of auth-cookie")
     missing = load(str(root / "fixtures" / "sms-otp-flow-cookie-missing.json"))
     expect_failure(missing, "auth-cookie is missing")
+    webauthn_first = load(str(root / "fixtures" / "sms-otp-flow-webauthn-first.json"))
+    expect_failure(webauthn_first, "webauthn-authenticator-passwordless is ahead of the phone-username subflow")
+    expect_failure(no_webauthn, "webauthn-authenticator-passwordless is missing")
+    if not passkeys_policy_ok(dict(PASSKEYS_POLICY)):
+        fail("signed passkeys policy must validate")
+    enabled = dict(PASSKEYS_POLICY)
+    enabled["webAuthnPolicyPasswordlessPasskeysEnabled"] = True
+    if passkeys_policy_ok(enabled):
+        fail("Enable Passkeys must stay off")
+    actions = [
+        {
+            "alias": WEBAUTHN_ACTION,
+            "providerId": WEBAUTHN_ACTION,
+            "enabled": True,
+            "defaultAction": False,
+        }
+    ]
+    if not passkeys_required_action_present(actions) or not passkeys_required_action_ok(actions):
+        fail("required action must be enabled and not default")
+    defaulted = [{**actions[0], "defaultAction": True}]
+    if passkeys_required_action_ok(defaulted):
+        fail("required action must not be a default action")
 
     mfa_source = json.loads(json.dumps(ok))
     mfa_source.extend(
@@ -816,6 +921,9 @@ def main() -> None:
     parser.add_argument("--apply-username-rule", action="store_true")
     parser.add_argument("--username-reject-pattern", action="store_true")
     parser.add_argument("--select-config-key", action="store_true")
+    parser.add_argument("--passkeys-policy-ok", action="store_true")
+    parser.add_argument("--passkeys-required-action-present", action="store_true")
+    parser.add_argument("--passkeys-required-action-ok", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
 
@@ -842,6 +950,22 @@ def main() -> None:
         if not isinstance(data, dict):
             fail("expected an authenticator config description")
         print(select_config_key(data))
+        return
+    if args.passkeys_policy_ok:
+        if not isinstance(data, dict):
+            fail("expected a realm document")
+        if not passkeys_policy_ok(data):
+            fail("WebAuthn Passwordless policy does not match the signed passkeys shape")
+        return
+    if args.passkeys_required_action_present:
+        if not isinstance(data, list):
+            fail("expected a list of required actions")
+        raise SystemExit(0 if passkeys_required_action_present(data) else 1)
+    if args.passkeys_required_action_ok:
+        if not isinstance(data, list):
+            fail("expected a list of required actions")
+        if not passkeys_required_action_ok(data):
+            fail("webauthn-register-passwordless must be enabled and not a default action")
         return
     if isinstance(data, dict) and "executions" in data:
         data = data["executions"]

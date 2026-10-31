@@ -182,6 +182,17 @@ fi
 grep -q 'registrationAllowed=false' scripts/provision-keycloak-sms-otp.sh
 grep -q 'freedriver-phone-username-router' scripts/provision-keycloak-sms-otp.sh
 grep -q 'freedriver-sms-route-condition' scripts/provision-keycloak-sms-otp.sh
+grep -q 'webauthn-authenticator-passwordless' scripts/provision-keycloak-sms-otp.sh
+grep -q 'webauthn-register-passwordless' scripts/provision-keycloak-sms-otp.sh
+grep -q 'webAuthnPolicyPasswordlessRpId=auth.freedriver.io' scripts/provision-keycloak-sms-otp.sh
+grep -q 'webAuthnPolicyPasswordlessRequireResidentKey=Yes' scripts/provision-keycloak-sms-otp.sh
+grep -q 'webAuthnPolicyPasswordlessUserVerificationRequirement=required' scripts/provision-keycloak-sms-otp.sh
+grep -q 'webAuthnPolicyPasswordlessAttestationConveyancePreference=none' scripts/provision-keycloak-sms-otp.sh
+grep -q 'webAuthnPolicyPasswordlessPasskeysEnabled=false' scripts/provision-keycloak-sms-otp.sh
+if grep -q 'webAuthnPolicyPasswordlessPasskeysEnabled=true' scripts/provision-keycloak-sms-otp.sh; then
+  fail "provision must not enable realm Enable Passkeys"
+fi
+grep -q 'defaultAction=false' scripts/provision-keycloak-sms-otp.sh
 grep -q -- '--count-usernames' scripts/provision-keycloak-sms-otp.sh
 grep -q -- '--apply-username-rule' scripts/provision-keycloak-sms-otp.sh
 grep -q -- '--plan' scripts/provision-keycloak-sms-otp.sh
@@ -217,6 +228,14 @@ for template in freedriver-sms-phone.ftl freedriver-sms-code.ftl; do
   grep -q "\"$template\"" keycloak/sms-otp-spi/src/main/java/io/freedriver/keycloak/sms/SmsOtpAuthenticator.java
   grep -q 'url.loginRestartFlowUrl' "$THEME/$template"
 done
+for template in webauthn-authenticate.ftl webauthn-register.ftl webauthn-error.ftl; do
+  test -s "$THEME/$template" || fail "theme must ship stock $template"
+done
+test -s "$THEME/resources/js/webauthnAuthenticate.js" || fail "theme must ship stock webauthnAuthenticate.js"
+test -s "$THEME/resources/js/webauthnRegister.js" || fail "theme must ship stock webauthnRegister.js"
+if grep -RIn 'passkeysConditionalAuth' "$THEME" >/dev/null; then
+  fail "theme must not ship Enable Passkeys conditional UI"
+fi
 grep -q 'keycloak/themes/freedriver /opt/keycloak/themes/freedriver' keycloak/Dockerfile
 if grep -q 'SMS_OTP_SHARED_SECRET' keycloak/Dockerfile; then
   fail "Dockerfile must not mention SMS_OTP_SHARED_SECRET"
@@ -264,8 +283,14 @@ if python3 scripts/check-sms-otp-flow.py scripts/fixtures/sms-otp-flow-router-ah
   fail "checker must reject a router ahead of auth-cookie"
 fi
 grep -q 'router is ahead of auth-cookie' "$router_err" || fail "checker must say the router is ahead of auth-cookie"
-rm -f "$cookie_err" "$router_err"
-for bad in password-disabled sms-required password-missing forms-disabled sms-first; do
+webauthn_err="$(mktemp)"
+if python3 scripts/check-sms-otp-flow.py scripts/fixtures/sms-otp-flow-webauthn-first.json >/dev/null 2>"$webauthn_err"; then
+  fail "checker must reject webauthn ahead of the phone-username subflow"
+fi
+grep -q 'webauthn-authenticator-passwordless is ahead of the phone-username subflow' "$webauthn_err" \
+  || fail "checker must say webauthn is ahead of the phone-username subflow"
+rm -f "$cookie_err" "$router_err" "$webauthn_err"
+for bad in password-disabled sms-required password-missing forms-disabled sms-first webauthn-first; do
   if python3 scripts/check-sms-otp-flow.py "scripts/fixtures/sms-otp-flow-${bad}.json" >/dev/null 2>&1; then
     fail "checker must reject scripts/fixtures/sms-otp-flow-${bad}.json"
   fi
