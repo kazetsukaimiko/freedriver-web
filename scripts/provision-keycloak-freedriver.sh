@@ -26,6 +26,9 @@
 # dashboard env file. It creates the top-level group mqtt-instance with no topic
 # attributes. Topic attributes belong on the house user, which the dashboard creates.
 #
+# Sessions (#353): accessCodeLifespanLogin 7200, ssoSessionIdleTimeout 28800,
+# ssoSessionMaxLifespan 86400, accessCodeLifespanUserAction 1800.
+#
 # Run as root, or as a member of the allowed group, on the VPS. Idempotent. New password users get the
 # UPDATE_PASSWORD required action and choose their own password.
 set -euo pipefail
@@ -43,6 +46,10 @@ GROUP=lonewatt-techops
 REALM=freedriver
 # One exact post-logout redirect for freedriver-api. Not a wildcard.
 POST_LOGOUT_REDIRECT_URI='https://app.freedriver.io/'
+ACCESS_CODE_LIFESPAN_LOGIN=7200
+SSO_SESSION_IDLE_TIMEOUT=28800
+SSO_SESSION_MAX_LIFESPAN=86400
+ACCESS_CODE_LIFESPAN_USER_ACTION=1800
 PHONE_USER=kaze
 PHONE_GROUP=phone-sign-in
 PHONE_ATTRIBUTE=phone
@@ -139,6 +146,17 @@ else
   kcadm create realms -s "realm=${REALM}" -s enabled=true -s displayName=Freedriver >/dev/null
   echo "Created realm ${REALM}."
 fi
+
+ensure_session_timeouts() {
+  kcadm update "realms/${REALM}" \
+    -s "accessCodeLifespanLogin=${ACCESS_CODE_LIFESPAN_LOGIN}" \
+    -s "ssoSessionIdleTimeout=${SSO_SESSION_IDLE_TIMEOUT}" \
+    -s "ssoSessionMaxLifespan=${SSO_SESSION_MAX_LIFESPAN}" \
+    -s "accessCodeLifespanUserAction=${ACCESS_CODE_LIFESPAN_USER_ACTION}" >/dev/null
+  echo "Realm ${REALM} session timeouts: login ${ACCESS_CODE_LIFESPAN_LOGIN}s, idle ${SSO_SESSION_IDLE_TIMEOUT}s, max ${SSO_SESSION_MAX_LIFESPAN}s, user-action ${ACCESS_CODE_LIFESPAN_USER_ACTION}s."
+}
+
+ensure_session_timeouts
 
 CLIENT_UUID="$(kcadm get clients -r "$REALM" -q clientId=freedriver-api --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
 CREATED_CLIENT=0

@@ -485,6 +485,45 @@ if ! grep -q 'Placeholder for the dashboard instances admin client' secrets/keyc
   fail "instances example file must mark the assignment as a placeholder"
 fi
 
+python3 - <<'PY'
+from pathlib import Path
+
+script = Path("scripts/provision-keycloak-freedriver.sh").read_text()
+for line in (
+    "ACCESS_CODE_LIFESPAN_LOGIN=7200",
+    "SSO_SESSION_IDLE_TIMEOUT=28800",
+    "SSO_SESSION_MAX_LIFESPAN=86400",
+    "ACCESS_CODE_LIFESPAN_USER_ACTION=1800",
+):
+    if line not in script:
+        raise SystemExit(f"missing {line}")
+if "ensure_session_timeouts() {" not in script:
+    raise SystemExit("provision script must define ensure_session_timeouts")
+body = script.split("ensure_session_timeouts() {", 1)[1]
+depth = 1
+kept = []
+for line in body.splitlines():
+    if line.strip() == "{":
+        depth += 1
+    elif line.strip() == "}":
+        depth -= 1
+        if depth == 0:
+            break
+    kept.append(line)
+timeouts = "\n".join(kept)
+if 'kcadm update "realms/${REALM}"' not in timeouts:
+    raise SystemExit("session timeouts must update realms/${REALM}")
+for flag in (
+    'accessCodeLifespanLogin=${ACCESS_CODE_LIFESPAN_LOGIN}',
+    'ssoSessionIdleTimeout=${SSO_SESSION_IDLE_TIMEOUT}',
+    'ssoSessionMaxLifespan=${SSO_SESSION_MAX_LIFESPAN}',
+    'accessCodeLifespanUserAction=${ACCESS_CODE_LIFESPAN_USER_ACTION}',
+):
+    if flag not in timeouts:
+        raise SystemExit(f"session timeouts must set {flag}")
+print("realm session timeouts 7200/28800/86400/1800")
+PY
+
 chmod +x scripts/test-invite-service-account.sh
 ./scripts/test-invite-service-account.sh
 
