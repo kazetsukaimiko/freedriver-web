@@ -20,6 +20,7 @@ class DevAuthPathLockTest {
         assertTrue(Files.isRegularFile(source), "DevOpenAuthAugmentor must stay in security");
         String body = Files.readString(source);
         assertTrue(body.contains("@IfBuildProfile(\"dev\")"), "augmentor is %dev only");
+        assertTrue(body.contains("McpPaths.matches"), "augmentor must not authenticate /autonomy/mcp");
         assertFalse(body.contains("@IfBuildProfile(\"test\")"), "augmentor must never be on the test profile");
         assertFalse(body.contains("@IfBuildProfile(\"prod\")"), "augmentor must never be on the prod profile");
     }

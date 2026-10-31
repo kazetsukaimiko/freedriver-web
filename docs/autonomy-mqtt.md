@@ -6,7 +6,7 @@ Portal product surface: [appliances.md](appliances.md). Broker, ACL, and apply: 
 
 **Autonomy scope:** connect, subscribe to commands, publish state. The portal owns OIDC, UX, `live-commands`, and Mosquitto.
 
-**live-commands stays `false`.** Quarkus publishes Topic B in production once [freedriver-web#27](https://github.com/kazetsukaimiko/freedriver-web/issues/27) lands. Until then, treat incoming commands as optional.
+**live-commands is on in production (MVP).** Quarkus publishes Topic B. Autonomy subscribes and applies those commands.
 
 ## Contract home
 
@@ -75,7 +75,7 @@ Field rules (Quarkus rejects any other shape):
 
 ## Topic B — command (Quarkus → autonomy)
 
-Topic B carries traffic once live-commands is on; subscribe now so you are ready.
+Topic B carries command traffic in production. Autonomy subscribes and applies those commands.
 
 ```json
 {

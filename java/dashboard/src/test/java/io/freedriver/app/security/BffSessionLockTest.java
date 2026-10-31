@@ -21,7 +21,7 @@ class BffSessionLockTest {
                 "src/main/resources/META-INF/services/org.eclipse.microprofile.config.spi.ConfigSource"));
         assertEquals("io.freedriver.app.security.AuthPolicyConfigSource", loader.trim());
         assertFalse(application.contains("quarkus.config.locations"));
-        assertTrue(application.contains("quarkus.quinoa.ignored-path-prefixes=/api,/q,/login,/logout,/sign-in"));
+        assertTrue(application.contains("quarkus.quinoa.ignored-path-prefixes=/api,/q,/login,/logout,/sign-in,/autonomy"));
         assertFalse(application.contains("quarkus.oidc."));
         assertFalse(application.contains("quarkus.http.auth.permission."));
         assertFalse(application.contains("freedriver.appliances.rate-limit."));
@@ -50,6 +50,15 @@ class BffSessionLockTest {
         assertTrue(properties.contains("quarkus.http.auth.permission.phones.policy=authenticated"));
         assertTrue(properties.contains("quarkus.http.auth.permission.instances.paths=/api/instances,/api/instances/*"));
         assertTrue(properties.contains("quarkus.http.auth.permission.instances.policy=authenticated"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.mcp.paths=/autonomy/mcp,/autonomy/mcp/*"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.mcp.policy=authenticated"));
+        assertTrue(properties.contains("quarkus.oidc.mcp.application-type=service"));
+        assertTrue(properties.contains("quarkus.oidc.mcp.client-id=freedriver-grok-mcp"));
+        assertTrue(properties.contains("quarkus.oidc.mcp.token.audience=https://app.freedriver.io/autonomy/mcp"));
+        assertTrue(properties.contains("quarkus.oidc.mcp.token.required-claims.azp=freedriver-grok-mcp"));
+        assertTrue(properties.contains("quarkus.oidc.mcp.tenant-paths=/autonomy/mcp,/autonomy/mcp/*"));
+        assertTrue(properties.contains("quarkus.oidc.mcp.tenant-enabled=true"));
+        assertFalse(properties.contains("quarkus.oidc.mcp.application-type=web-app"));
         assertTrue(properties.contains("freedriver.invite.client-secret=${FREEDRIVER_INVITE_CLIENT_SECRET:}"));
         assertTrue(properties.contains(
                 "\n%prod.freedriver.invite.client-secret=${FREEDRIVER_INVITE_CLIENT_SECRET:}\n"));

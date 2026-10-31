@@ -71,7 +71,8 @@ final class AuthPolicyLock {
      * Known Quarkus defaults for locked names that are not lines in the file.
      * {@code shared=false} and {@code applies-to=ALL} for a permission already in the file
      * and for the {@code *} lookup. {@code tenant-enabled=true} only for the default tenant
-     * and the literal {@code quarkus.oidc.*.tenant-enabled} lookup. A named tenant stays absent.
+     * and the literal {@code quarkus.oidc.*.tenant-enabled} lookup. A named tenant
+     * stays absent unless it is a line in the file.
      */
     private String builtInRaw(String bare) {
         if ("quarkus.oidc.tenant-enabled".equals(bare) || "quarkus.oidc.*.tenant-enabled".equals(bare)) {
