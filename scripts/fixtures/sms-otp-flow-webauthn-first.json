@@ -1,0 +1,84 @@
+[
+  {
+    "id": "cookie",
+    "providerId": "auth-cookie",
+    "requirement": "ALTERNATIVE",
+    "authenticationFlow": false,
+    "level": 0,
+    "priority": 0
+  },
+  {
+    "id": "webauthn",
+    "providerId": "webauthn-authenticator-passwordless",
+    "requirement": "ALTERNATIVE",
+    "authenticationFlow": false,
+    "level": 0,
+    "priority": 20
+  },
+  {
+    "id": "rest",
+    "displayName": "freedriver-phone-username",
+    "requirement": "ALTERNATIVE",
+    "authenticationFlow": true,
+    "level": 0,
+    "priority": 40
+  },
+  {
+    "id": "router",
+    "providerId": "freedriver-phone-username-router",
+    "requirement": "REQUIRED",
+    "authenticationFlow": false,
+    "level": 1,
+    "priority": 10
+  },
+  {
+    "id": "phone-flow",
+    "displayName": "freedriver-phone-path",
+    "requirement": "CONDITIONAL",
+    "authenticationFlow": true,
+    "level": 1,
+    "priority": 20
+  },
+  {
+    "id": "phone-cond",
+    "providerId": "freedriver-sms-route-condition",
+    "requirement": "REQUIRED",
+    "authenticationFlow": false,
+    "level": 2,
+    "priority": 10,
+    "config": {"route": "phone"}
+  },
+  {
+    "id": "sms",
+    "providerId": "freedriver-sms-otp",
+    "requirement": "ALTERNATIVE",
+    "authenticationFlow": false,
+    "level": 2,
+    "priority": 20
+  },
+  {
+    "id": "user-flow",
+    "displayName": "freedriver-username-path",
+    "requirement": "CONDITIONAL",
+    "authenticationFlow": true,
+    "level": 1,
+    "priority": 30
+  },
+  {
+    "id": "user-cond",
+    "providerId": "freedriver-sms-route-condition",
+    "requirement": "REQUIRED",
+    "authenticationFlow": false,
+    "level": 2,
+    "priority": 10,
+    "config": {"route": "username"}
+  },
+  {
+    "id": "user-pass",
+    "providerId": "auth-username-password-form",
+    "requirement": "REQUIRED",
+    "authenticationFlow": false,
+    "level": 2,
+    "priority": 20
+  }
+]

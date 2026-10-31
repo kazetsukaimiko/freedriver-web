@@ -80,5 +80,13 @@
     "authenticationFlow": false,
     "level": 2,
     "priority": 20
+  },
+  {
+    "id": "webauthn",
+    "providerId": "webauthn-authenticator-passwordless",
+    "requirement": "ALTERNATIVE",
+    "authenticationFlow": false,
+    "level": 0,
+    "priority": 50
   }
 ]

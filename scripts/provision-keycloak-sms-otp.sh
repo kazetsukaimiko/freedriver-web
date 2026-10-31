@@ -4,7 +4,9 @@
 # One top-level ALTERNATIVE subflow holds freedriver-phone-username-router
 # (REQUIRED), a phone CONDITIONAL subflow, and a username CONDITIONAL subflow.
 # freedriver-sms-otp stays ALTERNATIVE. The password form stays REQUIRED on
-# the username path.
+# the username path. webauthn-authenticator-passwordless is a later top-level
+# ALTERNATIVE (priority 50) so the phone/username form stays the default after
+# a cookie miss.
 #
 # An empty or placeholder SMS_OTP_SHARED_SECRET still inserts that shape.
 # This script does not write a secret and does not export the realm.
@@ -25,6 +27,8 @@ PASSWORD_PROVIDER=auth-username-password-form
 SMS_PROVIDER=freedriver-sms-otp
 ROUTER_PROVIDER=freedriver-phone-username-router
 CONDITION_PROVIDER=freedriver-sms-route-condition
+WEBAUTHN_PROVIDER=webauthn-authenticator-passwordless
+WEBAUTHN_ACTION=webauthn-register-passwordless
 GROUP=phone-sign-in
 PHONE_ATTRIBUTE=phone
 THEME=freedriver
@@ -207,7 +211,7 @@ if [[ "$phone_users" != "0" ]]; then
 fi
 
 kcadm get authentication/authenticator-providers -r "$REALM" > "$tmp"
-python3 - "$tmp" "$SMS_PROVIDER" "$ROUTER_PROVIDER" "$CONDITION_PROVIDER" <<'PY'
+python3 - "$tmp" "$SMS_PROVIDER" "$ROUTER_PROVIDER" "$CONDITION_PROVIDER" "$WEBAUTHN_PROVIDER" <<'PY'
 import json, sys
 data = json.load(open(sys.argv[1], encoding="utf-8"))
 ids = {item.get("id") for item in data}
@@ -298,10 +302,10 @@ PY
       python3 -c 'import re,sys; raise SystemExit(0 if re.fullmatch(r"[a-z0-9-]{1,80}", sys.argv[1]) else 1)' "$provider"
       case "$parent" in
         browser-freedriver)
-          if [[ "$provider" != "auth-cookie" ]]; then
-            echo "refusing execution parent" >&2
-            exit 1
-          fi
+          case "$provider" in
+            auth-cookie|webauthn-authenticator-passwordless) ;;
+            *) echo "refusing execution parent" >&2; exit 1 ;;
+          esac
           ;;
         freedriver-phone-username|freedriver-phone-path|freedriver-username-path|freedriver-username-2fa) ;;
         *) echo "refusing execution parent" >&2; exit 1 ;;
@@ -401,6 +405,38 @@ fi
 dump_executions "$FLOW"
 enrich_configs
 python3 "$CHECK" --config-key "$config_key" "$tmp"
+
+ensure_passkeys_policy() {
+  kcadm update "realms/${REALM}" \
+    -s 'webAuthnPolicyPasswordlessRpId=auth.freedriver.io' \
+    -s 'webAuthnPolicyPasswordlessRpEntityName=Freedriver' \
+    -s 'webAuthnPolicyPasswordlessRequireResidentKey=Yes' \
+    -s 'webAuthnPolicyPasswordlessUserVerificationRequirement=required' \
+    -s 'webAuthnPolicyPasswordlessAttestationConveyancePreference=none' \
+    -s 'webAuthnPolicyPasswordlessPasskeysEnabled=false' >/dev/null
+  echo "Realm ${REALM} WebAuthn Passwordless policy: RP ID auth.freedriver.io, resident key required, user verification required, attestation none. Enable Passkeys stays off."
+}
+
+ensure_passkeys_required_action() {
+  kcadm get authentication/required-actions -r "$REALM" > "$tmp"
+  if ! python3 "$CHECK" --passkeys-required-action-present "$tmp"; then
+    kcadm create authentication/register-required-action -r "$REALM" \
+      -s "providerId=${WEBAUTHN_ACTION}" \
+      -s 'name=Webauthn Register Passwordless' >/dev/null
+    echo "Registered required action ${WEBAUTHN_ACTION}."
+  fi
+  kcadm update "authentication/required-actions/${WEBAUTHN_ACTION}" -r "$REALM" \
+    -s enabled=true \
+    -s defaultAction=false >/dev/null
+  echo "Required action ${WEBAUTHN_ACTION} is enabled, not default, skippable."
+}
+
+ensure_passkeys_policy
+ensure_passkeys_required_action
+kcadm get "realms/${REALM}" > "$tmp"
+python3 "$CHECK" --passkeys-policy-ok "$tmp"
+kcadm get authentication/required-actions -r "$REALM" > "$tmp"
+python3 "$CHECK" --passkeys-required-action-ok "$tmp"
 
 # The shape is inserted whether or not the container holds a real secret.
 # The secret is only read inside the container to choose the log line.
