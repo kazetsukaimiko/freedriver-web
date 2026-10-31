@@ -517,6 +517,9 @@ if grep -q 'rolename grafana-viewer' scripts/provision-keycloak-freedriver.sh \
     || grep -q 'rolename grafana-editor' scripts/provision-keycloak-freedriver.sh; then
   fail "this card must not assign grafana-viewer or grafana-editor"
 fi
+if [[ "$(grep -c 'GRAFANA_ENV_FILE=' scripts/test-invite-service-account.sh)" -lt 3 ]]; then
+  fail "invite throwaway provision must set GRAFANA_ENV_FILE on each run"
+fi
 python3 - <<'PY'
 from pathlib import Path
 script = Path("scripts/provision-keycloak-freedriver.sh").read_text()
