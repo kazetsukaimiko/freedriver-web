@@ -11,8 +11,9 @@
 # FREEDRIVER_SEED_PHONE from /opt/freedriver-secrets/.env and makes it a direct
 # member of phone-sign-in with the realm role dashboard. Group and role checks
 # run before that write. Effective realm roles must be inside dashboard,
-# default-roles-freedriver, offline_access, and uma_authorization. Any client
-# role stops the script. A +1 number is ten digits whose first digit is 2-9.
+# default-roles-freedriver, offline_access, uma_authorization, grafana-viewer,
+# grafana-editor, and grafana-admin. Any client role stops the script. A +1
+# number is ten digits whose first digit is 2-9.
 # Run scripts/provision-keycloak-sms-otp.sh first; it creates the group and
 # the attribute.
 #
@@ -26,6 +27,12 @@
 # dashboard env file. It creates the top-level group mqtt-instance with no topic
 # attributes. Topic attributes belong on the house user, which the dashboard creates.
 #
+# Grafana (#349) is the confidential client freedriver-grafana. Redirect URI is
+# https://grafana.freedriver.io/login/generic_oauth only. Realm roles
+# grafana-viewer, grafana-editor, and grafana-admin exist; this script assigns
+# grafana-admin only to kaze, the invite username, and kazetsukai. The secret
+# is written once for Grafana.
+#
 # Run as root, or as a member of the allowed group, on the VPS. Idempotent. New password users get the
 # UPDATE_PASSWORD required action and choose their own password.
 set -euo pipefail
@@ -35,6 +42,7 @@ TECHOPS_PASS_FILE="${TECHOPS_PASS_FILE:-/opt/freedriver-secrets/keycloak-techops
 SECRET_FILE="${SECRET_FILE:-/opt/freedriver-secrets/keycloak-freedriver-api.secret}"
 INVITE_ENV_FILE="${INVITE_ENV_FILE:-/opt/freedriver-secrets/keycloak-freedriver-invite.env}"
 INSTANCES_ENV_FILE="${INSTANCES_ENV_FILE:-/opt/freedriver-secrets/keycloak-freedriver-instances.env}"
+GRAFANA_ENV_FILE="${GRAFANA_ENV_FILE:-/opt/freedriver-secrets/keycloak-freedriver-grafana.env}"
 SECRETS_ENV="${SECRETS_ENV:-/opt/freedriver-secrets/.env}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KCADM=/opt/keycloak/bin/kcadm.sh
@@ -225,6 +233,9 @@ ensure_role() {
 
 ensure_role dashboard
 ensure_role portal-admin
+ensure_role grafana-viewer
+ensure_role grafana-editor
+ensure_role grafana-admin
 
 ensure_user() {
   local username="$1"
@@ -728,8 +739,95 @@ PY
   fi
 }
 
+# Grafana OAuth client (#349). Secret file is for the Grafana container.
+GRAFANA_CLIENT=freedriver-grafana
+GRAFANA_REDIRECT_URI='https://grafana.freedriver.io/login/generic_oauth'
+GRAFANA_REDIRECT_URIS="[\"${GRAFANA_REDIRECT_URI}\"]"
+GRAFANA_WEB_ORIGINS='["https://grafana.freedriver.io"]'
+if [[ "$GRAFANA_REDIRECT_URIS" != '["https://grafana.freedriver.io/login/generic_oauth"]' ]] \
+    || [[ "$GRAFANA_WEB_ORIGINS" != '["https://grafana.freedriver.io"]' ]]; then
+  echo "freedriver-grafana redirect or web origins are not the pinned values." >&2
+  exit 1
+fi
+
+assign_grafana_admin_users() {
+  local username id
+  for username in kaze inv9263cb3bac06f0b0a42f2f038c98a0c1 kazetsukai; do
+    id="$(kcadm get users -r "$REALM" -q "username=${username}" -q exact=true --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
+    if [[ -z "$id" ]]; then
+      echo "User ${username} is missing; grafana-admin not assigned."
+      continue
+    fi
+    kcadm add-roles -r "$REALM" --uid "$id" --rolename grafana-admin >/dev/null
+    echo "Assigned grafana-admin to ${username}."
+  done
+}
+
+ensure_grafana_client() {
+  local client_uuid secret tmp
+  client_uuid="$(kcadm get clients -r "$REALM" -q clientId="$GRAFANA_CLIENT" --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
+  if [[ -z "$client_uuid" ]]; then
+    kcadm create clients -r "$REALM" \
+      -s clientId="$GRAFANA_CLIENT" \
+      -s name='Freedriver Grafana' \
+      -s enabled=true \
+      -s publicClient=false \
+      -s clientAuthenticatorType=client-secret \
+      -s standardFlowEnabled=true \
+      -s implicitFlowEnabled=false \
+      -s directAccessGrantsEnabled=false \
+      -s serviceAccountsEnabled=false \
+      -s protocol=openid-connect \
+      -s 'description=Grafana generic OAuth. Secret stays on the Grafana container.' \
+      -s "redirectUris=${GRAFANA_REDIRECT_URIS}" \
+      -s "webOrigins=${GRAFANA_WEB_ORIGINS}" >/dev/null
+    client_uuid="$(kcadm get clients -r "$REALM" -q clientId="$GRAFANA_CLIENT" --fields id --format csv --noquotes | csv_id)"
+    echo "Created confidential client ${GRAFANA_CLIENT}."
+  else
+    echo "Client ${GRAFANA_CLIENT} already exists."
+  fi
+  kcadm update "clients/${client_uuid}" -r "$REALM" \
+    -s publicClient=false \
+    -s standardFlowEnabled=true \
+    -s implicitFlowEnabled=false \
+    -s directAccessGrantsEnabled=false \
+    -s serviceAccountsEnabled=false \
+    -s 'description=Grafana generic OAuth. Secret stays on the Grafana container.' \
+    -s "redirectUris=${GRAFANA_REDIRECT_URIS}" \
+    -s "webOrigins=${GRAFANA_WEB_ORIGINS}" >/dev/null
+  ensure_mapper "$client_uuid" grafana-realm-roles \
+    -s protocolMapper=oidc-usermodel-realm-role-mapper \
+    -s 'config."claim.name"=realm_access.roles' \
+    -s 'config."jsonType.label"=String' \
+    -s 'config.multivalued=true' \
+    -s 'config."access.token.claim"=true' \
+    -s 'config."id.token.claim"=false' \
+    -s 'config."userinfo.token.claim"=false'
+  if [[ -e "$GRAFANA_ENV_FILE" ]]; then
+    echo "Grafana client env file already exists; not rotating or rewriting it."
+  else
+    tmp="$(mktemp)"
+    chmod 600 "$tmp"
+    secret="$(kcadm get "clients/${client_uuid}/client-secret" -r "$REALM" --fields value --format csv --noquotes \
+      | sed '/^value$/d' | tr -d '\r' | awk 'NF { print; exit }')"
+    if [[ -z "$secret" || "$secret" == *" "* || "$secret" == *$'\n'* ]]; then
+      rm -f "$tmp"
+      unset secret
+      echo "Failed to read ${GRAFANA_CLIENT} client secret." >&2
+      exit 1
+    fi
+    printf 'FREEDRIVER_GRAFANA_CLIENT_SECRET=%s\n' "$secret" > "$tmp"
+    unset secret
+    own_secret "$tmp"
+    mv "$tmp" "$GRAFANA_ENV_FILE"
+    echo "Wrote Grafana client secret (not printed)."
+  fi
+  assign_grafana_admin_users
+}
+
 ensure_invite_service_account
 ensure_instances_admin
+ensure_grafana_client
 
 # Phone sign-in user kaze (#169). Checks run before the phone attribute is written.
 seed_phone="$(sed -n 's/^FREEDRIVER_SEED_PHONE=//p' "$SECRETS_ENV" 2>/dev/null | tail -n 1 \
@@ -871,3 +969,5 @@ PY
   exit 1
 fi
 echo "User ${PHONE_USER} has ${PHONE_GROUP}, ${PHONE_ROLE}, and no realm role outside the allow-list."
+
+assign_grafana_admin_users
