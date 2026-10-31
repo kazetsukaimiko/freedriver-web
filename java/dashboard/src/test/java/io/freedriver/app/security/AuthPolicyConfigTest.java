@@ -46,6 +46,10 @@ class AuthPolicyConfigTest {
         assertTrue(auth.contains("quarkus.http.auth.permission.phones.policy=authenticated"));
         assertTrue(auth.contains("quarkus.http.auth.permission.instances.paths=/api/instances,/api/instances/*"));
         assertTrue(auth.contains("quarkus.http.auth.permission.instances.policy=authenticated"));
+        assertTrue(auth.contains("quarkus.http.auth.permission.mcp.paths=/autonomy/mcp,/autonomy/mcp/*"));
+        assertTrue(auth.contains("quarkus.http.auth.permission.mcp.policy=authenticated"));
+        assertTrue(auth.contains("quarkus.oidc.mcp.client-id=freedriver-grok-mcp"));
+        assertTrue(auth.contains("quarkus.oidc.mcp.token.audience=https://app.freedriver.io/autonomy/mcp"));
         assertTrue(auth.contains("freedriver.instances.client-id=freedriver-instances"));
         assertTrue(auth.contains("freedriver.instances.client-secret=${FREEDRIVER_INSTANCES_CLIENT_SECRET:}"));
         assertTrue(auth.contains("freedriver.appliances.rate-limit.permits=30"));
@@ -85,6 +89,14 @@ class AuthPolicyConfigTest {
                 "/api/instances,/api/instances/*",
                 config.getValue("quarkus.http.auth.permission.instances.paths", String.class));
         assertEquals("authenticated", config.getValue("quarkus.http.auth.permission.instances.policy", String.class));
+        assertEquals(
+                "/autonomy/mcp,/autonomy/mcp/*",
+                config.getValue("quarkus.http.auth.permission.mcp.paths", String.class));
+        assertEquals("authenticated", config.getValue("quarkus.http.auth.permission.mcp.policy", String.class));
+        assertEquals("freedriver-grok-mcp", config.getValue("quarkus.oidc.mcp.client-id", String.class));
+        assertEquals(
+                "https://app.freedriver.io/autonomy/mcp",
+                config.getValue("quarkus.oidc.mcp.token.audience", String.class));
         assertEquals("freedriver-instances", config.getValue("freedriver.instances.client-id", String.class));
         assertEquals(8, appliances.rateLimit().permits());
         assertEquals(Duration.ofSeconds(60), appliances.rateLimit().window());
