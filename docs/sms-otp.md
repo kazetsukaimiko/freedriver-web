@@ -50,7 +50,7 @@ How the Quarkus service works:
 
 Compose passes `SMS_OTP_SHARED_SECRET` from `/opt/freedriver-secrets/.env` to `sms` and `keycloak` through each service's `environment` as `${SMS_OTP_SHARED_SECRET:-}`. When the secret is empty or the placeholder, `freedriver-sms-otp` skips itself, sms answers `401`, and the #155 router keeps every entry on the password step, so the send path stays idle. The provisioning script still inserts the signed flow. It reads `SMS_OTP_SHARED_SECRET` inside the container only to choose its log line. The value stays in the server env file.
 
-Compose also requires `FREEDRIVER_SMS_DAILY_SEND_CAP` from that file and passes it only to `sms`. There is no production default. `.env.example` holds the placeholder `20` and a comment. A missing cap stops sms at startup.
+Compose also requires `FREEDRIVER_SMS_DAILY_SEND_CAP` from that file and passes it only to `sms`. There is no production default. `.env.example` holds the placeholder `100` and a comment. A missing cap stops sms at startup.
 
 The sms service mounts `/opt/freedriver-storage/sms` at `/deployments/data`. The host prepares that directory for uid 185, mode 700, before the first deploy, so agreement records survive restarts. Deploy checks the owner and mode. Deploy builds the Keycloak image (the SPI jar and the login theme) and the sms image on the runner, then pulls them onto the VPS.
 

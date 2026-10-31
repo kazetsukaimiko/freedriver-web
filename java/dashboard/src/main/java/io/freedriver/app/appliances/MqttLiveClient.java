@@ -64,9 +64,6 @@ public class MqttLiveClient {
         }
         List<UUID> instances = mqtt.instances();
         if (instances.isEmpty()) {
-            if (appliances.liveCommands()) {
-                throw new IllegalStateException("live-commands requires freedriver.mqtt.instance-ids");
-            }
             return;
         }
         scheduler = Executors.newSingleThreadScheduledExecutor(r -> {

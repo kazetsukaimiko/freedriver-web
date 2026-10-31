@@ -15,7 +15,7 @@ auth.freedriver.io {
 
 app.freedriver.io {
 	encode gzip
-	@dispatcher path /mcp /mcp/* /api/dispatcher /api/dispatcher/* /api/device /api/device/*
+	@dispatcher path /mcp /mcp/* /dispatch/mcp /dispatch/mcp/* /api/dispatcher /api/dispatcher/* /api/device /api/device/*
 	handle @dispatcher {
 		reverse_proxy agent-dispatcher:8080
 	}

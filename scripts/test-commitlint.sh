@@ -37,6 +37,9 @@ check fail "ci: missing scope" $'Refs: #151'
 check fail "style(ci): not a type" $'Refs: #151'
 check fail "ci(nope): unknown scope" $'Refs: #151'
 check fail "ci(ci): missing the card" "Check the pull request title."
+check pass "chore(release): release 2026-10_r141" $':robot: I have created a release *beep* *boop*\n---\n\n## 2026-10_r141 (2026-10-29)\n\nThis PR was generated with [Release Please](https://github.com/googleapis/release-please). See [documentation](https://github.com/googleapis/release-please#release-please).'
+check fail "chore(release): not a stamp release" "Release Please body without a card."
+check fail "chore(main): release 2026-10_r141" $'Refs: #151'
 check fail "feat(dashboard)!: missing the footer" $'Ids move.\n\nRefs: #151'
 check fail "feat(dashboard): footer without bang" $'BREAKING CHANGE: the switch id changed\n\nRefs: #151'
 

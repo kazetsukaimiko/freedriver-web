@@ -39,7 +39,7 @@ class DefaultProfileSafetyTest {
     }
 
     @Test
-    void prod_profile_reads_host_state_and_keeps_live_commands_off() throws IOException {
+    void prod_profile_reads_host_state_and_turns_live_commands_on() throws IOException {
         List<String> lines = Files.readAllLines(Path.of("src/main/resources/application.properties")).stream()
                 .map(String::strip)
                 .toList();
@@ -68,12 +68,12 @@ class DefaultProfileSafetyTest {
                 .toList();
         assertTrue(prod.contains("freedriver.appliances.enabled=true"));
         assertTrue(prod.contains("freedriver.appliances.mock=false"));
-        assertTrue(prod.contains("freedriver.appliances.live-commands=false"));
+        assertTrue(prod.contains("freedriver.appliances.live-commands=true"));
         assertTrue(prod.contains("freedriver.appliances.mock-refresh=false"));
         assertTrue(prod.contains("freedriver.mqtt.instance-ids-file=/opt/freedriver-secrets/mosquitto/acl"));
         assertTrue(prod.contains("freedriver.mqtt.password-file=/opt/freedriver-secrets/mosquitto/api.pass"));
         assertEquals(1, prod.stream().filter(line -> line.startsWith("freedriver.appliances.mock=")).count());
-        assertFalse(prod.stream().anyMatch(line -> line.startsWith("freedriver.appliances.live-commands=true")));
+        assertFalse(prod.stream().anyMatch(line -> line.startsWith("freedriver.appliances.live-commands=false")));
         assertFalse(prod.stream().anyMatch(line -> line.startsWith("freedriver.appliances.mock=true")));
         assertFalse(prod.stream().anyMatch(line -> line.contains("mqtt.freedriver.io") || line.contains(":1883")));
         assertFalse(prod.stream().anyMatch(line -> line.startsWith("freedriver.mqtt.host")));

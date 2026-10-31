@@ -77,6 +77,14 @@ class McpResourceTest {
         assertEquals(before, jobs.jobCount());
         given().get("/mcp/sse").then().statusCode(401);
         given().post("/mcp/oauth-protected-resource").then().statusCode(401);
+        given()
+                .contentType("application/json")
+                .body(submitBody("pc-anon", PROMPT))
+                .post("/dispatch/mcp")
+                .then()
+                .statusCode(401)
+                .header("WWW-Authenticate", is(McpProtectedResource.CHALLENGE));
+        given().get("/dispatch/mcp").then().statusCode(401).header("WWW-Authenticate", is(McpProtectedResource.CHALLENGE));
     }
 
     @Test
@@ -106,6 +114,12 @@ class McpResourceTest {
                 .contentType("application/json")
                 .body(submitBody("pc-device-role", PROMPT))
                 .post("/mcp")
+                .then()
+                .statusCode(403);
+        given()
+                .contentType("application/json")
+                .body(submitBody("pc-device-role", PROMPT))
+                .post("/dispatch/mcp")
                 .then()
                 .statusCode(403);
 
