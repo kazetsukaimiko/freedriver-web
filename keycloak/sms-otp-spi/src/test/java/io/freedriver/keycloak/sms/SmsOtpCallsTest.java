@@ -1,8 +1,13 @@
 package io.freedriver.keycloak.sms;
 
+import io.freedriver.sms.api.SmsApi;
 import io.freedriver.sms.client.SmsClient;
 import io.freedriver.sms.client.SmsClientConfig;
 import io.freedriver.sms.client.SmsClientException;
+import io.freedriver.sms.model.SendRequest;
+import io.freedriver.sms.model.SentResponse;
+import io.freedriver.sms.model.VerifiedResponse;
+import io.freedriver.sms.model.VerifyRequest;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -64,5 +69,21 @@ class SmsOtpCallsTest {
         assertEquals(SmsOtpCalls.DEFAULT_RETRY_AFTER_SECONDS, SmsOtpCalls.retrySeconds(0L));
         assertEquals(SmsOtpCalls.DEFAULT_RETRY_AFTER_SECONDS, SmsOtpCalls.retrySeconds(3601L));
         assertEquals(SmsOtpCalls.DEFAULT_RETRY_AFTER_SECONDS, SmsOtpCalls.retrySeconds(86400L));
+    }
+
+    @Test
+    void sendSwallowedRuntimeExceptionIsSwallowedNotUnavailable() {
+        SmsOtpCalls calls = new SmsOtpCalls(secret -> new SmsApi() {
+            @Override
+            public SentResponse send(SendRequest request) {
+                throw new IllegalStateException("boom");
+            }
+
+            @Override
+            public VerifiedResponse verify(VerifyRequest request) {
+                throw new UnsupportedOperationException();
+            }
+        });
+        assertEquals(SmsOtpCalls.Outcome.SWALLOWED, calls.send("secret", "+15555550100", "abcd1234").outcome());
     }
 }
