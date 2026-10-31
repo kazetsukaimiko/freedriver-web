@@ -1,6 +1,7 @@
 package io.freedriver.keycloak.sms;
 
 import io.freedriver.sms.api.SmsApi;
+import io.freedriver.sms.client.SmsCallContext;
 import io.freedriver.sms.client.SmsClient;
 import io.freedriver.sms.client.SmsClientConfig;
 import io.freedriver.sms.client.SmsClientException;
@@ -31,7 +32,9 @@ final class SmsOtpCalls {
         RATE_LIMITED,
         /** Verify answered 503 {@code unavailable}. */
         CHECK_UNAVAILABLE,
-        UNAVAILABLE
+        UNAVAILABLE,
+        /** {@code send} caught a {@link RuntimeException} that was not {@link SmsClientException}. */
+        SWALLOWED
     }
 
     /** Per-number window the sms service sends as {@code Retry-After: 900}. */
@@ -59,15 +62,18 @@ final class SmsOtpCalls {
         return SmsClient.create(SmsClientConfig.atFixedBase(secret));
     }
 
-    Result send(String secret, String phone) {
+    Result send(String secret, String phone, String correlationId) {
         try {
+            SmsCallContext.setCorrelationId(correlationId);
             SentResponse sent = clients.apply(secret).send(
                     new OtpSendRequest(phone, new AgreementShown(SignInAgreement.WORDING)));
             return sent(sent);
         } catch (SmsClientException ex) {
             return fromException(ex, false);
         } catch (RuntimeException ex) {
-            return Result.of(Outcome.UNAVAILABLE);
+            return Result.of(Outcome.SWALLOWED);
+        } finally {
+            SmsCallContext.clear();
         }
     }
 

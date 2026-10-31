@@ -62,6 +62,31 @@ class SmsClientTest {
     }
 
     @Test
+    void send_forwards_the_correlation_id_and_not_the_secret_as_cid() throws Exception {
+        AtomicReference<String> sawCid = new AtomicReference<>();
+        AtomicReference<String> sawSecret = new AtomicReference<>();
+        try (Harness server = Harness.start((exchange, path) -> {
+            sawCid.set(exchange.getRequestHeaders().getFirst(SmsClientConfig.CORRELATION_HEADER));
+            sawSecret.set(exchange.getRequestHeaders().getFirst(SmsClientConfig.HEADER));
+            byte[] bytes = ("{\"sent\":{\"type\":\"otp\",\"phone\":\"" + PHONE + "\"}}").getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        })) {
+            SmsCallContext.setCorrelationId("abcd1234");
+            try {
+                client(server).send(new OtpSendRequest(PHONE, null));
+            } finally {
+                SmsCallContext.clear();
+            }
+            assertEquals("abcd1234", sawCid.get());
+            assertEquals(SECRET, sawSecret.get());
+            assertFalse(SECRET.equals(sawCid.get()));
+        }
+    }
+
+    @Test
     void error_status_keeps_the_token_and_drops_the_body() throws Exception {
         try (Harness server = Harness.start((exchange, path) -> {
             byte[] bytes = "{\"error\":\"invalid-code\",\"phone\":\"+15555550199\"}".getBytes(StandardCharsets.UTF_8);

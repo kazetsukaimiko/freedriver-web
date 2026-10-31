@@ -15,6 +15,9 @@ public final class SmsClientConfig {
     /** Same header the sms service requires. */
     public static final String HEADER = "X-Freedriver-Sms-Secret";
 
+    /** Optional 8-hex id so Keycloak and sms log lines for one send match. */
+    public static final String CORRELATION_HEADER = "X-Freedriver-Sms-Cid";
+
     /** Same placeholder the service treats as unset. */
     public static final String PLACEHOLDER = "placeholder-not-a-live-secret";
 

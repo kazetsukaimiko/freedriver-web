@@ -58,11 +58,16 @@ final class SmsHttpHandler implements InvocationHandler {
         } catch (IOException ex) {
             throw new SmsClientException(0, "bad-request", null);
         }
-        HttpRequest request = HttpRequest.newBuilder(uri)
+        HttpRequest.Builder builder = HttpRequest.newBuilder(uri)
                 .timeout(timeout)
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
-                .header(SmsClientConfig.HEADER, secret)
+                .header(SmsClientConfig.HEADER, secret);
+        String correlationId = SmsCallContext.correlationId();
+        if (correlationId != null) {
+            builder.header(SmsClientConfig.CORRELATION_HEADER, correlationId);
+        }
+        HttpRequest request = builder
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body))
                 .build();
         HttpResponse<byte[]> response;

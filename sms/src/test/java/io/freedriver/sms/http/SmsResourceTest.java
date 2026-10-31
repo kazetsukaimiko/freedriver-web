@@ -144,6 +144,23 @@ class SmsResourceTest {
     }
 
     @Test
+    void send_logs_last_two_and_correlation_id_without_the_e164() {
+        String phone = listedAndAgreed("house.user");
+        try (LogCapture logs = LogCapture.open()) {
+            given().header(SharedSecretFilter.HEADER, SECRET)
+                    .header(SmsResource.CORRELATION_HEADER, "abcd1234")
+                    .contentType(ContentType.JSON)
+                    .body(Map.of("type", "otp", "phone", phone))
+                    .post("/sms/send")
+                    .then().statusCode(200);
+            String out = logs.all();
+            assertTrue(out.contains("sms send last2=***" + phone.substring(phone.length() - 2)), out);
+            assertTrue(out.contains("cid=abcd1234"), out);
+            assertFalse(out.contains(phone), out);
+        }
+    }
+
+    @Test
     void verify_answers_with_the_request_type_and_number() {
         String phone = listedAndAgreed("house.user");
         send(phone).statusCode(200);

@@ -10,6 +10,7 @@ import io.freedriver.sms.otp.SendResult;
 import io.freedriver.sms.otp.VerificationSid;
 import io.freedriver.sms.phones.ConsentLedger;
 import org.jboss.logging.Logger;
+import org.jboss.logging.MDC;
 
 import java.io.IOException;
 import java.net.URI;
@@ -34,6 +35,7 @@ import java.util.stream.Collectors;
 public class TwilioVerifySender extends AgreementGatedSender {
 
     private static final Logger LOG = Logger.getLogger(TwilioVerifySender.class);
+    static final String MDC_CID = "smsCid";
     private static final int MAX_BODY = 16 * 1024;
 
     private final TwilioEndpoint endpoint;
@@ -67,10 +69,14 @@ public class TwilioVerifySender extends AgreementGatedSender {
             HttpResponse<String> response = post(endpoint.verifications(serviceSid), form);
             if (response.statusCode() == 201 || response.statusCode() == 200) {
                 String sid = field(response.body(), "sid");
+                String cid = correlationId();
                 if (!VerificationSid.matches(sid)) {
-                    LOG.warnf("Twilio accepted the code send to %s without a verification sid", masked);
+                    LOG.warnf("Twilio accepted the code send to %s without a verification sid cid=%s",
+                            masked, cid);
                     return SendResult.of(SendOutcome.SENT);
                 }
+                LOG.infof("Twilio accepted the code send to %s sid=%s cid=%s",
+                        masked, VerificationSid.maskForLog(sid), cid);
                 return new SendResult(SendOutcome.SENT, sid);
             }
             LOG.warnf("Twilio refused the code send to %s (HTTP %d, Twilio error %s)",
@@ -163,6 +169,11 @@ public class TwilioVerifySender extends AgreementGatedSender {
                 .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                 .build();
         return http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+    }
+
+    private static String correlationId() {
+        Object value = MDC.get(MDC_CID);
+        return value == null || value.toString().isBlank() ? "-" : value.toString();
     }
 
     /** Twilio's numeric error code only; the message text can echo the number. */

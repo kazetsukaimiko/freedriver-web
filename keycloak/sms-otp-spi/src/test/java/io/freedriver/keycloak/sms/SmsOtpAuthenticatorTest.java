@@ -31,9 +31,14 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -591,5 +596,94 @@ class SmsOtpAuthenticatorTest {
         assertEquals(List.of(2), page().errorArgs());
         assertNull(notes.get(SmsOtpAuthenticator.NOTE_WRONG_CODES));
         assertEquals(PHONE, notes.get(SmsOtpAuthenticator.NOTE_PHONE));
+    }
+
+    @Test
+    void sendLogsOutcomeLastFourAndCorrelationId() {
+        String message = captureLog(this::enterPhone);
+        assertTrue(message.matches("sms otp send SENT last4=0100 cid=[0-9a-f]{8}"), message);
+        assertFalse(message.contains(PHONE), message);
+        assertFalse(message.contains("real-secret"), message);
+    }
+
+    @Test
+    void resendLogsResendSent() {
+        enterPhone();
+        String message = captureLog(() -> post("resend", "1"));
+        assertTrue(message.matches("sms otp resend SENT last4=0100 cid=[0-9a-f]{8}"), message);
+        assertFalse(message.contains(PHONE), message);
+    }
+
+    @Test
+    void unavailableSendLogsUnavailable() {
+        sendStatus = 503;
+        sendError = "stub";
+        authenticator.authenticate(context);
+        String message = captureLog(() -> post("phone", PHONE));
+        assertTrue(message.matches("sms otp send UNAVAILABLE last4=0100 cid=[0-9a-f]{8}"), message);
+        assertFalse(message.contains(PHONE), message);
+    }
+
+    @Test
+    void swallowedSendLogsSwallowedRuntimeException() {
+        authenticator = new SmsOtpAuthenticator(new SmsOtpCalls(secret -> new SmsApi() {
+            @Override
+            public SentResponse send(SendRequest request) {
+                throw new IllegalStateException("boom");
+            }
+
+            @Override
+            public VerifiedResponse verify(VerifyRequest request) {
+                throw new UnsupportedOperationException();
+            }
+        }), () -> Optional.of("real-secret"));
+        authenticator.authenticate(context);
+        String message = captureLog(() -> post("phone", PHONE));
+        assertTrue(message.matches("sms otp send swallowed RuntimeException last4=0100 cid=[0-9a-f]{8}"), message);
+        assertFalse(message.contains(PHONE), message);
+        assertFalse(message.contains("boom"), message);
+    }
+
+    @Test
+    void rateLimitedSendLogsRateLimited() {
+        sendStatus = 429;
+        sendError = "rate-limited";
+        sendRetry = 900L;
+        authenticator.authenticate(context);
+        String message = captureLog(() -> post("phone", PHONE));
+        assertTrue(message.matches("sms otp send RATE_LIMITED last4=0100 cid=[0-9a-f]{8}"), message);
+        assertFalse(message.contains(PHONE), message);
+    }
+
+    private String captureLog(Runnable action) {
+        List<LogRecord> records = new ArrayList<>();
+        Logger log = Logger.getLogger(SmsOtpAuthenticator.class.getName());
+        Level previous = log.getLevel();
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                records.add(record);
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        handler.setLevel(Level.ALL);
+        log.setLevel(Level.INFO);
+        log.addHandler(handler);
+        try {
+            action.run();
+        } finally {
+            log.removeHandler(handler);
+            log.setLevel(previous);
+        }
+        assertEquals(1, records.size(), records.toString());
+        assertNull(records.getFirst().getThrown());
+        return records.getFirst().getMessage();
     }
 }
