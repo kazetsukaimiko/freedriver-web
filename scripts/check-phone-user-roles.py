@@ -15,6 +15,9 @@ def main() -> int:
         f"default-roles-{realm}",
         "offline_access",
         "uma_authorization",
+        "grafana-viewer",
+        "grafana-editor",
+        "grafana-admin",
     }
     composite = json.load(open(composite_path, encoding="utf-8"))
     mappings = json.load(open(mappings_path, encoding="utf-8"))
