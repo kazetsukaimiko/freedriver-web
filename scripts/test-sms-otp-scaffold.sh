@@ -113,10 +113,10 @@ fi
 if [[ "$(grep '^FREEDRIVER_SEED_PHONE=' .env.example)" != "FREEDRIVER_SEED_PHONE=" ]]; then
   fail ".env.example holds FREEDRIVER_SEED_PHONE with an empty value"
 fi
-if [[ "$(grep '^FREEDRIVER_SMS_DAILY_SEND_CAP=' .env.example)" != "FREEDRIVER_SMS_DAILY_SEND_CAP=20" ]]; then
-  fail ".env.example holds FREEDRIVER_SMS_DAILY_SEND_CAP as the placeholder 20"
+if [[ "$(grep '^FREEDRIVER_SMS_DAILY_SEND_CAP=' .env.example)" != "FREEDRIVER_SMS_DAILY_SEND_CAP=100" ]]; then
+  fail ".env.example holds FREEDRIVER_SMS_DAILY_SEND_CAP as the placeholder 100"
 fi
-if ! grep -B2 '^FREEDRIVER_SMS_DAILY_SEND_CAP=20$' .env.example | grep -q 'placeholder'; then
+if ! grep -B2 '^FREEDRIVER_SMS_DAILY_SEND_CAP=100$' .env.example | grep -q 'placeholder'; then
   fail ".env.example comments the daily send cap placeholder"
 fi
 if grep -RInE '^FREEDRIVER_SMS_DAILY_SEND_CAP=.+' \
