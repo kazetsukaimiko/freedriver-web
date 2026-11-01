@@ -358,6 +358,9 @@ else
   echo "Created public client ${DISPATCHER_CLIENT}."
 fi
 
+# grok.com connector is connect-and-forget. 30-day access token and client
+# session on this public client only. Realm SSO and freedriver-api stay as they
+# are. offline_access stays optional (not default).
 kcadm update "clients/${DISPATCHER_UUID}" -r "$REALM" \
   -s publicClient=true \
   -s standardFlowEnabled=true \
@@ -366,7 +369,10 @@ kcadm update "clients/${DISPATCHER_UUID}" -r "$REALM" \
   -s serviceAccountsEnabled=false \
   -s "redirectUris=${DISPATCHER_REDIRECT_URIS}" \
   -s "webOrigins=${DISPATCHER_WEB_ORIGINS}" \
-  -s 'attributes."pkce.code.challenge.method"=S256' >/dev/null
+  -s 'attributes."pkce.code.challenge.method"=S256' \
+  -s 'attributes."access.token.lifespan"=2592000' \
+  -s 'attributes."client.session.idle.timeout"=2592000' \
+  -s 'attributes."client.session.max.lifespan"=2592000' >/dev/null
 
 ensure_mapper "$DISPATCHER_UUID" actor-dispatcher \
   -s protocolMapper=oidc-hardcoded-claim-mapper \
