@@ -285,6 +285,41 @@ class JobStoreTest {
     }
 
     @Test
+    void openbot_worker_runs_without_a_grok_session() throws Exception {
+        JobStore store = store();
+        store.register("freedriver-openbot", "luna", List.of("techops", "yuni"));
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<JobView> pending = pool.submit(() -> store.submit(
+                    "grok.com",
+                    new SubmitJobRequest(List.of("freedriver-openbot"), "techops", "check appliance states", Channel.TEXT),
+                    Duration.ofSeconds(5)));
+            AssignmentView queued = waitForQueued(store, "freedriver-openbot");
+            store.claim("freedriver-openbot", queued.assignmentId());
+            AssignmentView running = store.update(
+                    "freedriver-openbot",
+                    queued.assignmentId(),
+                    new UpdateAssignmentRequest(AssignmentState.RUNNING, null, null));
+            assertEquals(AssignmentState.RUNNING, running.state());
+            assertNull(running.grokSessionId());
+            assertEquals("techops", running.agentName());
+            store.update(
+                    "freedriver-openbot",
+                    queued.assignmentId(),
+                    new UpdateAssignmentRequest(AssignmentState.SUCCEEDED, null, "pumps are on"));
+
+            JobView finished = pending.get(5, TimeUnit.SECONDS);
+            assertEquals(AssignmentState.SUCCEEDED, finished.assignments().get(0).state());
+            assertNull(finished.assignments().get(0).grokSessionId());
+            assertEquals("pumps are on", finished.assignments().get(0).note());
+            assertEquals("techops", finished.assignments().get(0).agentName());
+            assertEquals("freedriver-openbot", finished.assignments().get(0).deviceId());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
     void claimed_can_fail_without_a_session() throws Exception {
         JobStore store = store();
         store.register("pc-a", "a.local", List.of("yuni"));

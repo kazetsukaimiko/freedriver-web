@@ -34,4 +34,33 @@ class PackagingTest {
         assertTrue(dashboard.contains("device-daemon/pom.xml"));
         assertTrue(dispatcher.contains("device-daemon/pom.xml"));
     }
+
+    @Test
+    void openbot_example_is_the_device_client() throws Exception {
+        Path root = Path.of("").toAbsolutePath();
+        while (root != null && !Files.exists(root.resolve("docker-compose.yml"))) {
+            root = root.getParent();
+        }
+        String example = Files.readString(root.resolve("java/device-daemon/openbot-dispatcher-worker.json.example"));
+        String docs = Files.readString(root.resolve("docs/device-dispatcher.md"));
+
+        assertTrue(example.contains("\"deviceId\": \"freedriver-openbot\""));
+        assertTrue(example.contains("\"mode\": \"openbot\""));
+        assertTrue(example.contains("secretFile"));
+        assertTrue(example.contains("openbot.secret"));
+        assertFalse(example.contains("client_secret"));
+        assertFalse(example.contains("webhook"));
+        assertTrue(docs.contains("https://app.freedriver.io/dispatch/mcp"));
+        assertTrue(docs.contains("freedriver-openbot"));
+        try (var files = Files.list(root.resolve(".github/workflows"))) {
+            for (Path file : files.toList()) {
+                if (!Files.isRegularFile(file)) {
+                    continue;
+                }
+                String text = Files.readString(file);
+                assertFalse(text.contains("freedriver-openbot"));
+                assertFalse(text.contains("/openbot/wake"));
+            }
+        }
+    }
 }

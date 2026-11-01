@@ -38,21 +38,22 @@ public final class Main {
             return;
         }
         HttpsDeviceClient http = HttpsDeviceClient.create(config.deviceId(), material);
-        DeviceDaemon daemon = new DeviceDaemon(
-                http,
-                new ProcessGrokLauncher(() -> forbidden(material, http)),
-                config.settings());
+        DeviceWorker worker = worker(config, material, http);
         try {
-            daemon.registerOnce();
+            worker.registerOnce();
         } catch (RuntimeException failed) {
             System.err.println("register failed");
             System.exit(1);
             return;
         }
-        Thread heartbeat = Thread.ofPlatform().name("device-heartbeat").unstarted(() -> beat(daemon));
-        Thread poller = Thread.ofPlatform().name("device-poll").unstarted(() -> poll(daemon));
+        Thread heartbeat = Thread.ofPlatform().name("device-heartbeat").unstarted(() -> beat(worker));
+        Thread poller = Thread.ofPlatform().name("device-poll").unstarted(() -> poll(worker));
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            daemon.close();
+            try {
+                worker.close();
+            } catch (Exception ignored) {
+                // shutdown
+            }
             heartbeat.interrupt();
             poller.interrupt();
         }, "device-stop"));
@@ -91,10 +92,26 @@ public final class Main {
         return values;
     }
 
-    private static void beat(DeviceDaemon daemon) {
+    private static DeviceWorker worker(DaemonConfig config, SecretFile.Material material, HttpsDeviceClient http) {
+        if (config.mode() == WorkerMode.OPENBOT) {
+            return new OpenBotWorker(
+                    http,
+                    new ProcessAgentRouter(
+                            config.settings().router(),
+                            config.settings().workDir(),
+                            () -> forbidden(material, http)),
+                    config.settings());
+        }
+        return new DeviceDaemon(
+                http,
+                new ProcessGrokLauncher(() -> forbidden(material, http)),
+                config.settings());
+    }
+
+    private static void beat(DeviceWorker worker) {
         while (!Thread.currentThread().isInterrupted()) {
             try {
-                daemon.heartbeatOnce();
+                worker.heartbeatOnce();
                 Thread.sleep(HEARTBEAT);
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
@@ -111,10 +128,10 @@ public final class Main {
         }
     }
 
-    private static void poll(DeviceDaemon daemon) {
+    private static void poll(DeviceWorker worker) {
         while (!Thread.currentThread().isInterrupted()) {
             try {
-                daemon.pollOnce();
+                worker.pollOnce();
             } catch (RuntimeException failed) {
                 System.err.println("poll failed");
                 try {

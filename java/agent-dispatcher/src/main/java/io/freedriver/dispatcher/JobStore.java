@@ -211,18 +211,17 @@ public class JobStore {
                     if (assignment.state != AssignmentState.CLAIMED) {
                         throw conflict("assignment is " + assignment.state);
                     }
-                    if (request.grokSessionId() == null) {
-                        throw badRequest("running requires grokSessionId");
+                    if (request.grokSessionId() != null) {
+                        assignment.grokSessionId = request.grokSessionId();
                     }
-                    assignment.grokSessionId = request.grokSessionId();
                 }
                 case SUCCEEDED -> {
                     if (assignment.state != AssignmentState.RUNNING) {
                         throw conflict("assignment is " + assignment.state);
                     }
                 }
-                // Claimed to failed is a refusal before a session starts (speech, or grok
-                // never started). Succeeded still requires running.
+                // Claimed to failed is a refusal before work starts (speech, or the
+                // worker never entered running). Succeeded still requires running.
                 case FAILED -> {
                     if (assignment.state != AssignmentState.RUNNING
                             && assignment.state != AssignmentState.CLAIMED) {
