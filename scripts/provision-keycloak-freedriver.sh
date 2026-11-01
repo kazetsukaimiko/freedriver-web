@@ -36,6 +36,10 @@
 # Sessions (#353): accessCodeLifespanLogin 7200, ssoSessionIdleTimeout 28800,
 # ssoSessionMaxLifespan 86400, accessCodeLifespanUserAction 1800.
 #
+# Appliances grok.com connector (#112) is the public client freedriver-grok-mcp.
+# Authorization code + PKCE, grok.com callback, 1-year token/session on this
+# client only. No secret, no service account. Does not grant mcp-user.
+#
 # Run as root, or as a member of the allowed group, on the VPS. Idempotent. New password users get the
 # UPDATE_PASSWORD required action and choose their own password.
 set -euo pipefail
@@ -361,6 +365,54 @@ ensure_mapper "$DISPATCHER_UUID" actor-dispatcher \
 ensure_mapper "$DISPATCHER_UUID" role-dispatcher \
   -s protocolMapper=oidc-hardcoded-role-mapper \
   -s 'config."role"=dispatcher'
+
+# grok.com appliances MCP connector. Same callback and 1-year session as
+# freedriver-dispatcher. Web origin is grok.com (the redirect origin). This
+# client does not put mcp-user on the token; that grant stays explicit later.
+GROK_MCP_CLIENT=freedriver-grok-mcp
+GROK_MCP_REDIRECT_URI='https://grok.com/connectors-oauth-exchange-code/'
+GROK_MCP_REDIRECT_URIS="[\"${GROK_MCP_REDIRECT_URI}\"]"
+GROK_MCP_WEB_ORIGINS='["https://grok.com"]'
+if [[ "$GROK_MCP_REDIRECT_URIS" != '["https://grok.com/connectors-oauth-exchange-code/"]' ]] \
+    || [[ "$GROK_MCP_WEB_ORIGINS" != '["https://grok.com"]' ]]; then
+  echo "freedriver-grok-mcp redirect or web origins are not the pinned values." >&2
+  exit 1
+fi
+GROK_MCP_UUID="$(kcadm get clients -r "$REALM" -q "clientId=${GROK_MCP_CLIENT}" --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
+if [[ -n "${GROK_MCP_UUID}" ]]; then
+  echo "Client ${GROK_MCP_CLIENT} already exists."
+else
+  kcadm create clients -r "$REALM" \
+    -s "clientId=${GROK_MCP_CLIENT}" \
+    -s name='Freedriver grok MCP' \
+    -s enabled=true \
+    -s publicClient=true \
+    -s standardFlowEnabled=true \
+    -s implicitFlowEnabled=false \
+    -s directAccessGrantsEnabled=false \
+    -s serviceAccountsEnabled=false \
+    -s protocol=openid-connect \
+    -s 'description=Public authorization-code + PKCE client for grok.com appliances MCP. No secret.' \
+    -s "redirectUris=${GROK_MCP_REDIRECT_URIS}" \
+    -s "webOrigins=${GROK_MCP_WEB_ORIGINS}" \
+    -s 'attributes."pkce.code.challenge.method"=S256' >/dev/null
+  GROK_MCP_UUID="$(kcadm get clients -r "$REALM" -q "clientId=${GROK_MCP_CLIENT}" --fields id --format csv --noquotes | csv_id)"
+  echo "Created public client ${GROK_MCP_CLIENT}."
+fi
+
+kcadm update "clients/${GROK_MCP_UUID}" -r "$REALM" \
+  -s publicClient=true \
+  -s enabled=true \
+  -s standardFlowEnabled=true \
+  -s implicitFlowEnabled=false \
+  -s directAccessGrantsEnabled=false \
+  -s serviceAccountsEnabled=false \
+  -s "redirectUris=${GROK_MCP_REDIRECT_URIS}" \
+  -s "webOrigins=${GROK_MCP_WEB_ORIGINS}" \
+  -s 'attributes."pkce.code.challenge.method"=S256' \
+  -s 'attributes."access.token.lifespan"=31536000' \
+  -s 'attributes."client.session.idle.timeout"=31536000' \
+  -s 'attributes."client.session.max.lifespan"=31536000' >/dev/null
 
 ensure_device_client() {
   local id="$1"
