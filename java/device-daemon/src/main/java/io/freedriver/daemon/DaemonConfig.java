@@ -18,7 +18,8 @@ final class DaemonConfig {
     static final Duration DEFAULT_WATCH = Duration.ofSeconds(1);
 
     private static final Set<String> KEYS = Set.of(
-            "deviceId", "hostname", "agents", "secretFile", "allow", "grok", "sessionTimeout", "workDir");
+            "deviceId", "hostname", "agents", "secretFile", "allow", "grok", "sessionTimeout", "workDir",
+            "mode", "router");
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private final String deviceId;
@@ -64,6 +65,15 @@ final class DaemonConfig {
         if (deviceId.startsWith("-") || !deviceId.matches("[A-Za-z0-9._-]{1,64}")) {
             throw new IllegalArgumentException("device id is not safe");
         }
+        WorkerMode mode = mode(node);
+        if (mode == WorkerMode.OPENBOT) {
+            if (!OpenBotWorker.DEVICE_ID.equals(deviceId)) {
+                throw new IllegalArgumentException("openbot device id is freedriver-openbot");
+            }
+            if (node.has("grok") || node.has("allow")) {
+                throw new IllegalArgumentException("grok settings belong to the device daemon");
+            }
+        }
         String hostname = text(node, "hostname");
         if (hostname.length() > 253) {
             throw new IllegalArgumentException("hostname is too long");
@@ -77,7 +87,8 @@ final class DaemonConfig {
         }
         String secretPath = text(node, "secretFile");
         List<String> allow = node.has("allow") ? GrokCommand.sanitize(strings(node.get("allow"), "allow")) : List.of();
-        String grok = node.has("grok") ? text(node, "grok") : "grok";
+        String grok = node.has("grok") ? text(node, "grok") : (mode == WorkerMode.OPENBOT ? null : "grok");
+        List<String> router = node.has("router") ? strings(node.get("router"), "router") : List.of();
         Duration timeout = node.has("sessionTimeout")
                 ? duration(text(node, "sessionTimeout"))
                 : DEFAULT_SESSION_TIMEOUT;
@@ -85,7 +96,25 @@ final class DaemonConfig {
         return new DaemonConfig(
                 deviceId,
                 Path.of(secretPath),
-                new DaemonSettings(hostname, agents, allow, grok, timeout, DEFAULT_WATCH, workDir));
+                new DaemonSettings(hostname, agents, allow, grok, timeout, DEFAULT_WATCH, workDir, mode, router));
+    }
+
+    WorkerMode mode() {
+        return settings.mode();
+    }
+
+    private static WorkerMode mode(JsonNode node) {
+        if (!node.has("mode")) {
+            return WorkerMode.GROK;
+        }
+        String value = text(node, "mode");
+        if ("grok".equals(value)) {
+            return WorkerMode.GROK;
+        }
+        if ("openbot".equals(value)) {
+            return WorkerMode.OPENBOT;
+        }
+        throw new IllegalArgumentException("mode is grok or openbot");
     }
 
     private static Duration duration(String text) {

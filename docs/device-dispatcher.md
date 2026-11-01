@@ -1,6 +1,6 @@
 # Device dispatcher
 
-Home PCs run a headless Grok session when a dispatcher (the Grok app, the car, or the CLI) submits a job. This service is that in-memory queue. Keycloak issues the tokens. The device daemon on each PC starts Grok.
+Home PCs run a headless Grok session when a dispatcher (the Grok app, the car, or the CLI) submits a job. This service is that in-memory queue. Keycloak issues the tokens. The device daemon on each PC starts Grok. The OpenBot worker is the same device-daemon binary in `openbot` mode: it claims jobs for device `freedriver-openbot` and routes each prompt to the assignment's `agentName`.
 
 Keycloak at `https://auth.freedriver.io/realms/freedriver` is the issuer. `%prod.quarkus.oidc.enabled` is true. The unprofiled property and the `%dev` and `%test` lines stay false. Anonymous callers receive 401, except the metadata GET below. A device token calls the device routes. A dispatcher token calls the dispatcher routes. Dispatcher calls require `azp=freedriver-dispatcher`. The service does not introspect tokens.
 
@@ -23,7 +23,7 @@ The device id is the token subject. When the access token carries `device_id`, t
 
 `channel` is `TEXT` or `SPEECH`. One assignment is queued per device. `agentName` must be one that device registered, or the call fails immediately and nothing is queued. The call stays open until every assignment is `succeeded`, `failed`, or `expired`, or 75 seconds pass. At that deadline, non-terminal assignments for the job move to `expired`, and a later claim is rejected. A second submit for the same dispatcher subject is rejected while one submit is still in flight.
 
-Assignment states: `queued` → `claimed` → `running` → `succeeded` | `failed`. `expired` is set at the submit deadline, and a device may also set it from any non-terminal state. `running` requires `grokSessionId`. `failed` is also allowed from `claimed` when the device refuses the assignment before a session starts. `succeeded` is only from `running`. A device only sees and updates its own assignments. `AssignmentView` carries `channel` and `prompt` for the owning device's assignment. A read by any other device is forbidden. `GET /api/device/assignments` long-polls for about 25 seconds.
+Assignment states: `queued` → `claimed` → `running` → `succeeded` | `failed`. `expired` is set at the submit deadline, and a device may also set it from any non-terminal state. `running` records `grokSessionId` when the device sends one. The Grok daemon sends a session id. The OpenBot worker on `freedriver-openbot` completes `running` and `succeeded` over the same `/api/device` long-poll. `failed` is also allowed from `claimed` when the device refuses the assignment before work starts. `succeeded` is only from `running`. A device only sees and updates its own assignments. `AssignmentView` carries `channel` and `prompt` for the owning device's assignment. A read by any other device is forbidden. `GET /api/device/assignments` long-polls for about 25 seconds.
 
 ## Deploy
 
@@ -34,6 +34,8 @@ Compose service `agent-dispatcher` has no host port. On `app.freedriver.io`, Cad
 `GET /api/dispatcher/oauth-protected-resource` is the only unauthenticated dispatcher response. It is OAuth protected-resource metadata and nothing else: `resource` is `https://app.freedriver.io/dispatch/mcp`, `authorization_servers` is only `https://auth.freedriver.io/realms/freedriver`, and `bearer_methods_supported` is `header`. The document has no client secret and no devices, jobs, or prompts. `/dispatch/mcp`, `/mcp`, and other dispatcher routes stay authenticated.
 
 The device daemon in `java/device-daemon/` runs on the PC. It registers, heartbeats, long-polls, claims, and starts one headless `grok` process per winning text claim. The tool allowlist is local configuration and defaults to no tools. The prompt is written to a mode `0600` file and passed with `--prompt-file`. The client calls `https://app.freedriver.io/api/device/*` with TLS verification on, using its device client credentials. A user systemd unit in the module is what #213 installs on the PC. The local session timeout kills that child process. The 75 second queue deadline stays in `JobStore`.
+
+The OpenBot worker is that same jar with `"mode": "openbot"` and `"deviceId": "freedriver-openbot"`. It long-polls `GET /api/device/assignments`, claims TEXT jobs, and routes each prompt to the assignment's `agentName` through local `router` argv (`router` plus the agent name plus `--prompt-file` on a mode `0600` file). grok.com keeps `https://app.freedriver.io/dispatch/mcp` (`list_devices`, `submit_job`, `get_job`). `/mcp` is the same contract. The Keycloak device client id `freedriver-openbot` is the TechOps split.
 
 ## Keycloak
 
