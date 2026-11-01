@@ -1,0 +1,9 @@
+{
+  "deviceId": "freedriver-openbot",
+  "hostname": "luna",
+  "agents": ["techops", "yuni"],
+  "secretFile": "/home/pc/.config/freedriver/openbot.secret",
+  "mode": "openbot",
+  "router": ["openbot-route"],
+  "sessionTimeout": "PT1M"
+}

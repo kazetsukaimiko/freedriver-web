@@ -5,9 +5,11 @@ import org.junit.jupiter.api.Test;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -23,6 +25,50 @@ class DaemonConfigTest {
         assertFalse(config.settings().sessionTimeout().equals(Duration.ofSeconds(75)));
         assertEquals("pc-luna", config.deviceId());
         assertEquals("grok", config.settings().grokBinary());
+        assertEquals(WorkerMode.GROK, config.mode());
+    }
+
+    @Test
+    void openbot_mode_pins_the_device_id() throws Exception {
+        DaemonConfig config = DaemonConfig.parse(Files.readString(Path.of("openbot-dispatcher-worker.json.example")));
+
+        assertEquals(OpenBotWorker.DEVICE_ID, config.deviceId());
+        assertEquals(WorkerMode.OPENBOT, config.mode());
+        assertEquals(List.of("techops", "yuni"), config.settings().agents());
+        assertEquals(List.of("openbot-route"), config.settings().router());
+        assertEquals(Duration.ofMinutes(1), config.settings().sessionTimeout());
+        assertNull(config.settings().grokBinary());
+        assertTrue(config.settings().allow().isEmpty());
+        assertTrue(config.secretFile().toString().endsWith("openbot.secret"));
+    }
+
+    @Test
+    void openbot_rejects_another_device_id() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> DaemonConfig.parse("""
+                {"deviceId":"shizuku","hostname":"luna","agents":["techops"],"secretFile":"/tmp/openbot.secret","mode":"openbot","router":["openbot-route"]}
+                """));
+        assertEquals("openbot device id is freedriver-openbot", error.getMessage());
+    }
+
+    @Test
+    void openbot_rejects_grok_settings() {
+        IllegalArgumentException grok = assertThrows(IllegalArgumentException.class, () -> DaemonConfig.parse("""
+                {"deviceId":"freedriver-openbot","hostname":"luna","agents":["techops"],"secretFile":"/tmp/openbot.secret","mode":"openbot","router":["openbot-route"],"grok":"grok"}
+                """));
+        assertEquals("grok settings belong to the device daemon", grok.getMessage());
+
+        IllegalArgumentException allow = assertThrows(IllegalArgumentException.class, () -> DaemonConfig.parse("""
+                {"deviceId":"freedriver-openbot","hostname":"luna","agents":["techops"],"secretFile":"/tmp/openbot.secret","mode":"openbot","router":["openbot-route"],"allow":[]}
+                """));
+        assertEquals("grok settings belong to the device daemon", allow.getMessage());
+    }
+
+    @Test
+    void openbot_requires_router() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> DaemonConfig.parse("""
+                {"deviceId":"freedriver-openbot","hostname":"luna","agents":["techops"],"secretFile":"/tmp/openbot.secret","mode":"openbot"}
+                """));
+        assertEquals("router is required", error.getMessage());
     }
 
     @Test

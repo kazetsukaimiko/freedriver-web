@@ -13,7 +13,7 @@ import java.util.UUID;
  * One poll cycle claims queued work and starts at most one grok at a time.
  * The session timeout kills that child. The 75 second queue deadline stays in JobStore.
  */
-final class DeviceDaemon implements AutoCloseable {
+final class DeviceDaemon implements DeviceWorker {
 
     private final DeviceApiClient devices;
     private final GrokLauncher grok;
@@ -26,15 +26,18 @@ final class DeviceDaemon implements AutoCloseable {
         this.settings = settings;
     }
 
-    void registerOnce() {
+    @Override
+    public void registerOnce() {
         devices.register(settings.hostname(), settings.agents());
     }
 
-    void heartbeatOnce() {
+    @Override
+    public void heartbeatOnce() {
         devices.heartbeat();
     }
 
-    void pollOnce() {
+    @Override
+    public void pollOnce() {
         for (AssignmentView queued : devices.poll()) {
             handle(queued);
         }
