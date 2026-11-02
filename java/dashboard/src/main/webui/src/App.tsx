@@ -1,10 +1,12 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
 import { SIGN_OUT_PATH, apiFetch } from './api'
 import { Brand } from './Brand'
 import { BuildStamp } from './BuildStamp'
 import { Changelog } from './Changelog'
 import { CHANGELOG_PATH } from './changelog'
 import { Dashboard } from './Dashboard'
+import { DispatcherJobs } from './DispatcherJobs'
+import { DISPATCHER_PATH } from './dispatcher'
 import { InvitePage } from './InvitePage'
 import { Instances } from './Instances'
 import { INSTANCES_PATH } from './instances'
@@ -14,26 +16,41 @@ import './App.css'
 
 type Splash = 'playing' | 'docking' | 'revealing' | 'done'
 
-type Page = 'dashboard' | 'changelog' | 'phones' | 'instances' | 'not-found'
+type Page = 'dashboard' | 'changelog' | 'phones' | 'instances' | 'dispatcher' | 'not-found'
 
-const pages = new Map<string, Page>([
-  ['/', 'dashboard'],
-  ['/dashboard', 'dashboard'],
-  [CHANGELOG_PATH, 'changelog'],
-  [PHONES_PATH, 'phones'],
-  [INSTANCES_PATH, 'instances'],
-])
+function pageFor(pathname: string): Page {
+  if (pathname === '/' || pathname === '/dashboard') {
+    return 'dashboard'
+  }
+  if (pathname === CHANGELOG_PATH) {
+    return 'changelog'
+  }
+  if (pathname === PHONES_PATH) {
+    return 'phones'
+  }
+  if (pathname === INSTANCES_PATH) {
+    return 'instances'
+  }
+  if (pathname === DISPATCHER_PATH || pathname.startsWith(DISPATCHER_PATH + '/')) {
+    return 'dispatcher'
+  }
+  return 'not-found'
+}
 
 type PrimaryItem = { to: string; label: string; page: Page }
 
-function primaryNavItems(portalAdmin: boolean): PrimaryItem[] {
-  const items: PrimaryItem[] = [{ to: '/', label: 'Dashboard', page: 'dashboard' }]
+function primaryNavItems(portalAdmin: boolean, dispatcher: boolean): PrimaryItem[] {
+  const items: PrimaryItem[] = [{ to: '/', label: 'Home/Appliances', page: 'dashboard' }]
   if (portalAdmin) {
     items.push({ to: INSTANCES_PATH, label: 'Instances', page: 'instances' })
-    items.push({ to: PHONES_PATH, label: 'Phone sign-in', page: 'phones' })
+    items.push({ to: PHONES_PATH, label: 'Phones/Accounts', page: 'phones' })
+  }
+  if (dispatcher) {
+    items.push({ to: DISPATCHER_PATH, label: 'Dispatcher MCP', page: 'dispatcher' })
   }
   return items
 }
+
 const SPLASH_KEY = 'freedriver.splash.seen'
 
 function shouldPlaySplash() {
@@ -84,11 +101,8 @@ function App() {
   const [search, setSearch] = useState(() => window.location.search)
   const [signingOut, setSigningOut] = useState(false)
   const [portalAdmin, setPortalAdmin] = useState(false)
-  const [navOpen, setNavOpen] = useState(false)
+  const [dispatcher, setDispatcher] = useState(false)
   const navBrand = useRef<HTMLAnchorElement>(null)
-  const navMenu = useRef<HTMLDivElement>(null)
-  const navButton = useRef<HTMLButtonElement>(null)
-  const navMenuId = useId()
 
   useEffect(() => {
     if (splash === 'playing') {
@@ -146,6 +160,17 @@ function App() {
           setPortalAdmin(false)
         }
       })
+    apiFetch('/api/dispatcher/jobs')
+      .then((response) => {
+        if (!cancelled) {
+          setDispatcher(response.ok)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDispatcher(false)
+        }
+      })
     return () => {
       cancelled = true
     }
@@ -155,37 +180,10 @@ function App() {
     const onPop = () => {
       setPath(window.location.pathname)
       setSearch(window.location.search)
-      setNavOpen(false)
     }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
-
-  useEffect(() => {
-    if (!navOpen) {
-      return
-    }
-    const menu = navMenu.current
-    function onPointerDown(event: PointerEvent) {
-      if (menu?.contains(event.target as Node)) {
-        return
-      }
-      setNavOpen(false)
-    }
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape') {
-        return
-      }
-      setNavOpen(false)
-      navButton.current?.focus()
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [navOpen])
 
   useEffect(() => {
     if (!signingOut) {
@@ -201,15 +199,11 @@ function App() {
     return <InvitePage />
   }
 
-  const page: Page = pages.get(path) ?? 'not-found'
+  const page: Page = pageFor(path)
   const hrefFor = (to: string) => to + search
-  const primaryNav = primaryNavItems(portalAdmin)
-  const currentPrimary = primaryNav.find((item) => item.page === page)
-  const menuLabel = currentPrimary?.label ?? 'Menu'
+  const primaryNav = primaryNavItems(portalAdmin, dispatcher)
 
-  function go(event: MouseEvent<HTMLAnchorElement>, to: string) {
-    event.preventDefault()
-    setNavOpen(false)
+  function goTo(to: string) {
     const next = hrefFor(to)
     if (window.location.pathname === to && window.location.search === search) {
       return
@@ -217,6 +211,11 @@ function App() {
     window.history.pushState({}, '', next)
     setPath(to)
     setSearch(window.location.search)
+  }
+
+  function go(event: MouseEvent<HTMLAnchorElement>, to: string) {
+    event.preventDefault()
+    goTo(to)
   }
 
   function signOut(event: MouseEvent<HTMLAnchorElement>) {
@@ -238,33 +237,17 @@ function App() {
           <Brand />
         </a>
         <nav aria-label="Primary">
-          <div className="nav-menu" ref={navMenu}>
-            <button
-              ref={navButton}
-              type="button"
-              className="nav-menu-button"
-              aria-expanded={navOpen}
-              aria-controls={navMenuId}
-              data-current={currentPrimary ? 'true' : 'false'}
-              onClick={() => setNavOpen((open) => !open)}
+          {primaryNav.map((item) => (
+            <a
+              key={item.to}
+              className={item.page === page ? 'nav-item is-current' : 'nav-item'}
+              href={hrefFor(item.to)}
+              aria-current={item.page === page ? 'page' : undefined}
+              onClick={(event) => go(event, item.to)}
             >
-              {menuLabel}
-              <span className="nav-menu-caret" aria-hidden="true" />
-            </button>
-            <div id={navMenuId} className="nav-menu-list" hidden={!navOpen}>
-              {primaryNav.map((item) => (
-                <a
-                  key={item.to}
-                  className={item.page === page ? 'nav-item is-current' : 'nav-item'}
-                  href={hrefFor(item.to)}
-                  aria-current={item.page === page ? 'page' : undefined}
-                  onClick={(event) => go(event, item.to)}
-                >
-                  {item.label}
-                </a>
-              ))}
-            </div>
-          </div>
+              {item.label}
+            </a>
+          ))}
         </nav>
         <a
           className="sign-out"
@@ -286,6 +269,7 @@ function App() {
         {page === 'changelog' && <Changelog />}
         {page === 'phones' && <PhoneSignIn />}
         {page === 'instances' && <Instances />}
+        {page === 'dispatcher' && <DispatcherJobs path={path} onOpen={goTo} />}
         {page === 'not-found' && <NotFound />}
       </div>
       <BuildStamp changelogHref={hrefFor(CHANGELOG_PATH)} onOpenChangelog={(event) => go(event, CHANGELOG_PATH)} />

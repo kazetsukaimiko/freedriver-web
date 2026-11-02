@@ -123,6 +123,8 @@ class JobStoreTest {
         assertEquals(DispatcherException.Kind.CONFLICT, error.kind());
         assertEquals(submitted, store.getJob("grok", submitted.jobId()));
         assertThrows(DispatcherException.class, () -> store.getJob("someone-else", submitted.jobId()));
+        assertEquals(List.of(submitted), store.listJobs("grok"));
+        assertEquals(List.of(), store.listJobs("someone-else"));
     }
 
     @Test

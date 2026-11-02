@@ -153,6 +153,19 @@ public class JobStore {
         }
     }
 
+    public List<JobView> listJobs(String dispatcherSubject) {
+        requireText(dispatcherSubject, "dispatcher");
+        synchronized (monitor) {
+            List<JobView> views = new ArrayList<>();
+            for (Job job : jobs.values()) {
+                if (job.dispatcherSubject.equals(dispatcherSubject)) {
+                    views.add(view(job));
+                }
+            }
+            return List.copyOf(views);
+        }
+    }
+
     public List<AssignmentView> poll(String deviceId, Duration wait) {
         Duration budget = wait == null ? Duration.ZERO : wait;
         synchronized (monitor) {
