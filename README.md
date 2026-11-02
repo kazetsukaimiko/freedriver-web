@@ -17,7 +17,7 @@ The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{gra
 - Caddy 2 on 80/443
   - `freedriver.io` / `www` — 308 to `app.freedriver.io`
   - `auth.freedriver.io` — Keycloak 26
-  - `app.freedriver.io` — Quinoa app behind Caddy. `/autonomy/mcp` is 404 until the appliance MCP process is on (#112).
+  - `app.freedriver.io` — Quinoa app behind Caddy. `/autonomy/mcp` is 404 until the appliance MCP process is on.
   - `grafana.freedriver.io` — 404 on purpose; Grafana is loopback-only
   - `mqtt.freedriver.io` — 404 on purpose (ACME HTTP-01). MQTTS is host 8883, not Caddy.
 - Keycloak 26.3 + local Postgres 16. The image build compiles `sms-model`, `sms-api`, and `sms-client` from this checkout and adds the phone OTP provider at `/opt/keycloak/providers/freedriver-sms-otp.jar`. The jar manifest records that commit.

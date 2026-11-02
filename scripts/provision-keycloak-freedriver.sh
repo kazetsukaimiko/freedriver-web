@@ -37,9 +37,8 @@
 # ssoSessionMaxLifespan 86400, accessCodeLifespanUserAction 1800.
 #
 # Appliances MCP (#112) is the public client freedriver-grok-mcp. Authorization
-# code + PKCE, no secret, no service account. Client stays disabled and the
-# redirect stays unset until anonymous GET /autonomy/mcp returns 401. Does not
-# grant mcp-user. Do not put a grok.com connector redirect on this client.
+# code + PKCE, no secret, no service account. The client remains disabled with
+# empty redirectUris and webOrigins until anonymous GET /autonomy/mcp returns 401.
 #
 # Run as root, or as a member of the allowed group, on the VPS. Idempotent. New password users get the
 # UPDATE_PASSWORD required action and choose their own password.
@@ -367,8 +366,7 @@ ensure_mapper "$DISPATCHER_UUID" role-dispatcher \
   -s protocolMapper=oidc-hardcoded-role-mapper \
   -s 'config."role"=dispatcher'
 
-# Public Grok Bot client for /autonomy/mcp. Redirect stays unset. Client stays
-# disabled until that URL 401s. No grok.com connector redirect. No mcp-user.
+# Public Grok Bot client for /autonomy/mcp. Disabled, empty redirect and origins.
 GROK_MCP_CLIENT=freedriver-grok-mcp
 GROK_MCP_REDIRECT_URIS='[]'
 GROK_MCP_WEB_ORIGINS='[]'
