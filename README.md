@@ -33,7 +33,7 @@ Grafana and the Keycloak admin console listen on 127.0.0.1 on the VPS host and a
 ssh -L 3000:127.0.0.1:3000 -L 8081:127.0.0.1:8081 -i <key> <ops-user>@<DEPLOY_HOST>
 ```
 
-Then Grafana is http://127.0.0.1:3000 (user `admin`, password `GF_SECURITY_ADMIN_PASSWORD` in `/opt/freedriver-secrets/.env`). Keycloak admin is http://127.0.0.1:8081/admin. Public `https://auth.freedriver.io/admin` returns 404; user login on that host is unchanged. `https://grafana.freedriver.io` and `https://mqtt.freedriver.io` return 404.
+Then Grafana is http://127.0.0.1:3000 (user `admin`, password `GF_SECURITY_ADMIN_PASSWORD` in `/opt/freedriver-secrets/.env`). Generic OAuth against `https://auth.freedriver.io/realms/freedriver` is on (`freedriver-grafana`). Local admin stays as break-glass. Keycloak admin is http://127.0.0.1:8081/admin. Public `https://auth.freedriver.io/admin` returns 404; user login on that host is unchanged. `https://grafana.freedriver.io` and `https://mqtt.freedriver.io` return 404.
 
 
 Alloy tails Docker container logs into Loki (14 days). It does not mount the Docker socket. `docker-logs-proxy` is the only Compose service with `/var/run/docker.sock`. It forwards container list and log streams, and the inspect fields Alloy needs to tail (running state and TTY), with environment and mounts removed. Prometheus keeps ~15 days and scrapes itself, Alloy, `dashboard:8080/q/metrics`, and `agent-dispatcher:8080/q/metrics` (those targets stay down until the Quarkus apps export Micrometer metrics). Loki, Prometheus, Alloy, and the proxy stay on the compose network. The proxy publishes no port. Grafana and Keycloak admin bind 127.0.0.1 only.
