@@ -51,13 +51,16 @@ class DispatcherConfigTest {
         String caddy = Files.readString(Path.of("../../Caddyfile"));
         assertTrue(caddy.contains(
                 "@dispatcher path /mcp /mcp/* /dispatch/mcp /dispatch/mcp/* /api/dispatcher /api/dispatcher/* /api/device /api/device/*"));
-        assertTrue(caddy.contains("@autonomy_mcp path /autonomy/mcp /autonomy/mcp/*"));
-        int autonomy = caddy.indexOf("@autonomy_mcp path /autonomy/mcp /autonomy/mcp/*");
+        assertTrue(caddy.contains(
+                "@autonomy path /autonomy/mcp /autonomy/mcp/* /api/autonomy /api/autonomy/*"));
+        int autonomy = caddy.indexOf(
+                "@autonomy path /autonomy/mcp /autonomy/mcp/* /api/autonomy /api/autonomy/*");
         int catchAll = caddy.indexOf("handle {\n\t\treverse_proxy dashboard:8080");
         assertTrue(autonomy >= 0 && catchAll > autonomy);
-        assertTrue(caddy.substring(autonomy, catchAll).contains("respond 404"));
+        assertTrue(caddy.substring(autonomy, catchAll).contains("reverse_proxy autonomy-mcp:8080"));
         assertFalse(caddy.contains("oauth-protected-resource"));
         assertFalse(caddy.contains(".well-known"));
+        assertFalse(caddy.contains("@dispatcher path /autonomy/mcp"));
 
         String compose = Files.readString(Path.of("../../docker-compose.yml"));
         assertTrue(compose.contains("QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver"));

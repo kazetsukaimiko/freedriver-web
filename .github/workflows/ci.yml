@@ -413,6 +413,7 @@ jobs:
           env = os.environ["DUMMY_ENV"]
           expect = [
               "agent-dispatcher",
+              "autonomy-mcp",
               "dashboard",
               "docker-logs-proxy",
               "keycloak",

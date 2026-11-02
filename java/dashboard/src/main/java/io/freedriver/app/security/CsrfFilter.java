@@ -102,6 +102,9 @@ public class CsrfFilter implements ContainerRequestFilter, ContainerResponseFilt
     }
 
     private boolean commandCaller() {
+        if (identity != null && Boolean.TRUE.equals(identity.getAttribute(McpInternalAuthMechanism.ATTRIBUTE))) {
+            return false;
+        }
         return identity != null
                 && !identity.isAnonymous()
                 && (identity.hasRole("dashboard") || identity.hasRole("portal-admin"));

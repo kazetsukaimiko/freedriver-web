@@ -20,6 +20,8 @@
         <module>agent-dispatcher-model</module>
         <module>agent-dispatcher-api</module>
         <module>agent-dispatcher</module>
+        <module>autonomy-mcp-api</module>
+        <module>autonomy-mcp</module>
         <module>device-daemon</module>
     </modules>
 

@@ -92,6 +92,10 @@ public class MqttLiveClient {
         return appliances.liveCommands() && connection != null;
     }
 
+    public boolean brokerConnected() {
+        return connection != null;
+    }
+
     public void onCommand(ApplianceCommandRouted routed, String actor) {
         if (!appliances.liveCommands() || connection == null) {
             return;

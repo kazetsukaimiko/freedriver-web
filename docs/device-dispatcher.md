@@ -27,7 +27,7 @@ Assignment states: `queued` → `claimed` → `running` → `succeeded` | `faile
 
 ## Deploy
 
-Compose service `agent-dispatcher` has no host port. On `app.freedriver.io`, Caddy sends `/mcp`, `/mcp/*`, `/dispatch/mcp`, `/dispatch/mcp/*`, `/api/dispatcher`, `/api/dispatcher/*`, `/api/device`, and `/api/device/*` to `agent-dispatcher:8080`. `/autonomy/mcp` is 404 until the appliance MCP container is on (#112). Every other path stays on `dashboard:8080`.
+Compose service `agent-dispatcher` has no host port. On `app.freedriver.io`, Caddy sends `/mcp`, `/mcp/*`, `/dispatch/mcp`, `/dispatch/mcp/*`, `/api/dispatcher`, `/api/dispatcher/*`, `/api/device`, and `/api/device/*` to `agent-dispatcher:8080`. `/autonomy/mcp` and `/api/autonomy` go to `autonomy-mcp:8080`. Every other path stays on `dashboard:8080`.
 
 `/dispatch/mcp` is Streamable HTTP MCP for the `dispatcher` role. `/mcp` is the same contract. The tools are `list_devices`, `submit_job`, and `get_job`. They call this same queue. Legacy HTTP+SSE under `/mcp/` is not served. A session id is bound to the bearer token subject and is not itself a credential. Anonymous `GET` and `POST` on `/dispatch/mcp` and `/mcp` receive 401 with `WWW-Authenticate: Bearer` and `resource_metadata="https://app.freedriver.io/api/dispatcher/oauth-protected-resource"`, and they do not run a tool. A token without the dispatcher role receives 403. `McpApi` in `agent-dispatcher-api` is the `/mcp` and `/dispatch/mcp` contract, beside the REST interfaces a RestEasy proxy client can call.
 

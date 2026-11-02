@@ -15,6 +15,7 @@ services:
       - keycloak
       - dashboard
       - agent-dispatcher
+      - autonomy-mcp
       - grafana
 
   dashboard:
@@ -37,6 +38,7 @@ services:
       # No credential in the default. A password, if one is set later, comes from the env file.
       QUARKUS_MONGODB_CONNECTION_STRING: ${QUARKUS_MONGODB_CONNECTION_STRING:-mongodb://mongodb:27017/freedriver}
       FREEDRIVER_APPLIANCES_LIVE_COMMANDS: "true"
+      FREEDRIVER_MCP_INTERNAL_SECRET: ${FREEDRIVER_MCP_INTERNAL_SECRET:-}
     # Invite service account (#172) and instances admin client (#319).
     # The provision script writes these files. Do not also interpolate
     # FREEDRIVER_INVITE_CLIENT_SECRET or FREEDRIVER_INSTANCES_CLIENT_SECRET here:
@@ -78,6 +80,28 @@ services:
       QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver
       QUARKUS_OIDC_CLIENT_ID: freedriver-dispatcher
       QUARKUS_OIDC_CREDENTIALS_SECRET: ${FREEDRIVER_DISPATCHER_OIDC_SECRET:-}
+    expose:
+      - "8080"
+
+  # No host port. Caddy on app.freedriver.io sends /autonomy/mcp here.
+  # Off unless FREEDRIVER_AUTONOMY_MCP_ENABLED is true. Not /mcp or /appliances/mcp.
+  autonomy-mcp:
+    build:
+      context: .
+      dockerfile: java/autonomy-mcp/src/main/docker/Dockerfile.compose
+      args:
+        BUILD_NUMBER: ${BUILD_NUMBER:-1.0.0-SNAPSHOT}
+      labels:
+        org.opencontainers.image.source: https://github.com/kazetsukaimiko/freedriver-web
+    restart: unless-stopped
+    environment:
+      QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver
+      QUARKUS_OIDC_CLIENT_ID: freedriver-grok-mcp
+      FREEDRIVER_MCP_DASHBOARD_URL: http://dashboard:8080
+      FREEDRIVER_MCP_INTERNAL_SECRET: ${FREEDRIVER_MCP_INTERNAL_SECRET:-}
+      FREEDRIVER_MCP_ENABLED: ${FREEDRIVER_AUTONOMY_MCP_ENABLED:-false}
+    depends_on:
+      - dashboard
     expose:
       - "8080"
 

@@ -12,6 +12,9 @@ services:
   agent-dispatcher:
     image: ghcr.io/kazetsukaimiko/freedriver-web/agent-dispatcher:${BUILD_NUMBER:-1.0.0-SNAPSHOT}
     pull_policy: missing
+  autonomy-mcp:
+    image: ghcr.io/kazetsukaimiko/freedriver-web/autonomy-mcp:${BUILD_NUMBER:-1.0.0-SNAPSHOT}
+    pull_policy: missing
   keycloak:
     image: ghcr.io/kazetsukaimiko/freedriver-web/keycloak:${BUILD_NUMBER:-1.0.0-SNAPSHOT}
     pull_policy: missing

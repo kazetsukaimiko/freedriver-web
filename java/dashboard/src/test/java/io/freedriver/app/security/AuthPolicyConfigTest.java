@@ -48,6 +48,8 @@ class AuthPolicyConfigTest {
         assertTrue(auth.contains("quarkus.http.auth.permission.instances.policy=authenticated"));
         assertTrue(auth.contains("quarkus.http.auth.permission.mcp.paths=/autonomy/mcp,/autonomy/mcp/*"));
         assertTrue(auth.contains("quarkus.http.auth.permission.mcp.policy=authenticated"));
+        assertTrue(auth.contains("quarkus.http.auth.permission.mcp-ops.paths=/api/mcp,/api/mcp/*"));
+        assertTrue(auth.contains("quarkus.http.auth.permission.mcp-ops.policy=authenticated"));
         assertTrue(auth.contains("quarkus.oidc.mcp.client-id=freedriver-grok-mcp"));
         assertTrue(auth.contains("quarkus.oidc.mcp.token.audience=https://app.freedriver.io/autonomy/mcp"));
         assertTrue(auth.contains("freedriver.instances.client-id=freedriver-instances"));
@@ -93,6 +95,10 @@ class AuthPolicyConfigTest {
                 "/autonomy/mcp,/autonomy/mcp/*",
                 config.getValue("quarkus.http.auth.permission.mcp.paths", String.class));
         assertEquals("authenticated", config.getValue("quarkus.http.auth.permission.mcp.policy", String.class));
+        assertEquals(
+                "/api/mcp,/api/mcp/*",
+                config.getValue("quarkus.http.auth.permission.mcp-ops.paths", String.class));
+        assertEquals("authenticated", config.getValue("quarkus.http.auth.permission.mcp-ops.policy", String.class));
         assertEquals("freedriver-grok-mcp", config.getValue("quarkus.oidc.mcp.client-id", String.class));
         assertEquals(
                 "https://app.freedriver.io/autonomy/mcp",

@@ -4,7 +4,7 @@ Portal REST/product surface for the appliance map. **Live MQTT command publish t
 
 The browser speaks REST. Quarkus is the portal's MQTT client, connecting to the docker-network Mosquitto broker once live commands are on.
 
-This page is the portal REST contract. MQTT topics, JSON, TLS, and passwords: [autonomy-mqtt.md](autonomy-mqtt.md). Broker, ACL, and first-house apply: [mqtt-connect.md](mqtt-connect.md). Wire types: [mqtt-contract-consume.md](mqtt-contract-consume.md) (`io.freedriver:freedriver-mqtt-contract`).
+This page is the portal REST contract. MQTT topics, JSON, TLS, and passwords: [autonomy-mqtt.md](autonomy-mqtt.md). Broker, ACL, and first-house apply: [mqtt-connect.md](mqtt-connect.md). Wire types: [mqtt-contract-consume.md](mqtt-contract-consume.md) (`io.freedriver:freedriver-mqtt-contract`). Grok MCP for the same house: [autonomy-mcp.md](autonomy-mcp.md).
 
 `ApplianceControl` is the one router, keyed by `instanceId`. Mock event sources and the MQTT client fire/observe the same CDI bus.
 

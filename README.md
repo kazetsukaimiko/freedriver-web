@@ -17,7 +17,7 @@ The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{gra
 - Caddy 2 on 80/443
   - `freedriver.io` / `www` — 308 to `app.freedriver.io`
   - `auth.freedriver.io` — Keycloak 26
-  - `app.freedriver.io` — Quinoa app behind Caddy. `/autonomy/mcp` is 404 until the appliance MCP process is on.
+  - `app.freedriver.io` — Quinoa app behind Caddy. `/autonomy/mcp` and `/api/autonomy` go to `autonomy-mcp`.
   - `grafana.freedriver.io` — 404 on purpose; Grafana is loopback-only
   - `mqtt.freedriver.io` — 404 on purpose (ACME HTTP-01). MQTTS is host 8883, not Caddy.
 - Keycloak 26.3 + local Postgres 16. The image build compiles `sms-model`, `sms-api`, and `sms-client` from this checkout and adds the phone OTP provider at `/opt/keycloak/providers/freedriver-sms-otp.jar`. The jar manifest records that commit.
@@ -45,6 +45,8 @@ Alloy tails Docker container logs into Loki (14 days). It does not mount the Doc
 The product app lives in `java/dashboard/`: Quarkus 3.38 (Java 23) with Quinoa serving a React TypeScript SPA. Shared Quarkus and Jackson versions live in `java/bom/`. It talks normal REST under `/api`. Auth is an OIDC BFF against Keycloak at `https://auth.freedriver.io`. It is on in the prod profile (`%prod.quarkus.oidc.enabled=true`) and off in the default, dev and test profiles, so the app starts locally with no secrets set. App details: [java/dashboard/README.md](java/dashboard/README.md).
 
 `java/agent-dispatcher/` is the device queue on the same host. Caddy sends `/api/dispatcher`, `/api/device`, `/mcp`, and `/dispatch/mcp` to that Compose service. OIDC is on in the prod profile and off in the default, dev, and test profiles. Contract: [`docs/device-dispatcher.md`](docs/device-dispatcher.md).
+
+`java/autonomy-mcp/` is the appliance MCP server. Caddy sends `/autonomy/mcp` and `/api/autonomy` to that Compose service. Contract: [`docs/autonomy-mcp.md`](docs/autonomy-mcp.md).
 
 `java/device-daemon/` is the PC client of that device API. The jar runs on the PC. The base URL is fixed at `https://app.freedriver.io`.
 
