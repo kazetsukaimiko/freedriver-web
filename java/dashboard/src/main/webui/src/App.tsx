@@ -6,19 +6,22 @@ import { Changelog } from './Changelog'
 import { CHANGELOG_PATH } from './changelog'
 import { Dashboard } from './Dashboard'
 import { InvitePage } from './InvitePage'
+import { Instances } from './Instances'
+import { INSTANCES_PATH } from './instances'
 import { PhoneSignIn } from './PhoneSignIn'
 import { PHONES_PATH } from './phones'
 import './App.css'
 
 type Splash = 'playing' | 'docking' | 'revealing' | 'done'
 
-type Page = 'dashboard' | 'changelog' | 'phones' | 'not-found'
+type Page = 'dashboard' | 'changelog' | 'phones' | 'instances' | 'not-found'
 
 const pages = new Map<string, Page>([
   ['/', 'dashboard'],
   ['/dashboard', 'dashboard'],
   [CHANGELOG_PATH, 'changelog'],
   [PHONES_PATH, 'phones'],
+  [INSTANCES_PATH, 'instances'],
 ])
 
 type PrimaryItem = { to: string; label: string; page: Page }
@@ -26,6 +29,7 @@ type PrimaryItem = { to: string; label: string; page: Page }
 function primaryNavItems(portalAdmin: boolean): PrimaryItem[] {
   const items: PrimaryItem[] = [{ to: '/', label: 'Dashboard', page: 'dashboard' }]
   if (portalAdmin) {
+    items.push({ to: INSTANCES_PATH, label: 'Instances', page: 'instances' })
     items.push({ to: PHONES_PATH, label: 'Phone sign-in', page: 'phones' })
   }
   return items
@@ -281,6 +285,7 @@ function App() {
         {page === 'dashboard' && <Dashboard search={search} />}
         {page === 'changelog' && <Changelog />}
         {page === 'phones' && <PhoneSignIn />}
+        {page === 'instances' && <Instances />}
         {page === 'not-found' && <NotFound />}
       </div>
       <BuildStamp changelogHref={hrefFor(CHANGELOG_PATH)} onOpenChangelog={(event) => go(event, CHANGELOG_PATH)} />
