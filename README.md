@@ -46,7 +46,7 @@ The product app lives in `java/dashboard/`: Quarkus 3.38 (Java 23) with Quinoa s
 
 `java/agent-dispatcher/` is the device queue on the same host. Caddy sends `/api/dispatcher`, `/api/device`, `/mcp`, and `/dispatch/mcp` to that Compose service. OIDC is on in the prod profile and off in the default, dev, and test profiles. Contract: [`docs/device-dispatcher.md`](docs/device-dispatcher.md).
 
-`java/autonomy-mcp/` is the appliance MCP server. Caddy sends `/autonomy/mcp` and `/api/autonomy` to that Compose service. It validates the Grok bearer itself, then calls `http://dashboard:8080` without copying `Authorization`. Off unless `FREEDRIVER_AUTONOMY_MCP_ENABLED` is true. Contract: [`docs/autonomy-mcp.md`](docs/autonomy-mcp.md).
+`java/autonomy-mcp/` is the appliance MCP server. Caddy sends `/autonomy/mcp` and `/api/autonomy` to that Compose service. Contract: [`docs/autonomy-mcp.md`](docs/autonomy-mcp.md).
 
 `java/device-daemon/` is the PC client of that device API. The jar runs on the PC. The base URL is fixed at `https://app.freedriver.io`.
 
