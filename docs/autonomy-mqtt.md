@@ -31,11 +31,11 @@ Broker passwords live on the VPS at `/opt/freedriver-secrets/mosquitto/*.pass` (
 
 ## Topics
 
-One broker can carry more than one autonomy instance. Each topic carries `instanceId` (a lowercase UUID, any version) as its segment. Appliances and commands stay exact; metrics uses `freedriver/v1/{instanceId}/metrics/#` for autonomy and `freedriver/v1/+/metrics/#` for api. Boards stay inside the instance.
+One broker can carry more than one autonomy instance. Each topic carries `instanceId` (a lowercase UUID, any version) as its segment. Appliances and commands are exact instance topics; metrics uses `freedriver/v1/{instanceId}/metrics/#` for autonomy and `freedriver/v1/+/metrics/#` for api. Boards stay inside the instance.
 
 Long-term, **freedriver-web owns minting `instanceId`**. The first-house instanceId is locked. This doc writes it as `__INSTANCE_ID__`.
 
-Use these topics. Appliances and commands stay exact. Metrics is the per-instance write filter; `api` subscribes with `freedriver/v1/+/metrics/#`. House users get no `+` wildcard.
+Use these topics. Appliances and commands are exact instance topics. Metrics is the per-instance write filter; house users receive those exact instance topics; `api` receives the `+/metrics/#` filter.
 
 | | Topic | Publisher | Subscriber | QoS | Retain |
 | --- | --- | --- | --- | --- | --- |

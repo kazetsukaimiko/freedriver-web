@@ -149,7 +149,7 @@ jobs:
             exit 1
           fi
           if awk '/^user autonomy$/{p=1; next} /^user /{p=0} p' "$leftover" | grep -E '^topic .*\+'; then
-            echo "autonomy and house users get no + wildcard"
+            echo "autonomy topic lines are the exact instance filters"
             exit 1
           fi
           if grep -E '^topic ' "$leftover" | grep -E '[+#]' \

@@ -54,7 +54,7 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
   - Container port 8884 is published as host `8883`. That certificate is Let's Encrypt for `DNS:mqtt.freedriver.io` only.
 - Host port 8883 stays reachable from any address because the home IP is dynamic. Broker passwords and instance ACLs guard it. `allow_anonymous false`, the password file, and the ACL apply to both listeners. Do not set `listener_allow_anonymous true`. Port 1883 stays closed.
 - Sysadmin still needs `mqtt.freedriver.io` A → `138.197.90.42`.
-- Auth: every client logs in with a broker password (`allow_anonymous false`). v1 has one house, which shares broker users `autonomy` and `api`. Each later instance gets its own autonomy user. House users get no `+` wildcard.
+- Auth: every client logs in with a broker password (`allow_anonymous false`). v1 has one house, which shares broker users `autonomy` and `api`. Each later instance gets its own autonomy user. House users receive exact instance topics; `api` receives the `+/metrics/#` filter.
 - Persistence: `/opt/freedriver-storage/mosquitto`.
 - Command-live arrives with #27.
 
@@ -74,7 +74,7 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
 
 ## Topics and ACL
 
-Appliances and commands stay exact, one pair per instance. Metrics uses the filters below. Instance id is the same source as appliances and commands (host broker ACL). House users get no `+` wildcard.
+Appliances and commands are exact instance topics, one pair per instance. Metrics uses the filters below. Instance id is the same source as appliances and commands (host broker ACL). House users receive exact instance topics; `api` receives the `+/metrics/#` filter.
 
 | Topic | Writer | Reader |
 | --- | --- | --- |
@@ -83,7 +83,7 @@ Appliances and commands stay exact, one pair per instance. Metrics uses the filt
 | `freedriver/v1/{instanceId}/metrics/#` | that instance's autonomy user | — |
 | `freedriver/v1/+/metrics/#` | — | api |
 
-Publishers set retain=false on appliances and commands; retain is a publisher setting. Grafana/Alloy already ingest from the dashboard; do not stand up a second metrics stack.
+Publishers set retain=false on appliances and commands; retain is a publisher setting. Grafana/Alloy ingest from the existing dashboard path.
 
 ## Let's Encrypt on host 8883 (Techops)
 

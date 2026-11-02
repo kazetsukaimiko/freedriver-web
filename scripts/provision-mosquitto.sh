@@ -10,11 +10,11 @@
 # __INSTANCE_ID__ in the template's topic lines:
 #   INSTANCE_ID=<uuid> ./scripts/provision-mosquitto.sh
 #   ./scripts/provision-mosquitto.sh --instance-id <uuid>
-# Appliances and commands stay exact. Autonomy writes
+# Appliances and commands are exact instance topics. Autonomy writes
 # freedriver/v1/<instanceId>/metrics/#. api reads freedriver/v1/+/metrics/#.
-# House users get no + wildcard. Long-term, freedriver-web owns minting
-# instanceId. Techops runs the first-house apply with the locked first-house
-# instanceId. Techops restarts Mosquitto afterwards to load the ACL.
+# House users receive exact instance topics. Long-term, freedriver-web owns
+# minting instanceId. Techops runs the first-house apply with the locked
+# first-house instanceId. Techops restarts Mosquitto afterwards to load the ACL.
 # TLS: self-signed and Let's Encrypt share server.crt/server.key.
 # scripts/sync-mosquitto-le-cert.sh replaces them in place after Caddy
 # issues mqtt.freedriver.io. That pair is the public listener (container
@@ -58,7 +58,7 @@ Git is the template. Compose does not mount it as live. First-house apply
 is Techops + the secrets file: instance topics in, leftover
 freedriver/v1/home/... out, same write. Metrics: autonomy writes
 freedriver/v1/<id>/metrics/#; api reads freedriver/v1/+/metrics/#; house
-users get no +. live-commands stays false. Do not open 1883.
+users receive exact instance topics. Do not open 1883.
 EOF
 }
 
@@ -104,9 +104,9 @@ same_path() {
 }
 
 # Checks topic lines only; comment lines carry free text.
-# Appliances and commands stay exact. Autonomy may write
-# freedriver/v1/<id>/metrics/#. api may read freedriver/v1/+/metrics/#.
-# House users (anyone except api) get no + wildcard.
+# Appliances and commands are exact instance topics. Autonomy writes
+# freedriver/v1/<id>/metrics/#. api reads freedriver/v1/+/metrics/#.
+# The + filter is api-only.
 assert_acl_topics() {
   local file="$1"
   local instance_token="$2"
