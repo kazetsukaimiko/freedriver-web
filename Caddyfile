@@ -19,13 +19,25 @@ app.freedriver.io {
 	handle @dispatcher {
 		reverse_proxy agent-dispatcher:8080
 	}
+	@autonomy path /autonomy/mcp /autonomy/mcp/* /api/autonomy /api/autonomy/*
+	handle @autonomy {
+		reverse_proxy autonomy-mcp:8080
+	}
 	@invite path /invite /invite/*
 	handle @invite {
 		header Referrer-Policy "no-referrer"
-		reverse_proxy dashboard:8080
+		reverse_proxy dashboard:8080 {
+			header_up -X-Freedriver-Internal
+			header_up -X-Freedriver-Subject
+			header_up -X-Freedriver-Roles
+		}
 	}
 	handle {
-		reverse_proxy dashboard:8080
+		reverse_proxy dashboard:8080 {
+			header_up -X-Freedriver-Internal
+			header_up -X-Freedriver-Subject
+			header_up -X-Freedriver-Roles
+		}
 	}
 }
 

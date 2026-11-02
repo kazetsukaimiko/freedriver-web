@@ -43,6 +43,14 @@ class AppliancesDisabledTest {
     }
 
     @Test
+    @TestSecurity(user = "ada", roles = {"mcp-user", "mcp-debug"})
+    void mcp_ops_are_404_when_disabled() {
+        given().when().get("/api/mcp/appliances").then().statusCode(404);
+        given().when().get("/api/mcp/home-status").then().statusCode(404);
+        given().when().get("/api/mcp/debug").then().statusCode(404);
+    }
+
+    @Test
     void hello_still_public() {
         given().when().get("/api/hello").then().statusCode(200);
     }

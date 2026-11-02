@@ -30,7 +30,10 @@ public class AppliancesDisabledFilter implements ContainerRequestFilter {
         if (path.startsWith("/")) {
             path = path.substring(1);
         }
-        if (path.equals("api/appliances") || path.startsWith("api/appliances/")) {
+        if (path.equals("api/appliances")
+                || path.startsWith("api/appliances/")
+                || path.equals("api/mcp")
+                || path.startsWith("api/mcp/")) {
             requestContext.abortWith(Response.status(Response.Status.NOT_FOUND).build());
         }
     }

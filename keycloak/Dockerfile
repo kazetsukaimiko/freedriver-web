@@ -29,6 +29,8 @@ COPY java/dashboard/pom.xml java/dashboard/pom.xml
 COPY java/agent-dispatcher-model/pom.xml java/agent-dispatcher-model/pom.xml
 COPY java/agent-dispatcher-api/pom.xml java/agent-dispatcher-api/pom.xml
 COPY java/agent-dispatcher/pom.xml java/agent-dispatcher/pom.xml
+COPY java/autonomy-mcp-api/pom.xml java/autonomy-mcp-api/pom.xml
+COPY java/autonomy-mcp/pom.xml java/autonomy-mcp/pom.xml
 COPY java/device-daemon/pom.xml java/device-daemon/pom.xml
 COPY sms-model/pom.xml sms-model/pom.xml
 COPY sms-api/pom.xml sms-api/pom.xml

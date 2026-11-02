@@ -402,6 +402,12 @@ class AuthPolicyProdLockTest {
         assertEquals(
                 "/autonomy/mcp,/autonomy/mcp/*",
                 prod.getConfigValue("quarkus.http.auth.permission.mcp.paths").getValue());
+        assertEquals(
+                "authenticated",
+                prod.getConfigValue("quarkus.http.auth.permission.mcp-ops.policy").getValue());
+        assertEquals(
+                "/api/mcp,/api/mcp/*",
+                prod.getConfigValue("quarkus.http.auth.permission.mcp-ops.paths").getValue());
         assertEquals("true", prod.getConfigValue("quarkus.oidc.mcp.tenant-enabled").getValue());
         assertEquals("service", prod.getConfigValue("quarkus.oidc.mcp.application-type").getValue());
         assertEquals("freedriver-grok-mcp", prod.getConfigValue("quarkus.oidc.mcp.client-id").getValue());
@@ -549,6 +555,7 @@ class AuthPolicyProdLockTest {
                     || "quarkus.oidc.evil.tenant-enabled".equals(name)
                     || "quarkus.oidc.mcp.tenant-enabled".equals(name)
                     || "quarkus.http.auth.permission.mcp.policy".equals(name)
+                    || "quarkus.http.auth.permission.mcp-ops.policy".equals(name)
                     || "quarkus.oidc.credentials.secret".equals(name)
                     || "freedriver.appliances.rate-limit.permits".equals(name)
                     || "freedriver.appliances.rate-limit.window".equals(name)) {

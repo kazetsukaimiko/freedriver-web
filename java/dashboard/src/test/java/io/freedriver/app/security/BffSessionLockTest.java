@@ -52,6 +52,8 @@ class BffSessionLockTest {
         assertTrue(properties.contains("quarkus.http.auth.permission.instances.policy=authenticated"));
         assertTrue(properties.contains("quarkus.http.auth.permission.mcp.paths=/autonomy/mcp,/autonomy/mcp/*"));
         assertTrue(properties.contains("quarkus.http.auth.permission.mcp.policy=authenticated"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.mcp-ops.paths=/api/mcp,/api/mcp/*"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.mcp-ops.policy=authenticated"));
         assertTrue(properties.contains("quarkus.oidc.mcp.application-type=service"));
         assertTrue(properties.contains("quarkus.oidc.mcp.client-id=freedriver-grok-mcp"));
         assertTrue(properties.contains("quarkus.oidc.mcp.token.audience=https://app.freedriver.io/autonomy/mcp"));

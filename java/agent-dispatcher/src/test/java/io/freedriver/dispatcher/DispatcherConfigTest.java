@@ -53,7 +53,7 @@ class DispatcherConfigTest {
                 "@dispatcher path /mcp /mcp/* /dispatch/mcp /dispatch/mcp/* /api/dispatcher /api/dispatcher/* /api/device /api/device/*"));
         assertFalse(caddy.contains("oauth-protected-resource"));
         assertFalse(caddy.contains(".well-known"));
-        assertFalse(caddy.contains("/autonomy/mcp"));
+        assertFalse(caddy.contains("@dispatcher path /autonomy/mcp"));
 
         String compose = Files.readString(Path.of("../../docker-compose.yml"));
         assertTrue(compose.contains("QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver"));
