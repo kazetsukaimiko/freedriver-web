@@ -19,6 +19,11 @@ app.freedriver.io {
 	handle @dispatcher {
 		reverse_proxy agent-dispatcher:8080
 	}
+	# Off until the #111 MCP process is on. 404, never dashboard/dispatcher/SPA.
+	@autonomy_mcp path /autonomy/mcp /autonomy/mcp/*
+	handle @autonomy_mcp {
+		respond 404
+	}
 	@invite path /invite /invite/*
 	handle @invite {
 		header Referrer-Policy "no-referrer"
