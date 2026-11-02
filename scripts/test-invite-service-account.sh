@@ -262,11 +262,11 @@ if grep -q 'FREEDRIVER_INSTANCES_CLIENT_SECRET' "$work/secrets/api.secret" "$wor
   echo "instances secret leaked into another file" >&2
   exit 1
 fi
-if ! grep -q '^FREEDRIVER_GRAFANA_CLIENT_SECRET=.\+' "$work/secrets/grafana.env"; then
+if ! grep -q '^GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=.\+' "$work/secrets/grafana.env"; then
   echo "grafana env file is missing a secret value" >&2
   exit 1
 fi
-if grep -q 'FREEDRIVER_GRAFANA_CLIENT_SECRET' "$work/secrets/api.secret" "$work/secrets.env" "$work/secrets/invite.env" "$work/secrets/instances.env"; then
+if grep -q 'GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET\|FREEDRIVER_GRAFANA_CLIENT_SECRET' "$work/secrets/api.secret" "$work/secrets.env" "$work/secrets/invite.env" "$work/secrets/instances.env"; then
   echo "grafana secret leaked into another file" >&2
   exit 1
 fi

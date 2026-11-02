@@ -27,11 +27,11 @@
 # dashboard env file. It creates the top-level group mqtt-instance with no topic
 # attributes. Topic attributes belong on the house user, which the dashboard creates.
 #
-# Grafana (#349) is the confidential client freedriver-grafana. Redirect URI is
+# Grafana (#349, #350) is the confidential client freedriver-grafana. Redirect URI is
 # https://grafana.freedriver.io/login/generic_oauth only. Realm roles
 # grafana-viewer, grafana-editor, and grafana-admin exist; this script assigns
 # grafana-admin only to kaze, the invite username, and kazetsukai. The secret
-# is written once for Grafana.
+# is written once as GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET for the Grafana container.
 #
 # Sessions (#353): accessCodeLifespanLogin 7200, ssoSessionIdleTimeout 28800,
 # ssoSessionMaxLifespan 86400, accessCodeLifespanUserAction 1800.
@@ -852,25 +852,45 @@ ensure_grafana_client() {
     -s 'config."jsonType.label"=String' \
     -s 'config.multivalued=true' \
     -s 'config."access.token.claim"=true' \
-    -s 'config."id.token.claim"=false' \
-    -s 'config."userinfo.token.claim"=false'
-  if [[ -e "$GRAFANA_ENV_FILE" ]]; then
-    echo "Grafana client env file already exists; not rotating or rewriting it."
-  else
+    -s 'config."id.token.claim"=true' \
+    -s 'config."userinfo.token.claim"=true'
+  write_grafana_env() {
+    local secret="$1" tmp
     tmp="$(mktemp)"
     chmod 600 "$tmp"
+    printf 'GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=%s\n' "$secret" > "$tmp"
+    unset secret
+    own_secret "$tmp"
+    mv "$tmp" "$GRAFANA_ENV_FILE"
+  }
+  grafana_env_assignment() {
+    local key="$1"
+    sed -n "s/^${key}=//p" "$GRAFANA_ENV_FILE" 2>/dev/null | tail -n 1 | tr -d '\r'
+  }
+  if [[ -e "$GRAFANA_ENV_FILE" ]]; then
+    gf_secret="$(grafana_env_assignment GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET)"
+    old_secret="$(grafana_env_assignment FREEDRIVER_GRAFANA_CLIENT_SECRET)"
+    if [[ -n "$gf_secret" ]]; then
+      unset gf_secret old_secret
+      echo "Grafana client env file already exists; not rotating or rewriting it."
+    elif [[ -n "$old_secret" ]]; then
+      write_grafana_env "$old_secret"
+      unset gf_secret old_secret
+      echo "Renamed Grafana client secret key (not printed)."
+    else
+      unset gf_secret old_secret
+      echo "Grafana client env file already exists; not rotating or rewriting it."
+    fi
+  else
     secret="$(kcadm get "clients/${client_uuid}/client-secret" -r "$REALM" --fields value --format csv --noquotes \
       | sed '/^value$/d' | tr -d '\r' | awk 'NF { print; exit }')"
     if [[ -z "$secret" || "$secret" == *" "* || "$secret" == *$'\n'* ]]; then
-      rm -f "$tmp"
       unset secret
       echo "Failed to read ${GRAFANA_CLIENT} client secret." >&2
       exit 1
     fi
-    printf 'FREEDRIVER_GRAFANA_CLIENT_SECRET=%s\n' "$secret" > "$tmp"
+    write_grafana_env "$secret"
     unset secret
-    own_secret "$tmp"
-    mv "$tmp" "$GRAFANA_ENV_FILE"
     echo "Wrote Grafana client secret (not printed)."
   fi
   assign_grafana_admin_users
