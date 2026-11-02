@@ -87,12 +87,47 @@ jobs:
             echo "apply must write the secrets ACL only, not a checkout/git ACL"
             exit 1
           fi
-          if grep -RInE '^[[:space:]]*topic .*(freedriver/v1/home|/home/appliances|/home/commands|[+#]|freedriver/v1/#)' mosquitto scripts docs; then
-            echo "topic lines must be exact instance topics (no leftover home/, no + or #)"
-            exit 1
-          fi
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          id_re = r"(?:__INSTANCE_ID__|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+          allowed = (
+              re.compile(rf"^topic (?:read|write) freedriver/v1/{id_re}/(?:appliances|commands)$"),
+              re.compile(rf"^topic write freedriver/v1/{id_re}/metrics/#$"),
+              re.compile(r"^topic read freedriver/v1/\+/metrics/#$"),
+          )
+          bad = []
+          for folder in ("mosquitto", "scripts", "docs"):
+              for path in Path(folder).rglob("*"):
+                  if not path.is_file():
+                      continue
+                  try:
+                      text = path.read_text(encoding="utf-8")
+                  except (OSError, UnicodeDecodeError):
+                      continue
+                  for i, raw in enumerate(text.splitlines(), 1):
+                      if not re.match(r"^[ \t]*topic\s+", raw):
+                          continue
+                      line = raw.strip()
+                      if any(rule.match(line) for rule in allowed):
+                          continue
+                      bad.append(f"{path}:{i}:{line}")
+          if bad:
+              print("topic lines must be exact appliances/commands or the metrics ACL filters")
+              print("\n".join(bad))
+              raise SystemExit(1)
+          PY
           if ! grep -Fq '__INSTANCE_ID__' mosquitto/acl.template; then
             echo "template must keep the apply-time __INSTANCE_ID__ placeholder"
+            exit 1
+          fi
+          if ! grep -Fxq 'topic write freedriver/v1/__INSTANCE_ID__/metrics/#' mosquitto/acl.template; then
+            echo "template must grant autonomy write freedriver/v1/__INSTANCE_ID__/metrics/#"
+            exit 1
+          fi
+          if ! grep -Fxq 'topic read freedriver/v1/+/metrics/#' mosquitto/acl.template; then
+            echo "template must grant api read freedriver/v1/+/metrics/#"
             exit 1
           fi
           leftover="$(mktemp)"
@@ -107,8 +142,20 @@ jobs:
             --acl-out "$leftover"
           grep -Fq 'freedriver/v1/123e4567-e89b-12d3-a456-426614174000/appliances' "$leftover"
           grep -Fq 'freedriver/v1/123e4567-e89b-12d3-a456-426614174000/commands' "$leftover"
-          if grep -E '^topic ' "$leftover" | grep -E 'home/|[+#]|__INSTANCE_ID__'; then
-            echo "apply must write exact topics and drop leftover home/ in the same step"
+          grep -Fxq 'topic write freedriver/v1/123e4567-e89b-12d3-a456-426614174000/metrics/#' "$leftover"
+          grep -Fxq 'topic read freedriver/v1/+/metrics/#' "$leftover"
+          if grep -E '^topic ' "$leftover" | grep -E 'home/|__INSTANCE_ID__'; then
+            echo "apply must write instance topics and drop leftover home/ in the same step"
+            exit 1
+          fi
+          if awk '/^user autonomy$/{p=1; next} /^user /{p=0} p' "$leftover" | grep -E '^topic .*\+'; then
+            echo "autonomy and house users get no + wildcard"
+            exit 1
+          fi
+          if grep -E '^topic ' "$leftover" | grep -E '[+#]' \
+            | grep -vFx 'topic write freedriver/v1/123e4567-e89b-12d3-a456-426614174000/metrics/#' \
+            | grep -vFx 'topic read freedriver/v1/+/metrics/#'; then
+            echo "only the metrics ACL filters may use + or #"
             exit 1
           fi
           if ./scripts/provision-mosquitto.sh --acl-only \

@@ -29,10 +29,12 @@ INSTANCE_ID=__INSTANCE_ID__ ./scripts/provision-mosquitto.sh
 
 The script accepts a lowercase UUID only. It checks the value before writing the ACL and exits non-zero when the value is missing, empty, the literal `__INSTANCE_ID__`, or malformed.
 
-That **one write** puts exact topics into `/opt/freedriver-secrets/mosquitto/acl` and drops leftover `freedriver/v1/home/...` in the same step:
+That **one write** puts instance topics into `/opt/freedriver-secrets/mosquitto/acl` and drops leftover `freedriver/v1/home/...` in the same step:
 
 - `freedriver/v1/__INSTANCE_ID__/appliances`
 - `freedriver/v1/__INSTANCE_ID__/commands`
+- autonomy write `freedriver/v1/__INSTANCE_ID__/metrics/#`
+- api read `freedriver/v1/+/metrics/#`
 
 The live ACL sits outside the deploy checkout (`/opt/freedriver-web`), so deploys leave it as applied.
 
@@ -50,9 +52,9 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
 - Two MQTTS listeners (`protocol mqtt`). Mosquitto has no SNI, so each socket has one certificate.
   - Container port 8883 is not published. The API dials hostname `mosquitto` on that port. The certificate SAN is `DNS:mosquitto` only, signed by `/opt/freedriver-secrets/mqtt-internal/ca.crt`.
   - Container port 8884 is published as host `8883`. That certificate is Let's Encrypt for `DNS:mqtt.freedriver.io` only.
-- Host port 8883 stays reachable from any address because the home IP is dynamic. Broker passwords and exact-topic ACLs guard it. `allow_anonymous false`, the password file, and the ACL apply to both listeners. Do not set `listener_allow_anonymous true`. Port 1883 stays closed.
+- Host port 8883 stays reachable from any address because the home IP is dynamic. Broker passwords and instance ACLs guard it. `allow_anonymous false`, the password file, and the ACL apply to both listeners. Do not set `listener_allow_anonymous true`. Port 1883 stays closed.
 - Sysadmin still needs `mqtt.freedriver.io` A → `138.197.90.42`.
-- Auth: every client logs in with a broker password (`allow_anonymous false`). v1 has one house, which shares broker users `autonomy` and `api`. Each later instance gets its own autonomy user.
+- Auth: every client logs in with a broker password (`allow_anonymous false`). v1 has one house, which shares broker users `autonomy` and `api`. Each later instance gets its own autonomy user. House users get no `+` wildcard.
 - Persistence: `/opt/freedriver-storage/mosquitto`.
 - Command-live arrives with #27.
 
@@ -63,7 +65,7 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
 | `/opt/freedriver-secrets/mosquitto/autonomy.pass` | autonomy password |
 | `/opt/freedriver-secrets/mosquitto/api.pass` | api password |
 | `/opt/freedriver-secrets/mosquitto/passwd` | hashed broker passwd file |
-| `/opt/freedriver-secrets/mosquitto/acl` | **live** exact-topic ACL (Techops apply) |
+| `/opt/freedriver-secrets/mosquitto/acl` | **live** instance ACL (Techops apply) |
 | `/opt/freedriver-secrets/mosquitto/server.crt` | Public listener certificate (Let's Encrypt `DNS:mqtt.freedriver.io`) |
 | `/opt/freedriver-secrets/mosquitto/server.key` | Public listener key (mode 0600, owner 1883) |
 | `/opt/freedriver-secrets/mosquitto/internal.crt` | Unpublished listener leaf (`DNS:mosquitto` only) |
@@ -72,14 +74,16 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
 
 ## Topics and ACL
 
-The ACL grants exact topics only, one pair per instance:
+Appliances and commands stay exact, one pair per instance. Metrics uses the filters below. Instance id is the same source as appliances and commands (host broker ACL). House users get no `+` wildcard.
 
 | Topic | Writer | Reader |
 | --- | --- | --- |
 | `freedriver/v1/{instanceId}/appliances` | that instance's autonomy user | api |
 | `freedriver/v1/{instanceId}/commands` | api | that instance's autonomy user |
+| `freedriver/v1/{instanceId}/metrics/#` | that instance's autonomy user | — |
+| `freedriver/v1/+/metrics/#` | — | api |
 
-Publishers set retain=false on both topics; retain is a publisher setting.
+Publishers set retain=false on appliances and commands; retain is a publisher setting. Grafana/Alloy already ingest from the dashboard; do not stand up a second metrics stack.
 
 ## Let's Encrypt on host 8883 (Techops)
 

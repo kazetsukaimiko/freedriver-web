@@ -10,9 +10,11 @@
 # __INSTANCE_ID__ in the template's topic lines:
 #   INSTANCE_ID=<uuid> ./scripts/provision-mosquitto.sh
 #   ./scripts/provision-mosquitto.sh --instance-id <uuid>
-# Long-term, freedriver-web owns minting instanceId. Techops runs the
-# first-house apply with the locked first-house instanceId. Techops restarts
-# Mosquitto afterwards to load the ACL.
+# Appliances and commands stay exact. Autonomy writes
+# freedriver/v1/<instanceId>/metrics/#. api reads freedriver/v1/+/metrics/#.
+# House users get no + wildcard. Long-term, freedriver-web owns minting
+# instanceId. Techops runs the first-house apply with the locked first-house
+# instanceId. Techops restarts Mosquitto afterwards to load the ACL.
 # TLS: self-signed and Let's Encrypt share server.crt/server.key.
 # scripts/sync-mosquitto-le-cert.sh replaces them in place after Caddy
 # issues mqtt.freedriver.io. That pair is the public listener (container
@@ -53,9 +55,10 @@ Usage: provision-mosquitto.sh [--instance-id UUID] [--acl-only] [--acl-template 
                                 /opt/freedriver-secrets/mosquitto/acl.
 
 Git is the template. Compose does not mount it as live. First-house apply
-is Techops + the secrets file: exact instance topics in, leftover
-freedriver/v1/home/... out, same write. live-commands stays false. Do not
-open 1883.
+is Techops + the secrets file: instance topics in, leftover
+freedriver/v1/home/... out, same write. Metrics: autonomy writes
+freedriver/v1/<id>/metrics/#; api reads freedriver/v1/+/metrics/#; house
+users get no +. live-commands stays false. Do not open 1883.
 EOF
 }
 
@@ -101,28 +104,74 @@ same_path() {
 }
 
 # Checks topic lines only; comment lines carry free text.
-assert_exact_topic_acl() {
+# Appliances and commands stay exact. Autonomy may write
+# freedriver/v1/<id>/metrics/#. api may read freedriver/v1/+/metrics/#.
+# House users (anyone except api) get no + wildcard.
+assert_acl_topics() {
   local file="$1"
-  local topics
-  topics="$(grep -E '^topic ' "$file" || true)"
-  if [[ -z "$topics" ]]; then
+  local instance_token="$2"
+  local current_user=""
+  local saw_topic=0
+  local line access filter
+  local exact_id="freedriver/v1/${instance_token}"
+  local autonomy_metrics="${exact_id}/metrics/#"
+  local api_metrics="freedriver/v1/+/metrics/#"
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ ^user[[:space:]]+([^[:space:]]+)[[:space:]]*$ ]]; then
+      current_user="${BASH_REMATCH[1]}"
+      continue
+    fi
+    [[ "$line" =~ ^topic[[:space:]]+ ]] || continue
+    saw_topic=1
+    read -r _ access filter <<<"$line"
+    if [[ "$access" != "read" && "$access" != "write" ]]; then
+      echo "ACL topic lines must be 'topic read|write FILTER': ${line}" >&2
+      exit 1
+    fi
+    if [[ "$filter" == *home/* ]]; then
+      echo "ACL topic lines must not contain leftover home/ segment." >&2
+      exit 1
+    fi
+    if [[ -z "$current_user" ]]; then
+      echo "ACL topic line has no user: ${line}" >&2
+      exit 1
+    fi
+    if [[ "$filter" == "${exact_id}/appliances" || "$filter" == "${exact_id}/commands" ]]; then
+      continue
+    fi
+    if [[ "$current_user" == "autonomy" && "$access" == "write" && "$filter" == "$autonomy_metrics" ]]; then
+      continue
+    fi
+    if [[ "$current_user" == "api" && "$access" == "read" && "$filter" == "$api_metrics" ]]; then
+      continue
+    fi
+    echo "ACL topic not allowed for user ${current_user}: ${line}" >&2
+    exit 1
+  done < "$file"
+  if [[ "$saw_topic" -eq 0 ]]; then
     echo "ACL has no topic lines: ${file}" >&2
     exit 1
   fi
-  if grep -E '^topic .*(home/|[+#]|freedriver/v1/#)' <<<"$topics"; then
-    echo "ACL topic lines must be exact instance topics (no leftover home/ segment, no + or #)." >&2
+  if ! grep -Fxq "topic write ${autonomy_metrics}" "$file"; then
+    echo "ACL must grant autonomy write ${autonomy_metrics}" >&2
+    exit 1
+  fi
+  if ! grep -Fxq "topic read ${api_metrics}" "$file"; then
+    echo "ACL must grant api read ${api_metrics}" >&2
     exit 1
   fi
 }
 
-# One write replaces the destination: exact instance topics in, leftover
+# One write replaces the destination: instance topics in, leftover
 # freedriver/v1/home/... out. Exits non-zero on an instanceId that fails
 # INSTANCE_ID_RE, on the git template as destination, and on topic lines with
-# home/, wildcards, or __INSTANCE_ID__.
+# home/, a disallowed wildcard, or __INSTANCE_ID__.
 apply_instance_acl() {
   local instance_id="$1"
   local template="$2"
   local out="$3"
+  local api_metrics="topic read freedriver/v1/+/metrics/#"
 
   if ! is_instance_id "$instance_id"; then
     echo "INSTANCE_ID must be a UUID (hex+hyphens). Do not enforce a version nibble. Do not invent a house id." >&2
@@ -142,7 +191,7 @@ apply_instance_acl() {
     echo "ACL template must contain ${ACL_PLACEHOLDER} for apply-time substitution." >&2
     exit 1
   fi
-  assert_exact_topic_acl "$template"
+  assert_acl_topics "$template" "$ACL_PLACEHOLDER"
   if same_path "$out" "$template"; then
     echo "Refusing to overwrite the git template as if it were the live ACL." >&2
     exit 1
@@ -152,19 +201,19 @@ apply_instance_acl() {
   tmp="$(mktemp)"
   # Placeholder is a fixed token and instance_id is lowercase hex+hyphens,
   # so both are literal in sed. Substitution edits topic lines; comments keep
-  # the documented token.
+  # the documented token. api metrics keeps + and is not instance-scoped.
   sed "/^topic /s/${ACL_PLACEHOLDER}/${instance_id}/g" "$template" > "$tmp"
   if grep -E '^topic ' "$tmp" | grep -Fq "$ACL_PLACEHOLDER"; then
     echo "ACL topic lines still contain ${ACL_PLACEHOLDER} after substitution." >&2
     rm -f "$tmp"
     exit 1
   fi
-  if grep -E '^topic ' "$tmp" | grep -Fv "/${instance_id}/"; then
-    echo "ACL topic lines must include the applied instanceId." >&2
+  if grep -E '^topic ' "$tmp" | grep -Fvx "$api_metrics" | grep -Fv "/${instance_id}/"; then
+    echo "ACL topic lines must include the applied instanceId (api metrics subscribe excepted)." >&2
     rm -f "$tmp"
     exit 1
   fi
-  assert_exact_topic_acl "$tmp"
+  assert_acl_topics "$tmp" "$instance_id"
 
   local dest_dir
   dest_dir="$(dirname "$out")"
@@ -172,11 +221,11 @@ apply_instance_acl() {
   umask 022
   cat "$tmp" > "$out"
   rm -f "$tmp"
-  if grep -E '^topic .*(home/|[+#]|__INSTANCE_ID__)' "$out"; then
-    echo "Applied ACL still has leftover home/, wildcards, or the placeholder." >&2
+  if grep -E '^topic .*(home/|__INSTANCE_ID__)' "$out"; then
+    echo "Applied ACL still has leftover home/ or the placeholder." >&2
     exit 1
   fi
-  echo "Wrote exact-topic ACL to ${out} (leftover freedriver/v1/home/... dropped in this write)."
+  echo "Wrote instance ACL to ${out} (leftover freedriver/v1/home/... dropped in this write)."
 }
 
 if [[ "$ACL_ONLY" -eq 1 ]]; then
