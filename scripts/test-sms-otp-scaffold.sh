@@ -78,8 +78,8 @@ if instances_env not in dash:
     raise SystemExit("dashboard loads the instances admin secret env file, and it is not required before provision")
 if "keycloak-freedriver-instances.env" in compose.replace(dash, ""):
     raise SystemExit("only dashboard loads the instances admin secret env file")
-if compose.count("\n    env_file:\n") != 2:
-    raise SystemExit("env_file is only the sms twilio file and the dashboard secret files")
+if compose.count("\n    env_file:\n") != 3:
+    raise SystemExit("env_file is the sms twilio file, the dashboard secret files, and the grafana secret file")
 if "TWILIO_" in compose.replace(block, ""):
     raise SystemExit("only sms receives TWILIO_ variables")
 if "sms-otp.env.example" in block or "sms-otp.env.example" in compose:
@@ -94,6 +94,40 @@ if "AWS_" in kc or "AKIA" in kc:
 if "keycloak/Dockerfile" not in kc:
     raise SystemExit("keycloak image must bake the SMS OTP provider")
 print("compose sms is internal")
+gf = compose.split("\n  grafana:\n", 1)[1].split("\n  loki:\n", 1)[0]
+grafana_env = (
+    "    env_file:\n"
+    "      - path: /opt/freedriver-secrets/keycloak-freedriver-grafana.env\n"
+    "        required: false\n"
+)
+if grafana_env not in gf:
+    raise SystemExit("grafana loads keycloak-freedriver-grafana.env, and it is not required before provision")
+if "keycloak-freedriver-grafana.env" in compose.replace(gf, ""):
+    raise SystemExit("only grafana loads the grafana secret env file")
+if "GF_SERVER_ROOT_URL: https://grafana.freedriver.io" not in gf:
+    raise SystemExit("grafana ROOT_URL is https://grafana.freedriver.io")
+if "GF_SERVER_DOMAIN: grafana.freedriver.io" not in gf:
+    raise SystemExit("grafana DOMAIN is grafana.freedriver.io")
+if 'GF_AUTH_GENERIC_OAUTH_ENABLED: "true"' not in gf:
+    raise SystemExit("grafana generic OAuth is enabled")
+if "GF_AUTH_GENERIC_OAUTH_CLIENT_ID: freedriver-grafana" not in gf:
+    raise SystemExit("grafana OAuth client id is freedriver-grafana")
+if "GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET:" in gf:
+    raise SystemExit("grafana client secret comes from the env file")
+if "contains(realm_access.roles[*], 'grafana-admin')" not in gf:
+    raise SystemExit("grafana role_attribute_path maps grafana-admin")
+if "GF_SECURITY_ADMIN_USER: admin" not in gf:
+    raise SystemExit("local grafana admin stays")
+if "GF_AUTH_DISABLE_LOGIN_FORM" in gf:
+    raise SystemExit("local grafana admin login stays enabled")
+if '"127.0.0.1:3000:3000"' not in gf:
+    raise SystemExit("grafana still binds 127.0.0.1:3000")
+caddy = Path("Caddyfile").read_text()
+if "grafana.freedriver.io {\n\trespond 404\n}" not in caddy:
+    raise SystemExit("Caddy keeps grafana.freedriver.io as 404")
+if "reverse_proxy grafana" in caddy:
+    raise SystemExit("Caddy must not reverse_proxy grafana on this card")
+print("compose grafana oauth is on and unpublished")
 PY
 
 if grep -q 'sms-otp.env.example' docker-compose.yml; then
@@ -513,7 +547,7 @@ fi
 if ! grep -q 'Placeholder for the dashboard instances admin client' secrets/keycloak-freedriver-instances.env.example; then
   fail "instances example file must mark the assignment as a placeholder"
 fi
-if [[ "$(grep -v '^#' secrets/keycloak-freedriver-grafana.env.example | grep -v '^$')" != "FREEDRIVER_GRAFANA_CLIENT_SECRET=" ]]; then
+if [[ "$(grep -v '^#' secrets/keycloak-freedriver-grafana.env.example | grep -v '^$')" != "GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=" ]]; then
   fail "grafana example file holds one empty assignment"
 fi
 if ! grep -q 'Placeholder for the Grafana OAuth client' secrets/keycloak-freedriver-grafana.env.example; then
@@ -534,6 +568,12 @@ if grep -n 'GRAFANA_REDIRECT' scripts/provision-keycloak-freedriver.sh | grep -q
 fi
 if ! grep -q 'config."claim.name"=realm_access.roles' scripts/provision-keycloak-freedriver.sh; then
   fail "Grafana mapper must put realm roles on realm_access.roles"
+fi
+if ! grep -q 'GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET' scripts/provision-keycloak-freedriver.sh; then
+  fail "provision script must write GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET"
+fi
+if grep -q "printf 'FREEDRIVER_GRAFANA_CLIENT_SECRET" scripts/provision-keycloak-freedriver.sh; then
+  fail "provision script must write the Grafana GF_ auth secret name"
 fi
 if ! grep -q 'rolename grafana-admin' scripts/provision-keycloak-freedriver.sh; then
   fail "provision script must assign grafana-admin"
