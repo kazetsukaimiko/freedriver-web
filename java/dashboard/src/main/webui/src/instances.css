@@ -1,0 +1,34 @@
+.instances-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.instances table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.instances td,
+.instances th {
+  text-align: left;
+  padding: 0.4rem 0.6rem 0.4rem 0;
+  vertical-align: middle;
+}
+
+.instances .opened-credentials {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.instances .opened-credentials input {
+  width: 100%;
+  font: inherit;
+}
+
+.instances .row-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}

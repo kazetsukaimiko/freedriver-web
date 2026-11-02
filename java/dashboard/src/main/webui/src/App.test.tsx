@@ -34,6 +34,7 @@ it('opens one primary menu and sends a portal admin to Phone sign-in', async () 
   fireEvent.click(screen.getByRole('button', { name: /^Dashboard$/ }))
   const phone = screen.getByRole('link', { name: 'Phone sign-in' })
   expect(phone.getAttribute('href')).toBe('/phones?splash=0')
+  expect(screen.getByRole('link', { name: 'Instances' }).getAttribute('href')).toBe('/instances?splash=0')
   expect(screen.getByRole('link', { name: 'Dashboard' }).getAttribute('href')).toBe('/?splash=0')
 
   fireEvent.click(phone)
@@ -63,6 +64,7 @@ it('keeps Phone sign-in out of the primary menu without portal-admin', async () 
 
   fireEvent.click(screen.getByRole('button', { name: /^Menu$/ }))
   expect(screen.queryByRole('link', { name: 'Phone sign-in' })).toBeNull()
+  expect(screen.queryByRole('link', { name: 'Instances' })).toBeNull()
   expect(screen.getByRole('link', { name: 'Dashboard' })).toBeTruthy()
   fireEvent.click(screen.getByRole('link', { name: 'Dashboard' }))
   await act(async () => {
@@ -70,6 +72,35 @@ it('keeps Phone sign-in out of the primary menu without portal-admin', async () 
   })
   expect(window.location.pathname).toBe('/')
   expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeTruthy()
+})
+
+it('opens Instances beside Phone sign-in for a portal admin', async () => {
+  window.history.replaceState({}, '', '/?splash=0')
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) =>
+      url === '/api/invites'
+        ? Response.json({ invites: [], csrfToken: 'csrf-1' })
+        : url === '/api/instances'
+          ? Response.json({ instances: [], csrfToken: 'csrf-1' })
+          : new Response(null, { status: 404 }),
+    ),
+  )
+  render(<App />)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0)
+  })
+
+  fireEvent.click(screen.getByRole('button', { name: /^Dashboard$/ }))
+  const instances = screen.getByRole('link', { name: 'Instances' })
+  expect(instances.getAttribute('href')).toBe('/instances?splash=0')
+  fireEvent.click(instances)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0)
+  })
+
+  expect(window.location.pathname).toBe('/instances')
+  expect(screen.getByRole('heading', { level: 1, name: 'Instances' })).toBeTruthy()
 })
 
 it('shows the dashboard at /, where /login returns the browser after sign-in', async () => {
