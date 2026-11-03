@@ -1174,6 +1174,7 @@ PY
     fi
     printf 'FREEDRIVER_MQTT_CLIENT_SECRET=%s\nFREEDRIVER_MQTT_SA_PASSWORD=%s\n' "$secret" "$sa_pass" > "$tmp"
     own_secret "$tmp"
+    mkdir -p "$(dirname "$MQTT_ENV_FILE")"
     mv "$tmp" "$MQTT_ENV_FILE"
     docker exec -e SA_PASS="$sa_pass" "$CONTAINER" \
       sh -c "$KCADM set-password --config $KCADM_CONFIG -r $REALM --username service-account-freedriver-mqtt --new-password \"\$SA_PASS\"" >/dev/null
