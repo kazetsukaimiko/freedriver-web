@@ -118,16 +118,20 @@ if "contains(realm_access.roles[*], 'grafana-admin')" not in gf:
     raise SystemExit("grafana role_attribute_path maps grafana-admin")
 if "GF_SECURITY_ADMIN_USER: admin" not in gf:
     raise SystemExit("local grafana admin stays")
-if "GF_AUTH_DISABLE_LOGIN_FORM" in gf:
-    raise SystemExit("local grafana admin login stays enabled")
+if 'GF_AUTH_DISABLE_LOGIN_FORM: "true"' not in gf:
+    raise SystemExit("grafana login form is off; public sign-in is OAuth")
 if '"127.0.0.1:3000:3000"' not in gf:
     raise SystemExit("grafana still binds 127.0.0.1:3000")
 caddy = Path("Caddyfile").read_text()
-if "grafana.freedriver.io {\n\trespond 404\n}" not in caddy:
-    raise SystemExit("Caddy keeps grafana.freedriver.io as 404")
-if "reverse_proxy grafana" in caddy:
-    raise SystemExit("Caddy must not reverse_proxy grafana on this card")
-print("compose grafana oauth is on and unpublished")
+grafana_site = re.search(r"grafana\.freedriver\.io \{[^}]*\}", caddy)
+if grafana_site is None:
+    raise SystemExit("Caddy has a grafana.freedriver.io site")
+site = grafana_site.group(0)
+if "respond 404" in site:
+    raise SystemExit("Caddy reverse_proxies grafana.freedriver.io")
+if "reverse_proxy grafana:3000" not in site:
+    raise SystemExit("Caddy reverse_proxies grafana.freedriver.io to grafana:3000")
+print("compose grafana oauth is on and caddy reverse_proxies grafana.freedriver.io")
 PY
 
 if grep -q 'sms-otp.env.example' docker-compose.yml; then

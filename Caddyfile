@@ -41,10 +41,11 @@ app.freedriver.io {
 	}
 }
 
-# Holds the grafana.freedriver.io certificate and DNS name and answers 404.
-# Grafana serves on host 127.0.0.1:3000.
+# grafana.freedriver.io terminates TLS and reverse-proxies Grafana on grafana:3000.
+# Host 127.0.0.1:3000 is SSH break-glass.
 grafana.freedriver.io {
-	respond 404
+	encode gzip
+	reverse_proxy grafana:3000
 }
 
 # Obtains the mqtt.freedriver.io certificate over ACME HTTP-01 and answers 404.
