@@ -48,13 +48,15 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
 
 ## Broker
 
-- Image: `eclipse-mosquitto:2.1.2-alpine`
+- Image: `eclipse-mosquitto:2.1.2-alpine` with `iotinga/mosquitto-oauth-plugin` compiled against Mosquitto 2.1.2 (`mosquitto/Dockerfile`). Compose builds that image. Deploy pushes `ghcr.io/kazetsukaimiko/freedriver-web/mosquitto`.
+- Plugin path `/usr/lib/mosquitto-oauth-plugin.so`. Client id `freedriver-mqtt`. Token URL `https://auth.freedriver.io/realms/freedriver/protocol/openid-connect/token`. `plugin_opt_oauth_jwt_validate_exp false` so a short access token leaves a connected house up. Client secret and realm public key live in `/opt/freedriver-secrets/mosquitto/oauth.d/plugin.conf`, written by `scripts/provision-keycloak-freedriver.sh`.
+- House grants stay on `password_file` and `acl_file`. [#321](https://github.com/kazetsukaimiko/freedriver-web/issues/321) is the cutover that starts the live house on Keycloak.
 - Two MQTTS listeners (`protocol mqtt`). Mosquitto has no SNI, so each socket has one certificate.
   - Container port 8883 is not published. The API dials hostname `mosquitto` on that port. The certificate SAN is `DNS:mosquitto` only, signed by `/opt/freedriver-secrets/mqtt-internal/ca.crt`.
   - Container port 8884 is published as host `8883`. That certificate is Let's Encrypt for `DNS:mqtt.freedriver.io` only.
 - Host port 8883 stays reachable from any address because the home IP is dynamic. Broker passwords and instance ACLs guard it. `allow_anonymous false`, the password file, and the ACL apply to both listeners. Do not set `listener_allow_anonymous true`. Port 1883 stays closed.
 - Sysadmin still needs `mqtt.freedriver.io` A → `138.197.90.42`.
-- Auth: every client logs in with a broker password (`allow_anonymous false`). v1 has one house, which shares broker users `autonomy` and `api`. Each later instance gets its own autonomy user. House users receive exact instance topics; `api` receives the `+/metrics/#` filter.
+- Auth: every client logs in with a broker password (`allow_anonymous false`). v1 has one house, which shares broker users `autonomy` and `api`. The OAuth plugin is loaded. The dashboard service account `service-account-freedriver-mqtt` (group `portal-broker`) publishes `freedriver/v1/+/commands` and subscribes to `freedriver/v1/+/appliances` once #321 cuts over. House users receive exact instance topics; `api` receives the `+/metrics/#` filter.
 - Persistence: `/opt/freedriver-storage/mosquitto`.
 - Command-live arrives with #27.
 
@@ -70,6 +72,8 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
 | `/opt/freedriver-secrets/mosquitto/server.key` | Public listener key (mode 0600, owner 1883) |
 | `/opt/freedriver-secrets/mosquitto/internal.crt` | Unpublished listener leaf (`DNS:mosquitto` only) |
 | `/opt/freedriver-secrets/mosquitto/internal.key` | Unpublished listener key (mode 0600, owner 1883) |
+| `/opt/freedriver-secrets/mosquitto/oauth.d/plugin.conf` | Broker plugin client secret and realm public key |
+| `/opt/freedriver-secrets/keycloak-freedriver-mqtt.env` | `freedriver-mqtt` client secret and service-account password |
 | `/opt/freedriver-secrets/mqtt-internal/ca.crt` | Internal CA certificate that signed `internal.crt`. The CA private key is not kept. The dashboard mounts this file read-only. |
 
 ## Topics and ACL

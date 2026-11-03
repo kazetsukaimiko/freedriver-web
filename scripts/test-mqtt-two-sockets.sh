@@ -76,10 +76,43 @@ for required in (
     "allow_anonymous false",
     "password_file /mosquitto/config/secrets/passwd",
     "acl_file /mosquitto/config/secrets/acl",
+    "plugin /usr/lib/mosquitto-oauth-plugin.so",
+    "plugin_opt_oauth_client_id freedriver-mqtt",
+    "plugin_opt_oauth_token_url https://auth.freedriver.io/realms/freedriver/protocol/openid-connect/token",
+    "plugin_opt_oauth_jwt_validate_exp false",
+    "include_dir /mosquitto/config/secrets/oauth.d",
     "persistence true",
 ):
     if required not in globals_:
         raise SystemExit(f"missing global setting before listeners: {required}")
+if "per_listener_settings" in "\n".join(globals_):
+    raise SystemExit("per_listener_settings stays unset")
+dockerfile = Path("mosquitto/Dockerfile").read_text()
+if "eclipse-mosquitto:2.1.2-alpine" not in dockerfile:
+    raise SystemExit("Dockerfile must stay on eclipse-mosquitto:2.1.2-alpine")
+if "iotinga/mosquitto-oauth-plugin" not in dockerfile:
+    raise SystemExit("Dockerfile must fetch iotinga/mosquitto-oauth-plugin")
+if "FROM eclipse-mosquitto:2.1.2-alpine AS builder" not in dockerfile:
+    raise SystemExit("plugin must compile against the 2.1.2-alpine builder")
+provision_kc = Path("scripts/provision-keycloak-freedriver.sh").read_text()
+for needle in (
+    "clientId=freedriver-mqtt",
+    '"name": "mqtt-acl"',
+    "portal-broker",
+    "service-account-freedriver-mqtt",
+    "mqtt_acl.publish",
+    "mqtt_acl.subscribe",
+    "mqtt_acl.superuser",
+    "freedriver/v1/+/commands",
+    "freedriver/v1/+/appliances",
+):
+    if needle not in provision_kc:
+        raise SystemExit(f"provision-keycloak-freedriver.sh missing {needle}")
+compose_mosq = mosquitto
+if "dockerfile: mosquitto/Dockerfile" not in compose_mosq:
+    raise SystemExit("compose must build mosquitto/Dockerfile")
+if "image: eclipse-mosquitto:2.1.2-alpine" in compose_mosq:
+    raise SystemExit("compose mosquitto service builds the plugin image")
 
 listeners = []
 current = None
@@ -334,7 +367,9 @@ fi
 echo "tls handshake: mosquitto verifies with ca.crt; public name does not"
 
 run_broker_handshake() {
-  local image="eclipse-mosquitto:2.1.2-alpine"
+  local image="freedriver-mosquitto:handshake"
+  local client_image="eclipse-mosquitto:2.1.2-alpine"
+  docker build -f "${ROOT}/mosquitto/Dockerfile" -t "$image" "$ROOT" >/dev/null
   docker_net="fd218-mqtt-$$"
   docker_name="fd218-mqtt-$$"
   docker network create "$docker_net" >/dev/null
@@ -358,6 +393,11 @@ run_broker_handshake() {
   if [[ "$ready" -ne 1 ]]; then
     printf '%s\n' "$logs" >&2
     echo "mosquitto did not open 8883 and 8884" >&2
+    exit 1
+  fi
+  if ! grep -q "Mosquitto auth plugin initialized" <<<"$logs"; then
+    printf '%s\n' "$logs" >&2
+    echo "broker image must log that the OAuth plugin initialized" >&2
     exit 1
   fi
   local ip
@@ -393,7 +433,7 @@ run_broker_handshake() {
   local anon
   anon="$(docker run --rm --network "$docker_net" \
     -v "${CA_DIR}/ca.crt:/ca.crt:ro" \
-    "$image" \
+    "$client_image" \
     mosquitto_sub -h mosquitto -p 8883 -t probe --cafile /ca.crt -W 2 2>&1 || true)"
   if ! grep -qiE 'not authori[sz]ed' <<<"$anon"; then
     printf '%s\n' "$anon" >&2
@@ -403,14 +443,14 @@ run_broker_handshake() {
   local anon_public
   anon_public="$(docker run --rm --network "$docker_net" \
     -v "${SECRETS}/server.crt:/server.crt:ro" \
-    "$image" \
+    "$client_image" \
     mosquitto_sub -h mosquitto -p 8884 -t probe --cafile /server.crt --insecure -W 2 2>&1 || true)"
   if ! grep -qiE 'not authori[sz]ed' <<<"$anon_public"; then
     printf '%s\n' "$anon_public" >&2
     echo "anonymous connect on the public listener must be refused" >&2
     exit 1
   fi
-  echo "mosquitto handshake: unpublished 8883 is DNS:mosquitto; published 8884 is DNS:mqtt.freedriver.io; anonymous refused"
+  echo "mosquitto handshake: unpublished 8883 is DNS:mosquitto; published 8884 is DNS:mqtt.freedriver.io; anonymous refused; OAuth plugin initialized"
 }
 
 mkdir -p "${WORKDIR}/data"
@@ -428,6 +468,7 @@ if docker info >/dev/null 2>&1; then
     eclipse-mosquitto:2.1.2-alpine \
     mosquitto_passwd -c -b /mosquitto/config/secrets/passwd api fixture-not-printed >/dev/null
   printf '%s\n' 'user api' 'topic read probe' > "${SECRETS}/acl"
+  mkdir -p "${SECRETS}/oauth.d"
   # Host-side probes cannot read a 0640 file owned by 1883. Keep a copy
   # of the public certificate for those probes. The broker still reads
   # the secrets-dir file.
@@ -443,10 +484,13 @@ if docker info >/dev/null 2>&1; then
       /mosquitto/config/secrets/server.key \
       /mosquitto/config/secrets/internal.crt \
       /mosquitto/config/secrets/internal.key \
+      /mosquitto/config/secrets/oauth.d \
       && chmod 0600 \
       /mosquitto/config/secrets/passwd \
       /mosquitto/config/secrets/server.key \
       /mosquitto/config/secrets/internal.key \
+      && chmod 0750 \
+      /mosquitto/config/secrets/oauth.d \
       && chmod 0640 \
       /mosquitto/config/secrets/acl \
       /mosquitto/config/secrets/server.crt \

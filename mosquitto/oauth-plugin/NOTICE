@@ -1,0 +1,9 @@
+This image compiles iotinga/mosquitto-oauth-plugin (Apache-2.0) against
+Eclipse Mosquitto 2.1.2 headers and libjwt 1.17.2.
+
+- https://github.com/iotinga/mosquitto-oauth-plugin/tree/v1.1.1
+- https://github.com/benmcollins/libjwt/tree/v1.17.2
+- https://mosquitto.org/files/source/mosquitto-2.1.2.tar.gz
+
+defer-password-file.patch is a Freedriver change: a failed OAuth exchange
+returns MOSQ_ERR_PLUGIN_DEFER. House-grant timing is in docs/mqtt-connect.md.

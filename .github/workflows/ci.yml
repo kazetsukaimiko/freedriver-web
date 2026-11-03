@@ -450,6 +450,14 @@ jobs:
             -t freedriver-mosquitto-cert-sync:ci \
             scripts
 
+      - name: Build the Mosquitto OAuth image
+        run: |
+          set -euo pipefail
+          docker build \
+            -f mosquitto/Dockerfile \
+            -t freedriver-mosquitto:ci \
+            .
+
       - name: Compose config against a dummy env file
         run: |
           set -euo pipefail
@@ -476,6 +484,7 @@ jobs:
               "dashboard",
               "docker-logs-proxy",
               "keycloak",
+              "mosquitto",
               "mosquitto-cert-sync",
               "sms",
           ]
