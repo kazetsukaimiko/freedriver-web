@@ -16,6 +16,7 @@ WORKDIR /build
 
 RUN apk add --no-cache \
     build-base \
+    cjson-dev \
     cmake \
     curl \
     curl-dev \
