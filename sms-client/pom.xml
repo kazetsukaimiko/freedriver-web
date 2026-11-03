@@ -10,7 +10,7 @@
     <groupId>io.freedriver.sms</groupId>
     <artifactId>sms-client</artifactId>
     <name>sms-client</name>
-    <description>Proxy client for SmsApi over java.net.http. Java 21, for Keycloak 26.3. No JAX-RS client and no Quarkus.</description>
+    <description>Proxy client for SmsApi over java.net.http. Java 21, for Keycloak 26.7. No JAX-RS client and no Quarkus.</description>
 
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
@@ -25,7 +25,7 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
-            <version>${keycloak.jackson.version}</version>
+            <version>${keycloak.jackson.annotations.version}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>

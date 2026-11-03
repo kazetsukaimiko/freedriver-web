@@ -16,8 +16,9 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>21</maven.compiler.release>
-        <keycloak.version>26.3.5</keycloak.version>
-        <jackson.version>2.18.2</jackson.version>
+        <keycloak.version>26.7.5</keycloak.version>
+        <jackson.version>2.21.7</jackson.version>
+        <jackson.annotations.version>2.21</jackson.annotations.version>
         <junit.version>5.13.4</junit.version>
         <mockito.version>5.20.0</mockito.version>
         <!-- Image build sets this from the deploy commit. Not a secret. -->
@@ -31,7 +32,7 @@
             <version>${keycloak.version}</version>
             <scope>provided</scope>
         </dependency>
-        <!-- Keycloak 26.3 ships the Authenticator SPI in keycloak-server-spi-private. -->
+        <!-- Keycloak 26.7 ships the Authenticator SPI in keycloak-server-spi-private. -->
         <dependency>
             <groupId>org.keycloak</groupId>
             <artifactId>keycloak-server-spi-private</artifactId>
@@ -65,12 +66,12 @@
             <scope>provided</scope>
         </dependency>
         <!-- Jackson and validation-api are provided by the build, not bundled.
-             Keycloak 26.3 supplies Jackson and JAX-RS at runtime. validation-api is not on that runtime,
-             and this provider does not run a Validator. -->
+             Keycloak 26.7 supplies Jackson, JAX-RS, and validation-api at runtime;
+             the provider jar never instantiates a Validator. -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
-            <version>${jackson.version}</version>
+            <version>${jackson.annotations.version}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -82,7 +83,7 @@
         <dependency>
             <groupId>jakarta.validation</groupId>
             <artifactId>jakarta.validation-api</artifactId>
-            <version>3.0.2</version>
+            <version>3.1.1</version>
             <scope>provided</scope>
         </dependency>
         <!-- Built from this checkout by ./mvnw -C -pl sms-client -am package. Not a registry read. -->

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Throwaway Keycloak 26.3 realm in container freedriver-invite-kc-test.
+# Throwaway Keycloak 26.7.5 realm in container freedriver-invite-kc-test.
 # Expects 403 for role grants, user create, member password and profile edits,
 # impersonation, and client reads, and 204 when adding phone-sign-in membership.
 # Prints status codes.
@@ -11,7 +11,7 @@ cd "$ROOT"
 CONTAINER=freedriver-invite-kc-test
 PORT=18080
 BASE="http://127.0.0.1:${PORT}"
-IMAGE=quay.io/keycloak/keycloak:26.3
+IMAGE=quay.io/keycloak/keycloak:26.7.5
 
 if ! command -v docker >/dev/null; then
   echo "docker is required for the invite service-account checks" >&2
@@ -102,11 +102,16 @@ PY
   while IFS=$'\t' read -r perm_id perm_name; do
     admin get "clients/${admin_client}/authz/resource-server/permission/scope/${perm_id}?fields=*" -r freedriver > "$work/perm-one.json"
     python3 - "$work/perm-one.json" "$perm_name" <<'PY' || exit 1
-import json, sys
+import json, re, sys
 item = json.load(open(sys.argv[1], encoding="utf-8"))
+uuid = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 scopes = []
 for entry in list(item.get("scopes") or []) + list(item.get("scopesData") or []):
     if isinstance(entry, str):
+        if uuid.fullmatch(entry):
+            continue
         scopes.append(entry)
     elif isinstance(entry, dict) and entry.get("name"):
         scopes.append(entry["name"])
@@ -145,11 +150,16 @@ PY
   fi
   admin get "clients/${admin_client}/authz/resource-server/permission/scope/${perm_id}?fields=*" -r freedriver > "$work/perm-one.json"
   python3 - "$work/perm-one.json" > "$work/wide.json" <<'PY'
-import json, sys
+import json, re, sys
 item = json.load(open(sys.argv[1], encoding="utf-8"))
+uuid = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 names = []
 for entry in list(item.get("scopes") or []) + list(item.get("scopesData") or []):
     if isinstance(entry, str):
+        if uuid.fullmatch(entry):
+            continue
         names.append(entry)
     elif isinstance(entry, dict) and entry.get("name"):
         names.append(entry["name"])
@@ -181,11 +191,16 @@ PY
   admin_stdin update "clients/${admin_client}/authz/resource-server/permission/scope/${perm_id}" -r freedriver -f - < "$work/wide.json" >/dev/null
   admin get "clients/${admin_client}/authz/resource-server/permission/scope/${perm_id}?fields=*" -r freedriver > "$work/perm-one.json"
   python3 - "$work/perm-one.json" <<'PY'
-import json, sys
+import json, re, sys
 item = json.load(open(sys.argv[1], encoding="utf-8"))
+uuid = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 names = []
 for entry in list(item.get("scopes") or []) + list(item.get("scopesData") or []):
     if isinstance(entry, str):
+        if uuid.fullmatch(entry):
+            continue
         names.append(entry)
     elif isinstance(entry, dict) and entry.get("name"):
         names.append(entry["name"])
@@ -378,11 +393,18 @@ PY
     [[ -n "$perm_id" ]] || continue
     admin get "clients/${admin_client}/authz/resource-server/permission/scope/${perm_id}?fields=*" -r freedriver > "$work/perm-one.json" || continue
     python3 - "$work/perm-one.json" "$phone_group" "$perm_name" <<'PY'
-import json, sys
+import json, re, sys
 item = json.load(open(sys.argv[1], encoding="utf-8"))
 scopes = item.get("scopes") or []
 scopes_data = item.get("scopesData") or []
-scope_names = sorted({s if isinstance(s, str) else s.get("name") for s in list(scopes) + list(scopes_data) if s})
+uuid = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+scope_names = sorted({
+    (s if isinstance(s, str) else (s or {}).get("name"))
+    for s in list(scopes) + list(scopes_data)
+    if s and not (isinstance(s, str) and uuid.fullmatch(s))
+})
 resources = item.get("resources") or []
 resources_data = item.get("resourcesData") or []
 resource_names = []

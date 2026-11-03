@@ -338,9 +338,11 @@ else
   echo "Created public client ${DISPATCHER_CLIENT}."
 fi
 
-# grok.com connector is connect-and-forget. 1-year access token and client
-# session on this public client only. Realm SSO and freedriver-api stay as they
-# are. offline_access stays optional (not default).
+# grok.com connector is connect-and-forget. 1-year access token on this public
+# client. Client session idle and max use realm SSO
+# (${SSO_SESSION_IDLE_TIMEOUT}/${SSO_SESSION_MAX_LIFESPAN}); Keycloak 26.7
+# accepts those attributes at the realm SSO ceiling. offline_access stays
+# optional (not default).
 kcadm update "clients/${DISPATCHER_UUID}" -r "$REALM" \
   -s publicClient=true \
   -s standardFlowEnabled=true \
@@ -351,8 +353,8 @@ kcadm update "clients/${DISPATCHER_UUID}" -r "$REALM" \
   -s "webOrigins=${DISPATCHER_WEB_ORIGINS}" \
   -s 'attributes."pkce.code.challenge.method"=S256' \
   -s 'attributes."access.token.lifespan"=31536000' \
-  -s 'attributes."client.session.idle.timeout"=31536000' \
-  -s 'attributes."client.session.max.lifespan"=31536000' >/dev/null
+  -s 'attributes."client.session.idle.timeout"='"${SSO_SESSION_IDLE_TIMEOUT}" \
+  -s 'attributes."client.session.max.lifespan"='"${SSO_SESSION_MAX_LIFESPAN}" >/dev/null
 
 ensure_mapper "$DISPATCHER_UUID" actor-dispatcher \
   -s protocolMapper=oidc-hardcoded-claim-mapper \
