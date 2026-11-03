@@ -976,7 +976,7 @@ PY
     echo "MQTT user profile attributes are admin-only."
   fi
 
-  kcadm get client-scopes -r "$REALM" > "$work/client-scopes.json"
+  kcadm get client-scopes -r "$REALM" --format json > "$work/client-scopes.json"
   scope_id="$(python3 - "$work/client-scopes.json" <<'PY'
 import json, sys
 scopes = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -985,12 +985,20 @@ print(ids[0] if len(ids) == 1 else "")
 PY
 )"
   if [[ -z "$scope_id" ]]; then
-    kcadm create client-scopes -r "$REALM" \
-      -s name=mqtt-acl \
-      -s protocol=openid-connect \
-      -s 'description=mqtt_acl claims from mqtt_publ_topic and mqtt_subs_topic' \
-      -s 'attributes.include.in.token.scope=true' >/dev/null
-    kcadm get client-scopes -r "$REALM" > "$work/client-scopes.json"
+    python3 - "$work/mqtt-acl-scope.json" <<'PY'
+import json, sys
+json.dump({
+    "name": "mqtt-acl",
+    "protocol": "openid-connect",
+    "description": "mqtt_acl claims from mqtt_publ_topic and mqtt_subs_topic",
+    "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false",
+    },
+}, open(sys.argv[1], "w", encoding="utf-8"))
+PY
+    kcadm_stdin create client-scopes -r "$REALM" -f - < "$work/mqtt-acl-scope.json" >/dev/null
+    kcadm get client-scopes -r "$REALM" --format json > "$work/client-scopes.json"
     scope_id="$(python3 - "$work/client-scopes.json" <<'PY'
 import json, sys
 scopes = json.load(open(sys.argv[1], encoding="utf-8"))
