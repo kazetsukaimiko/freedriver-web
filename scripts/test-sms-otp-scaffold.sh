@@ -264,6 +264,7 @@ THEME=keycloak/themes/freedriver/login
 grep -qx 'parent=keycloak.v2' "$THEME/theme.properties"
 for template in freedriver-sms-phone.ftl freedriver-sms-code.ftl; do
   grep -q "\"$template\"" keycloak/sms-otp-spi/src/main/java/io/freedriver/keycloak/sms/SmsOtpAuthenticator.java
+  grep -q 'freedriverSmsPasswordAllowed!false' "$THEME/$template"
   grep -q 'url.loginRestartFlowUrl' "$THEME/$template"
 done
 for template in webauthn-authenticate.ftl webauthn-register.ftl webauthn-error.ftl; do
