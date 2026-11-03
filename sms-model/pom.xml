@@ -10,7 +10,7 @@
     <groupId>io.freedriver.sms</groupId>
     <artifactId>sms-model</artifactId>
     <name>sms-model</name>
-    <description>Request and response DTOs for the sms service. Java 21, for Keycloak 26.3.</description>
+    <description>Request and response DTOs for the sms service. Java 21, for Keycloak 26.7.</description>
 
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
@@ -20,7 +20,7 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
-            <version>${keycloak.jackson.version}</version>
+            <version>${keycloak.jackson.annotations.version}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
