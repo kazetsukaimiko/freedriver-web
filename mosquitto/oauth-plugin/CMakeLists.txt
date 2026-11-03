@@ -26,6 +26,9 @@ target_include_directories(mosquitto-oauth-plugin PRIVATE
     ${JWT_INCLUDE_DIR}
     ${JANSSON_INCLUDE_DIRS}
 )
+# Mosquitto 2.1 mosquitto_broker.h no longer declares mosquitto_malloc;
+# mosquitto.h does, via libcommon_memory.h.
+target_compile_options(mosquitto-oauth-plugin PRIVATE -include mosquitto.h)
 target_link_libraries(mosquitto-oauth-plugin PRIVATE
     ${LIBCURL_LIBRARIES}
     ${JWT_LIBRARY}
