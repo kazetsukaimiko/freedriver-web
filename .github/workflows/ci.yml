@@ -226,6 +226,18 @@ jobs:
           python3 observability/docker-logs-proxy/test_docker_logs_proxy.py
           docker build -t freedriver-docker-logs-proxy:ci observability/docker-logs-proxy
 
+      - name: Draft PRs become ready when checks pass
+        run: |
+          python3 .github/scripts/pr_ready_when_green.py --self-test
+          if grep -F "conclusion != 'success'" .github/workflows/ci-notify-openbot.yml; then
+            echo "ci-notify-openbot must POST on success and failure"
+            exit 1
+          fi
+          if ! grep -q 'name: pr-ready-when-green' .github/workflows/pr-ready-when-green.yml; then
+            echo "missing pr-ready-when-green workflow"
+            exit 1
+          fi
+
       - name: Browser must not speak MQTT
         run: |
           if grep -RInE 'mqtt|8883|mosquitto' java/dashboard/src/main/webui; then

@@ -1,8 +1,9 @@
 name: ci-notify-openbot
 
-# After another workflow in this repo completes, POST a signed OpenBot
-# envelope. Native GitHub webhook JSON is 400 on signal.openbot.run.
-# GitHub does not re-enter this workflow via workflow_run.
+# After another workflow in this repo completes (success or failure, not
+# skipped), POST a signed OpenBot envelope. Native GitHub webhook JSON is
+# 400 on signal.openbot.run. GitHub does not re-enter this workflow via
+# workflow_run.
 on:
   workflow_run:
     workflows:
@@ -18,7 +19,7 @@ on:
 
 jobs:
   notify:
-    if: github.event.workflow_run.conclusion != 'skipped' && github.event.workflow_run.conclusion != 'success'
+    if: github.event.workflow_run.conclusion != 'skipped'
     runs-on: ubuntu-latest
     permissions:
       actions: read

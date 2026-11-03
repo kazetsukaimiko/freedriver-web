@@ -24,9 +24,9 @@ Open the pull request as the GitHub user for your role. The default role is yuni
 
 Open the pull request as a draft.
 
-When CI is green, read the automated review. [The Grok review on pull request 203](https://github.com/kazetsukaimiko/freedriver-web/pull/203#pullrequestreview-5579525971) is the shape of that comment. Settle it under the mandate.
+`pr-ready-when-green` marks it ready and requests kaze (`kazetsukaimiko`) when CI, Commitlint, and Grok review succeed on `main`. It leaves the pull request draft when the label is `keep-draft`, the base is not `main`, Grok's verdict on this head is `request-changes`, or Grok did not run.
 
-When CI is green and that review is settled, mark the pull request ready for review and request a review from kaze (`kazetsukaimiko`).
+When CI is green, read the automated review. [The Grok review on pull request 203](https://github.com/kazetsukaimiko/freedriver-web/pull/203#pullrequestreview-5579525971) is the shape of that comment. Settle it under the mandate.
 
 When kaze approves, merge. Leave the pull request open when kaze's review says to hold the merge.
 
