@@ -6,5 +6,4 @@ Eclipse Mosquitto 2.1.2 headers and libjwt 1.17.2.
 - https://mosquitto.org/files/source/mosquitto-2.1.2.tar.gz
 
 defer-password-file.patch is a Freedriver change: a failed OAuth exchange
-returns MOSQ_ERR_PLUGIN_DEFER so password_file remains the house grant
-until kazetsukaimiko/freedriver-web#321.
+returns MOSQ_ERR_PLUGIN_DEFER. House-grant timing is in docs/mqtt-connect.md.

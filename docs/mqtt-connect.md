@@ -56,7 +56,7 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
   - Container port 8884 is published as host `8883`. That certificate is Let's Encrypt for `DNS:mqtt.freedriver.io` only.
 - Host port 8883 stays reachable from any address because the home IP is dynamic. Broker passwords and instance ACLs guard it. `allow_anonymous false`, the password file, and the ACL apply to both listeners. Do not set `listener_allow_anonymous true`. Port 1883 stays closed.
 - Sysadmin still needs `mqtt.freedriver.io` A → `138.197.90.42`.
-- Auth: every client logs in with a broker password (`allow_anonymous false`). v1 has one house, which shares broker users `autonomy` and `api`. The OAuth plugin is loaded. House grants stay on that password file and ACL. The dashboard service account `service-account-freedriver-mqtt` (group `portal-broker`) publishes `freedriver/v1/+/commands` and subscribes to `freedriver/v1/+/appliances` once #321 cuts over. House users receive exact instance topics; `api` receives the `+/metrics/#` filter.
+- Auth: every client logs in with a broker password (`allow_anonymous false`). v1 has one house, which shares broker users `autonomy` and `api`. The OAuth plugin is loaded. The dashboard service account `service-account-freedriver-mqtt` (group `portal-broker`) publishes `freedriver/v1/+/commands` and subscribes to `freedriver/v1/+/appliances` once #321 cuts over. House users receive exact instance topics; `api` receives the `+/metrics/#` filter.
 - Persistence: `/opt/freedriver-storage/mosquitto`.
 - Command-live arrives with #27.
 

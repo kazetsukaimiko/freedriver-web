@@ -32,7 +32,8 @@ RUN curl -fsSL -o mosquitto.tar.gz "https://mosquitto.org/files/source/mosquitto
     && echo "${LIBJWT_SHA256}  libjwt.tar.gz" | sha256sum -c - \
     && tar -xzf libjwt.tar.gz \
     && curl -fsSL -o plugin.tar.gz "https://github.com/iotinga/mosquitto-oauth-plugin/archive/refs/tags/v${OAUTH_PLUGIN_VERSION}.tar.gz" \
-    && echo "${OAUTH_PLUGIN_SHA256}  plugin.tar.gz" | sha256sum -c -
+    && echo "${OAUTH_PLUGIN_SHA256}  plugin.tar.gz" | sha256sum -c - \
+    && tar -xzf plugin.tar.gz
 
 WORKDIR /build/libjwt-${LIBJWT_VERSION}
 RUN cmake -S . -B build \
@@ -47,7 +48,8 @@ COPY mosquitto/oauth-plugin/defer-password-file.patch /build/defer-password-file
 COPY mosquitto/oauth-plugin/CMakeLists.txt /build/plugin-CMakeLists.txt
 
 WORKDIR /build/mosquitto-oauth-plugin-${OAUTH_PLUGIN_VERSION}
-RUN patch -p1 < /build/defer-password-file.patch \
+RUN test -f src/auth.c \
+    && patch -p1 --forward --batch < /build/defer-password-file.patch \
     && cp /build/plugin-CMakeLists.txt CMakeLists.txt \
     && cmake -S . -B build \
         -DCMAKE_INSTALL_PREFIX=/usr \

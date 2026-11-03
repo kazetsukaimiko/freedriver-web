@@ -44,8 +44,7 @@
 # grants plus a service account. Client scope mqtt-acl fills mqtt_acl.publish and
 # mqtt_acl.subscribe from user attributes. Group mqtt-instance is the house gate;
 # group portal-broker holds the dashboard service account. The plugin secret is
-# written once under /opt/freedriver-secrets. House grants stay on password_file
-# until #321.
+# written once under /opt/freedriver-secrets.
 #
 # Run as root, or as a member of the allowed group, on the VPS. Idempotent. New password users get the
 # UPDATE_PASSWORD required action and choose their own password.
