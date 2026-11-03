@@ -13,11 +13,13 @@
                 <@buttons.button id="freedriver-sms-send" name="send" label="freedriverSmsSend" class=["kcButtonPrimaryClass", "kcButtonBlockClass"] />
             </@buttons.actionGroup>
         </form>
+        <#if freedriverSmsPasswordAllowed!false>
         <div id="freedriver-sms-password" class="${properties.kcFormGroupClass!}">
             <a class="${properties.kcButtonLinkClass!}" href="${url.loginRestartFlowUrl}">${msg("freedriverSmsUsePassword")}</a>
         </div>
+        </#if>
         <#-- keycloak.v2 prints Try another way after this form when auth is present.
-             This page's only alternate path is the password link. -->
+             Password is offered only after send failed or a sent OTP timed out. -->
         <#global auth="">
     </#if>
 </@layout.registrationLayout>
