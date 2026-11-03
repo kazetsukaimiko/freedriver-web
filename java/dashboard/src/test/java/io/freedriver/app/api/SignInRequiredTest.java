@@ -87,6 +87,17 @@ class SignInRequiredTest {
     }
 
     @Test
+    void javascript_account_passkeys_without_session_is_499() {
+        given().header("X-Requested-With", "JavaScript")
+                .redirects().follow(false)
+                .when().get("/api/account/passkeys")
+                .then()
+                .statusCode(499)
+                .header("WWW-Authenticate", "OIDC")
+                .header("Location", nullValue());
+    }
+
+    @Test
     void browser_opening_api_path_is_redirected_to_sign_in() {
         String location = given()
                 .redirects().follow(false)

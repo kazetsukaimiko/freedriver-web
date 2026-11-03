@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Account } from './Account'
-import { SET_OR_CHANGE_PASSWORD, acceptPasswordActionUrl } from './account'
+import { SET_OR_CHANGE_PASSWORD, SET_UP_A_PASSKEY, acceptPasswordActionUrl } from './account'
 
 let fetchMock: ReturnType<typeof vi.fn>
 
@@ -22,8 +22,8 @@ async function renderPage() {
   })
 }
 
-async function clickStart() {
-  fireEvent.click(screen.getByRole('button', { name: SET_OR_CHANGE_PASSWORD }))
+async function clickStart(name: string = SET_OR_CHANGE_PASSWORD) {
+  fireEvent.click(screen.getByRole('button', { name }))
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0)
   })
@@ -57,6 +57,7 @@ describe('Account', () => {
 
     expect(screen.getByRole('heading', { level: 1, name: 'Account' })).toBeTruthy()
     expect(screen.getByRole('button', { name: SET_OR_CHANGE_PASSWORD }).closest('section')?.className).toBe('card')
+    expect(screen.getByRole('button', { name: SET_UP_A_PASSKEY }).closest('section')?.className).toBe('card')
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -106,5 +107,42 @@ describe('Account', () => {
 
     expect(replace).toHaveBeenCalledTimes(1)
     expect(replace).toHaveBeenCalledWith('/login')
+  })
+
+  it('reads GET /api/account/passkeys through apiFetch and goes to /login', async () => {
+    const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => {})
+    answer(200, { url: '/login' })
+    await renderPage()
+    await clickStart(SET_UP_A_PASSKEY)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit | undefined]
+    expect(url).toBe('/api/account/passkeys')
+    expect(init?.method ?? 'GET').toMatch(/GET/i)
+    expect(init?.body).toBeUndefined()
+    expect(assign).toHaveBeenCalledWith('/login')
+  })
+
+  it('does not follow a Grok Bot redirect for passkeys', async () => {
+    const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => {})
+    answer(200, { url: 'https://grok.com/connectors-oauth-exchange-code/' })
+    await renderPage()
+    await clickStart(SET_UP_A_PASSKEY)
+
+    expect(assign).not.toHaveBeenCalled()
+    expect(screen.getByText("Couldn't start passkey setup.")).toBeTruthy()
+  })
+
+  it('does not call WebAuthn on the dashboard origin', async () => {
+    const create = vi.fn()
+    Object.defineProperty(globalThis, 'navigator', {
+      value: { credentials: { create } },
+      configurable: true,
+    })
+    answer(200, { url: '/login' })
+    await renderPage()
+    await clickStart(SET_UP_A_PASSKEY)
+
+    expect(create).not.toHaveBeenCalled()
   })
 })
