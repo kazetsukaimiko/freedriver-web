@@ -97,7 +97,7 @@ if "FROM eclipse-mosquitto:2.1.2-alpine AS builder" not in dockerfile:
 provision_kc = Path("scripts/provision-keycloak-freedriver.sh").read_text()
 for needle in (
     "clientId=freedriver-mqtt",
-    "name=mqtt-acl",
+    '"name": "mqtt-acl"',
     "portal-broker",
     "service-account-freedriver-mqtt",
     "mqtt_acl.publish",
