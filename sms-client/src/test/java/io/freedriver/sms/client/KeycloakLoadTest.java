@@ -30,17 +30,17 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Loads sms-client the way a Keycloak 26.3 provider does: parent is the server's {@code lib/lib/main}
+ * Loads sms-client the way a Keycloak 26.7 provider does: parent is the server's {@code lib/lib/main}
  * runtime, child is only the three modules' classes.
  *
- * <p>Set {@code KEYCLOAK_HOME} to a local Keycloak 26.3 directory (the one that contains
+ * <p>Set {@code KEYCLOAK_HOME} to a local Keycloak 26.7 directory (the one that contains
  * {@code version.txt} and {@code lib/lib/main}) to run this against that install. Otherwise the
- * test downloads {@code keycloak-quarkus-dist} 26.3.5 from Maven Central and checks the sha256.
+ * test downloads {@code keycloak-quarkus-dist} 26.7.5 from Maven Central and checks the sha256.
  */
 class KeycloakLoadTest {
 
-    private static final String DIST_VERSION = "26.3.5";
-    private static final String SHA256 = "95756bdfd7540fafaf28874a8eb8d0d4c55977344a3b7821e9bd3a22bfb2b6a6";
+    private static final String DIST_VERSION = "26.7.5";
+    private static final String SHA256 = "30ef87fb7101c43d29688d1ae80c0588ff4a151b3330e9f664bf9692d398658a";
     private static final String DIST_URL =
             "https://repo1.maven.org/maven2/org/keycloak/keycloak-quarkus-dist/" + DIST_VERSION
                     + "/keycloak-quarkus-dist-" + DIST_VERSION + ".zip";
@@ -49,16 +49,17 @@ class KeycloakLoadTest {
     void client_loads_jackson_and_jax_rs_from_keycloak_runtime_not_from_the_modules() throws Exception {
         Path home = keycloakHome();
         String version = Files.readString(home.resolve("version.txt"));
-        assertTrue(version.contains("26.3"), version);
+        assertTrue(version.contains("26.7"), version);
         Path main = home.resolve("lib/lib/main");
         Path deployment = home.resolve("lib/lib/deployment");
         assertTrue(Files.isDirectory(main), main.toString());
         Path jackson = oneJar(main, "jackson-databind-");
         Path jaxrs = oneJar(main, "jakarta.ws.rs-api-");
-        assertTrue(listJars(main, "jakarta.validation-api-").isEmpty(),
-                "Keycloak runtime must not gain a second validation-api without this test being updated");
-        Path validationAtBuild = oneJar(deployment, "jakarta.validation-api-");
-        assertTrue(validationAtBuild.getFileName().toString().contains("3.0.2"), validationAtBuild.toString());
+        Path validation = oneJar(main, "jakarta.validation-api-");
+        assertTrue(jackson.getFileName().toString().contains("2.21.7"), jackson.toString());
+        assertTrue(validation.getFileName().toString().contains("3.1.1"), validation.toString());
+        assertTrue(listJars(deployment, "jakarta.validation-api-").isEmpty(),
+                deployment + " should not also ship validation-api");
 
         List<URL> runtime = new ArrayList<>();
         try (Stream<Path> jars = Files.list(main)) {
@@ -80,8 +81,8 @@ class KeycloakLoadTest {
             Class<?> path = Class.forName("jakarta.ws.rs.Path", false, provider);
             assertFromRuntime(mapper, "jackson-databind");
             assertFromRuntime(path, "jakarta.ws.rs-api");
-            assertThrows(ClassNotFoundException.class,
-                    () -> Class.forName("jakarta.validation.constraints.NotNull", false, provider));
+            Class<?> notNull = Class.forName("jakarta.validation.constraints.NotNull", false, provider);
+            assertFromRuntime(notNull, "jakarta.validation-api");
             // jakarta.ws.rs-api contains the client interfaces. A client runtime is a different jar.
             assertThrows(ClassNotFoundException.class,
                     () -> Class.forName("org.jboss.resteasy.client.jaxrs.ResteasyClient", false, provider));

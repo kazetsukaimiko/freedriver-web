@@ -1,4 +1,4 @@
-# Keycloak 26.3 plus the Freedriver SMS OTP provider at
+# Keycloak 26.7.5 plus the Freedriver SMS OTP provider at
 # /opt/keycloak/providers/freedriver-sms-otp.jar and the freedriver login theme
 # at /opt/keycloak/themes/freedriver.
 #
@@ -54,7 +54,7 @@ RUN chmod +x mvnw scripts/check-sms-otp-provider-jar.sh \
       "${SOURCE_COMMIT}" \
  && cp keycloak/sms-otp-spi/target/freedriver-sms-otp-spi-1.0.0-SNAPSHOT.jar /freedriver-sms-otp.jar
 
-FROM quay.io/keycloak/keycloak:26.3
+FROM quay.io/keycloak/keycloak:26.7.5
 ENV KC_DB=postgres \
     KC_HEALTH_ENABLED=true \
     KC_HTTP_ENABLED=true

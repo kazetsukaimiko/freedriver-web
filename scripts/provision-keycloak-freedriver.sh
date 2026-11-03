@@ -40,6 +40,13 @@
 # code + PKCE, no secret, no service account. The client remains disabled with
 # empty redirectUris and webOrigins until anonymous GET /autonomy/mcp returns 401.
 #
+# MQTT broker client (#317) is confidential client freedriver-mqtt. Direct access
+# grants. Client scope mqtt-acl fills mqtt_acl.publish and mqtt_acl.subscribe from
+# user attributes. Group mqtt-instance is the house gate; group portal-broker
+# holds realm user service-account-freedriver-mqtt. The plugin exchanges
+# username/password, so that user is a realm user with a password. The plugin
+# secret is written once under /opt/freedriver-secrets.
+#
 # Run as root, or as a member of the allowed group, on the VPS. Idempotent. New password users get the
 # UPDATE_PASSWORD required action and choose their own password.
 set -euo pipefail
@@ -50,6 +57,8 @@ SECRET_FILE="${SECRET_FILE:-/opt/freedriver-secrets/keycloak-freedriver-api.secr
 INVITE_ENV_FILE="${INVITE_ENV_FILE:-/opt/freedriver-secrets/keycloak-freedriver-invite.env}"
 INSTANCES_ENV_FILE="${INSTANCES_ENV_FILE:-/opt/freedriver-secrets/keycloak-freedriver-instances.env}"
 GRAFANA_ENV_FILE="${GRAFANA_ENV_FILE:-/opt/freedriver-secrets/keycloak-freedriver-grafana.env}"
+MQTT_ENV_FILE="${MQTT_ENV_FILE:-/opt/freedriver-secrets/keycloak-freedriver-mqtt.env}"
+MQTT_OAUTH_DIR="${MQTT_OAUTH_DIR:-/opt/freedriver-secrets/mosquitto/oauth.d}"
 SECRETS_ENV="${SECRETS_ENV:-/opt/freedriver-secrets/.env}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KCADM=/opt/keycloak/bin/kcadm.sh
@@ -338,9 +347,11 @@ else
   echo "Created public client ${DISPATCHER_CLIENT}."
 fi
 
-# grok.com connector is connect-and-forget. 1-year access token and client
-# session on this public client only. Realm SSO and freedriver-api stay as they
-# are. offline_access stays optional (not default).
+# grok.com connector is connect-and-forget. 1-year access token on this public
+# client. Client session idle and max use realm SSO
+# (${SSO_SESSION_IDLE_TIMEOUT}/${SSO_SESSION_MAX_LIFESPAN}); Keycloak 26.7
+# accepts those attributes at the realm SSO ceiling. offline_access stays
+# optional (not default).
 kcadm update "clients/${DISPATCHER_UUID}" -r "$REALM" \
   -s publicClient=true \
   -s standardFlowEnabled=true \
@@ -351,8 +362,8 @@ kcadm update "clients/${DISPATCHER_UUID}" -r "$REALM" \
   -s "webOrigins=${DISPATCHER_WEB_ORIGINS}" \
   -s 'attributes."pkce.code.challenge.method"=S256' \
   -s 'attributes."access.token.lifespan"=31536000' \
-  -s 'attributes."client.session.idle.timeout"=31536000' \
-  -s 'attributes."client.session.max.lifespan"=31536000' >/dev/null
+  -s 'attributes."client.session.idle.timeout"='"${SSO_SESSION_IDLE_TIMEOUT}" \
+  -s 'attributes."client.session.max.lifespan"='"${SSO_SESSION_MAX_LIFESPAN}" >/dev/null
 
 ensure_mapper "$DISPATCHER_UUID" actor-dispatcher \
   -s protocolMapper=oidc-hardcoded-claim-mapper \
@@ -896,9 +907,322 @@ ensure_grafana_client() {
   assign_grafana_admin_users
 }
 
+ensure_mqtt_broker() {
+  local group_id portal_id scope_id client_uuid sa_id secret sa_pass jwt_key tmp mapper_id has_scope
+  ensure_top_group() {
+    local name="$1"
+    local id
+    kcadm get groups -r "$REALM" -q "search=${name}" -q exact=true > "$work/${name}-groups.json"
+    id="$(python3 - "$work/${name}-groups.json" "$name" <<'PY'
+import json, sys
+groups = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+ids = [g["id"] for g in groups if g.get("name") == wanted and not g.get("parentId")]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+    if [[ -z "$id" ]]; then
+      kcadm create groups -r "$REALM" -s "name=${name}" >/dev/null
+      echo "Created group ${name}." >&2
+      kcadm get groups -r "$REALM" -q "search=${name}" -q exact=true > "$work/${name}-groups.json"
+      id="$(python3 - "$work/${name}-groups.json" "$name" <<'PY'
+import json, sys
+groups = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+ids = [g["id"] for g in groups if g.get("name") == wanted and not g.get("parentId")]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+    else
+      echo "Group ${name} already exists." >&2
+    fi
+    printf '%s\n' "$id"
+  }
+
+  group_id="$(ensure_top_group mqtt-instance)"
+  portal_id="$(ensure_top_group portal-broker)"
+  if [[ -z "$group_id" || -z "$portal_id" ]]; then
+    echo "Failed to read mqtt-instance or portal-broker." >&2
+    exit 1
+  fi
+
+  kcadm get users/profile -r "$REALM" > "$work/mqtt-profile.json"
+  if python3 - "$work/mqtt-profile.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+profile = json.load(open(path, encoding="utf-8"))
+attributes = profile.setdefault("attributes", [])
+wanted = {"view": ["admin"], "edit": ["admin"]}
+changed = False
+for name in ("label", "mqtt_publ_topic", "mqtt_subs_topic", "mqtt_superuser"):
+    found = next((item for item in attributes if item.get("name") == name), None)
+    if found is None:
+        attributes.append({
+            "name": name,
+            "displayName": name,
+            "permissions": wanted,
+            "multivalued": False,
+        })
+        changed = True
+        continue
+    if found.get("permissions") != wanted or found.get("multivalued") is True:
+        found["permissions"] = wanted
+        found["multivalued"] = False
+        changed = True
+if changed:
+    json.dump(profile, open(path, "w", encoding="utf-8"))
+    sys.exit(0)
+sys.exit(1)
+PY
+  then
+    kcadm_stdin update users/profile -r "$REALM" -f - < "$work/mqtt-profile.json" >/dev/null
+    echo "MQTT user profile attributes are admin-only."
+  fi
+
+  kcadm get client-scopes -r "$REALM" --format json > "$work/client-scopes.json"
+  scope_id="$(python3 - "$work/client-scopes.json" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+ids = [s["id"] for s in scopes if s.get("name") == "mqtt-acl"]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+  if [[ -z "$scope_id" ]]; then
+    python3 - "$work/mqtt-acl-scope.json" <<'PY'
+import json, sys
+json.dump({
+    "name": "mqtt-acl",
+    "protocol": "openid-connect",
+    "description": "mqtt_acl claims from mqtt_publ_topic and mqtt_subs_topic",
+    "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false",
+    },
+}, open(sys.argv[1], "w", encoding="utf-8"))
+PY
+    kcadm_stdin create client-scopes -r "$REALM" -f - < "$work/mqtt-acl-scope.json" >/dev/null
+    kcadm get client-scopes -r "$REALM" --format json > "$work/client-scopes.json"
+    scope_id="$(python3 - "$work/client-scopes.json" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+ids = [s["id"] for s in scopes if s.get("name") == "mqtt-acl"]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+    echo "Created client scope mqtt-acl."
+  else
+    echo "Client scope mqtt-acl already exists."
+  fi
+  if [[ -z "$scope_id" ]]; then
+    echo "Failed to read client scope mqtt-acl." >&2
+    exit 1
+  fi
+
+  ensure_scope_mapper() {
+    local name="$1"
+    shift
+    local mapper_id
+    kcadm get "client-scopes/${scope_id}/protocol-mappers/models" -r "$REALM" > "$work/mqtt-mappers.json"
+    mapper_id="$(python3 - "$work/mqtt-mappers.json" "$name" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+ids = [item["id"] for item in data if isinstance(item, dict) and item.get("name") == wanted and item.get("id")]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+    if [[ -n "$mapper_id" ]]; then
+      echo "Mapper ${name} already exists."
+      return
+    fi
+    kcadm create "client-scopes/${scope_id}/protocol-mappers/models" -r "$REALM" \
+      -s "name=${name}" \
+      -s protocol=openid-connect \
+      "$@" >/dev/null
+    echo "Created mapper ${name}."
+  }
+  ensure_scope_mapper mqtt-acl-publish \
+    -s protocolMapper=oidc-usermodel-attribute-mapper \
+    -s 'config."user.attribute"=mqtt_publ_topic' \
+    -s 'config."claim.name"=mqtt_acl.publish' \
+    -s 'config."jsonType.label"=String' \
+    -s 'config."id.token.claim"=false' \
+    -s 'config."access.token.claim"=true' \
+    -s 'config."userinfo.token.claim"=false' \
+    -s 'config.multivalued=true' \
+    -s 'config."aggregate.attrs"=true'
+  ensure_scope_mapper mqtt-acl-subscribe \
+    -s protocolMapper=oidc-usermodel-attribute-mapper \
+    -s 'config."user.attribute"=mqtt_subs_topic' \
+    -s 'config."claim.name"=mqtt_acl.subscribe' \
+    -s 'config."jsonType.label"=String' \
+    -s 'config."id.token.claim"=false' \
+    -s 'config."access.token.claim"=true' \
+    -s 'config."userinfo.token.claim"=false' \
+    -s 'config.multivalued=true' \
+    -s 'config."aggregate.attrs"=true'
+  ensure_scope_mapper mqtt-acl-superuser \
+    -s protocolMapper=oidc-usermodel-attribute-mapper \
+    -s 'config."user.attribute"=mqtt_superuser' \
+    -s 'config."claim.name"=mqtt_acl.superuser' \
+    -s 'config."jsonType.label"=boolean' \
+    -s 'config."id.token.claim"=false' \
+    -s 'config."access.token.claim"=true' \
+    -s 'config."userinfo.token.claim"=false' \
+    -s 'config.multivalued=false' \
+    -s 'config."aggregate.attrs"=true'
+
+  client_uuid="$(kcadm get clients -r "$REALM" -q clientId=freedriver-mqtt --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
+  if [[ -z "$client_uuid" ]]; then
+    kcadm create clients -r "$REALM" \
+      -s clientId=freedriver-mqtt \
+      -s name='Freedriver MQTT broker' \
+      -s enabled=true \
+      -s publicClient=false \
+      -s clientAuthenticatorType=client-secret \
+      -s standardFlowEnabled=false \
+      -s implicitFlowEnabled=false \
+      -s directAccessGrantsEnabled=true \
+      -s serviceAccountsEnabled=false \
+      -s protocol=openid-connect \
+      -s fullScopeAllowed=false \
+      -s 'description=Broker plugin client. Secret stays in server configuration.' >/dev/null
+    client_uuid="$(kcadm get clients -r "$REALM" -q clientId=freedriver-mqtt --fields id --format csv --noquotes | csv_id)"
+    echo "Created confidential client freedriver-mqtt."
+  else
+    echo "Client freedriver-mqtt already exists."
+  fi
+  kcadm update "clients/${client_uuid}" -r "$REALM" \
+    -s publicClient=false \
+    -s standardFlowEnabled=false \
+    -s implicitFlowEnabled=false \
+    -s directAccessGrantsEnabled=true \
+    -s serviceAccountsEnabled=false \
+    -s fullScopeAllowed=false \
+    -s 'description=Broker plugin client. Secret stays in server configuration.' >/dev/null
+
+  kcadm get "clients/${client_uuid}/default-client-scopes" -r "$REALM" > "$work/mqtt-default-scopes.json"
+  has_scope="$(python3 - "$work/mqtt-default-scopes.json" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+names = {s.get("name") for s in scopes}
+print("yes" if "mqtt-acl" in names else "no")
+PY
+)"
+  if [[ "$has_scope" != "yes" ]]; then
+    echo '{}' | kcadm_stdin update "clients/${client_uuid}/default-client-scopes/${scope_id}" -r "$REALM" >/dev/null
+    echo "Added mqtt-acl as a default client scope."
+  fi
+
+  sa_id="$(kcadm get users -r "$REALM" -q username=service-account-freedriver-mqtt -q exact=true --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
+  if [[ -z "$sa_id" ]]; then
+    kcadm create users -r "$REALM" \
+      -s username=service-account-freedriver-mqtt \
+      -s enabled=true \
+      -s emailVerified=true >/dev/null
+    sa_id="$(kcadm get users -r "$REALM" -q username=service-account-freedriver-mqtt -q exact=true --fields id --format csv --noquotes | csv_id)"
+    echo "Created realm user service-account-freedriver-mqtt."
+  else
+    echo "User service-account-freedriver-mqtt already exists."
+  fi
+  if [[ -z "$sa_id" ]]; then
+    echo "Failed to read user service-account-freedriver-mqtt." >&2
+    exit 1
+  fi
+  kcadm get "users/${sa_id}/groups" -r "$REALM" > "$work/mqtt-sa-groups.json"
+  if python3 - "$work/mqtt-sa-groups.json" "$portal_id" <<'PY'
+import json, sys
+groups = json.load(open(sys.argv[1], encoding="utf-8"))
+sys.exit(0 if any(g.get("id") == sys.argv[2] for g in groups) else 1)
+PY
+  then
+    echo "User service-account-freedriver-mqtt already in portal-broker."
+  else
+    kcadm update "users/${sa_id}/groups/${portal_id}" -r "$REALM" >/dev/null
+    echo "Joined service-account-freedriver-mqtt to portal-broker."
+  fi
+
+  kcadm get "users/${sa_id}" -r "$REALM" > "$work/mqtt-sa-user.json"
+  python3 - "$work/mqtt-sa-user.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+user = json.load(open(path, encoding="utf-8"))
+attrs = user.setdefault("attributes", {})
+attrs["mqtt_publ_topic"] = ["freedriver/v1/+/commands"]
+attrs["mqtt_subs_topic"] = ["freedriver/v1/+/appliances"]
+attrs["mqtt_superuser"] = ["false"]
+json.dump(user, open(path, "w", encoding="utf-8"))
+PY
+  kcadm_stdin update "users/${sa_id}" -r "$REALM" -f - < "$work/mqtt-sa-user.json" >/dev/null
+  echo "Set service-account-freedriver-mqtt topic attributes."
+
+  kcadm get keys -r "$REALM" > "$work/mqtt-realm-keys.json"
+  jwt_key="$(python3 - "$work/mqtt-realm-keys.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+keys = data.get("keys") or []
+for key in keys:
+    if key.get("algorithm") == "RS256" and key.get("use") == "SIG" and key.get("publicKey"):
+        print(key["publicKey"].replace("\n", "").replace(" ", ""))
+        break
+PY
+)"
+
+  mqtt_env_assignment() {
+    local key="$1"
+    sed -n "s/^${key}=//p" "$MQTT_ENV_FILE" 2>/dev/null | tail -n 1 | tr -d '\r'
+  }
+
+  if [[ -e "$MQTT_ENV_FILE" ]]; then
+    secret="$(mqtt_env_assignment FREEDRIVER_MQTT_CLIENT_SECRET)"
+    sa_pass="$(mqtt_env_assignment FREEDRIVER_MQTT_SA_PASSWORD)"
+    echo "MQTT client env file already exists; not rotating or rewriting it."
+  else
+    tmp="$(mktemp)"
+    chmod 600 "$tmp"
+    secret="$(kcadm get "clients/${client_uuid}/client-secret" -r "$REALM" --fields value --format csv --noquotes \
+      | sed '/^value$/d' | tr -d '\r' | awk 'NF { print; exit }')"
+    sa_pass="$(openssl rand -base64 32 | tr -d '\n')"
+    if [[ -z "$secret" || "$secret" == *" "* || "$secret" == *$'\n'* || -z "$sa_pass" ]]; then
+      rm -f "$tmp"
+      unset secret sa_pass
+      echo "Failed to mint freedriver-mqtt client secret or service-account password." >&2
+      exit 1
+    fi
+    printf 'FREEDRIVER_MQTT_CLIENT_SECRET=%s\nFREEDRIVER_MQTT_SA_PASSWORD=%s\n' "$secret" "$sa_pass" > "$tmp"
+    own_secret "$tmp"
+    mkdir -p "$(dirname "$MQTT_ENV_FILE")"
+    mv "$tmp" "$MQTT_ENV_FILE"
+    docker exec -e SA_PASS="$sa_pass" "$CONTAINER" \
+      sh -c "$KCADM set-password --config $KCADM_CONFIG -r $REALM --username service-account-freedriver-mqtt --new-password \"\$SA_PASS\"" >/dev/null
+    echo "Wrote MQTT broker client secret and service-account password (not printed)."
+  fi
+
+  mkdir -p "$MQTT_OAUTH_DIR"
+  if [[ "$(id -u)" -eq 0 ]]; then
+    chown 1883:1883 "$MQTT_OAUTH_DIR"
+    chmod 0750 "$MQTT_OAUTH_DIR"
+  fi
+  if [[ -n "$secret" && -n "$jwt_key" ]]; then
+    tmp="$(mktemp)"
+    chmod 600 "$tmp"
+    printf 'plugin_opt_oauth_client_secret %s\nplugin_opt_oauth_jwt_key %s\n' "$secret" "$jwt_key" > "$tmp"
+    if [[ "$(id -u)" -eq 0 ]]; then
+      chown 1883:1883 "$tmp"
+      chmod 0640 "$tmp"
+    fi
+    mv "$tmp" "${MQTT_OAUTH_DIR}/plugin.conf"
+    echo "Wrote Mosquitto OAuth plugin options (not printed)."
+  else
+    echo "MQTT plugin options skipped; client secret or realm public key was empty."
+  fi
+  unset secret sa_pass jwt_key
+}
+
 ensure_invite_service_account
 ensure_instances_admin
 ensure_grafana_client
+ensure_mqtt_broker
 
 # Phone sign-in user kaze (#169). Checks run before the phone attribute is written.
 seed_phone="$(sed -n 's/^FREEDRIVER_SEED_PHONE=//p' "$SECRETS_ENV" 2>/dev/null | tail -n 1 \

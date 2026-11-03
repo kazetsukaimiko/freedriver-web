@@ -338,7 +338,11 @@ services:
         condition: service_healthy
 
   mosquitto:
-    image: eclipse-mosquitto:2.1.2-alpine
+    build:
+      context: .
+      dockerfile: mosquitto/Dockerfile
+      labels:
+        org.opencontainers.image.source: https://github.com/kazetsukaimiko/freedriver-web
     restart: unless-stopped
     # Host 8883 is the public listener (container 8884, Let's Encrypt).
     # Container 8883 is the internal listener and is not published.
