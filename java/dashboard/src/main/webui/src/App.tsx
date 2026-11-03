@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
+import { Account } from './Account'
+import { ACCOUNT_PATH } from './account'
 import { SIGN_OUT_PATH, apiFetch } from './api'
 import { Brand } from './Brand'
 import { BuildStamp } from './BuildStamp'
@@ -16,11 +18,14 @@ import './App.css'
 
 type Splash = 'playing' | 'docking' | 'revealing' | 'done'
 
-type Page = 'dashboard' | 'changelog' | 'phones' | 'instances' | 'dispatcher' | 'not-found'
+type Page = 'dashboard' | 'account' | 'changelog' | 'phones' | 'instances' | 'dispatcher' | 'not-found'
 
 function pageFor(pathname: string): Page {
   if (pathname === '/' || pathname === '/dashboard') {
     return 'dashboard'
+  }
+  if (pathname === ACCOUNT_PATH) {
+    return 'account'
   }
   if (pathname === CHANGELOG_PATH) {
     return 'changelog'
@@ -40,7 +45,10 @@ function pageFor(pathname: string): Page {
 type PrimaryItem = { to: string; label: string; page: Page }
 
 function primaryNavItems(portalAdmin: boolean, dispatcher: boolean): PrimaryItem[] {
-  const items: PrimaryItem[] = [{ to: '/', label: 'Home/Appliances', page: 'dashboard' }]
+  const items: PrimaryItem[] = [
+    { to: '/', label: 'Home/Appliances', page: 'dashboard' },
+    { to: ACCOUNT_PATH, label: 'Account', page: 'account' },
+  ]
   if (portalAdmin) {
     items.push({ to: INSTANCES_PATH, label: 'Instances', page: 'instances' })
     items.push({ to: PHONES_PATH, label: 'Phones/Accounts', page: 'phones' })
@@ -266,6 +274,7 @@ function App() {
 
       <div className="workspace">
         {page === 'dashboard' && <Dashboard search={search} />}
+        {page === 'account' && <Account />}
         {page === 'changelog' && <Changelog />}
         {page === 'phones' && <PhoneSignIn />}
         {page === 'instances' && <Instances />}
