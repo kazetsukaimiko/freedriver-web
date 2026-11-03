@@ -265,7 +265,11 @@ if ! command -v docker >/dev/null; then
   exit 1
 fi
 
-mkdir -p "$SECRETS" "$STORAGE"
+mkdir -p "$SECRETS" "$STORAGE" "$SECRETS/oauth.d"
+if [[ "$(id -u)" -eq 0 ]]; then
+  chown 1883:1883 "$SECRETS/oauth.d" 2>/dev/null || true
+  chmod 0750 "$SECRETS/oauth.d"
+fi
 
 write_pass() {
   local path="$1"
