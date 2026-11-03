@@ -35,12 +35,14 @@ class MqttHouseIdsTest {
                 user autonomy
                 topic write freedriver/v1/%s/appliances
                 topic read freedriver/v1/%s/commands
+                topic write freedriver/v1/%s/metrics/#
                 user api
                 topic read freedriver/v1/%s/appliances
                 topic write freedriver/v1/%s/commands
+                topic read freedriver/v1/+/metrics/#
                 topic read freedriver/v1/__INSTANCE_ID__/appliances
                 topic read freedriver/v1/%s/commands
-                """.formatted(FIRST, FIRST, FIRST, FIRST, SECOND));
+                """.formatted(FIRST, FIRST, FIRST, FIRST, FIRST, SECOND));
         assertEquals(List.of(FIRST), MqttHouseIds.instances("", acl.toString()));
     }
 
