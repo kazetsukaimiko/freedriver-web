@@ -28,7 +28,7 @@ import java.util.regex.Pattern;
  * When auth note {@code freedriver.sms.route} is {@code phone}, the number in
  * {@code freedriver.sms.number} uses this same send path, including the send cap.
  * An empty or placeholder secret still marks the execution attempted before any send.
- * Password is offered only after a send failure or a sent OTP timed out. There is no skip-OTP.
+ * Password is offered only after a send failure or a sent OTP timed out.
  */
 public final class SmsOtpAuthenticator implements Authenticator {
 
@@ -98,7 +98,7 @@ public final class SmsOtpAuthenticator implements Authenticator {
         }
         MultivaluedMap<String, String> form = context.getHttpRequest().getDecodedFormParameters();
         if (form.containsKey("tryAnotherWay")) {
-            // No skip-OTP. Password is the restart link after send fail or expiry.
+            // Password is the restart link after send fail or expiry.
             if (session(context).getAuthNote(NOTE_PHONE) != null) {
                 context.challenge(codePage(context, null, null));
             } else {
