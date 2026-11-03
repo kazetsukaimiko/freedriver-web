@@ -1,0 +1,33 @@
+name: pr-ready-when-green
+
+# After CI, Commitlint, or Grok review succeeds, mark a main-target draft ready
+# and request kaze. GitHub does not re-enter this workflow via workflow_run.
+on:
+  workflow_run:
+    workflows:
+      - CI
+      - Commitlint
+      - Grok review
+    types: [completed]
+
+jobs:
+  ready:
+    if: github.repository == 'kazetsukaimiko/freedriver-web' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout the ready script
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Mark draft ready and request kaze
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+        run: python3 .github/scripts/pr_ready_when_green.py
