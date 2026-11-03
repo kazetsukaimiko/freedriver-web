@@ -1,11 +1,11 @@
 package io.freedriver.dashboard.api;
 
+import io.freedriver.dashboard.model.PasswordActionView;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
 
 /**
  * Starts Keycloak {@code UPDATE_PASSWORD} for the signed-in person. The dashboard
@@ -18,5 +18,5 @@ public interface AccountPasswordApi {
     @GET
     @Path("/password")
     @RolesAllowed({"dashboard", "portal-admin"})
-    Response password();
+    PasswordActionView password();
 }
