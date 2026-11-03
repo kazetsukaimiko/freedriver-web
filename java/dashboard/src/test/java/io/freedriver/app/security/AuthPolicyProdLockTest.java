@@ -190,6 +190,7 @@ class AuthPolicyProdLockTest {
         assertTrue(owned.contains("quarkus.oidc.enabled"));
         assertTrue(owned.contains("quarkus.http.auth.permission.appliances.policy"));
         assertTrue(owned.contains("quarkus.http.auth.permission.changelog.policy"));
+        assertTrue(owned.contains("quarkus.http.auth.permission.account.policy"));
         assertTrue(owned.contains("freedriver.appliances.rate-limit.permits"));
         assertTrue(owned.contains("freedriver.appliances.rate-limit.window"));
         Set<String> seen = new HashSet<>();
@@ -408,6 +409,12 @@ class AuthPolicyProdLockTest {
         assertEquals(
                 "/api/mcp,/api/mcp/*",
                 prod.getConfigValue("quarkus.http.auth.permission.mcp-ops.paths").getValue());
+        assertEquals(
+                "authenticated",
+                prod.getConfigValue("quarkus.http.auth.permission.account.policy").getValue());
+        assertEquals(
+                "/api/account,/api/account/*",
+                prod.getConfigValue("quarkus.http.auth.permission.account.paths").getValue());
         assertEquals("true", prod.getConfigValue("quarkus.oidc.mcp.tenant-enabled").getValue());
         assertEquals("service", prod.getConfigValue("quarkus.oidc.mcp.application-type").getValue());
         assertEquals("freedriver-grok-mcp", prod.getConfigValue("quarkus.oidc.mcp.client-id").getValue());
@@ -556,6 +563,7 @@ class AuthPolicyProdLockTest {
                     || "quarkus.oidc.mcp.tenant-enabled".equals(name)
                     || "quarkus.http.auth.permission.mcp.policy".equals(name)
                     || "quarkus.http.auth.permission.mcp-ops.policy".equals(name)
+                    || "quarkus.http.auth.permission.account.policy".equals(name)
                     || "quarkus.oidc.credentials.secret".equals(name)
                     || "freedriver.appliances.rate-limit.permits".equals(name)
                     || "freedriver.appliances.rate-limit.window".equals(name)) {

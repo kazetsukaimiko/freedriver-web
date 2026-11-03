@@ -35,6 +35,7 @@ it('shows a flat left nav and sends a portal admin to Phones/Accounts', async ()
   expect(phone.getAttribute('href')).toBe('/phones?splash=0')
   expect(screen.getByRole('link', { name: 'Instances' }).getAttribute('href')).toBe('/instances?splash=0')
   expect(screen.getByRole('link', { name: 'Home/Appliances' }).getAttribute('href')).toBe('/?splash=0')
+  expect(screen.getByRole('link', { name: 'Account' }).getAttribute('href')).toBe('/account?splash=0')
   expect(screen.queryByRole('link', { name: 'Dispatcher MCP' })).toBeNull()
 
   fireEvent.click(phone)
@@ -63,6 +64,7 @@ it('keeps Phones/Accounts and Instances out of the nav without portal-admin', as
   expect(screen.queryByRole('link', { name: 'Instances' })).toBeNull()
   expect(screen.queryByRole('link', { name: 'Dispatcher MCP' })).toBeNull()
   expect(screen.getByRole('link', { name: 'Home/Appliances' })).toBeTruthy()
+  expect(screen.getByRole('link', { name: 'Account' })).toBeTruthy()
   fireEvent.click(screen.getByRole('link', { name: 'Home/Appliances' }))
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0)
@@ -160,6 +162,19 @@ it('shows the dashboard at /, where /login returns the browser after sign-in', a
   expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeTruthy()
 })
 
+it('shows the account page at /account for every signed-in nav', async () => {
+  window.history.replaceState({}, '', '/account?splash=0')
+  render(<App />)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0)
+  })
+
+  expect(screen.getByRole('heading', { level: 1, name: 'Account' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Set or change password' })).toBeTruthy()
+  expect(screen.getByRole('navigation', { name: 'Primary' })).toBeTruthy()
+  expect(screen.getByRole('link', { name: 'Account' }).getAttribute('aria-current')).toBe('page')
+})
+
 it('shows the changelog page at /changelog inside the portal shell', async () => {
   window.history.replaceState({}, '', '/changelog?splash=0')
   render(<App />)
@@ -197,6 +212,7 @@ it('opens /changelog in the same tab from the build stamp link', async () => {
 it('keeps Sign out at the end of the header on the dashboard, changelog, denied, and unknown pages', async () => {
   for (const [href, heading] of [
     ['/?splash=0', 'Dashboard'],
+    ['/account?splash=0', 'Account'],
     ['/changelog?splash=0', 'Changelog'],
     ['/?splash=0&demo=denied', 'Access denied'],
     ['/no-such-page?splash=0', '404'],
