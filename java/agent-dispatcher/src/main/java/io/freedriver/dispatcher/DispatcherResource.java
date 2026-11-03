@@ -37,6 +37,11 @@ public class DispatcherResource implements DispatcherApi {
     }
 
     @Override
+    public List<JobView> listJobs() {
+        return jobs.listJobs(CallerIds.subject(identity));
+    }
+
+    @Override
     @Blocking
     public JobView submit(SubmitJobRequest body) {
         return jobs.submit(CallerIds.subject(identity), body, submitTimeout);

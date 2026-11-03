@@ -26,6 +26,11 @@ public interface DispatcherApi {
     @RolesAllowed(Actors.DISPATCHER)
     List<DeviceView> listDevices();
 
+    @GET
+    @Path("/jobs")
+    @RolesAllowed(Actors.DISPATCHER)
+    List<JobView> listJobs();
+
     @POST
     @Path("/jobs")
     @Consumes(MediaType.APPLICATION_JSON)

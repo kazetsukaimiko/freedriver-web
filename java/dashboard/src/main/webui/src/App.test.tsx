@@ -15,7 +15,7 @@ afterEach(() => {
   window.history.replaceState({}, '', '/')
 })
 
-it('opens one primary menu and sends a portal admin to Phone sign-in', async () => {
+it('shows a flat left nav and sends a portal admin to Phones/Accounts', async () => {
   window.history.replaceState({}, '', '/?splash=0')
   vi.stubGlobal(
     'fetch',
@@ -30,12 +30,12 @@ it('opens one primary menu and sends a portal admin to Phone sign-in', async () 
     await vi.advanceTimersByTimeAsync(0)
   })
 
-  expect(screen.queryByRole('link', { name: 'Phone sign-in' })).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: /^Dashboard$/ }))
-  const phone = screen.getByRole('link', { name: 'Phone sign-in' })
+  expect(screen.queryByRole('button', { name: /Dashboard|Menu|Home/ })).toBeNull()
+  const phone = screen.getByRole('link', { name: 'Phones/Accounts' })
   expect(phone.getAttribute('href')).toBe('/phones?splash=0')
   expect(screen.getByRole('link', { name: 'Instances' }).getAttribute('href')).toBe('/instances?splash=0')
-  expect(screen.getByRole('link', { name: 'Dashboard' }).getAttribute('href')).toBe('/?splash=0')
+  expect(screen.getByRole('link', { name: 'Home/Appliances' }).getAttribute('href')).toBe('/?splash=0')
+  expect(screen.queryByRole('link', { name: 'Dispatcher MCP' })).toBeNull()
 
   fireEvent.click(phone)
   await act(async () => {
@@ -44,10 +44,7 @@ it('opens one primary menu and sends a portal admin to Phone sign-in', async () 
 
   expect(window.location.pathname).toBe('/phones')
   expect(screen.getByRole('heading', { level: 1, name: 'Phone sign-in' })).toBeTruthy()
-  expect(screen.queryByRole('link', { name: 'Phone sign-in' })).toBeNull()
-
-  fireEvent.click(screen.getByRole('button', { name: /^Phone sign-in$/ }))
-  fireEvent.click(screen.getByRole('link', { name: 'Dashboard' }))
+  fireEvent.click(screen.getByRole('link', { name: 'Home/Appliances' }))
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0)
   })
@@ -55,18 +52,18 @@ it('opens one primary menu and sends a portal admin to Phone sign-in', async () 
   expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeTruthy()
 })
 
-it('keeps Phone sign-in out of the primary menu without portal-admin', async () => {
+it('keeps Phones/Accounts and Instances out of the nav without portal-admin', async () => {
   window.history.replaceState({}, '', '/changelog?splash=0')
   render(<App />)
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0)
   })
 
-  fireEvent.click(screen.getByRole('button', { name: /^Menu$/ }))
-  expect(screen.queryByRole('link', { name: 'Phone sign-in' })).toBeNull()
+  expect(screen.queryByRole('link', { name: 'Phones/Accounts' })).toBeNull()
   expect(screen.queryByRole('link', { name: 'Instances' })).toBeNull()
-  expect(screen.getByRole('link', { name: 'Dashboard' })).toBeTruthy()
-  fireEvent.click(screen.getByRole('link', { name: 'Dashboard' }))
+  expect(screen.queryByRole('link', { name: 'Dispatcher MCP' })).toBeNull()
+  expect(screen.getByRole('link', { name: 'Home/Appliances' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('link', { name: 'Home/Appliances' }))
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0)
   })
@@ -74,7 +71,7 @@ it('keeps Phone sign-in out of the primary menu without portal-admin', async () 
   expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeTruthy()
 })
 
-it('opens Instances beside Phone sign-in for a portal admin', async () => {
+it('opens Instances beside Phones/Accounts for a portal admin', async () => {
   window.history.replaceState({}, '', '/?splash=0')
   vi.stubGlobal(
     'fetch',
@@ -91,7 +88,6 @@ it('opens Instances beside Phone sign-in for a portal admin', async () => {
     await vi.advanceTimersByTimeAsync(0)
   })
 
-  fireEvent.click(screen.getByRole('button', { name: /^Dashboard$/ }))
   const instances = screen.getByRole('link', { name: 'Instances' })
   expect(instances.getAttribute('href')).toBe('/instances?splash=0')
   fireEvent.click(instances)
@@ -101,6 +97,57 @@ it('opens Instances beside Phone sign-in for a portal admin', async () => {
 
   expect(window.location.pathname).toBe('/instances')
   expect(screen.getByRole('heading', { level: 1, name: 'Instances' })).toBeTruthy()
+})
+
+it('lists and gets dispatcher jobs for an account with access', async () => {
+  const jobId = '550e8400-e29b-41d4-a716-446655440000'
+  window.history.replaceState({}, '', '/?splash=0')
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      if (url === '/api/dispatcher/jobs') {
+        return Response.json([
+          {
+            jobId,
+            dispatcherSubject: 'grok',
+            channel: 'TEXT',
+            prompt: 'say hello',
+            assignments: [{ assignmentId: 'a1', jobId, deviceId: 'pc', agentName: 'yuni', channel: 'TEXT', prompt: 'say hello', state: 'SUCCEEDED' }],
+          },
+        ])
+      }
+      if (url === `/api/dispatcher/jobs/${jobId}`) {
+        return Response.json({
+          jobId,
+          dispatcherSubject: 'grok',
+          channel: 'TEXT',
+          prompt: 'say hello',
+          assignments: [{ assignmentId: 'a1', jobId, deviceId: 'pc', agentName: 'yuni', channel: 'TEXT', prompt: 'say hello', state: 'SUCCEEDED', note: 'done' }],
+        })
+      }
+      return new Response(null, { status: 404 })
+    }),
+  )
+  render(<App />)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0)
+  })
+
+  const dispatcher = screen.getByRole('link', { name: 'Dispatcher MCP' })
+  expect(dispatcher.getAttribute('href')).toBe('/dispatcher?splash=0')
+  fireEvent.click(dispatcher)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0)
+  })
+  expect(window.location.pathname).toBe('/dispatcher')
+  expect(screen.getByRole('heading', { level: 1, name: 'Dispatcher MCP' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('link', { name: 'say hello' }))
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0)
+  })
+  expect(window.location.pathname).toBe(`/dispatcher/${jobId}`)
+  expect(screen.getByRole('heading', { level: 2, name: 'say hello' })).toBeTruthy()
+  expect(screen.getByText(/pc yuni SUCCEEDED/)).toBeTruthy()
 })
 
 it('shows the dashboard at /, where /login returns the browser after sign-in', async () => {

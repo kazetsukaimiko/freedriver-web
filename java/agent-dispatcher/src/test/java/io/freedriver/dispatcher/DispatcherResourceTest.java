@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 
 @QuarkusTest
 class DispatcherResourceTest {
@@ -92,6 +93,46 @@ class DispatcherResourceTest {
                 .get("/api/dispatcher/jobs/" + UUID.randomUUID())
                 .then()
                 .statusCode(404);
+    }
+
+    @Test
+    void anonymous_list_is_rejected() {
+        given().get("/api/dispatcher/jobs").then().statusCode(401);
+    }
+
+    @Test
+    @TestSecurity(user = "pc-1", roles = "device")
+    void device_cannot_list_jobs() {
+        given().get("/api/dispatcher/jobs").then().statusCode(403);
+    }
+
+    @Test
+    @TestSecurity(user = "grok-list", roles = "dispatcher")
+    void list_returns_this_dispatchers_jobs_only() {
+        jobs.register("pc-list", "list.local", List.of("yuni"));
+        JobView own = jobs.submit(
+                "grok-list",
+                new SubmitJobRequest(List.of("pc-list"), "yuni", "list me", Channel.TEXT),
+                Duration.ofMillis(20));
+        jobs.submit(
+                "other-list",
+                new SubmitJobRequest(List.of("pc-list"), "yuni", "hidden", Channel.TEXT),
+                Duration.ofMillis(20));
+
+        given()
+                .get("/api/dispatcher/jobs")
+                .then()
+                .statusCode(200)
+                .body("jobId", hasItem(own.jobId().toString()))
+                .body("prompt", hasItem("list me"))
+                .body("prompt", not(hasItem("hidden")));
+
+        given()
+                .get("/api/dispatcher/jobs/" + own.jobId())
+                .then()
+                .statusCode(200)
+                .body("jobId", is(own.jobId().toString()))
+                .body("prompt", is("list me"));
     }
 
     @Test

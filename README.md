@@ -18,7 +18,7 @@ The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{gra
   - `freedriver.io` / `www` — 308 to `app.freedriver.io`
   - `auth.freedriver.io` — Keycloak 26
   - `app.freedriver.io` — Quinoa app behind Caddy. `/autonomy/mcp` and `/api/autonomy` go to `autonomy-mcp`.
-  - `grafana.freedriver.io` — 404 on purpose; Grafana is loopback-only
+  - `grafana.freedriver.io` — Caddy reverse-proxies Grafana (`grafana:3000`); sign-in is Keycloak OAuth
   - `mqtt.freedriver.io` — 404 on purpose (ACME HTTP-01). MQTTS is host 8883, not Caddy.
 - Keycloak 26.3 + local Postgres 16. The image build compiles `sms-model`, `sms-api`, and `sms-client` from this checkout and adds the phone OTP provider at `/opt/keycloak/providers/freedriver-sms-otp.jar`. The jar manifest records that commit.
 - `sms` — internal service at `http://sms:8080` on the compose network. The Quarkus service in `sms/` ([#107](https://github.com/kazetsukaimiko/freedriver-web/issues/107)) sends and checks sign-in codes through Twilio Verify. Compose builds `sms/src/main/docker/Dockerfile.compose`. Agreement records live on `/opt/freedriver-storage/sms`.
@@ -27,16 +27,17 @@ The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{gra
 
 ## Observability
 
-Grafana and the Keycloak admin console listen on 127.0.0.1 on the VPS host and are reached through an SSH tunnel to the `DEPLOY_HOST` address, signed in as your ops user:
+Public Grafana is https://grafana.freedriver.io. Caddy reverse-proxies that host to `grafana:3000`. Sign-in is Keycloak generic OAuth (`freedriver-grafana`). Compose sets `GF_AUTH_DISABLE_LOGIN_FORM`. Break-glass is SSH to host `127.0.0.1:3000`, or `grafana cli` in the grafana container. The admin password is `GF_SECURITY_ADMIN_PASSWORD` in `/opt/freedriver-secrets/.env`.
+
+The Keycloak admin console listens on 127.0.0.1 on the VPS host:
 
 ```
 ssh -L 3000:127.0.0.1:3000 -L 8081:127.0.0.1:8081 -i <key> <ops-user>@<DEPLOY_HOST>
 ```
 
-Then Grafana is http://127.0.0.1:3000 (user `admin`, password `GF_SECURITY_ADMIN_PASSWORD` in `/opt/freedriver-secrets/.env`). Generic OAuth against `https://auth.freedriver.io/realms/freedriver` is on (`freedriver-grafana`). Local admin stays as break-glass. Keycloak admin is http://127.0.0.1:8081/admin. Public `https://auth.freedriver.io/admin` returns 404; user login on that host is unchanged. `https://grafana.freedriver.io` and `https://mqtt.freedriver.io` return 404.
+Keycloak admin is http://127.0.0.1:8081/admin. Public `https://auth.freedriver.io/admin` returns 404; user login on that host is unchanged. `https://mqtt.freedriver.io` returns 404.
 
-
-Alloy tails Docker container logs into Loki (14 days). It does not mount the Docker socket. `docker-logs-proxy` is the only Compose service with `/var/run/docker.sock`. It forwards container list and log streams, and the inspect fields Alloy needs to tail (running state and TTY), with environment and mounts removed. Prometheus keeps ~15 days and scrapes itself, Alloy, `dashboard:8080/q/metrics`, and `agent-dispatcher:8080/q/metrics` (those targets stay down until the Quarkus apps export Micrometer metrics). Loki, Prometheus, Alloy, and the proxy stay on the compose network. The proxy publishes no port. Grafana and Keycloak admin bind 127.0.0.1 only.
+Alloy tails Docker container logs into Loki (14 days). It does not mount the Docker socket. `docker-logs-proxy` is the only Compose service with `/var/run/docker.sock`. It forwards container list and log streams, and the inspect fields Alloy needs to tail (running state and TTY), with environment and mounts removed. Prometheus keeps ~15 days and scrapes itself, Alloy, `dashboard:8080/q/metrics`, and `agent-dispatcher:8080/q/metrics` (those targets stay down until the Quarkus apps export Micrometer metrics). Loki, Prometheus, Alloy, and the proxy stay on the compose network. The proxy publishes no port. Grafana publishes `127.0.0.1:3000` for SSH break-glass. Keycloak admin binds 127.0.0.1 only.
 
 `grafana.freedriver.io` A record is Sysadmin, same as `auth.freedriver.io`.
 
