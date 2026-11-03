@@ -1,9 +1,5 @@
 # Changelog
 
-## 2026-11_r1 (2026-11-03)
-
-Stamp for the current main deploy after `2026-10_r141`.
-
 ## 2026-10_r141 (2026-10-29)
 
 
