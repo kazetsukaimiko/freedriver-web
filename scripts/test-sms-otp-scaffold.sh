@@ -650,6 +650,16 @@ for flag in (
     if flag not in timeouts:
         raise SystemExit(f"session timeouts must set {flag}")
 print("realm session timeouts 7200/28800/86400/1800")
+if script.count("31536000") != 1:
+    raise SystemExit("31536000 is the dispatcher access token lifespan only")
+for line in (
+    """-s 'attributes."access.token.lifespan"=31536000'""",
+    """-s 'attributes."client.session.idle.timeout"='"${SSO_SESSION_IDLE_TIMEOUT}\"""",
+    """-s 'attributes."client.session.max.lifespan"='"${SSO_SESSION_MAX_LIFESPAN}\"""",
+):
+    if line not in script:
+        raise SystemExit(f"dispatcher client missing {line}")
+print("dispatcher client session follows realm SSO")
 PY
 
 chmod +x scripts/test-invite-service-account.sh
