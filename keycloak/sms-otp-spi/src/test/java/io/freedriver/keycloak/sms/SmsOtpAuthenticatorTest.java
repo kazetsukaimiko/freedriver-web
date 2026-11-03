@@ -278,6 +278,7 @@ class SmsOtpAuthenticatorTest {
         assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_CODE_LIMIT);
         assertTrue(sends.isEmpty());
         assertNull(notes.get(SmsOtpAuthenticator.NOTE_PHONE));
+        assertEquals(false, page().attributes().get(SmsOtpAuthenticator.ATTR_PASSWORD_ALLOWED));
     }
 
     @Test
@@ -366,7 +367,9 @@ class SmsOtpAuthenticatorTest {
     @Test
     void codePageCarriesOnlyTheResendFlag() {
         enterPhone();
-        assertEquals(Map.of(SmsOtpAuthenticator.ATTR_RESEND_ALLOWED, true), page().attributes());
+        assertEquals(Map.of(
+                SmsOtpAuthenticator.ATTR_RESEND_ALLOWED, true,
+                SmsOtpAuthenticator.ATTR_PASSWORD_ALLOWED, false), page().attributes());
         assertNull(page().error());
     }
 
@@ -443,6 +446,8 @@ class SmsOtpAuthenticatorTest {
         assertPage(SmsOtpAuthenticator.CODE_TEMPLATE, SmsOtpAuthenticator.MSG_EXPIRED);
         assertNull(page().attributes().get(SmsOtpAuthenticator.ATTR_CODE));
         assertEquals(PHONE, notes.get(SmsOtpAuthenticator.NOTE_PHONE));
+        assertEquals(true, page().attributes().get(SmsOtpAuthenticator.ATTR_PASSWORD_ALLOWED));
+        assertEquals("1", notes.get(SmsOtpAuthenticator.NOTE_PASSWORD_FALLBACK));
     }
 
     @Test
@@ -524,6 +529,8 @@ class SmsOtpAuthenticatorTest {
         post("phone", PHONE);
         assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_UNAVAILABLE);
         assertNull(notes.get(SmsOtpAuthenticator.NOTE_PHONE));
+        assertEquals(true, page().attributes().get(SmsOtpAuthenticator.ATTR_PASSWORD_ALLOWED));
+        assertEquals("1", notes.get(SmsOtpAuthenticator.NOTE_PASSWORD_FALLBACK));
     }
 
     @Test
@@ -653,6 +660,96 @@ class SmsOtpAuthenticatorTest {
         String message = captureLog(() -> post("phone", PHONE));
         assertTrue(message.matches("sms otp send RATE_LIMITED last4=0100 cid=[0-9a-f]{8}"), message);
         assertFalse(message.contains(PHONE), message);
+    }
+
+    @Test
+    void firstPhonePageDoesNotOfferPassword() {
+        authenticator.authenticate(context);
+        assertEquals(false, page().attributes().get(SmsOtpAuthenticator.ATTR_PASSWORD_ALLOWED));
+        assertNull(notes.get(SmsOtpAuthenticator.NOTE_PASSWORD_FALLBACK));
+    }
+
+    @Test
+    void wrongCodeDoesNotOfferPassword() {
+        enterPhone();
+        verifyReplies.add(new Scripted(400, "invalid-code", null, null));
+        post("code", "000000");
+        assertEquals(false, page().attributes().get(SmsOtpAuthenticator.ATTR_PASSWORD_ALLOWED));
+        assertNull(notes.get(SmsOtpAuthenticator.NOTE_PASSWORD_FALLBACK));
+    }
+
+    @Test
+    void sendRateLimitDoesNotOfferPassword() {
+        sendStatus = 429;
+        sendError = "rate-limited";
+        sendRetry = 61L;
+        authenticator.authenticate(context);
+        post("phone", PHONE);
+        assertEquals(false, page().attributes().get(SmsOtpAuthenticator.ATTR_PASSWORD_ALLOWED));
+        assertNull(notes.get(SmsOtpAuthenticator.NOTE_PASSWORD_FALLBACK));
+    }
+
+    @Test
+    void invalidPhoneDoesNotOfferPassword() {
+        authenticator.authenticate(context);
+        post("phone", "555-0100");
+        assertEquals(false, page().attributes().get(SmsOtpAuthenticator.ATTR_PASSWORD_ALLOWED));
+        assertNull(notes.get(SmsOtpAuthenticator.NOTE_PASSWORD_FALLBACK));
+    }
+
+    @Test
+    void resendUnavailableOffersPasswordAndKeepsOtp() {
+        enterPhone();
+        sendStatus = 503;
+        sendError = "stub";
+        post("resend", "1");
+        assertPage(SmsOtpAuthenticator.CODE_TEMPLATE, SmsOtpAuthenticator.MSG_UNAVAILABLE);
+        assertEquals(PHONE, notes.get(SmsOtpAuthenticator.NOTE_PHONE));
+        assertEquals(true, page().attributes().get(SmsOtpAuthenticator.ATTR_PASSWORD_ALLOWED));
+        assertEquals("1", notes.get(SmsOtpAuthenticator.NOTE_PASSWORD_FALLBACK));
+    }
+
+    @Test
+    void tryAnotherWayDoesNotSkipOtp() {
+        authenticator.authenticate(context);
+        post("tryAnotherWay", "1");
+        assertEquals("challenge", outcome);
+        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, null);
+        assertEquals(false, page().attributes().get(SmsOtpAuthenticator.ATTR_PASSWORD_ALLOWED));
+    }
+
+    @Test
+    void postedPasswordIsNotSentToSms() {
+        authenticator.authenticate(context);
+        post("phone", PHONE, "password", "not-for-twilio");
+        assertEquals(List.of(PHONE), sends);
+        assertFalse(sendRequests.getFirst().toString().contains("not-for-twilio"));
+        assertFalse(sendRequests.getFirst().toString().contains("password"));
+        verifyReplies.add(new Scripted(200, null, null, PHONE));
+        post("code", "123456", "password", "not-for-twilio");
+        assertEquals(PHONE, verifyRequests.getFirst().phone());
+        assertEquals("123456", verifyRequests.getFirst().code());
+        assertFalse(verifyRequests.getFirst().toString().contains("not-for-twilio"));
+        assertFalse(verifyRequests.getFirst().toString().contains("password"));
+    }
+
+    @Test
+    void swallowedSendOffersPassword() {
+        authenticator = new SmsOtpAuthenticator(new SmsOtpCalls(secret -> new SmsApi() {
+            @Override
+            public SentResponse send(SendRequest request) {
+                throw new IllegalStateException("boom");
+            }
+
+            @Override
+            public VerifiedResponse verify(VerifyRequest request) {
+                throw new UnsupportedOperationException();
+            }
+        }), () -> Optional.of("real-secret"));
+        authenticator.authenticate(context);
+        post("phone", PHONE);
+        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_UNAVAILABLE);
+        assertEquals(true, page().attributes().get(SmsOtpAuthenticator.ATTR_PASSWORD_ALLOWED));
     }
 
     private String captureLog(Runnable action) {

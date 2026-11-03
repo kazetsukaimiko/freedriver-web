@@ -28,12 +28,15 @@ import java.util.regex.Pattern;
  * When auth note {@code freedriver.sms.route} is {@code phone}, the number in
  * {@code freedriver.sms.number} uses this same send path, including the send cap.
  * An empty or placeholder secret still marks the execution attempted before any send.
+ * Password is offered only after a send failure or a sent OTP timed out.
  */
 public final class SmsOtpAuthenticator implements Authenticator {
 
     static final String NOTE_PHONE = "freedriver.sms.phone";
     static final String NOTE_WRONG_CODES = "freedriver.sms.wrong-codes";
     static final String NOTE_SENDS = "freedriver.sms.sends";
+    /** Set when the server reports a send failure or a sent OTP timed out. */
+    static final String NOTE_PASSWORD_FALLBACK = "freedriver.sms.password-fallback";
 
     static final int MAX_RESENDS = 3;
 
@@ -42,6 +45,7 @@ public final class SmsOtpAuthenticator implements Authenticator {
     static final String ATTR_RESEND_ALLOWED = "freedriverSmsResendAllowed";
     static final String ATTR_AGREEMENT = "freedriverSmsAgreement";
     static final String ATTR_CODE = "freedriverSmsCode";
+    static final String ATTR_PASSWORD_ALLOWED = "freedriverSmsPasswordAllowed";
 
     static final String MSG_PHONE_INVALID = "freedriverSmsPhoneInvalid";
     static final String MSG_UNAVAILABLE = "freedriverSmsUnavailable";
@@ -94,8 +98,12 @@ public final class SmsOtpAuthenticator implements Authenticator {
         }
         MultivaluedMap<String, String> form = context.getHttpRequest().getDecodedFormParameters();
         if (form.containsKey("tryAnotherWay")) {
-            clearPending(context);
-            context.attempted();
+            // Password is the restart link after send fail or expiry.
+            if (session(context).getAuthNote(NOTE_PHONE) != null) {
+                context.challenge(codePage(context, null, null));
+            } else {
+                context.challenge(phonePage(context, sendAllowed(context) ? null : MSG_CODE_LIMIT));
+            }
             return;
         }
         String pending = session(context).getAuthNote(NOTE_PHONE);
@@ -126,6 +134,7 @@ public final class SmsOtpAuthenticator implements Authenticator {
             return;
         }
         if (result.outcome() != SmsOtpCalls.Outcome.SENT || !phone.equals(result.phone())) {
+            allowPassword(context);
             context.challenge(phonePage(context, MSG_UNAVAILABLE));
             return;
         }
@@ -145,6 +154,7 @@ public final class SmsOtpAuthenticator implements Authenticator {
             return;
         }
         if (result.outcome() != SmsOtpCalls.Outcome.SENT || !phone.equals(result.phone())) {
+            allowPassword(context);
             context.challenge(codePage(context, MSG_UNAVAILABLE, null));
             return;
         }
@@ -177,8 +187,11 @@ public final class SmsOtpAuthenticator implements Authenticator {
                 signIn(context, phone);
             }
             case INVALID_CODE -> wrongCode(context);
-            case EXPIRED -> context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS,
-                    codePage(context, MSG_EXPIRED, null));
+            case EXPIRED -> {
+                allowPassword(context);
+                context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS,
+                        codePage(context, MSG_EXPIRED, null));
+            }
             case TOO_MANY_ATTEMPTS -> context.failureChallenge(AuthenticationFlowError.INVALID_CREDENTIALS,
                     codePage(context, MSG_TOO_MANY_CODES, null));
             case RATE_LIMITED -> context.challenge(rateLimited(context, false, result.retryAfterSeconds()));
@@ -256,8 +269,18 @@ public final class SmsOtpAuthenticator implements Authenticator {
         return context.getAuthenticationSession();
     }
 
+    private static void allowPassword(AuthenticationFlowContext context) {
+        session(context).setAuthNote(NOTE_PASSWORD_FALLBACK, "1");
+    }
+
+    static boolean passwordAllowed(AuthenticationFlowContext context) {
+        return "1".equals(session(context).getAuthNote(NOTE_PASSWORD_FALLBACK));
+    }
+
     private static Response phonePage(AuthenticationFlowContext context, String error) {
-        LoginFormsProvider form = context.form().setAttribute(ATTR_AGREEMENT, SignInAgreement.WORDING);
+        LoginFormsProvider form = context.form()
+                .setAttribute(ATTR_AGREEMENT, SignInAgreement.WORDING)
+                .setAttribute(ATTR_PASSWORD_ALLOWED, passwordAllowed(context));
         if (error != null) {
             form.setError(error);
         }
@@ -265,7 +288,9 @@ public final class SmsOtpAuthenticator implements Authenticator {
     }
 
     private static Response codePage(AuthenticationFlowContext context, String error, String keptCode) {
-        LoginFormsProvider form = context.form().setAttribute(ATTR_RESEND_ALLOWED, sendAllowed(context));
+        LoginFormsProvider form = context.form()
+                .setAttribute(ATTR_RESEND_ALLOWED, sendAllowed(context))
+                .setAttribute(ATTR_PASSWORD_ALLOWED, passwordAllowed(context));
         if (keptCode != null) {
             form.setAttribute(ATTR_CODE, keptCode);
         }
@@ -277,7 +302,8 @@ public final class SmsOtpAuthenticator implements Authenticator {
 
     private static Response rateLimited(AuthenticationFlowContext context, boolean phoneForm, Integer retryAfterSeconds) {
         int minutes = retryMinutes(retryAfterSeconds);
-        LoginFormsProvider form = context.form();
+        LoginFormsProvider form = context.form()
+                .setAttribute(ATTR_PASSWORD_ALLOWED, passwordAllowed(context));
         if (phoneForm) {
             form.setAttribute(ATTR_AGREEMENT, SignInAgreement.WORDING);
         } else {
