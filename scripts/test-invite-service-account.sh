@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Throwaway Keycloak 26.3 realm in container freedriver-invite-kc-test.
+# Throwaway Keycloak 26.7.5 realm in container freedriver-invite-kc-test.
 # Expects 403 for role grants, user create, member password and profile edits,
 # impersonation, and client reads, and 204 when adding phone-sign-in membership.
 # Prints status codes.
@@ -11,7 +11,7 @@ cd "$ROOT"
 CONTAINER=freedriver-invite-kc-test
 PORT=18080
 BASE="http://127.0.0.1:${PORT}"
-IMAGE=quay.io/keycloak/keycloak:26.3
+IMAGE=quay.io/keycloak/keycloak:26.7.5
 
 if ! command -v docker >/dev/null; then
   echo "docker is required for the invite service-account checks" >&2
