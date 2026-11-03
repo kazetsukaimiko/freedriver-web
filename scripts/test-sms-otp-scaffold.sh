@@ -519,6 +519,9 @@ if 'update "${path}/${perm_id}"' not in script:
     raise SystemExit("existing invite permission must be updated")
 if re.search(r'"(view|view-members|manage-members)"', invite_body):
     raise SystemExit("invite scopes must be manage-membership and manage-group-membership")
+invite_test = Path("scripts/test-invite-service-account.sh").read_text()
+if "uuid.fullmatch(entry)" not in invite_test:
+    raise SystemExit("invite scope assertion must ignore Keycloak 26.7 scope ids")
 print("phone role allow-list and invite permission scope")
 PY
 
