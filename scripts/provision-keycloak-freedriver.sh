@@ -41,10 +41,11 @@
 # empty redirectUris and webOrigins until anonymous GET /autonomy/mcp returns 401.
 #
 # MQTT broker client (#317) is confidential client freedriver-mqtt. Direct access
-# grants plus a service account. Client scope mqtt-acl fills mqtt_acl.publish and
-# mqtt_acl.subscribe from user attributes. Group mqtt-instance is the house gate;
-# group portal-broker holds the dashboard service account. The plugin secret is
-# written once under /opt/freedriver-secrets.
+# grants. Client scope mqtt-acl fills mqtt_acl.publish and mqtt_acl.subscribe from
+# user attributes. Group mqtt-instance is the house gate; group portal-broker
+# holds realm user service-account-freedriver-mqtt. The plugin exchanges
+# username/password, so that user is a realm user with a password. The plugin
+# secret is written once under /opt/freedriver-secrets.
 #
 # Run as root, or as a member of the allowed group, on the VPS. Idempotent. New password users get the
 # UPDATE_PASSWORD required action and choose their own password.
@@ -1080,7 +1081,7 @@ PY
       -s standardFlowEnabled=false \
       -s implicitFlowEnabled=false \
       -s directAccessGrantsEnabled=true \
-      -s serviceAccountsEnabled=true \
+      -s serviceAccountsEnabled=false \
       -s protocol=openid-connect \
       -s fullScopeAllowed=false \
       -s 'description=Broker plugin client. Secret stays in server configuration.' >/dev/null
@@ -1094,7 +1095,7 @@ PY
     -s standardFlowEnabled=false \
     -s implicitFlowEnabled=false \
     -s directAccessGrantsEnabled=true \
-    -s serviceAccountsEnabled=true \
+    -s serviceAccountsEnabled=false \
     -s fullScopeAllowed=false \
     -s 'description=Broker plugin client. Secret stays in server configuration.' >/dev/null
 
@@ -1111,7 +1112,21 @@ PY
     echo "Added mqtt-acl as a default client scope."
   fi
 
-  sa_id="$(kcadm get "clients/${client_uuid}/service-account-user" -r "$REALM" --fields id --format csv --noquotes | csv_id)"
+  sa_id="$(kcadm get users -r "$REALM" -q username=service-account-freedriver-mqtt -q exact=true --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
+  if [[ -z "$sa_id" ]]; then
+    kcadm create users -r "$REALM" \
+      -s username=service-account-freedriver-mqtt \
+      -s enabled=true \
+      -s emailVerified=true >/dev/null
+    sa_id="$(kcadm get users -r "$REALM" -q username=service-account-freedriver-mqtt -q exact=true --fields id --format csv --noquotes | csv_id)"
+    echo "Created realm user service-account-freedriver-mqtt."
+  else
+    echo "User service-account-freedriver-mqtt already exists."
+  fi
+  if [[ -z "$sa_id" ]]; then
+    echo "Failed to read user service-account-freedriver-mqtt." >&2
+    exit 1
+  fi
   kcadm get "users/${sa_id}/groups" -r "$REALM" > "$work/mqtt-sa-groups.json"
   if python3 - "$work/mqtt-sa-groups.json" "$portal_id" <<'PY'
 import json, sys
@@ -1119,7 +1134,7 @@ groups = json.load(open(sys.argv[1], encoding="utf-8"))
 sys.exit(0 if any(g.get("id") == sys.argv[2] for g in groups) else 1)
 PY
   then
-    echo "Service account already in portal-broker."
+    echo "User service-account-freedriver-mqtt already in portal-broker."
   else
     kcadm update "users/${sa_id}/groups/${portal_id}" -r "$REALM" >/dev/null
     echo "Joined service-account-freedriver-mqtt to portal-broker."
