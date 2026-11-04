@@ -7,6 +7,7 @@ request-changes verdict on this head, or a did-not-run Grok review.
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import re
@@ -183,6 +184,11 @@ def cmd_self_test() -> None:
     missing_run = [{"commit_id": sha, "body": "> Security Review did not run.\n"}]
     if skip_reason(pr, green, missing_run, sha) != "did-not-run":
         die("self-test: did-not-run")
+    source = inspect.getsource(convert_ready)
+    if "markPullRequestReadyForReview" not in source:
+        die("self-test: markPullRequestReadyForReview mutation")
+    if "convertPullRequestToReadyForReview" in source:
+        die("self-test: old convertPullRequestToReadyForReview mutation")
     print("self-test OK")
 
 
@@ -200,7 +206,7 @@ def find_pr(repo: str, sha: str, token: str) -> dict | None:
 def convert_ready(node_id: str, token: str) -> None:
     payload = {
         "query": (
-            "mutation($id:ID!){convertPullRequestToReadyForReview(input:{pullRequestId:$id})"
+            "mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id})"
             "{pullRequest{isDraft}}}"
         ),
         "variables": {"id": node_id},
