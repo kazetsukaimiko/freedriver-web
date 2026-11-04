@@ -12,6 +12,8 @@ plugin_conf=/mosquitto/config/secrets/oauth.d/plugin.conf
 if [ -f "$plugin_conf" ]; then
 	printf '\n' >> "$runtime"
 	cat "$plugin_conf" >> "$runtime"
+	chmod 600 "$runtime"
+	chown 1883:1883 "$runtime"
 fi
 
 if [ "$#" -ge 3 ] && [ "$1" = "/usr/sbin/mosquitto" ] && [ "$2" = "-c" ]; then

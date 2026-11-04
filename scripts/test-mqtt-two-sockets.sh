@@ -125,6 +125,10 @@ if "plugin_conf=/mosquitto/config/secrets/oauth.d/plugin.conf" not in entrypoint
     raise SystemExit("entrypoint must copy oauth.d/plugin.conf onto the runtime conf")
 if "cat \"$plugin_conf\"" not in entrypoint:
     raise SystemExit("entrypoint must append plugin.conf after the plugin line")
+if 'chmod 600 "$runtime"' not in entrypoint:
+    raise SystemExit("entrypoint must chmod 600 the runtime conf after copying plugin.conf")
+if 'chown 1883:1883 "$runtime"' not in entrypoint:
+    raise SystemExit("entrypoint must give uid 1883 the runtime conf so SIGHUP can reread it")
 if "printf '\\ninclude_dir" in entrypoint:
     raise SystemExit("entrypoint copies plugin.conf onto the runtime conf")
 
@@ -436,6 +440,12 @@ run_broker_handshake() {
   fi
   if ! grep -Fxq "plugin_opt_oauth_jwt_key" <<<"$runtime_keys"; then
     echo "runtime conf must include plugin_opt_oauth_jwt_key from plugin.conf" >&2
+    exit 1
+  fi
+  local runtime_mode
+  runtime_mode="$(docker exec -u 0 "$docker_name" stat -c '%a' /tmp/mosquitto.conf)"
+  if [[ "$runtime_mode" != "600" ]]; then
+    echo "runtime conf must be mode 600, got ${runtime_mode}" >&2
     exit 1
   fi
   local ip
