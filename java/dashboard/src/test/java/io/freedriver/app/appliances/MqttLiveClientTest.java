@@ -3,6 +3,7 @@ package io.freedriver.app.appliances;
 import io.freedriver.mqtt.contract.Appliance;
 import io.freedriver.mqtt.contract.ApplianceCommandMessage;
 import io.freedriver.mqtt.contract.ApplianceJson;
+import io.freedriver.app.metrics.MetricsTopics;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
 import io.freedriver.mqtt.contract.ApplianceStateMessage;
 import io.quarkus.test.junit.QuarkusTest;
@@ -28,7 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
 @TestProfile(MqttLiveClientTest.LiveProfile.class)
-class MqttLiveClientTest {
+public class MqttLiveClientTest {
 
     private static final UUID SILENT = UUID.fromString("11111111-1111-4111-8111-111111111111");
     private static final UUID UNKNOWN = UUID.fromString("22222222-2222-4222-8222-222222222222");
@@ -73,7 +74,9 @@ class MqttLiveClientTest {
         assertEquals(
                 Set.of(
                         ApplianceSchemas.appliancesTopic(MockAutonomy.INSTANCE_ID),
-                        ApplianceSchemas.appliancesTopic(SILENT)),
+                        ApplianceSchemas.appliancesTopic(SILENT),
+                        MetricsTopics.metricsTopic(MockAutonomy.INSTANCE_ID),
+                        MetricsTopics.metricsTopic(SILENT)),
                 Set.copyOf(mqtt.subscriptions()));
         for (String topic : mqtt.subscriptions()) {
             assertFalse(topic.contains("+"), topic);

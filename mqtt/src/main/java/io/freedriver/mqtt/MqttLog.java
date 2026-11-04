@@ -69,6 +69,14 @@ public final class MqttLog {
         warn("mqtt state rejected topic=" + oneLine(topic, "-") + " reason=" + oneLine(reason, "rejected"));
     }
 
+    public static void metricsReceived(UUID instanceId) {
+        debug("mqtt metrics received instance=" + instanceId);
+    }
+
+    public static void metricsRejected(String topic, String reason) {
+        warn("mqtt metrics rejected topic=" + oneLine(topic, "-") + " reason=" + oneLine(reason, "rejected"));
+    }
+
     public static void commandSent(
             String commandId, UUID instanceId, String appliance, boolean state, String user) {
         info("mqtt command sent commandId=" + oneLine(commandId, "-")

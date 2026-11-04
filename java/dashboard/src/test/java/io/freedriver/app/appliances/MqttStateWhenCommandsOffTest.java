@@ -1,5 +1,6 @@
 package io.freedriver.app.appliances;
 
+import io.freedriver.app.metrics.MetricsTopics;
 import io.freedriver.mqtt.contract.Appliance;
 import io.freedriver.mqtt.contract.ApplianceCommandMessage;
 import io.freedriver.mqtt.contract.ApplianceJson;
@@ -65,7 +66,11 @@ class MqttStateWhenCommandsOffTest {
     void connects_and_subscribes_without_sending_commands() {
         assertFalse(appliances.liveCommands());
         assertTrue(mqtt.connected());
-        assertEquals(Set.of(ApplianceSchemas.appliancesTopic(MockAutonomy.INSTANCE_ID)), Set.copyOf(mqtt.subscriptions()));
+        assertEquals(
+                Set.of(
+                        ApplianceSchemas.appliancesTopic(MockAutonomy.INSTANCE_ID),
+                        MetricsTopics.metricsTopic(MockAutonomy.INSTANCE_ID)),
+                Set.copyOf(mqtt.subscriptions()));
         for (String topic : mqtt.subscriptions()) {
             assertFalse(topic.contains("+"), topic);
             assertFalse(topic.contains("#"), topic);

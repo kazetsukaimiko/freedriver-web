@@ -5,8 +5,8 @@ import java.util.UUID;
 /**
  * In-code model of the opposite-ACL contract the broker must enforce (Techops / CI own the
  * live broker ACL). ACL topics are keyed by {@code instanceId} only:
- * {@code freedriver/v1/{instanceId}/appliances} and {@code freedriver/v1/{instanceId}/commands}.
- * {@code instanceName} is a display label.
+ * {@code freedriver/v1/{instanceId}/appliances}, {@code .../commands}, and {@code .../metrics}.
+ * {@code instanceName} is a display label. Autonomy publishes metrics; the API subscribes.
  */
 public final class MqttAcl {
     public enum Identity {
@@ -23,6 +23,9 @@ public final class MqttAcl {
         if (identity == Identity.AUTONOMY && isAppliancesTopic(topic)) {
             return !retain;
         }
+        if (identity == Identity.AUTONOMY && isMetricsTopic(topic)) {
+            return !retain;
+        }
         if (identity == Identity.API && isCommandsTopic(topic)) {
             return !retain;
         }
@@ -34,7 +37,7 @@ public final class MqttAcl {
             return isCommandsTopic(topic);
         }
         if (identity == Identity.API) {
-            return isAppliancesTopic(topic);
+            return isAppliancesTopic(topic) || isMetricsTopic(topic);
         }
         return false;
     }
@@ -47,7 +50,11 @@ public final class MqttAcl {
         return instanceIdFrom(topic, "commands") != null;
     }
 
-    static UUID instanceIdFrom(String topic, String lastSegment) {
+    static boolean isMetricsTopic(String topic) {
+        return instanceIdFrom(topic, "metrics") != null;
+    }
+
+    public static UUID instanceIdFrom(String topic, String lastSegment) {
         if (topic == null) {
             return null;
         }
