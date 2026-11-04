@@ -412,17 +412,22 @@ run_broker_handshake() {
     echo "runtime conf must carry plugin_opt lines after the plugin line" >&2
     exit 1
   fi
-  local runtime_opts
-  runtime_opts="$(docker exec "$docker_name" sh -c 'grep -E "^(plugin |plugin_opt_oauth_client_secret|plugin_opt_oauth_jwt_key) " /tmp/mosquitto.conf | cut -d" " -f1')"
-  if ! grep -Fxq "plugin" <<<"$runtime_opts"; then
+  local runtime_keys
+  runtime_keys="$(docker exec -u 0 "$docker_name" awk '
+    /^plugin / { print "plugin" }
+    /^plugin_opt_oauth_client_secret / { print "plugin_opt_oauth_client_secret" }
+    /^plugin_opt_oauth_jwt_key / { print "plugin_opt_oauth_jwt_key" }
+  ' /tmp/mosquitto.conf)"
+  if ! grep -Fxq "plugin" <<<"$runtime_keys"; then
+    docker exec -u 0 "$docker_name" awk '{print $1}' /tmp/mosquitto.conf >&2 || true
     echo "runtime conf must keep the plugin line" >&2
     exit 1
   fi
-  if ! grep -Fxq "plugin_opt_oauth_client_secret" <<<"$runtime_opts"; then
+  if ! grep -Fxq "plugin_opt_oauth_client_secret" <<<"$runtime_keys"; then
     echo "runtime conf must include plugin_opt_oauth_client_secret from plugin.conf" >&2
     exit 1
   fi
-  if ! grep -Fxq "plugin_opt_oauth_jwt_key" <<<"$runtime_opts"; then
+  if ! grep -Fxq "plugin_opt_oauth_jwt_key" <<<"$runtime_keys"; then
     echo "runtime conf must include plugin_opt_oauth_jwt_key from plugin.conf" >&2
     exit 1
   fi
