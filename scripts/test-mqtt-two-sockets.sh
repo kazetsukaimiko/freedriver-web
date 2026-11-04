@@ -24,7 +24,14 @@ cleanup() {
   if [[ -n "$tls_server_pid" ]]; then
     kill "$tls_server_pid" >/dev/null 2>&1 || true
   fi
-  rm -rf "$WORKDIR"
+  # Handshake chowns oauth.d to uid 1883, so the runner cannot delete it.
+  if [[ -d "$WORKDIR" ]] && ! rm -rf "$WORKDIR" 2>/dev/null; then
+    docker run --rm --user 0 --entrypoint /bin/sh \
+      -v "$WORKDIR:/w" \
+      eclipse-mosquitto:2.1.2-alpine \
+      -c 'chown -R 0:0 /w' >/dev/null 2>&1 || true
+    rm -rf "$WORKDIR"
+  fi
 }
 trap cleanup EXIT
 
