@@ -24,7 +24,14 @@ cleanup() {
   if [[ -n "$tls_server_pid" ]]; then
     kill "$tls_server_pid" >/dev/null 2>&1 || true
   fi
-  rm -rf "$WORKDIR"
+  # Handshake chowns oauth.d to uid 1883. A root container deletes the
+  # workdir; chown to 0 still leaves the runner unable to rm.
+  if [[ -d "$WORKDIR" ]] && ! rm -rf "$WORKDIR" 2>/dev/null; then
+    docker run --rm --user 0 --entrypoint /bin/sh \
+      -v "$(dirname "$WORKDIR"):/p" \
+      eclipse-mosquitto:2.1.2-alpine \
+      -c "rm -rf '/p/$(basename "$WORKDIR")'" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT
 
@@ -113,6 +120,17 @@ if "dockerfile: mosquitto/Dockerfile" not in compose_mosq:
     raise SystemExit("compose must build mosquitto/Dockerfile")
 if "image: eclipse-mosquitto:2.1.2-alpine" in compose_mosq:
     raise SystemExit("compose mosquitto service builds the plugin image")
+entrypoint = Path("mosquitto/docker-entrypoint.sh").read_text()
+if "plugin_conf=/mosquitto/config/secrets/oauth.d/plugin.conf" not in entrypoint:
+    raise SystemExit("entrypoint must copy oauth.d/plugin.conf onto the runtime conf")
+if "cat \"$plugin_conf\"" not in entrypoint:
+    raise SystemExit("entrypoint must append plugin.conf after the plugin line")
+if 'chmod 600 "$runtime"' not in entrypoint:
+    raise SystemExit("entrypoint must chmod 600 the runtime conf after copying plugin.conf")
+if 'chown 1883:1883 "$runtime"' not in entrypoint:
+    raise SystemExit("entrypoint must give uid 1883 the runtime conf so SIGHUP can reread it")
+if "printf '\\ninclude_dir" in entrypoint:
+    raise SystemExit("entrypoint copies plugin.conf onto the runtime conf")
 
 listeners = []
 current = None
@@ -400,6 +418,36 @@ run_broker_handshake() {
     echo "broker image must log that the OAuth plugin initialized" >&2
     exit 1
   fi
+  if grep -q "requires plugin/global_plugin/plugin_load to be defined first" <<<"$logs"; then
+    printf '%s\n' "$logs" >&2
+    echo "runtime conf must carry plugin_opt lines after the plugin line" >&2
+    exit 1
+  fi
+  local runtime_keys
+  runtime_keys="$(docker exec -u 0 "$docker_name" awk '
+    /^plugin / { print "plugin" }
+    /^plugin_opt_oauth_client_secret / { print "plugin_opt_oauth_client_secret" }
+    /^plugin_opt_oauth_jwt_key / { print "plugin_opt_oauth_jwt_key" }
+  ' /tmp/mosquitto.conf)"
+  if ! grep -Fxq "plugin" <<<"$runtime_keys"; then
+    docker exec -u 0 "$docker_name" awk '{print $1}' /tmp/mosquitto.conf >&2 || true
+    echo "runtime conf must keep the plugin line" >&2
+    exit 1
+  fi
+  if ! grep -Fxq "plugin_opt_oauth_client_secret" <<<"$runtime_keys"; then
+    echo "runtime conf must include plugin_opt_oauth_client_secret from plugin.conf" >&2
+    exit 1
+  fi
+  if ! grep -Fxq "plugin_opt_oauth_jwt_key" <<<"$runtime_keys"; then
+    echo "runtime conf must include plugin_opt_oauth_jwt_key from plugin.conf" >&2
+    exit 1
+  fi
+  local runtime_mode
+  runtime_mode="$(docker exec -u 0 "$docker_name" stat -c '%a' /tmp/mosquitto.conf)"
+  if [[ "$runtime_mode" != "600" ]]; then
+    echo "runtime conf must be mode 600, got ${runtime_mode}" >&2
+    exit 1
+  fi
   local ip
   ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$docker_name")"
   if [[ -z "$ip" ]]; then
@@ -469,6 +517,10 @@ if docker info >/dev/null 2>&1; then
     mosquitto_passwd -c -b /mosquitto/config/secrets/passwd api fixture-not-printed >/dev/null
   printf '%s\n' 'user api' 'topic read probe' > "${SECRETS}/acl"
   mkdir -p "${SECRETS}/oauth.d"
+  printf '%s\n' \
+    'plugin_opt_oauth_client_secret fixture-not-printed' \
+    'plugin_opt_oauth_jwt_key fixturekey' \
+    > "${SECRETS}/oauth.d/plugin.conf"
   # Host-side probes cannot read a 0640 file owned by 1883. Keep a copy
   # of the public certificate for those probes. The broker still reads
   # the secrets-dir file.
@@ -485,6 +537,7 @@ if docker info >/dev/null 2>&1; then
       /mosquitto/config/secrets/internal.crt \
       /mosquitto/config/secrets/internal.key \
       /mosquitto/config/secrets/oauth.d \
+      /mosquitto/config/secrets/oauth.d/plugin.conf \
       && chmod 0600 \
       /mosquitto/config/secrets/passwd \
       /mosquitto/config/secrets/server.key \
@@ -494,7 +547,8 @@ if docker info >/dev/null 2>&1; then
       && chmod 0640 \
       /mosquitto/config/secrets/acl \
       /mosquitto/config/secrets/server.crt \
-      /mosquitto/config/secrets/internal.crt'
+      /mosquitto/config/secrets/internal.crt \
+      /mosquitto/config/secrets/oauth.d/plugin.conf'
   run_broker_handshake
 elif [[ "${CI:-}" == "true" ]]; then
   echo "docker is required in CI for the Mosquitto handshake" >&2

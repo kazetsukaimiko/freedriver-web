@@ -26,13 +26,13 @@ RUN apk add --no-cache \
     patch \
     pkgconfig
 
-RUN curl -fsSL -o mosquitto.tar.gz "https://mosquitto.org/files/source/mosquitto-${MOSQUITTO_VERSION}.tar.gz" \
+RUN curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o mosquitto.tar.gz "https://mosquitto.org/files/source/mosquitto-${MOSQUITTO_VERSION}.tar.gz" \
     && echo "${MOSQUITTO_SHA256}  mosquitto.tar.gz" | sha256sum -c - \
     && tar -xzf mosquitto.tar.gz \
-    && curl -fsSL -o libjwt.tar.gz "https://github.com/benmcollins/libjwt/archive/refs/tags/v${LIBJWT_VERSION}.tar.gz" \
+    && curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o libjwt.tar.gz "https://github.com/benmcollins/libjwt/archive/refs/tags/v${LIBJWT_VERSION}.tar.gz" \
     && echo "${LIBJWT_SHA256}  libjwt.tar.gz" | sha256sum -c - \
     && tar -xzf libjwt.tar.gz \
-    && curl -fsSL -o plugin.tar.gz "https://github.com/iotinga/mosquitto-oauth-plugin/archive/refs/tags/v${OAUTH_PLUGIN_VERSION}.tar.gz" \
+    && curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o plugin.tar.gz "https://github.com/iotinga/mosquitto-oauth-plugin/archive/refs/tags/v${OAUTH_PLUGIN_VERSION}.tar.gz" \
     && echo "${OAUTH_PLUGIN_SHA256}  plugin.tar.gz" | sha256sum -c - \
     && tar -xzf plugin.tar.gz
 

@@ -49,7 +49,7 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
 ## Broker
 
 - Image: `eclipse-mosquitto:2.1.2-alpine` with `iotinga/mosquitto-oauth-plugin` compiled against Mosquitto 2.1.2 (`mosquitto/Dockerfile`). Compose builds that image. Deploy pushes `ghcr.io/kazetsukaimiko/freedriver-web/mosquitto`.
-- Plugin path `/usr/lib/mosquitto-oauth-plugin.so`. Client id `freedriver-mqtt`. Token URL `https://auth.freedriver.io/realms/freedriver/protocol/openid-connect/token`. `plugin_opt_oauth_jwt_validate_exp false` so a short access token leaves a connected house up. Client secret and realm public key live in `/opt/freedriver-secrets/mosquitto/oauth.d/plugin.conf`, written by `scripts/provision-keycloak-freedriver.sh`.
+- Plugin path `/usr/lib/mosquitto-oauth-plugin.so`. Client id `freedriver-mqtt`. Token URL `https://auth.freedriver.io/realms/freedriver/protocol/openid-connect/token`. `plugin_opt_oauth_jwt_validate_exp false` so a short access token leaves a connected house up. Client secret and realm public key live in `/opt/freedriver-secrets/mosquitto/oauth.d/plugin.conf`, written by `scripts/provision-keycloak-freedriver.sh`. The image entrypoint copies that file onto the runtime conf after the plugin line.
 - House grants stay on `password_file` and `acl_file`. [#321](https://github.com/kazetsukaimiko/freedriver-web/issues/321) is the cutover that starts the live house on Keycloak.
 - Two MQTTS listeners (`protocol mqtt`). Mosquitto has no SNI, so each socket has one certificate.
   - Container port 8883 is not published. The API dials hostname `mosquitto` on that port. The certificate SAN is `DNS:mosquitto` only, signed by `/opt/freedriver-secrets/mqtt-internal/ca.crt`.
