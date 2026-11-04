@@ -30,6 +30,8 @@ class MqttLogTest {
             MqttLog.stateReceived(INSTANCE, 2);
             MqttLog.stateSummary(INSTANCE, 4, "12s");
             MqttLog.stateRejected("freedriver/v1/" + INSTANCE + "/appliances\nsecret", "schema");
+            MqttLog.metricsReceived(INSTANCE);
+            MqttLog.metricsRejected("freedriver/v1/" + INSTANCE + "/metrics\nsecret", "schema");
             MqttLog.commandSent("cmd-1", INSTANCE, "hallway", true, "ka\nze");
             MqttLog.commandUnacknowledged("cmd-1", INSTANCE, "hallway", true, "kaze", 5000);
             MqttLog.commandFailed("cmd-1", INSTANCE);
@@ -48,6 +50,9 @@ class MqttLogTest {
             assertTrue(all.contains("mqtt state summary instance=" + INSTANCE + " messages=4 lastHeardAgo=12s"), all);
             assertTrue(all.contains(
                     "mqtt state rejected topic=freedriver/v1/" + INSTANCE + "/appliancessecret reason=schema"), all);
+            assertTrue(all.contains("mqtt metrics received instance=" + INSTANCE), all);
+            assertTrue(all.contains(
+                    "mqtt metrics rejected topic=freedriver/v1/" + INSTANCE + "/metricssecret reason=schema"), all);
             assertTrue(all.contains("mqtt command sent commandId=cmd-1 instance=" + INSTANCE
                     + " appliance=hallway state=true user=kaze"), all);
             assertTrue(all.contains("mqtt command unacknowledged commandId=cmd-1 instance=" + INSTANCE
