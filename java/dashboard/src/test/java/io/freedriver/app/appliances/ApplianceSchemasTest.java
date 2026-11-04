@@ -49,6 +49,14 @@ class ApplianceSchemasTest {
         assertTrue(MqttAcl.canSubscribe(MqttAcl.Identity.API, state));
         assertFalse(MqttAcl.canSubscribe(MqttAcl.Identity.API, commands));
 
+        String metrics = "freedriver/v1/" + INSTANCE_ID + "/metrics";
+        assertTrue(MqttAcl.canPublish(MqttAcl.Identity.AUTONOMY, metrics, false));
+        assertFalse(MqttAcl.canPublish(MqttAcl.Identity.AUTONOMY, metrics, true));
+        assertFalse(MqttAcl.canPublish(MqttAcl.Identity.API, metrics, false));
+        assertTrue(MqttAcl.canSubscribe(MqttAcl.Identity.API, metrics));
+        assertFalse(MqttAcl.canSubscribe(MqttAcl.Identity.AUTONOMY, metrics));
+        assertFalse(MqttAcl.isMetricsTopic("freedriver/v1/+/metrics"));
+
         assertFalse(MqttAcl.canPublish(MqttAcl.Identity.ANONYMOUS, state, false));
         assertFalse(MqttAcl.canPublish(MqttAcl.Identity.ANONYMOUS, commands, false));
         assertFalse(MqttAcl.canSubscribe(MqttAcl.Identity.OTHER, state));
