@@ -27,7 +27,7 @@ The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{gra
 
 ## Observability
 
-Public Grafana is https://grafana.freedriver.io. Caddy reverse-proxies that host to `grafana:3000`. Sign-in is Keycloak generic OAuth (`freedriver-grafana`). Compose sets `GF_AUTH_DISABLE_LOGIN_FORM`. Break-glass is SSH to host `127.0.0.1:3000`, or `grafana cli` in the grafana container. The admin password is `GF_SECURITY_ADMIN_PASSWORD` in `/opt/freedriver-secrets/.env`.
+Public Grafana is https://grafana.freedriver.io. Caddy reverse-proxies that host to `grafana:3000`. Sign-in is Keycloak generic OAuth (`freedriver-grafana`). Compose sets `GF_AUTH_DISABLE_LOGIN_FORM`. Break-glass is SSH to host `127.0.0.1:3000`, or `grafana cli` in the grafana container. The admin password is `GF_SECURITY_ADMIN_PASSWORD` in `/opt/freedriver-secrets/.env`. File-provisioned dashboards live under `observability/grafana/provisioning/dashboards/json/`: **Freedriver metrics** (Prometheus scrape, dashboard HTTP, JVM, Alloy Loki write, `freedriver_io_*`) and **Freedriver logs** (Loki by `compose_service`).
 
 The Keycloak admin console listens on 127.0.0.1 on the VPS host:
 

@@ -226,6 +226,9 @@ jobs:
           python3 observability/docker-logs-proxy/test_docker_logs_proxy.py
           docker build -t freedriver-docker-logs-proxy:ci observability/docker-logs-proxy
 
+      - name: Grafana dashboards file-provision
+        run: python3 observability/grafana/provisioning/dashboards/test_dashboards.py
+
       - name: Draft PRs become ready when checks pass
         run: |
           python3 .github/scripts/pr_ready_when_green.py --self-test
