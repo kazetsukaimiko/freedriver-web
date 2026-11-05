@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.freedriver.mqtt.MqttBrokers;
 import io.freedriver.mqtt.MqttLog;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
+import io.freedriver.app.metrics.BlockingIo;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -30,6 +31,7 @@ import java.util.UUID;
  * The create {@code Location} id joins {@code mqtt-instance} and deletes a user that stops short.
  * That id is not stored. Reset replaces the credential and does not read the previous password.
  */
+@BlockingIo
 @ApplicationScoped
 public class KeycloakInstanceIdentity implements InstanceIdentity {
 

@@ -20,6 +20,7 @@ import java.util.UUID;
  * Subscribes to each house metrics topic and forwards points to Grafana via Micrometer.
  * Uses the same MQTT session as appliance state. Does not publish.
  */
+@BlockingIo
 @ApplicationScoped
 public class MetricsMqttForwarder {
     static final int MAX_BYTES = 64 * 1024;

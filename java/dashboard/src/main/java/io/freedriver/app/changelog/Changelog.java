@@ -1,5 +1,6 @@
 package io.freedriver.app.changelog;
 
+import io.freedriver.app.metrics.BlockingIo;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.io.IOException;
@@ -14,6 +15,7 @@ import java.util.Optional;
  * file to that classpath path. It sits outside {@code META-INF/resources}, so Quarkus never serves
  * it as a static file; {@code GET /api/changelog} is the one way to read it.
  */
+@BlockingIo
 @ApplicationScoped
 public class Changelog {
 

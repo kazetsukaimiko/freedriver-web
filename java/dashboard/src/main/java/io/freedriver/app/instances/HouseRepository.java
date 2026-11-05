@@ -1,11 +1,13 @@
 package io.freedriver.app.instances;
 
+import io.freedriver.app.metrics.BlockingIo;
 import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.Optional;
 import java.util.UUID;
 
+@BlockingIo
 @ApplicationScoped
 public class HouseRepository implements PanacheMongoRepositoryBase<House, String> {
 

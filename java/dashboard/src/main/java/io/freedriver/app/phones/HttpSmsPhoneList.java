@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.freedriver.app.invites.InviteUpstreamException;
 import io.freedriver.app.invites.InviteWording;
+import io.freedriver.app.metrics.BlockingIo;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -20,6 +21,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /** Calls the sms service. The shared secret never goes to the browser. */
+@BlockingIo
 @ApplicationScoped
 public class HttpSmsPhoneList implements SmsPhoneList {
 
