@@ -2,6 +2,7 @@ package io.freedriver.app.invites;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.freedriver.app.metrics.BlockingIo;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -29,6 +30,7 @@ import java.util.UUID;
  * Single-use invite links. The file stores the SHA-256 of the code, never the code.
  * Using a link sets used-at only when that field is still empty and the invite is open.
  */
+@BlockingIo
 @ApplicationScoped
 public class InviteStore {
 

@@ -1,5 +1,6 @@
 package io.freedriver.app.appliances;
 
+import io.freedriver.app.metrics.BlockingIo;
 import io.freedriver.mqtt.MqttConnection;
 import io.freedriver.mqtt.MqttLog;
 import io.freedriver.mqtt.contract.ApplianceJson;
@@ -31,6 +32,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * Command publishing stays behind {@code live-commands}. A failed state connection
  * does not stop the portal. Logs on {@code io.freedriver.mqtt}.
  */
+@BlockingIo
 @ApplicationScoped
 public class MqttLiveClient {
 

@@ -3,6 +3,7 @@ package io.freedriver.app.phones;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.freedriver.app.invites.InviteUpstreamException;
+import io.freedriver.app.metrics.BlockingIo;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -24,6 +25,7 @@ import java.util.regex.Pattern;
  * That account cannot grant {@code portal-admin}. This class sends only the phone.
  * The invite-account resource grants {@code dashboard} itself.
  */
+@BlockingIo
 @ApplicationScoped
 public class KeycloakPhoneSignIn implements PhoneSignInDirectory {
 
