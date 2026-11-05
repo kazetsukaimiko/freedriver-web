@@ -45,8 +45,10 @@
 # grants. Client scope mqtt-acl fills mqtt_acl.publish and mqtt_acl.subscribe from
 # user attributes. Group mqtt-instance is the house gate; group portal-broker
 # holds realm user service-account-freedriver-mqtt. The plugin exchanges
-# username/password, so that user is a realm user with a password. The plugin
-# secret is written once under /opt/freedriver-secrets.
+# username/password, so that user is a realm user with a password. The user
+# profile for role user needs email, firstName, and lastName; provision sets
+# mqtt-broker@freedriver.invalid / MQTT / Broker. The plugin secret is written
+# once under /opt/freedriver-secrets.
 #
 # Run as root, or as a member of the allowed group, on the VPS. Idempotent. New password users get the
 # UPDATE_PASSWORD required action and choose their own password.
@@ -1135,7 +1137,10 @@ PY
     kcadm create users -r "$REALM" \
       -s username=service-account-freedriver-mqtt \
       -s enabled=true \
-      -s emailVerified=true >/dev/null
+      -s emailVerified=true \
+      -s 'email=mqtt-broker@freedriver.invalid' \
+      -s 'firstName=MQTT' \
+      -s 'lastName=Broker' >/dev/null
     sa_id="$(kcadm get users -r "$REALM" -q username=service-account-freedriver-mqtt -q exact=true --fields id --format csv --noquotes | csv_id)"
     echo "Created realm user service-account-freedriver-mqtt."
   else
@@ -1163,6 +1168,10 @@ PY
 import json, sys
 path = sys.argv[1]
 user = json.load(open(path, encoding="utf-8"))
+user["email"] = "mqtt-broker@freedriver.invalid"
+user["firstName"] = "MQTT"
+user["lastName"] = "Broker"
+user["emailVerified"] = True
 attrs = user.setdefault("attributes", {})
 attrs["mqtt_publ_topic"] = ["freedriver/v1/+/commands"]
 attrs["mqtt_subs_topic"] = ["freedriver/v1/+/appliances"]

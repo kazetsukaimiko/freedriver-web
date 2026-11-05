@@ -46,11 +46,14 @@ RUN cmake -S . -B build \
     && cmake --install build
 
 COPY mosquitto/oauth-plugin/defer-password-file.patch /build/defer-password-file.patch
+COPY mosquitto/oauth-plugin/ropc-form-body.patch /build/ropc-form-body.patch
 COPY mosquitto/oauth-plugin/CMakeLists.txt /build/plugin-CMakeLists.txt
 
 WORKDIR /build/mosquitto-oauth-plugin-${OAUTH_PLUGIN_VERSION}
 RUN test -f src/auth.c \
+    && test -f src/oauth.c \
     && patch -p1 --forward --batch < /build/defer-password-file.patch \
+    && patch -p1 --forward --batch < /build/ropc-form-body.patch \
     && cp /build/plugin-CMakeLists.txt CMakeLists.txt \
     && cmake -S . -B build \
         -DCMAKE_INSTALL_PREFIX=/usr \

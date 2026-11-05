@@ -1,0 +1,186 @@
+--- a/src/oauth.c
++++ b/src/oauth.c
+@@ -86,44 +86,59 @@
+ 
+     if (curl_handle)
+     {
+-        char basic_auth_str[BASIC_AUTH_STR_MAX_SIZE] = {0};
+-        snprintf(basic_auth_str, BASIC_AUTH_STR_MAX_SIZE, ":%s", client_secret);
+-        char *basic_auth_encoded = base64_encode(basic_auth_str);
+-
+-        char req_auth[REQ_HEADER_AUTH_MAX_SIZE] = {0};
+-        snprintf(req_auth, REQ_HEADER_AUTH_MAX_SIZE, "Authorization: Basic %s", basic_auth_encoded);
+-        mosquitto_free(basic_auth_encoded);
+-
+-        char req_body[REQ_BODY_MAX_SIZE] = {0};
+-        snprintf(req_body, REQ_BODY_MAX_SIZE, "grant_type=password&username=%s&password=%s&client_id=%s", username, password, client_id);
+-
++        /* Form-encoded client_secret_post: the live client secret is longer
++         * than the upstream 50-byte Basic buffer, and passwords include
++         * reserved form characters. */
++        char *esc_user = curl_easy_escape(curl_handle, username ? username : "", 0);
++        char *esc_pass = curl_easy_escape(curl_handle, password ? password : "", 0);
++        char *esc_id = curl_easy_escape(curl_handle, client_id ? client_id : "", 0);
++        char *esc_secret = curl_easy_escape(curl_handle, client_secret ? client_secret : "", 0);
++        char *req_body = NULL;
+         struct curl_slist *headers = NULL;
+-        headers = curl_slist_append(headers, req_auth);
+-
+-        curl_easy_setopt(curl_handle, CURLOPT_URL, token_endpoint);
+-        curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headers);
+-        curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, http_write_callback);
+-        curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
+-        curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, HTTP_USERAGENT);
+-        curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, req_body);
+-
+-        res = curl_easy_perform(curl_handle);
+-        curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &http_status);
+ 
+-        if (res != CURLE_OK)
+-        {
+-            mosquitto_log_printf(MOSQ_LOG_ERR, "HTTP request failed: %s", curl_easy_strerror(res));
+-        }
+-        else if (http_status < 200 || http_status >= 300)
+-        {
+-            mosquitto_log_printf(MOSQ_LOG_ERR, "OAuth server returned HTTP status %ld", http_status);
+-        }
+-        else
++        if (esc_user && esc_pass && esc_id && esc_secret)
+         {
+-            get_access_token_from_http_response(&chunk, token);
++            size_t body_len = strlen("grant_type=password&username=&password=&client_id=&client_secret=")
++                + strlen(esc_user) + strlen(esc_pass) + strlen(esc_id) + strlen(esc_secret) + 1;
++            req_body = mosquitto_malloc(body_len);
++            if (req_body)
++            {
++                snprintf(req_body, body_len,
++                         "grant_type=password&username=%s&password=%s&client_id=%s&client_secret=%s",
++                         esc_user, esc_pass, esc_id, esc_secret);
++                headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
++
++                curl_easy_setopt(curl_handle, CURLOPT_URL, token_endpoint);
++                curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headers);
++                curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, http_write_callback);
++                curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
++                curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, HTTP_USERAGENT);
++                curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, req_body);
++
++                res = curl_easy_perform(curl_handle);
++                curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &http_status);
++
++                if (res != CURLE_OK)
++                {
++                    mosquitto_log_printf(MOSQ_LOG_ERR, "HTTP request failed: %s", curl_easy_strerror(res));
++                }
++                else if (http_status < 200 || http_status >= 300)
++                {
++                    mosquitto_log_printf(MOSQ_LOG_ERR, "OAuth server returned HTTP status %ld", http_status);
++                }
++                else
++                {
++                    get_access_token_from_http_response(&chunk, token);
++                }
++            }
+         }
+ 
+         curl_slist_free_all(headers);
++        mosquitto_free(req_body);
++        curl_free(esc_user);
++        curl_free(esc_pass);
++        curl_free(esc_id);
++        curl_free(esc_secret);
+         curl_easy_cleanup(curl_handle);
+     }
+ 
+@@ -148,47 +163,56 @@
+ 
+     if (curl_handle)
+     {
+-        char basic_auth_str[BASIC_AUTH_STR_MAX_SIZE] = {0};
+-        snprintf(basic_auth_str, BASIC_AUTH_STR_MAX_SIZE, ":%s", client_secret);
+-        char *basic_auth_encoded = base64_encode(basic_auth_str);
+-
+-        char req_auth[REQ_HEADER_AUTH_MAX_SIZE] = {0};
+-        snprintf(req_auth, REQ_HEADER_AUTH_MAX_SIZE, "Authorization: Basic %s", basic_auth_encoded);
+-        mosquitto_free(basic_auth_encoded);
+-
+-        char req_body[REQ_BODY_MAX_SIZE] = {0};
+-        snprintf(req_body, REQ_BODY_MAX_SIZE,
+-                 "grant_type=urn:ietf:params:oauth:grant-type:token-exchange&requested_token_type=urn:ietf:params:oauth:token-type:access_token&client_id=%s&subject_token=%s&requested_subject=%s",
+-                 client_id, admin_token,
+-                 target_username);
+-
++        char *esc_id = curl_easy_escape(curl_handle, client_id ? client_id : "", 0);
++        char *esc_secret = curl_easy_escape(curl_handle, client_secret ? client_secret : "", 0);
++        char *esc_token = curl_easy_escape(curl_handle, admin_token ? admin_token : "", 0);
++        char *esc_subject = curl_easy_escape(curl_handle, target_username ? target_username : "", 0);
++        char *req_body = NULL;
+         struct curl_slist *headers = NULL;
+-        headers = curl_slist_append(headers, req_auth);
+-
+-        curl_easy_setopt(curl_handle, CURLOPT_URL, token_endpoint);
+-        curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headers);
+-        curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, http_write_callback);
+-        curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
+-        curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, HTTP_USERAGENT);
+-        curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, req_body);
+ 
+-        res = curl_easy_perform(curl_handle);
+-        curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &http_status);
+-
+-        if (res != CURLE_OK)
+-        {
+-            mosquitto_log_printf(MOSQ_LOG_ERR, "HTTP request failed: %s", curl_easy_strerror(res));
+-        }
+-        else if (http_status < 200 || http_status >= 300)
+-        {
+-            mosquitto_log_printf(MOSQ_LOG_ERR, "OAuth server returned HTTP status %ld", http_status);
+-        }
+-        else
++        if (esc_id && esc_secret && esc_token && esc_subject)
+         {
+-            get_access_token_from_http_response(&chunk, token);
++            const char *prefix = "grant_type=urn:ietf:params:oauth:grant-type:token-exchange&requested_token_type=urn:ietf:params:oauth:token-type:access_token&client_id=&client_secret=&subject_token=&requested_subject=";
++            size_t body_len = strlen(prefix) + strlen(esc_id) + strlen(esc_secret) + strlen(esc_token) + strlen(esc_subject) + 1;
++            req_body = mosquitto_malloc(body_len);
++            if (req_body)
++            {
++                snprintf(req_body, body_len,
++                         "grant_type=urn:ietf:params:oauth:grant-type:token-exchange&requested_token_type=urn:ietf:params:oauth:token-type:access_token&client_id=%s&client_secret=%s&subject_token=%s&requested_subject=%s",
++                         esc_id, esc_secret, esc_token, esc_subject);
++                headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
++
++                curl_easy_setopt(curl_handle, CURLOPT_URL, token_endpoint);
++                curl_easy_setopt(curl_handle, CURLOPT_HTTPHEADER, headers);
++                curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, http_write_callback);
++                curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
++                curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, HTTP_USERAGENT);
++                curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, req_body);
++
++                res = curl_easy_perform(curl_handle);
++                curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &http_status);
++
++                if (res != CURLE_OK)
++                {
++                    mosquitto_log_printf(MOSQ_LOG_ERR, "HTTP request failed: %s", curl_easy_strerror(res));
++                }
++                else if (http_status < 200 || http_status >= 300)
++                {
++                    mosquitto_log_printf(MOSQ_LOG_ERR, "OAuth server returned HTTP status %ld", http_status);
++                }
++                else
++                {
++                    get_access_token_from_http_response(&chunk, token);
++                }
++            }
+         }
+ 
+         curl_slist_free_all(headers);
++        mosquitto_free(req_body);
++        curl_free(esc_id);
++        curl_free(esc_secret);
++        curl_free(esc_token);
++        curl_free(esc_subject);
+         curl_easy_cleanup(curl_handle);
+     }
+ 
