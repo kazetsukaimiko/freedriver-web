@@ -36,9 +36,10 @@
 # Sessions (#353): accessCodeLifespanLogin 7200, ssoSessionIdleTimeout 28800,
 # ssoSessionMaxLifespan 86400, accessCodeLifespanUserAction 1800.
 #
-# Appliances MCP (#112) is the public client freedriver-grok-mcp. Authorization
-# code + PKCE, no secret, no service account. The client remains disabled with
-# empty redirectUris and webOrigins until anonymous GET /autonomy/mcp returns 401.
+# Appliances MCP (#112 / #333) is the public client freedriver-grok-mcp.
+# Authorization code + PKCE S256, no secret, no service account. Enabled with
+# the grok.com connector callback (same URI as freedriver-dispatcher).
+# webOrigins stay empty. offline_access stays optional. 1-year access token.
 #
 # MQTT broker client (#317) is confidential client freedriver-mqtt. Direct access
 # grants. Client scope mqtt-acl fills mqtt_acl.publish and mqtt_acl.subscribe from
@@ -377,13 +378,15 @@ ensure_mapper "$DISPATCHER_UUID" role-dispatcher \
   -s protocolMapper=oidc-hardcoded-role-mapper \
   -s 'config."role"=dispatcher'
 
-# Public Grok Bot client for /autonomy/mcp. Disabled, empty redirect and origins.
+# Public Grok Bot client for /autonomy/mcp. Same grok.com callback as
+# freedriver-dispatcher; a separate client so azp stays freedriver-grok-mcp.
 GROK_MCP_CLIENT=freedriver-grok-mcp
-GROK_MCP_REDIRECT_URIS='[]'
+GROK_MCP_REDIRECT_URI='https://grok.com/connectors-oauth-exchange-code/'
+GROK_MCP_REDIRECT_URIS="[\"${GROK_MCP_REDIRECT_URI}\"]"
 GROK_MCP_WEB_ORIGINS='[]'
-if [[ "$GROK_MCP_REDIRECT_URIS" != '[]' ]] \
+if [[ "$GROK_MCP_REDIRECT_URIS" != '["https://grok.com/connectors-oauth-exchange-code/"]' ]] \
     || [[ "$GROK_MCP_WEB_ORIGINS" != '[]' ]]; then
-  echo "freedriver-grok-mcp redirect or web origins are not empty." >&2
+  echo "freedriver-grok-mcp redirect or web origins are not the pinned values." >&2
   exit 1
 fi
 GROK_MCP_UUID="$(kcadm get clients -r "$REALM" -q "clientId=${GROK_MCP_CLIENT}" --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
@@ -393,14 +396,14 @@ else
   kcadm create clients -r "$REALM" \
     -s "clientId=${GROK_MCP_CLIENT}" \
     -s name='Freedriver grok MCP' \
-    -s enabled=false \
+    -s enabled=true \
     -s publicClient=true \
     -s standardFlowEnabled=true \
     -s implicitFlowEnabled=false \
     -s directAccessGrantsEnabled=false \
     -s serviceAccountsEnabled=false \
     -s protocol=openid-connect \
-    -s 'description=Public authorization-code + PKCE client for /autonomy/mcp. Disabled until that URL 401s. No secret.' \
+    -s 'description=Public authorization-code + PKCE client for /autonomy/mcp. grok.com connector callback. No secret.' \
     -s "redirectUris=${GROK_MCP_REDIRECT_URIS}" \
     -s "webOrigins=${GROK_MCP_WEB_ORIGINS}" \
     -s 'attributes."pkce.code.challenge.method"=S256' >/dev/null
@@ -410,7 +413,7 @@ fi
 
 kcadm update "clients/${GROK_MCP_UUID}" -r "$REALM" \
   -s publicClient=true \
-  -s enabled=false \
+  -s enabled=true \
   -s standardFlowEnabled=true \
   -s implicitFlowEnabled=false \
   -s directAccessGrantsEnabled=false \
@@ -418,9 +421,22 @@ kcadm update "clients/${GROK_MCP_UUID}" -r "$REALM" \
   -s "redirectUris=${GROK_MCP_REDIRECT_URIS}" \
   -s "webOrigins=${GROK_MCP_WEB_ORIGINS}" \
   -s 'attributes."pkce.code.challenge.method"=S256' \
-  -s 'attributes."access.token.lifespan"=300' \
-  -s 'attributes."client.session.idle.timeout"=' \
-  -s 'attributes."client.session.max.lifespan"=' >/dev/null
+  -s 'attributes."access.token.lifespan"=31536000' \
+  -s 'attributes."client.session.idle.timeout"='"${SSO_SESSION_IDLE_TIMEOUT}" \
+  -s 'attributes."client.session.max.lifespan"='"${SSO_SESSION_MAX_LIFESPAN}" >/dev/null
+
+kcadm get "clients/${GROK_MCP_UUID}/default-client-scopes" -r "$REALM" > "$work/grok-mcp-scopes.json"
+if ! python3 - "$work/grok-mcp-scopes.json" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+names = {s.get("name") for s in scopes}
+sys.exit(0 if "offline_access" not in names else 1)
+PY
+then
+  echo "freedriver-grok-mcp has offline_access as a default client scope, so it requests offline tokens." >&2
+  exit 1
+fi
+echo "freedriver-grok-mcp does not request offline tokens."
 
 ensure_device_client() {
   local id="$1"
