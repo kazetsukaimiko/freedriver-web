@@ -50,13 +50,13 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
 
 - Image: `eclipse-mosquitto:2.1.2-alpine` with `iotinga/mosquitto-oauth-plugin` compiled against Mosquitto 2.1.2 (`mosquitto/Dockerfile`). Compose builds that image. Deploy pushes `ghcr.io/kazetsukaimiko/freedriver-web/mosquitto`.
 - Plugin path `/usr/lib/mosquitto-oauth-plugin.so`. Client id `freedriver-mqtt`. Token URL `https://auth.freedriver.io/realms/freedriver/protocol/openid-connect/token`. `plugin_opt_oauth_jwt_validate_exp false` so a short access token leaves a connected house up. Client secret and realm public key live in `/opt/freedriver-secrets/mosquitto/oauth.d/plugin.conf`, written by `scripts/provision-keycloak-freedriver.sh`. The image entrypoint copies that file onto the runtime conf after the plugin line.
-- House grants stay on `password_file` and `acl_file`. [#321](https://github.com/kazetsukaimiko/freedriver-web/issues/321) is the cutover that starts the live house on Keycloak.
+- Keycloak MQTT users receive topic grants from the OAuth plugin JWT (`mqtt_acl`). `password_file` and `acl_file` remain the live-house fallback until [#321](https://github.com/kazetsukaimiko/freedriver-web/issues/321) installs that house on Keycloak.
 - Two MQTTS listeners (`protocol mqtt`). Mosquitto has no SNI, so each socket has one certificate.
   - Container port 8883 is not published. The API dials hostname `mosquitto` on that port. The certificate SAN is `DNS:mosquitto` only, signed by `/opt/freedriver-secrets/mqtt-internal/ca.crt`.
   - Container port 8884 is published as host `8883`. That certificate is Let's Encrypt for `DNS:mqtt.freedriver.io` only.
 - Host port 8883 stays reachable from any address because the home IP is dynamic. Broker passwords and instance ACLs guard it. `allow_anonymous false`, the password file, and the ACL apply to both listeners. Do not set `listener_allow_anonymous true`. Port 1883 stays closed.
 - Sysadmin still needs `mqtt.freedriver.io` A → `138.197.90.42`.
-- Auth: every client logs in with a broker password (`allow_anonymous false`). v1 has one house, which shares broker users `autonomy` and `api`. The OAuth plugin is loaded. The dashboard service account `service-account-freedriver-mqtt` (group `portal-broker`) publishes `freedriver/v1/+/commands` and subscribes to `freedriver/v1/+/appliances` once #321 cuts over. House users receive exact instance topics; `api` receives the `+/metrics/#` filter.
+- Auth: every client logs in with a broker password (`allow_anonymous false`). v1 has one house, which shares broker users `autonomy` and `api`. The OAuth plugin is loaded. The dashboard service account `service-account-freedriver-mqtt` (group `portal-broker`) publishes `freedriver/v1/+/commands` and subscribes to `freedriver/v1/+/appliances` through the plugin. House users receive exact instance topics from JWT claims; `api` receives the `+/metrics/#` filter until #321.
 - Persistence: `/opt/freedriver-storage/mosquitto`.
 - Command-live arrives with #27.
 

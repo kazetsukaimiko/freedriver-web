@@ -101,6 +101,16 @@ if "iotinga/mosquitto-oauth-plugin" not in dockerfile:
     raise SystemExit("Dockerfile must fetch iotinga/mosquitto-oauth-plugin")
 if "FROM eclipse-mosquitto:2.1.2-alpine AS builder" not in dockerfile:
     raise SystemExit("plugin must compile against the 2.1.2-alpine builder")
+if dockerfile.count("ropc-form-body.patch") < 2:
+    raise SystemExit("Dockerfile must copy and apply ropc-form-body.patch")
+ropc_patch = Path("mosquitto/oauth-plugin/ropc-form-body.patch").read_text()
+for needle in (
+    "curl_easy_escape",
+    "client_secret=%s",
+    "Content-Type: application/x-www-form-urlencoded",
+):
+    if needle not in ropc_patch:
+        raise SystemExit(f"ropc-form-body.patch missing {needle}")
 provision_kc = Path("scripts/provision-keycloak-freedriver.sh").read_text()
 for needle in (
     "clientId=freedriver-mqtt",
@@ -112,6 +122,9 @@ for needle in (
     "mqtt_acl.superuser",
     "freedriver/v1/+/commands",
     "freedriver/v1/+/appliances",
+    "mqtt-broker@freedriver.invalid",
+    "firstName=MQTT",
+    "lastName=Broker",
 ):
     if needle not in provision_kc:
         raise SystemExit(f"provision-keycloak-freedriver.sh missing {needle}")
