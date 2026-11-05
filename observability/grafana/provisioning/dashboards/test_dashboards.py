@@ -46,6 +46,10 @@ def main() -> None:
         fail("provider.yml must point Grafana at /etc/grafana/provisioning/dashboards/json")
     if "folder: Freedriver" not in text:
         fail("provider.yml must load dashboards into folder Freedriver")
+    if "disableDeletion: true" not in text:
+        fail("provider.yml must set disableDeletion: true")
+    if "allowUiUpdates: false" not in text:
+        fail("provider.yml must set allowUiUpdates: false")
 
     for name, expect in EXPECTED.items():
         path = JSON_DIR / name
