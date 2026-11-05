@@ -22,6 +22,17 @@ discovery.relabel "containers" {
 loki.source.docker "containers" {
   host       = "unix:///run/docker-logs/docker.sock"
   targets    = discovery.relabel.containers.output
+  forward_to = [loki.process.drop_noise.receiver]
+}
+
+// mongo:8 healthcheck runs mongosh ping every 5s without SASL. MongoDB logs
+// INFO "Connection not authenticating" for each of those localhost sockets.
+loki.process "drop_noise" {
+  stage.drop {
+    expression          = "Connection not authenticating"
+    drop_counter_reason = "mongodb_healthcheck"
+  }
+
   forward_to = [loki.write.local.receiver]
 }
 

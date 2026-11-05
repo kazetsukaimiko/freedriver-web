@@ -82,7 +82,7 @@
             "uid": "loki"
           },
           "editorMode": "code",
-          "expr": "sum by (compose_service) (count_over_time({compose_service=~\"$compose_service\"}[$__interval]))",
+          "expr": "sum by (compose_service) (count_over_time({compose_service=~\"$compose_service\"} != \"Connection not authenticating\"[$__interval]))",
           "queryType": "range",
           "refId": "A",
           "legendFormat": "{{compose_service}}"
@@ -173,18 +173,28 @@
             "uid": "loki"
           },
           "editorMode": "code",
-          "expr": "{compose_service=~\"$compose_service\"}",
+          "expr": "{compose_service=~\"$compose_service\"} != \"Connection not authenticating\" !~ `^\\{`",
           "queryType": "range",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "{compose_service=~\"$compose_service\"} != \"Connection not authenticating\" |~ `^\\{` | json | line_format \"{{if .msg}}{{.s}} {{.c}} {{.msg}}{{else if .message}}{{.message}}{{else}}{{__line__}}{{end}}\"",
+          "queryType": "range",
+          "refId": "B"
         }
       ],
       "maxDataPoints": 1000,
       "options": {
         "dedupStrategy": "none",
         "enableLogDetails": true,
-        "prettifyLogMessage": false,
+        "prettifyLogMessage": true,
         "showCommonLabels": false,
-        "showLabels": false,
+        "showLabels": true,
         "showTime": true,
         "sortOrder": "Descending",
         "wrapLogMessage": true
@@ -211,18 +221,28 @@
             "uid": "loki"
           },
           "editorMode": "code",
-          "expr": "{compose_service=~\"$compose_service\"} |~ \"(?i)error|exception|fatal|panic\"",
+          "expr": "{compose_service=~\"$compose_service\"} != \"Connection not authenticating\" !~ `^\\{` |~ \"(?i)error|exception|fatal|panic\"",
           "queryType": "range",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "{compose_service=~\"$compose_service\"} != \"Connection not authenticating\" |~ `^\\{` | json | line_format \"{{if .msg}}{{.s}} {{.c}} {{.msg}}{{else if .message}}{{.message}}{{else}}{{__line__}}{{end}}\" |~ \"(?i)error|exception|fatal|panic\"",
+          "queryType": "range",
+          "refId": "B"
         }
       ],
       "maxDataPoints": 1000,
       "options": {
         "dedupStrategy": "none",
         "enableLogDetails": true,
-        "prettifyLogMessage": false,
+        "prettifyLogMessage": true,
         "showCommonLabels": false,
-        "showLabels": false,
+        "showLabels": true,
         "showTime": true,
         "sortOrder": "Descending",
         "wrapLogMessage": true
