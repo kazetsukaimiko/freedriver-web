@@ -479,6 +479,9 @@ class ComposeWiringTest(unittest.TestCase):
         alloy_config = (REPO / "observability/alloy/config.alloy").read_text()
         self.assertNotIn("/var/run/docker.sock", alloy_config)
         self.assertEqual(alloy_config.count("unix:///run/docker-logs/docker.sock"), 2)
+        self.assertIn("loki.process \"drop_noise\"", alloy_config)
+        self.assertIn("Connection not authenticating", alloy_config)
+        self.assertIn("loki.process.drop_noise.receiver", alloy_config)
         self.assertNotIn("docker.sock", (REPO / "Caddyfile").read_text())
 
 

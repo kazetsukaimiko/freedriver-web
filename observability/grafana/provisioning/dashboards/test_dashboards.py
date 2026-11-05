@@ -88,6 +88,28 @@ def main() -> None:
         if expect["datasource"] not in uids:
             fail(f"{name} must query datasource uid {expect['datasource']}")
 
+    logs = json.loads((JSON_DIR / "logs.json").read_text(encoding="utf-8"))
+    log_exprs = [
+        target.get("expr") or ""
+        for panel in logs.get("panels") or []
+        for target in panel.get("targets") or []
+    ]
+    if not log_exprs:
+        fail("logs.json needs query exprs")
+    if any("Connection not authenticating" not in expr for expr in log_exprs):
+        fail("logs.json must filter MongoDB healthcheck Connection not authenticating")
+    if not any("| json" in expr and "line_format" in expr for expr in log_exprs):
+        fail("logs.json must parse JSON lines with json | line_format")
+    logs_panels = [p for p in logs.get("panels") or [] if p.get("type") == "logs"]
+    if len(logs_panels) < 2:
+        fail("logs.json needs logs panels for lines and errors")
+    for panel in logs_panels:
+        opts = panel.get("options") or {}
+        if opts.get("prettifyLogMessage") is not True:
+            fail(f"logs.json panel {panel.get('title')!r} must prettify JSON")
+        if len(panel.get("targets") or []) < 2:
+            fail(f"logs.json panel {panel.get('title')!r} needs plain and JSON queries")
+
     extras = sorted(p.name for p in JSON_DIR.glob("*.json") if p.name not in EXPECTED)
     if extras:
         fail(f"unexpected dashboard JSON: {extras}")
