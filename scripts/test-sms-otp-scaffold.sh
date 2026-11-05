@@ -622,6 +622,27 @@ PY
 
 python3 - <<'PY'
 from pathlib import Path
+script = Path("scripts/provision-keycloak-freedriver.sh").read_text()
+if "GROK_MCP_CLIENT=freedriver-grok-mcp" not in script:
+    raise SystemExit("missing GROK_MCP_CLIENT")
+if "GROK_MCP_REDIRECT_URI='https://grok.com/connectors-oauth-exchange-code/'" not in script:
+    raise SystemExit("freedriver-grok-mcp redirect must be the grok.com connector callback")
+if 'GROK_MCP_WEB_ORIGINS=\'[]\'' not in script:
+    raise SystemExit("freedriver-grok-mcp webOrigins must stay empty")
+block = script.split("GROK_MCP_CLIENT=freedriver-grok-mcp", 1)[1].split("ensure_device_client()", 1)[0]
+if "-s enabled=false" in block:
+    raise SystemExit("freedriver-grok-mcp must stay enabled in provision")
+if 'attributes."access.token.lifespan"=300' in block:
+    raise SystemExit("freedriver-grok-mcp access token lifespan must match grok.com connect-and-forget")
+if 'attributes."access.token.lifespan"=31536000' not in block:
+    raise SystemExit("freedriver-grok-mcp access token lifespan must be 31536000")
+if "offline_access" not in block:
+    raise SystemExit("freedriver-grok-mcp must check offline_access is not a default scope")
+print("freedriver-grok-mcp is enabled with the grok.com callback")
+PY
+
+python3 - <<'PY'
+from pathlib import Path
 
 script = Path("scripts/provision-keycloak-freedriver.sh").read_text()
 for line in (
@@ -657,8 +678,8 @@ for flag in (
     if flag not in timeouts:
         raise SystemExit(f"session timeouts must set {flag}")
 print("realm session timeouts 7200/28800/86400/1800")
-if script.count("31536000") != 1:
-    raise SystemExit("31536000 is the dispatcher access token lifespan only")
+if script.count("31536000") != 2:
+    raise SystemExit("31536000 is the 1-year access token lifespan for dispatcher and grok-mcp")
 for line in (
     """-s 'attributes."access.token.lifespan"=31536000'""",
     """-s 'attributes."client.session.idle.timeout"='"${SSO_SESSION_IDLE_TIMEOUT}\"""",
@@ -666,7 +687,7 @@ for line in (
 ):
     if line not in script:
         raise SystemExit(f"dispatcher client missing {line}")
-print("dispatcher client session follows realm SSO")
+print("dispatcher and grok-mcp client sessions follow realm SSO")
 PY
 
 chmod +x scripts/test-invite-service-account.sh
