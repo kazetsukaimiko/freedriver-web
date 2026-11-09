@@ -439,7 +439,7 @@ class McpResourceTest {
     @Test
     @TestSecurity(user = "grok-cap", roles = "dispatcher")
     void mcp_submit_conflicts_while_the_subject_already_has_one_in_flight() throws Exception {
-        jobs.register("pc-cap-mcp", "cap.local", List.of("yuni"));
+        jobs.register("pc-cap-mcp", "mcp-cap.local", List.of("yuni"));
         String session = initialize();
         ExecutorService pool = Executors.newSingleThreadExecutor();
         try {
@@ -450,7 +450,7 @@ class McpResourceTest {
             AssignmentView queued = waitForQueued("pc-cap-mcp");
             int before = jobs.jobCount();
 
-            String body = call(session, submitBody("cap.local", "second"))
+            String body = call(session, submitBody("mcp-cap.local", "second"))
                     .statusCode(200)
                     .body("result.isError", is(true))
                     .extract()
