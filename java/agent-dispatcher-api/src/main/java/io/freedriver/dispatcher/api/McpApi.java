@@ -21,17 +21,17 @@ public interface McpApi {
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    @RolesAllowed(Actors.DISPATCHER)
+    @RolesAllowed({Actors.DISPATCHER, Actors.DEVICE})
     JsonRpcResponse post(
             @HeaderParam(SESSION_HEADER) String sessionId,
             @HeaderParam(PROTOCOL_HEADER) String protocolVersion,
             String body);
 
     @GET
-    @RolesAllowed(Actors.DISPATCHER)
+    @RolesAllowed({Actors.DISPATCHER, Actors.DEVICE})
     void get(@HeaderParam(SESSION_HEADER) String sessionId);
 
     @DELETE
-    @RolesAllowed(Actors.DISPATCHER)
+    @RolesAllowed({Actors.DISPATCHER, Actors.DEVICE})
     void delete(@HeaderParam(SESSION_HEADER) String sessionId);
 }

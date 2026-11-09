@@ -18,6 +18,8 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.time.Duration;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -91,8 +93,8 @@ public class McpResource implements McpApi {
         }
         return switch (method) {
             case "ping" -> envelope(id, mapper.createObjectNode());
-            case "tools/list" -> envelope(id, toolsList());
-            case "tools/call" -> callTool(subject, id, message.get("params"));
+            case "tools/list" -> envelope(id, toolsList(identity));
+            case "tools/call" -> callTool(identity, id, message.get("params"));
             default -> throw McpProtocolException.methodNotFound(id);
         };
     }
@@ -128,7 +130,7 @@ public class McpResource implements McpApi {
         return envelope(id, result);
     }
 
-    private JsonRpcResponse callTool(String subject, JsonNode id, JsonNode params) {
+    private JsonRpcResponse callTool(SecurityIdentity caller, JsonNode id, JsonNode params) {
         if (params == null || !params.isObject()) {
             throw McpProtocolException.invalidParams(id, "invalid params");
         }
@@ -140,11 +142,24 @@ public class McpResource implements McpApi {
         if (!arguments.isObject()) {
             throw McpProtocolException.invalidParams(id, "invalid params");
         }
+        String subject = CallerIds.subject(caller);
+        boolean deviceRole = caller.hasRole("device");
+        boolean dispatcherRole = caller.hasRole("dispatcher");
+        boolean hostTool = "report_host".equals(name) || "finish_job".equals(name);
+        boolean callerTool = "list_devices".equals(name) || "submit_job".equals(name) || "get_job".equals(name);
+        if (hostTool && !deviceRole) {
+            return toolResult(id, "wrong role", true);
+        }
+        if (callerTool && !dispatcherRole) {
+            return toolResult(id, "wrong role", true);
+        }
         try {
             return switch (name) {
                 case "list_devices" -> listDevices(id, arguments);
                 case "submit_job" -> submitJob(subject, id, arguments);
                 case "get_job" -> getJob(subject, id, arguments);
+                case "report_host" -> reportHost(caller, id, arguments);
+                case "finish_job" -> finishJob(caller, id, arguments);
                 case null -> throw McpProtocolException.invalidParams(id, "invalid params");
                 default -> throw McpProtocolException.invalidParams(id, "unknown tool");
             };
@@ -195,8 +210,55 @@ public class McpResource implements McpApi {
         return toolResult(id, write(jobs.getJob(subject, jobId)), false);
     }
 
-    private ObjectNode toolsList() {
+    private JsonRpcResponse reportHost(SecurityIdentity caller, JsonNode id, JsonNode arguments) {
+        if (!onlyFields(arguments, Set.of("hostname", "bots"))
+                || !textual(arguments, "hostname")
+                || arguments.get("bots") == null
+                || !arguments.get("bots").isArray()) {
+            throw McpProtocolException.invalidParams(id, "invalid params");
+        }
+        Map<String, String> bots = new LinkedHashMap<>();
+        for (JsonNode bot : arguments.get("bots")) {
+            if (bot == null || !bot.isObject() || !onlyFields(bot, Set.of("name", "activity"))
+                    || !textual(bot, "name") || !textual(bot, "activity")) {
+                throw McpProtocolException.invalidParams(id, "invalid params");
+            }
+            bots.put(bot.get("name").asText(), bot.get("activity").asText());
+        }
+        String deviceId = CallerIds.deviceId(caller);
+        ObjectNode body = mapper.createObjectNode();
+        body.set("host", mapper.valueToTree(jobs.report(deviceId, arguments.get("hostname").asText(), bots)));
+        body.set("jobs", mapper.valueToTree(jobs.poll(deviceId, Duration.ZERO)));
+        return toolResult(id, write(body), false);
+    }
+
+    private JsonRpcResponse finishJob(SecurityIdentity caller, JsonNode id, JsonNode arguments) {
+        if (!onlyFields(arguments, Set.of("assignmentId", "succeeded", "note"))
+                || !textual(arguments, "assignmentId")
+                || arguments.get("succeeded") == null
+                || !arguments.get("succeeded").isBoolean()
+                || (arguments.has("note") && !textual(arguments, "note"))) {
+            throw McpProtocolException.invalidParams(id, "invalid params");
+        }
+        UUID assignmentId;
+        try {
+            assignmentId = UUID.fromString(arguments.get("assignmentId").asText());
+        } catch (IllegalArgumentException ex) {
+            throw McpProtocolException.invalidParams(id, "invalid params");
+        }
+        String note = arguments.has("note") ? arguments.get("note").asText() : null;
+        return toolResult(id, write(jobs.finish(
+                CallerIds.deviceId(caller),
+                assignmentId,
+                arguments.get("succeeded").asBoolean(),
+                note)), false);
+    }
+
+    private ObjectNode toolsList(SecurityIdentity caller) {
         ArrayNode tools = mapper.createArrayNode();
+        boolean deviceRole = caller.hasRole("device");
+        boolean dispatcherRole = caller.hasRole("dispatcher");
+        if (dispatcherRole || !deviceRole) {
         tools.add(tool(
                 "list_devices",
                 "List registered devices: device id, hostname, agents, and last heartbeat.",
@@ -234,6 +296,66 @@ public class McpResource implements McpApi {
         jobId.put("format", "uuid");
         job.set("jobId", jobId);
         tools.add(tool("get_job", "Read one job submitted by this caller.", job, "jobId"));
+        }
+        if (deviceRole) {
+            ObjectNode hostname = mapper.createObjectNode();
+            hostname.put("type", "string");
+            hostname.put("minLength", 1);
+            hostname.put("maxLength", 253);
+            ObjectNode botName = mapper.createObjectNode();
+            botName.put("type", "string");
+            botName.put("minLength", 1);
+            botName.put("maxLength", 64);
+            ObjectNode activity = mapper.createObjectNode();
+            activity.put("type", "string");
+            ArrayNode states = mapper.createArrayNode();
+            states.add("idle");
+            states.add("busy");
+            activity.set("enum", states);
+            ObjectNode botProps = mapper.createObjectNode();
+            botProps.set("name", botName);
+            botProps.set("activity", activity);
+            ObjectNode bot = mapper.createObjectNode();
+            bot.put("type", "object");
+            bot.put("additionalProperties", false);
+            bot.set("properties", botProps);
+            ArrayNode botRequired = mapper.createArrayNode();
+            botRequired.add("name");
+            botRequired.add("activity");
+            bot.set("required", botRequired);
+            ObjectNode bots = mapper.createObjectNode();
+            bots.put("type", "array");
+            bots.put("minItems", 1);
+            bots.put("maxItems", 32);
+            bots.set("items", bot);
+            ObjectNode report = mapper.createObjectNode();
+            report.set("hostname", hostname);
+            report.set("bots", bots);
+            tools.add(tool(
+                    "report_host",
+                    "Freedriver dispatch: publish this host's bots and whether each is idle or busy. Returns queued jobs.",
+                    report,
+                    "hostname",
+                    "bots"));
+            ObjectNode finish = mapper.createObjectNode();
+            ObjectNode assignmentId = mapper.createObjectNode();
+            assignmentId.put("type", "string");
+            assignmentId.put("format", "uuid");
+            finish.set("assignmentId", assignmentId);
+            ObjectNode succeeded = mapper.createObjectNode();
+            succeeded.put("type", "boolean");
+            finish.set("succeeded", succeeded);
+            ObjectNode note = mapper.createObjectNode();
+            note.put("type", "string");
+            note.put("maxLength", 2000);
+            finish.set("note", note);
+            tools.add(tool(
+                    "finish_job",
+                    "Freedriver dispatch: post the result of one queued job so the caller can read it.",
+                    finish,
+                    "assignmentId",
+                    "succeeded"));
+        }
         ObjectNode result = mapper.createObjectNode();
         result.set("tools", tools);
         return result;

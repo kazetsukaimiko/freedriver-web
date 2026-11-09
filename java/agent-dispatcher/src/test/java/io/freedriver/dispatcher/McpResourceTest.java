@@ -105,25 +105,45 @@ class McpResourceTest {
     }
 
     @Test
-    @TestSecurity(user = "pc-mcp", roles = "device")
-    void device_role_is_403_and_the_tool_does_not_run() {
-        jobs.register("pc-device-role", "device.local", List.of("yuni"));
+    @TestSecurity(user = "freedriver-openbot", roles = "device")
+    void host_reports_bots_and_finishes_the_job() throws Exception {
+        String session = initialize();
+        call(session, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}")
+                .statusCode(200)
+                .body("result.tools.name", containsInAnyOrder("report_host", "finish_job"))
+                .body("result.tools.size()", is(2));
+
         int before = jobs.jobCount();
-
-        given()
-                .contentType("application/json")
-                .body(submitBody("pc-device-role", PROMPT))
-                .post("/mcp")
-                .then()
-                .statusCode(403);
-        given()
-                .contentType("application/json")
-                .body(submitBody("pc-device-role", PROMPT))
-                .post("/dispatch/mcp")
-                .then()
-                .statusCode(403);
-
+        call(session, submitBody("freedriver-openbot", PROMPT))
+                .statusCode(200)
+                .body("result.isError", is(true));
         assertEquals(before, jobs.jobCount());
+        assertFalse(call(session, submitBody("freedriver-openbot", PROMPT)).extract().asString().contains(PROMPT));
+
+        call(session, """
+                {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"report_host","arguments":{"hostname":"this-pc","bots":[{"name":"Project Manager","activity":"idle"}]}}}
+                """)
+                .statusCode(200)
+                .body("result.isError", is(false));
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<JobView> pending = pool.submit(() -> jobs.submit(
+                    "grok-user",
+                    new SubmitJobRequest(List.of("freedriver-openbot"), "Project Manager", "say hello", Channel.TEXT),
+                    Duration.ofSeconds(2)));
+            AssignmentView queued = waitForQueued("freedriver-openbot");
+            call(session, """
+                    {"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"finish_job","arguments":{"assignmentId":"%s","succeeded":true,"note":"done"}}}
+                    """.formatted(queued.assignmentId()))
+                    .statusCode(200)
+                    .body("result.isError", is(false));
+            JobView done = pending.get(5, TimeUnit.SECONDS);
+            assertEquals(AssignmentState.SUCCEEDED, done.assignments().get(0).state());
+            assertEquals("done", done.assignments().get(0).note());
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test
@@ -226,7 +246,7 @@ class McpResourceTest {
                 .path("result.content[0].text");
         JsonNode devices = mapper.readTree(devicesText);
         JsonNode device = findDevice(devices, "pc-mcp-grok");
-        assertEquals(Set.of("deviceId", "hostname", "agents", "lastHeartbeat"), fieldNames(device));
+        assertEquals(Set.of("deviceId", "hostname", "agents", "lastHeartbeat", "activity"), fieldNames(device));
         assertEquals("grok.local", device.path("hostname").asText());
         assertEquals("yuni", device.path("agents").get(0).asText());
 
