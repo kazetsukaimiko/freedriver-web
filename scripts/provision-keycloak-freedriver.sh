@@ -297,8 +297,8 @@ echo "Assigned kazetsukai → dashboard + portal-admin; second → dashboard."
 # Confidential device clients are opt-in: set FREEDRIVER_DEVICE_CLIENTS to a space-separated
 # list of client ids. Secrets are written once and never printed. Do not export that list
 # on a casual re-run. The OpenBot MCP client freedriver-openbot is always provisioned
-# (device role, /dispatch/mcp). It is not a REST device client and is not listed in
-# FREEDRIVER_DEVICE_CLIENTS.
+# (device role, /dispatch/mcp). Device ids stay in FREEDRIVER_DEVICE_CLIENTS; this
+# client is provisioned on its own.
 ensure_role dispatcher
 ensure_role device
 
@@ -520,10 +520,9 @@ else
   echo "FREEDRIVER_DEVICE_CLIENTS is unset; no device clients created."
 fi
 
-# OpenBot MCP worker for /dispatch/mcp. Same confidential client-credentials
-# shape as a device client (realm role device) with a different purpose than
-# grok.com's public freedriver-dispatcher. Do not reuse shizuku. Do not rotate
-# an existing secret. Throwaway realms skip the host secret file.
+# OpenBot MCP worker for /dispatch/mcp. Confidential client-credentials with
+# realm role device. Existing secret files stay as they are. Throwaway realms
+# skip the host secret file.
 OPENBOT_MCP_CLIENT=freedriver-openbot
 OPENBOT_MCP_SECRET_FILE="${OPENBOT_MCP_SECRET_FILE:-/opt/freedriver-secrets/keycloak-device-${OPENBOT_MCP_CLIENT}.secret}"
 ensure_openbot_mcp_client() {
@@ -544,13 +543,13 @@ ensure_openbot_mcp_client() {
       -s directAccessGrantsEnabled=false \
       -s serviceAccountsEnabled=true \
       -s protocol=openid-connect \
-      -s 'description=Confidential client-credentials client for OpenBot on /dispatch/mcp. Device role. Not the grok.com dispatcher client.' >/dev/null
+      -s 'description=Confidential client-credentials client for the OpenBot worker on /dispatch/mcp (realm role device).' >/dev/null
     uuid="$(kcadm get clients -r "$REALM" -q "clientId=${id}" --fields id --format csv --noquotes | csv_id)"
     echo "Created OpenBot MCP client ${id}."
   fi
   kcadm update "clients/${uuid}" -r "$REALM" \
     -s 'name=Freedriver OpenBot MCP' \
-    -s 'description=Confidential client-credentials client for OpenBot on /dispatch/mcp. Device role. Not the grok.com dispatcher client.' \
+    -s 'description=Confidential client-credentials client for the OpenBot worker on /dispatch/mcp (realm role device).' \
     -s publicClient=false \
     -s serviceAccountsEnabled=true \
     -s standardFlowEnabled=false \
