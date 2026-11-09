@@ -296,7 +296,9 @@ echo "Assigned kazetsukai → dashboard + portal-admin; second → dashboard."
 # Dispatcher actors. The public client is authorization code + PKCE S256.
 # Confidential device clients are opt-in: set FREEDRIVER_DEVICE_CLIENTS to a space-separated
 # list of client ids. Secrets are written once and never printed. Do not export that list
-# on a casual re-run.
+# on a casual re-run. The OpenBot MCP client freedriver-openbot is always provisioned
+# (device role, /dispatch/mcp). It is not a REST device client and is not listed in
+# FREEDRIVER_DEVICE_CLIENTS.
 ensure_role dispatcher
 ensure_role device
 
@@ -517,6 +519,86 @@ if [[ -n "${FREEDRIVER_DEVICE_CLIENTS:-}" ]]; then
 else
   echo "FREEDRIVER_DEVICE_CLIENTS is unset; no device clients created."
 fi
+
+# OpenBot MCP worker for /dispatch/mcp. Same confidential client-credentials
+# shape as a device client (realm role device) with a different purpose than
+# grok.com's public freedriver-dispatcher. Do not reuse shizuku. Do not rotate
+# an existing secret. Throwaway realms skip the host secret file.
+OPENBOT_MCP_CLIENT=freedriver-openbot
+OPENBOT_MCP_SECRET_FILE="${OPENBOT_MCP_SECRET_FILE:-/opt/freedriver-secrets/keycloak-device-${OPENBOT_MCP_CLIENT}.secret}"
+ensure_openbot_mcp_client() {
+  local id="$OPENBOT_MCP_CLIENT"
+  local uuid secret_file tmp
+  uuid="$(kcadm get clients -r "$REALM" -q "clientId=${id}" --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
+  if [[ -n "$uuid" ]]; then
+    echo "OpenBot MCP client ${id} already exists."
+  else
+    kcadm create clients -r "$REALM" \
+      -s "clientId=${id}" \
+      -s 'name=Freedriver OpenBot MCP' \
+      -s enabled=true \
+      -s publicClient=false \
+      -s clientAuthenticatorType=client-secret \
+      -s standardFlowEnabled=false \
+      -s implicitFlowEnabled=false \
+      -s directAccessGrantsEnabled=false \
+      -s serviceAccountsEnabled=true \
+      -s protocol=openid-connect \
+      -s 'description=Confidential client-credentials client for OpenBot on /dispatch/mcp. Device role. Not the grok.com dispatcher client.' >/dev/null
+    uuid="$(kcadm get clients -r "$REALM" -q "clientId=${id}" --fields id --format csv --noquotes | csv_id)"
+    echo "Created OpenBot MCP client ${id}."
+  fi
+  kcadm update "clients/${uuid}" -r "$REALM" \
+    -s 'name=Freedriver OpenBot MCP' \
+    -s 'description=Confidential client-credentials client for OpenBot on /dispatch/mcp. Device role. Not the grok.com dispatcher client.' \
+    -s publicClient=false \
+    -s serviceAccountsEnabled=true \
+    -s standardFlowEnabled=false \
+    -s implicitFlowEnabled=false \
+    -s directAccessGrantsEnabled=false >/dev/null
+  kcadm add-roles -r "$REALM" --uusername "service-account-${id}" --rolename device >/dev/null
+  ensure_mapper "$uuid" actor-device \
+    -s protocolMapper=oidc-hardcoded-claim-mapper \
+    -s 'config."claim.name"=actor' \
+    -s 'config."claim.value"=device' \
+    -s 'config."jsonType.label"=String' \
+    -s 'config."access.token.claim"=true' \
+    -s 'config."id.token.claim"=false' \
+    -s 'config."userinfo.token.claim"=false'
+  ensure_mapper "$uuid" device-id \
+    -s protocolMapper=oidc-hardcoded-claim-mapper \
+    -s 'config."claim.name"=device_id' \
+    -s "config.\"claim.value\"=${id}" \
+    -s 'config."jsonType.label"=String' \
+    -s 'config."access.token.claim"=true' \
+    -s 'config."id.token.claim"=false' \
+    -s 'config."userinfo.token.claim"=false'
+  ensure_mapper "$uuid" role-device \
+    -s protocolMapper=oidc-hardcoded-role-mapper \
+    -s 'config."role"=device'
+  if [[ "${PROVISION_ALLOW_NON_ROOT:-}" == "1" ]]; then
+    echo "Throwaway realm: OpenBot MCP client present; secret not written."
+    return
+  fi
+  secret_file="$OPENBOT_MCP_SECRET_FILE"
+  if [[ -e "$secret_file" ]]; then
+    echo "OpenBot MCP secret file already exists; not rotating or rewriting it."
+    return
+  fi
+  tmp="$(mktemp)"
+  chmod 600 "$tmp"
+  kcadm get "clients/${uuid}/client-secret" -r "$REALM" --fields value --format csv --noquotes \
+    | sed '/^value$/d' | tr -d '\r' | awk 'NF { print; exit }' > "$tmp"
+  if [[ ! -s "$tmp" ]]; then
+    rm -f "$tmp"
+    echo "Failed to read OpenBot MCP client secret." >&2
+    exit 1
+  fi
+  own_secret "$tmp"
+  mv "$tmp" "$secret_file"
+  echo "Wrote OpenBot MCP client secret (not printed)."
+}
+ensure_openbot_mcp_client
 
 lookup_phone_group() {
   kcadm get groups -r "$REALM" -q "search=${PHONE_GROUP}" -q exact=true > "$work/groups.json"
