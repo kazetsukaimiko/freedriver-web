@@ -53,26 +53,24 @@ class DispatcherResourceTest {
 
     @Test
     @TestSecurity(user = "grok", roles = "dispatcher")
-    void dispatcher_cannot_register() {
+    void device_register_is_gone() {
         given()
                 .contentType("application/json")
                 .body("{\"hostname\":\"pc\",\"agents\":[\"yuni\"]}")
                 .post("/api/device/register")
                 .then()
-                .statusCode(403);
+                .statusCode(404);
     }
 
     @Test
     @TestSecurity(user = "pc-http", roles = "device")
-    void register_uses_the_caller_name_as_device_id() {
+    void device_role_cannot_register_over_http() {
         given()
                 .contentType("application/json")
                 .body("{\"hostname\":\"pc-http\",\"agents\":[\"yuni\"]}")
                 .post("/api/device/register")
                 .then()
-                .statusCode(200)
-                .body("deviceId", is("pc-http"))
-                .body("agents", hasItem("yuni"));
+                .statusCode(404);
     }
 
     @Test

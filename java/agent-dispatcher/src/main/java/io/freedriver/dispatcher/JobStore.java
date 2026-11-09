@@ -14,7 +14,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -60,13 +62,82 @@ public class JobStore {
             Device device = devices.computeIfAbsent(deviceId, Device::new);
             device.hostname = hostname;
             device.agents = List.copyOf(copy);
+            device.activity = Map.of();
             device.lastHeartbeat = clock.instant();
             monitor.notifyAll();
             return view(device);
         }
     }
 
+    /**
+     * Host publish. Agent order is the map order. Activity is idle or busy.
+     */
+    public DeviceView report(String deviceId, String hostname, Map<String, String> activity) {
+        if (activity == null || activity.isEmpty()) {
+            throw badRequest("agents are required");
+        }
+        if (activity.size() > 32) {
+            throw badRequest("too many agents");
+        }
+        Map<String, String> copy = new LinkedHashMap<>();
+        for (Map.Entry<String, String> bot : activity.entrySet()) {
+            requireText(bot.getKey(), "agent");
+            if (bot.getKey().length() > 64) {
+                throw badRequest("agent is too long");
+            }
+            String state = bot.getValue();
+            if (!"idle".equals(state) && !"busy".equals(state)) {
+                throw badRequest("activity must be idle or busy");
+            }
+            if (copy.putIfAbsent(bot.getKey(), state) != null) {
+                throw badRequest("duplicate agent");
+            }
+        }
+        requireText(hostname, "hostname");
+        if (hostname.length() > 253) {
+            throw badRequest("hostname is too long");
+        }
+        register(deviceId, hostname, new ArrayList<>(copy.keySet()));
+        synchronized (monitor) {
+            Device device = devices.get(deviceId);
+            device.activity = Map.copyOf(copy);
+            return view(device);
+        }
+    }
+
+    /**
+     * One step from queued to a terminal result, so a poller can post the reply
+     * without a claim sequence.
+     */
+    public AssignmentView finish(String deviceId, UUID assignmentId, boolean succeeded, String note) {
+        if (note != null && note.length() > 2000) {
+            throw badRequest("note is too long");
+        }
+        synchronized (monitor) {
+            Assignment assignment = own(deviceId, assignmentId);
+            if (isTerminal(assignment.state)) {
+                throw conflict("assignment is " + assignment.state);
+            }
+            if (assignment.state == AssignmentState.QUEUED) {
+                assignment.state = AssignmentState.CLAIMED;
+            }
+            if (assignment.state == AssignmentState.CLAIMED) {
+                assignment.state = AssignmentState.RUNNING;
+            }
+            if (assignment.state != AssignmentState.RUNNING) {
+                throw conflict("assignment is " + assignment.state);
+            }
+            assignment.state = succeeded ? AssignmentState.SUCCEEDED : AssignmentState.FAILED;
+            if (note != null && !note.isBlank()) {
+                assignment.note = note;
+            }
+            monitor.notifyAll();
+            return view(assignment);
+        }
+    }
+
     public DeviceView heartbeat(String deviceId) {
+
         synchronized (monitor) {
             Device device = devices.get(deviceId);
             if (device == null) {
@@ -327,7 +398,7 @@ public class JobStore {
     }
 
     private DeviceView view(Device device) {
-        return new DeviceView(device.id, device.hostname, device.agents, device.lastHeartbeat);
+        return new DeviceView(device.id, device.hostname, device.agents, device.lastHeartbeat, device.activity);
     }
 
     private JobView view(Job job) {
@@ -377,6 +448,7 @@ public class JobStore {
         private final String id;
         private String hostname;
         private List<String> agents = List.of();
+        private Map<String, String> activity = Map.of();
         private Instant lastHeartbeat;
 
         private Device(String id) {

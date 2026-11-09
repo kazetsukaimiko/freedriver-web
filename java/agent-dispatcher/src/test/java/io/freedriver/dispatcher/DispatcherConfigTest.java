@@ -21,7 +21,9 @@ class DispatcherConfigTest {
         assertFalse(unprofiledEquals(properties, "quarkus.oidc.enabled", "true"));
         assertTrue(properties.contains("quarkus.oidc.application-type=service"));
         assertTrue(properties.contains("quarkus.oidc.auth-server-url=https://auth.freedriver.io/realms/freedriver"));
-        assertTrue(properties.contains("quarkus.oidc.token.required-claims.azp=freedriver-dispatcher"));
+        assertFalse(properties.contains("quarkus.oidc.token.required-claims.azp"));
+        assertTrue(properties.contains("freedriver.dispatcher.client.dispatcher=freedriver-dispatcher"));
+        assertTrue(properties.contains("freedriver.dispatcher.client.device=freedriver-openbot"));
         assertTrue(properties.contains("quarkus.tls.trust-all=false"));
         assertFalse(properties.contains("quarkus.oidc.tls.verification=none"));
         assertFalse(properties.contains("quarkus.tls.trust-all=true"));
@@ -50,7 +52,7 @@ class DispatcherConfigTest {
 
         String caddy = Files.readString(Path.of("../../Caddyfile"));
         assertTrue(caddy.contains(
-                "@dispatcher path /mcp /mcp/* /dispatch/mcp /dispatch/mcp/* /api/dispatcher /api/dispatcher/* /api/device /api/device/*"));
+                "@dispatcher path /mcp /mcp/* /dispatch/mcp /dispatch/mcp/* /api/dispatcher /api/dispatcher/*"));
         assertTrue(caddy.contains(
                 "@autonomy path /autonomy/mcp /autonomy/mcp/* /api/autonomy /api/autonomy/*"));
         int autonomy = caddy.indexOf(
@@ -68,6 +70,17 @@ class DispatcherConfigTest {
         assertFalse(compose.contains("QUARKUS_OIDC_ENABLED"));
         assertFalse(compose.contains("QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8080"));
         assertFalse(compose.contains("QUARKUS_OIDC_AUTH_SERVER_URL: http://127.0.0.1:8081"));
+    }
+
+    @Test
+    void client_filter_pairs_each_client_with_its_role() {
+        assertTrue(AllowedClientFilter.allowed(false, false, "other", false, false, "freedriver-dispatcher", "freedriver-openbot"));
+        assertTrue(AllowedClientFilter.allowed(true, true, null, false, false, "freedriver-dispatcher", "freedriver-openbot"));
+        assertTrue(AllowedClientFilter.allowed(true, false, "freedriver-dispatcher", true, false, "freedriver-dispatcher", "freedriver-openbot"));
+        assertTrue(AllowedClientFilter.allowed(true, false, "freedriver-openbot", false, true, "freedriver-dispatcher", "freedriver-openbot"));
+        assertFalse(AllowedClientFilter.allowed(true, false, "freedriver-openbot", true, false, "freedriver-dispatcher", "freedriver-openbot"));
+        assertFalse(AllowedClientFilter.allowed(true, false, "freedriver-dispatcher", false, true, "freedriver-dispatcher", "freedriver-openbot"));
+        assertFalse(AllowedClientFilter.allowed(true, false, "shizuku", false, true, "freedriver-dispatcher", "freedriver-openbot"));
     }
 
     private static boolean unprofiledEquals(String properties, String key, String value) {
