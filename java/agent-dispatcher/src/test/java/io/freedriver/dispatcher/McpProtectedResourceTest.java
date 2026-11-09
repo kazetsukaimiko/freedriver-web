@@ -68,7 +68,7 @@ class McpProtectedResourceTest {
         String posted = given()
                 .contentType("application/json")
                 .body("""
-                        {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_devices","arguments":{}}}
+                        {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_agents","arguments":{}}}
                         """)
                 .post(McpProtectedResource.PATH)
                 .then()
@@ -76,7 +76,7 @@ class McpProtectedResourceTest {
                 .extract()
                 .asString();
         assertFalse(posted.contains("authorization_servers"));
-        assertFalse(posted.contains("list_devices"));
+        assertFalse(posted.contains("list_agents"));
     }
 
     @Test

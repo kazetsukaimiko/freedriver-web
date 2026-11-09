@@ -3,10 +3,12 @@ package io.freedriver.dispatcher;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.freedriver.dispatcher.api.McpApi;
+import io.freedriver.dispatcher.model.AgentRosterEntry;
 import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
 import io.freedriver.dispatcher.model.JobView;
+import io.freedriver.dispatcher.model.ReportedBot;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
 import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
 import io.quarkus.test.junit.QuarkusTest;
@@ -121,10 +123,18 @@ class McpResourceTest {
         assertFalse(call(session, submitBody("freedriver-openbot", PROMPT)).extract().asString().contains(PROMPT));
 
         call(session, """
-                {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"report_host","arguments":{"hostname":"this-pc","bots":[{"name":"Project Manager","activity":"idle"}]}}}
+                {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"report_host","arguments":{"hostname":"this-pc","bots":[{"name":"Project Manager","state":"idle","activity":"waiting on a job"}]}}}
                 """)
                 .statusCode(200)
                 .body("result.isError", is(false));
+
+        AgentRosterEntry row = jobs.listAgents().stream()
+                .filter(entry -> "Project Manager".equals(entry.name()) && "this-pc".equals(entry.server()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("bot", row.type());
+        assertEquals("IDLE", row.state());
+        assertEquals("waiting on a job", row.activity());
 
         ExecutorService pool = Executors.newSingleThreadExecutor();
         try {
@@ -208,7 +218,7 @@ class McpResourceTest {
                 .post("/mcp")
                 .then()
                 .statusCode(200)
-                .body("result.tools.name", containsInAnyOrder("list_devices", "submit_job", "get_job"))
+                .body("result.tools.name", containsInAnyOrder("list_agents", "submit_job", "get_job"))
                 .extract()
                 .asString();
         assertTrue(listed.contains("Freedriver dispatch"));
@@ -256,12 +266,12 @@ class McpResourceTest {
         ValidatableResponse listed = call(session, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}")
                 .statusCode(200)
                 .contentType("application/json")
-                .body("result.tools.name", containsInAnyOrder("list_devices", "submit_job", "get_job"))
+                .body("result.tools.name", containsInAnyOrder("list_agents", "submit_job", "get_job"))
                 .body("result.tools.size()", is(3))
                 .body("result.tools.find { it.name == 'submit_job' }.inputSchema.properties.prompt.maxLength", is(16000))
-                .body("result.tools.find { it.name == 'submit_job' }.inputSchema.properties.deviceIds.maxItems", is(32))
+                .body("result.tools.find { it.name == 'submit_job' }.inputSchema.properties.server.maxLength", is(253))
                 .body("result.tools.find { it.name == 'submit_job' }.inputSchema.additionalProperties", is(false))
-                .body("result.tools.find { it.name == 'list_devices' }.inputSchema.additionalProperties", is(false));
+                .body("result.tools.find { it.name == 'list_agents' }.inputSchema.additionalProperties", is(false));
         String toolsJson = listed.extract().asString();
         assertFalse(toolsJson.contains("allowlist"));
         assertFalse(toolsJson.contains("\"shell\""));
@@ -270,18 +280,44 @@ class McpResourceTest {
         assertFalse(toolsJson.contains("\"resources\""));
         assertFalse(toolsJson.contains("\"prompts\""));
 
-        String devicesText = call(session, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"list_devices\",\"arguments\":{}}}")
+        String agentsText = call(session, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"list_agents\",\"arguments\":{}}}")
                 .statusCode(200)
                 .body("result.isError", is(false))
                 .extract()
                 .path("result.content[0].text");
-        JsonNode devices = mapper.readTree(devicesText);
-        JsonNode device = findDevice(devices, "pc-mcp-grok");
-        assertEquals(Set.of("deviceId", "hostname", "agents", "lastHeartbeat", "activity"), fieldNames(device));
-        assertEquals("grok.local", device.path("hostname").asText());
-        assertEquals("yuni", device.path("agents").get(0).asText());
+        JsonNode agents = mapper.readTree(agentsText);
+        assertTrue(agents.isArray());
+        JsonNode agent = null;
+        for (JsonNode row : agents) {
+            if ("yuni".equals(row.path("name").asText()) && "grok.local".equals(row.path("server").asText())) {
+                agent = row;
+            }
+        }
+        assertTrue(agent != null);
+        assertEquals(Set.of("type", "name", "server", "state", "activity"), fieldNames(agent));
+        assertEquals("bot", agent.path("type").asText());
+        assertEquals("yuni", agent.path("name").asText());
+        assertEquals("grok.local", agent.path("server").asText());
+        assertEquals("IDLE", agent.path("state").asText());
+        assertEquals("", agent.path("activity").asText());
 
-        String submittedText = call(session, submitBody("pc-mcp-grok", "say hello"))
+        jobs.report("pc-mcp-grok", "grok.local", List.of(new ReportedBot("yuni", "busy", "reviewing a pull request")));
+        String busyText = call(session, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"list_agents\",\"arguments\":{}}}")
+                .statusCode(200)
+                .body("result.isError", is(false))
+                .extract()
+                .path("result.content[0].text");
+        JsonNode busy = null;
+        for (JsonNode row : mapper.readTree(busyText)) {
+            if ("yuni".equals(row.path("name").asText()) && "grok.local".equals(row.path("server").asText())) {
+                busy = row;
+            }
+        }
+        assertTrue(busy != null);
+        assertEquals("BUSY", busy.path("state").asText());
+        assertEquals("reviewing a pull request", busy.path("activity").asText());
+
+        String submittedText = call(session, submitBody("grok.local", "say hello"))
                 .statusCode(200)
                 .body("result.isError", is(false))
                 .extract()
@@ -324,7 +360,7 @@ class McpResourceTest {
         assertEquals(before, jobs.jobCount());
 
         String shelled = call(session, """
-                {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"submit_job","arguments":{"deviceIds":["pc-mcp-grok"],"agentName":"yuni","prompt":"hi","channel":"TEXT","shell":"rm -rf /"}}}
+                {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"submit_job","arguments":{"server":"grok.local","agentName":"yuni","prompt":"hi","channel":"TEXT","shell":"rm -rf /"}}}
                 """)
                 .statusCode(200)
                 .body("error.code", is(-32602))
@@ -393,7 +429,7 @@ class McpResourceTest {
         assertFalse(body.contains(PROMPT));
         assertTrue(body.contains("job not found"));
 
-        String listed = call(session, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"list_devices\",\"arguments\":{}}}")
+        String listed = call(session, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"list_agents\",\"arguments\":{}}}")
                 .statusCode(200)
                 .extract()
                 .path("result.content[0].text");
@@ -414,7 +450,7 @@ class McpResourceTest {
             AssignmentView queued = waitForQueued("pc-cap-mcp");
             int before = jobs.jobCount();
 
-            String body = call(session, submitBody("pc-cap-mcp", "second"))
+            String body = call(session, submitBody("cap.local", "second"))
                     .statusCode(200)
                     .body("result.isError", is(true))
                     .extract()
@@ -465,10 +501,10 @@ class McpResourceTest {
                 .then();
     }
 
-    private static String submitBody(String deviceId, String prompt) {
+    private static String submitBody(String server, String prompt) {
         return """
-                {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"submit_job","arguments":{"deviceIds":["%s"],"agentName":"yuni","prompt":"%s","channel":"TEXT"}}}
-                """.formatted(deviceId, prompt);
+                {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"submit_job","arguments":{"server":"%s","agentName":"yuni","prompt":"%s","channel":"TEXT"}}}
+                """.formatted(server, prompt);
     }
 
     private static String getJob(String jobId) {
@@ -487,15 +523,6 @@ class McpResourceTest {
             Thread.sleep(10);
         }
         throw new AssertionError("assignment was not queued");
-    }
-
-    private static JsonNode findDevice(JsonNode devices, String deviceId) {
-        for (JsonNode device : devices) {
-            if (deviceId.equals(device.path("deviceId").asText())) {
-                return device;
-            }
-        }
-        throw new AssertionError(deviceId);
     }
 
     private static Set<String> fieldNames(JsonNode node) {
