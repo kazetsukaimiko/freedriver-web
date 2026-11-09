@@ -180,6 +180,37 @@ class McpResourceTest {
     }
 
     @Test
+    @TestSecurity(user = "grok-list", roles = "dispatcher")
+    void dispatcher_lists_tools_without_a_session() {
+        String listed = given()
+                .contentType("application/json")
+                .body("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}")
+                .post("/mcp")
+                .then()
+                .statusCode(200)
+                .body("result.tools.name", containsInAnyOrder("list_devices", "submit_job", "get_job"))
+                .extract()
+                .asString();
+        assertTrue(listed.contains("Freedriver dispatch"));
+        assertFalse(listed.contains("allowlist"));
+
+        given()
+                .contentType("application/json")
+                .body("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"ping\"}")
+                .post("/mcp")
+                .then()
+                .statusCode(200);
+
+        given()
+                .contentType("application/json")
+                .header(McpApi.SESSION_HEADER, "not-a-real-session")
+                .body("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/list\"}")
+                .post("/mcp")
+                .then()
+                .statusCode(404);
+    }
+
+    @Test
     @TestSecurity(user = "grok-unknown", roles = "dispatcher")
     void unknown_session_is_404_and_the_tool_does_not_run() {
         jobs.register("pc-unknown-session", "unknown.local", List.of("yuni"));
