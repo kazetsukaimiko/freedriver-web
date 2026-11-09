@@ -512,6 +512,11 @@ ensure_device_client() {
   echo "Wrote device client secret for ${id} (not printed)."
 }
 
+DEVICE_CLIENTS_FILE="${DEVICE_CLIENTS_FILE:-/opt/freedriver-secrets/keycloak-device-clients.env}"
+if [[ -z "${FREEDRIVER_DEVICE_CLIENTS:-}" && -f "$DEVICE_CLIENTS_FILE" ]]; then
+  # shellcheck disable=SC1090
+  FREEDRIVER_DEVICE_CLIENTS="$(. "$DEVICE_CLIENTS_FILE"; printf '%s' "${FREEDRIVER_DEVICE_CLIENTS:-}")"
+fi
 if [[ -n "${FREEDRIVER_DEVICE_CLIENTS:-}" ]]; then
   for device_id in ${FREEDRIVER_DEVICE_CLIENTS}; do
     ensure_device_client "$device_id"
