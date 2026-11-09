@@ -39,6 +39,6 @@ The OpenBot worker is that same jar with `"mode": "openbot"` and `"deviceId": "f
 
 ## Keycloak
 
-`scripts/provision-keycloak-freedriver.sh` can create the public client `freedriver-dispatcher` (authorization code + PKCE, claim `actor=dispatcher`, realm role `dispatcher`). Device clients are created only when `FREEDRIVER_DEVICE_CLIENTS` lists their ids. Secrets go to `/opt/freedriver-secrets/` and stay out of the script output. Run that script on production as its own ops step.
+`scripts/provision-keycloak-freedriver.sh` can create the public client `freedriver-dispatcher` (authorization code + PKCE, claim `actor=dispatcher`, realm role `dispatcher`). Device clients are created when `FREEDRIVER_DEVICE_CLIENTS` lists their ids, or when that variable is unset and `/opt/freedriver-secrets/keycloak-device-clients.env` names them. Secrets go to `/opt/freedriver-secrets/` and stay out of the script output. Run that script on production as its own ops step.
 
 Dashboard sign-in is the OIDC BFF against that same realm. Dispatcher and device clients get their tokens from Keycloak.
