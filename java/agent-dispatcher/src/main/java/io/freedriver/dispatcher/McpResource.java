@@ -84,10 +84,11 @@ public class McpResource implements McpApi {
             return initialize(subject, id, message.get("params"));
         }
         McpSessions.Status status = sessions.check(sessionId, subject);
-        if (status != McpSessions.Status.MATCH) {
+        if (status == McpSessions.Status.MATCH) {
+            sessionHeader.set(sessionId);
+        } else if (!(status == McpSessions.Status.ABSENT && sessionOptional(method))) {
             throw sessionFailure(status, id);
         }
-        sessionHeader.set(sessionId);
         if (!message.has("id")) {
             throw McpProtocolException.accepted();
         }
@@ -261,7 +262,7 @@ public class McpResource implements McpApi {
         if (dispatcherRole || !deviceRole) {
         tools.add(tool(
                 "list_devices",
-                "List registered devices: device id, hostname, agents, and last heartbeat.",
+                "Freedriver dispatch: list PCs that can take a job, with device id, hostname, agents, and last heartbeat.",
                 mapper.createObjectNode()));
         ObjectNode submit = mapper.createObjectNode();
         submit.set("deviceIds", stringArraySchema(1, 32, 128));
@@ -284,7 +285,7 @@ public class McpResource implements McpApi {
         submit.set("channel", channel);
         tools.add(tool(
                 "submit_job",
-                "Queue a prompt on registered devices and wait until every assignment is terminal or the submit timeout elapses.",
+                "Freedriver dispatch: queue a prompt for a named agent on those devices, such as Project Manager, and wait until the job finishes or times out. Returns the job id.",
                 submit,
                 "deviceIds",
                 "agentName",
@@ -295,7 +296,7 @@ public class McpResource implements McpApi {
         jobId.put("type", "string");
         jobId.put("format", "uuid");
         job.set("jobId", jobId);
-        tools.add(tool("get_job", "Read one job submitted by this caller.", job, "jobId"));
+        tools.add(tool("get_job", "Freedriver dispatch: read one job this caller submitted, including its id and result.", job, "jobId"));
         }
         if (deviceRole) {
             ObjectNode hostname = mapper.createObjectNode();
@@ -391,6 +392,11 @@ public class McpResource implements McpApi {
         schema.put("maxItems", maxItems);
         schema.set("items", items);
         return schema;
+    }
+
+    /** A missing session is not a credential. Listing tools and ping still answer. */
+    private static boolean sessionOptional(String method) {
+        return "tools/list".equals(method) || "ping".equals(method);
     }
 
     /**
