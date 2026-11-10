@@ -6,8 +6,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.freedriver.dispatcher.api.McpApi;
+import io.freedriver.dispatcher.model.Channel;
 import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.JsonRpcResponse;
+import io.freedriver.dispatcher.model.ReportedBot;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.common.annotation.Blocking;
@@ -17,9 +19,9 @@ import jakarta.validation.Validator;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -33,7 +35,7 @@ public class McpResource implements McpApi {
 
     private static final String LATEST_PROTOCOL = "2025-11-25";
     private static final Set<String> PROTOCOL_VERSIONS = Set.of("2025-03-26", "2025-06-18", LATEST_PROTOCOL);
-    private static final Set<String> SUBMIT_FIELDS = Set.of("deviceIds", "agentName", "prompt", "channel");
+    private static final Set<String> SUBMIT_FIELDS = Set.of("server", "agentName", "prompt", "channel");
     private static final Set<String> JOB_FIELDS = Set.of("jobId");
 
     private final JobStore jobs;
@@ -147,7 +149,7 @@ public class McpResource implements McpApi {
         boolean deviceRole = caller.hasRole("device");
         boolean dispatcherRole = caller.hasRole("dispatcher");
         boolean hostTool = "report_host".equals(name) || "finish_job".equals(name);
-        boolean callerTool = "list_devices".equals(name) || "submit_job".equals(name) || "get_job".equals(name);
+        boolean callerTool = "list_agents".equals(name) || "submit_job".equals(name) || "get_job".equals(name);
         if (hostTool && !deviceRole) {
             return toolResult(id, "wrong role", true);
         }
@@ -156,7 +158,7 @@ public class McpResource implements McpApi {
         }
         try {
             return switch (name) {
-                case "list_devices" -> listDevices(id, arguments);
+                case "list_agents" -> listAgents(id, arguments);
                 case "submit_job" -> submitJob(subject, id, arguments);
                 case "get_job" -> getJob(subject, id, arguments);
                 case "report_host" -> reportHost(caller, id, arguments);
@@ -170,27 +172,36 @@ public class McpResource implements McpApi {
         }
     }
 
-    private JsonRpcResponse listDevices(JsonNode id, JsonNode arguments) {
+    private JsonRpcResponse listAgents(JsonNode id, JsonNode arguments) {
         if (arguments.size() != 0) {
             throw McpProtocolException.invalidParams(id, "invalid params");
         }
-        return toolResult(id, write(jobs.listDevices()), false);
+        return toolResult(id, write(jobs.listAgents()), false);
     }
 
     private JsonRpcResponse submitJob(String subject, JsonNode id, JsonNode arguments) {
         if (!onlyFields(arguments, SUBMIT_FIELDS)
+                || !textual(arguments, "server")
                 || !textual(arguments, "agentName")
                 || !textual(arguments, "prompt")
-                || !textual(arguments, "channel")
-                || !stringArray(arguments.get("deviceIds"))) {
+                || !textual(arguments, "channel")) {
             throw McpProtocolException.invalidParams(id, "invalid params");
         }
-        SubmitJobRequest request;
+        String server = arguments.get("server").asText();
+        String agentName = arguments.get("agentName").asText();
+        String prompt = arguments.get("prompt").asText();
+        String channelName = arguments.get("channel").asText();
+        if (server.length() > 253 || agentName.length() > 64 || prompt.isEmpty() || prompt.length() > 16000) {
+            throw McpProtocolException.invalidParams(id, "invalid params");
+        }
+        Channel channel;
         try {
-            request = mapper.treeToValue(arguments, SubmitJobRequest.class);
-        } catch (JsonProcessingException ex) {
+            channel = Channel.valueOf(channelName);
+        } catch (IllegalArgumentException ex) {
             throw McpProtocolException.invalidParams(id, "invalid params");
         }
+        String deviceId = jobs.deviceIdFor(server, agentName);
+        SubmitJobRequest request = new SubmitJobRequest(List.of(deviceId), agentName, prompt, channel);
         if (!validator.validate(request).isEmpty()) {
             throw McpProtocolException.invalidParams(id, "invalid params");
         }
@@ -218,13 +229,15 @@ public class McpResource implements McpApi {
                 || !arguments.get("bots").isArray()) {
             throw McpProtocolException.invalidParams(id, "invalid params");
         }
-        Map<String, String> bots = new LinkedHashMap<>();
+        List<ReportedBot> bots = new ArrayList<>();
         for (JsonNode bot : arguments.get("bots")) {
-            if (bot == null || !bot.isObject() || !onlyFields(bot, Set.of("name", "activity"))
-                    || !textual(bot, "name") || !textual(bot, "activity")) {
+            if (bot == null || !bot.isObject() || !onlyFields(bot, Set.of("name", "state", "activity"))
+                    || !textual(bot, "name") || !textual(bot, "state")
+                    || (bot.has("activity") && !textual(bot, "activity"))) {
                 throw McpProtocolException.invalidParams(id, "invalid params");
             }
-            bots.put(bot.get("name").asText(), bot.get("activity").asText());
+            String activity = bot.has("activity") ? bot.get("activity").asText() : "";
+            bots.add(new ReportedBot(bot.get("name").asText(), bot.get("state").asText(), activity));
         }
         String deviceId = CallerIds.deviceId(caller);
         ObjectNode body = mapper.createObjectNode();
@@ -261,11 +274,15 @@ public class McpResource implements McpApi {
         boolean dispatcherRole = caller.hasRole("dispatcher");
         if (dispatcherRole || !deviceRole) {
         tools.add(tool(
-                "list_devices",
-                "Freedriver dispatch: list PCs that can take a job, with device id, hostname, agents, and last heartbeat.",
+                "list_agents",
+                "Freedriver dispatch: list agents that can take a job, with name, server, idle or busy state, and activity.",
                 mapper.createObjectNode()));
         ObjectNode submit = mapper.createObjectNode();
-        submit.set("deviceIds", stringArraySchema(1, 32, 128));
+        ObjectNode server = mapper.createObjectNode();
+        server.put("type", "string");
+        server.put("minLength", 1);
+        server.put("maxLength", 253);
+        submit.set("server", server);
         ObjectNode agentName = mapper.createObjectNode();
         agentName.put("type", "string");
         agentName.put("minLength", 1);
@@ -285,9 +302,9 @@ public class McpResource implements McpApi {
         submit.set("channel", channel);
         tools.add(tool(
                 "submit_job",
-                "Freedriver dispatch: queue a prompt for a named agent on those devices, such as Project Manager, and wait until the job finishes or times out. Returns the job id.",
+                "Freedriver dispatch: queue a prompt for a named agent on one server from list_agents, such as Project Manager, and wait until the job finishes or times out. Returns the job id.",
                 submit,
-                "deviceIds",
+                "server",
                 "agentName",
                 "prompt",
                 "channel"));
@@ -307,14 +324,18 @@ public class McpResource implements McpApi {
             botName.put("type", "string");
             botName.put("minLength", 1);
             botName.put("maxLength", 64);
-            ObjectNode activity = mapper.createObjectNode();
-            activity.put("type", "string");
+            ObjectNode state = mapper.createObjectNode();
+            state.put("type", "string");
             ArrayNode states = mapper.createArrayNode();
             states.add("idle");
             states.add("busy");
-            activity.set("enum", states);
+            state.set("enum", states);
+            ObjectNode activity = mapper.createObjectNode();
+            activity.put("type", "string");
+            activity.put("maxLength", 500);
             ObjectNode botProps = mapper.createObjectNode();
             botProps.set("name", botName);
+            botProps.set("state", state);
             botProps.set("activity", activity);
             ObjectNode bot = mapper.createObjectNode();
             bot.put("type", "object");
@@ -322,7 +343,7 @@ public class McpResource implements McpApi {
             bot.set("properties", botProps);
             ArrayNode botRequired = mapper.createArrayNode();
             botRequired.add("name");
-            botRequired.add("activity");
+            botRequired.add("state");
             bot.set("required", botRequired);
             ObjectNode bots = mapper.createObjectNode();
             bots.put("type", "array");
@@ -334,7 +355,7 @@ public class McpResource implements McpApi {
             report.set("bots", bots);
             tools.add(tool(
                     "report_host",
-                    "Freedriver dispatch: publish this host's bots and whether each is idle or busy. Returns queued jobs.",
+                    "Freedriver dispatch: publish this host's bots, each idle or busy, with a short activity note. Returns queued jobs.",
                     report,
                     "hostname",
                     "bots"));
@@ -379,19 +400,6 @@ public class McpResource implements McpApi {
         tool.put("description", description);
         tool.set("inputSchema", schema);
         return tool;
-    }
-
-    private ObjectNode stringArraySchema(int minItems, int maxItems, int maxLength) {
-        ObjectNode items = mapper.createObjectNode();
-        items.put("type", "string");
-        items.put("minLength", 1);
-        items.put("maxLength", maxLength);
-        ObjectNode schema = mapper.createObjectNode();
-        schema.put("type", "array");
-        schema.put("minItems", minItems);
-        schema.put("maxItems", maxItems);
-        schema.set("items", items);
-        return schema;
     }
 
     /** A missing session is not a credential. Listing tools and ping still answer. */

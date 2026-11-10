@@ -1,10 +1,12 @@
 package io.freedriver.dispatcher;
 
+import io.freedriver.dispatcher.model.AgentRosterEntry;
 import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
 import io.freedriver.dispatcher.model.DeviceView;
 import io.freedriver.dispatcher.model.JobView;
+import io.freedriver.dispatcher.model.ReportedBot;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
 import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -63,6 +65,7 @@ public class JobStore {
             device.hostname = hostname;
             device.agents = List.copyOf(copy);
             device.activity = Map.of();
+            device.activityText = Map.of();
             device.lastHeartbeat = clock.instant();
             monitor.notifyAll();
             return view(device);
@@ -70,39 +73,97 @@ public class JobStore {
     }
 
     /**
-     * Host publish. Agent order is the map order. Activity is idle or busy.
+     * Host publish. Agent order is the list order. State is idle or busy.
+     * Activity is a short note and may be empty.
      */
-    public DeviceView report(String deviceId, String hostname, Map<String, String> activity) {
-        if (activity == null || activity.isEmpty()) {
+    public DeviceView report(String deviceId, String hostname, List<ReportedBot> bots) {
+        if (bots == null || bots.isEmpty()) {
             throw badRequest("agents are required");
         }
-        if (activity.size() > 32) {
+        if (bots.size() > 32) {
             throw badRequest("too many agents");
         }
-        Map<String, String> copy = new LinkedHashMap<>();
-        for (Map.Entry<String, String> bot : activity.entrySet()) {
-            requireText(bot.getKey(), "agent");
-            if (bot.getKey().length() > 64) {
+        Map<String, String> states = new LinkedHashMap<>();
+        Map<String, String> notes = new LinkedHashMap<>();
+        for (ReportedBot bot : bots) {
+            if (bot == null) {
+                throw badRequest("agent is required");
+            }
+            requireText(bot.name(), "agent");
+            if (bot.name().length() > 64) {
                 throw badRequest("agent is too long");
             }
-            String state = bot.getValue();
-            if (!"idle".equals(state) && !"busy".equals(state)) {
-                throw badRequest("activity must be idle or busy");
+            String state = normalizeState(bot.state());
+            if (state == null) {
+                throw badRequest("state must be idle or busy");
             }
-            if (copy.putIfAbsent(bot.getKey(), state) != null) {
+            String note = bot.activity() == null ? "" : bot.activity();
+            if (note.length() > 500) {
+                throw badRequest("activity is too long");
+            }
+            if (states.putIfAbsent(bot.name(), state) != null) {
                 throw badRequest("duplicate agent");
             }
+            notes.put(bot.name(), note);
         }
         requireText(hostname, "hostname");
         if (hostname.length() > 253) {
             throw badRequest("hostname is too long");
         }
-        register(deviceId, hostname, new ArrayList<>(copy.keySet()));
+        register(deviceId, hostname, new ArrayList<>(states.keySet()));
         synchronized (monitor) {
             Device device = devices.get(deviceId);
-            device.activity = Map.copyOf(copy);
+            device.activity = Map.copyOf(states);
+            device.activityText = Map.copyOf(notes);
             return view(device);
         }
+    }
+
+    public List<AgentRosterEntry> listAgents() {
+        synchronized (monitor) {
+            List<AgentRosterEntry> rows = new ArrayList<>();
+            for (Device device : devices.values()) {
+                for (String agent : device.agents) {
+                    String stored = device.activity.get(agent);
+                    String state = "busy".equals(stored) ? "BUSY" : "IDLE";
+                    String note = device.activityText.getOrDefault(agent, "");
+                    rows.add(new AgentRosterEntry("bot", agent, device.hostname, state, note));
+                }
+            }
+            return List.copyOf(rows);
+        }
+    }
+
+    /** The one device whose hostname and agent match. */
+    public String deviceIdFor(String server, String agentName) {
+        requireText(server, "server");
+        requireText(agentName, "agentName");
+        synchronized (monitor) {
+            String found = null;
+            for (Device device : devices.values()) {
+                if (server.equals(device.hostname) && device.agents.contains(agentName)) {
+                    if (found != null) {
+                        throw badRequest("server matches more than one host");
+                    }
+                    found = device.id;
+                }
+            }
+            if (found == null) {
+                throw badRequest("unknown agent " + agentName + " on " + server);
+            }
+            return found;
+        }
+    }
+
+    private static String normalizeState(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String state = raw.toLowerCase();
+        if ("idle".equals(state) || "busy".equals(state)) {
+            return state;
+        }
+        return null;
     }
 
     /**
@@ -449,6 +510,7 @@ public class JobStore {
         private String hostname;
         private List<String> agents = List.of();
         private Map<String, String> activity = Map.of();
+        private Map<String, String> activityText = Map.of();
         private Instant lastHeartbeat;
 
         private Device(String id) {
