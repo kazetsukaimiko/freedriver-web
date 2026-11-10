@@ -525,11 +525,20 @@ else
   echo "FREEDRIVER_DEVICE_CLIENTS is unset; no device clients created."
 fi
 
-# OpenBot MCP worker for /dispatch/mcp. Confidential client-credentials with
-# realm role device. Existing secret files stay as they are. Throwaway realms
-# skip the host secret file.
+# OpenBot MCP client for /dispatch/mcp. Confidential. Authorization code + PKCE
+# for OpenBot Sign in at http://127.0.0.1:28417/mcp-auth. Client credentials
+# remain for the worker. Realm role device. Existing secret files stay as they
+# are. Throwaway realms skip the host secret file. This runs after
+# ensure_device_client so shizuku and other device ids stay client-credentials.
 OPENBOT_MCP_CLIENT=freedriver-openbot
 OPENBOT_MCP_SECRET_FILE="${OPENBOT_MCP_SECRET_FILE:-/opt/freedriver-secrets/keycloak-device-${OPENBOT_MCP_CLIENT}.secret}"
+OPENBOT_MCP_REDIRECT_URI='http://127.0.0.1:28417/mcp-auth'
+OPENBOT_MCP_REDIRECT_URIS="[\"${OPENBOT_MCP_REDIRECT_URI}\"]"
+OPENBOT_MCP_DESCRIPTION='Confidential OpenBot MCP client for /dispatch/mcp. Authorization code + PKCE for Sign in; client credentials for the worker. Realm role device.'
+if [[ "$OPENBOT_MCP_REDIRECT_URIS" != '["http://127.0.0.1:28417/mcp-auth"]' ]]; then
+  echo "freedriver-openbot redirect is not the pinned value." >&2
+  exit 1
+fi
 ensure_openbot_mcp_client() {
   local id="$OPENBOT_MCP_CLIENT"
   local uuid secret_file tmp
@@ -543,23 +552,27 @@ ensure_openbot_mcp_client() {
       -s enabled=true \
       -s publicClient=false \
       -s clientAuthenticatorType=client-secret \
-      -s standardFlowEnabled=false \
+      -s standardFlowEnabled=true \
       -s implicitFlowEnabled=false \
       -s directAccessGrantsEnabled=false \
       -s serviceAccountsEnabled=true \
       -s protocol=openid-connect \
-      -s 'description=Confidential client-credentials client for the OpenBot worker on /dispatch/mcp (realm role device).' >/dev/null
+      -s "description=${OPENBOT_MCP_DESCRIPTION}" \
+      -s "redirectUris=${OPENBOT_MCP_REDIRECT_URIS}" \
+      -s 'attributes."pkce.code.challenge.method"=S256' >/dev/null
     uuid="$(kcadm get clients -r "$REALM" -q "clientId=${id}" --fields id --format csv --noquotes | csv_id)"
     echo "Created OpenBot MCP client ${id}."
   fi
   kcadm update "clients/${uuid}" -r "$REALM" \
     -s 'name=Freedriver OpenBot MCP' \
-    -s 'description=Confidential client-credentials client for the OpenBot worker on /dispatch/mcp (realm role device).' \
+    -s "description=${OPENBOT_MCP_DESCRIPTION}" \
     -s publicClient=false \
     -s serviceAccountsEnabled=true \
-    -s standardFlowEnabled=false \
+    -s standardFlowEnabled=true \
     -s implicitFlowEnabled=false \
-    -s directAccessGrantsEnabled=false >/dev/null
+    -s directAccessGrantsEnabled=false \
+    -s "redirectUris=${OPENBOT_MCP_REDIRECT_URIS}" \
+    -s 'attributes."pkce.code.challenge.method"=S256' >/dev/null
   kcadm add-roles -r "$REALM" --uusername "service-account-${id}" --rolename device >/dev/null
   ensure_mapper "$uuid" actor-device \
     -s protocolMapper=oidc-hardcoded-claim-mapper \
