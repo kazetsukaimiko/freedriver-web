@@ -12,6 +12,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -397,6 +398,37 @@ class JobStoreTest {
             Thread.sleep(10);
         }
         throw new AssertionError("assignment was not queued");
+    }
+
+    @Test
+    void queued_job_pings_each_host_and_not_the_prompt() {
+        List<String> hosts = new ArrayList<>();
+        JobStore store = new JobStore(Clock.systemUTC(), hosts::add);
+        store.register("pc-a", "a.local", List.of("yuni"));
+        store.register("pc-b", "b.local", List.of("yuni"));
+        store.register("pc-c", "a.local", List.of("yuni"));
+
+        store.submit(
+                "grok",
+                new SubmitJobRequest(List.of("pc-a", "pc-b", "pc-c"), "yuni", "secret prompt", Channel.TEXT),
+                Duration.ZERO);
+
+        assertEquals(List.of("a.local", "b.local"), hosts);
+        assertFalse(hosts.contains("secret prompt"));
+    }
+
+    @Test
+    void rejected_submit_does_not_ping() {
+        List<String> hosts = new ArrayList<>();
+        JobStore store = new JobStore(Clock.systemUTC(), hosts::add);
+        store.register("pc-a", "a.local", List.of("yuni"));
+
+        assertThrows(DispatcherException.class, () -> store.submit(
+                "grok",
+                job(List.of("pc-a"), "missing"),
+                Duration.ZERO));
+
+        assertTrue(hosts.isEmpty());
     }
 
     private static JobStore store() {
