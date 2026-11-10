@@ -1,0 +1,28 @@
+.agent-jobs-table {
+  width: 100%;
+}
+
+.agent-jobs-modal {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.agent-jobs-modal::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+
+.agent-jobs-modal-card {
+  margin: 10vh auto;
+  max-width: 40rem;
+  padding: 1.25rem;
+  background: var(--paper, #fff);
+  color: inherit;
+}
+
+.agent-jobs-document {
+  max-height: 50vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: ui-monospace, monospace;
+}

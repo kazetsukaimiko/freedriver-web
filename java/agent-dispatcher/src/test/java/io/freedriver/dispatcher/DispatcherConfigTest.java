@@ -41,6 +41,9 @@ class DispatcherConfigTest {
         assertTrue(properties.contains(
                 "freedriver.dispatcher.openbot-webhook-secret=${FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET:}"));
         assertFalse(properties.contains("openbot-webhook-secret=test"));
+        assertTrue(properties.contains("freedriver.dispatcher.job-archive=mongo"));
+        assertTrue(properties.contains("%test.freedriver.dispatcher.job-archive=off"));
+        assertTrue(properties.contains("quarkus.mongodb.server-selection-timeout=2S"));
         assertTrue(properties.contains("quarkus.http.auth.permission.authenticated.paths=/*"));
         assertTrue(properties.contains("quarkus.http.auth.permission.public.paths=/q/*"));
         assertTrue(properties.contains(
@@ -72,6 +75,8 @@ class DispatcherConfigTest {
         assertTrue(compose.contains("QUARKUS_OIDC_CREDENTIALS_SECRET: ${FREEDRIVER_DISPATCHER_OIDC_SECRET:-}"));
         assertTrue(compose.contains(
                 "FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET: ${FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET:-}"));
+        assertTrue(compose.contains(
+                "QUARKUS_MONGODB_CONNECTION_STRING: ${QUARKUS_MONGODB_CONNECTION_STRING:-mongodb://mongodb:27017/freedriver}"));
         assertFalse(compose.contains("QUARKUS_OIDC_ENABLED"));
         assertFalse(compose.contains("QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8080"));
         assertFalse(compose.contains("QUARKUS_OIDC_AUTH_SERVER_URL: http://127.0.0.1:8081"));

@@ -81,6 +81,11 @@ services:
       QUARKUS_OIDC_CLIENT_ID: freedriver-dispatcher
       QUARKUS_OIDC_CREDENTIALS_SECRET: ${FREEDRIVER_DISPATCHER_OIDC_SECRET:-}
       FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET: ${FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET:-}
+      QUARKUS_MONGODB_CONNECTION_STRING: ${QUARKUS_MONGODB_CONNECTION_STRING:-mongodb://mongodb:27017/freedriver}
+      QUARKUS_MONGODB_DATABASE: freedriver
+    depends_on:
+      mongodb:
+        condition: service_healthy
     expose:
       - "8080"
 

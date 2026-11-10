@@ -9,6 +9,7 @@ import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.ReportedBot;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
 import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
+import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -26,7 +27,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * In-memory queues. One assignment list per device, one job per dispatcher subject.
- * Lost on restart. Postgres waits until bearer auth is actually on.
+ * Each assignment is also copied to {@code agent-jobs} when that archive is on,
+ * and those copies are loaded again after a restart.
  */
 @ApplicationScoped
 public class JobStore {
@@ -34,6 +36,7 @@ public class JobStore {
     private final Clock clock;
     private final Object monitor = new Object();
     private JobPing jobPing;
+    private JobArchive archive = JobArchive.NONE;
     private final ConcurrentHashMap<String, Device> devices = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Job> jobs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Assignment> assignments = new ConcurrentHashMap<>();
@@ -41,21 +44,37 @@ public class JobStore {
     private final Set<String> inFlightSubmits = new HashSet<>();
 
     public JobStore() {
-        this(Clock.systemUTC(), null);
+        this(Clock.systemUTC(), null, JobArchive.NONE);
     }
 
     JobStore(Clock clock) {
-        this(clock, null);
+        this(clock, null, JobArchive.NONE);
     }
 
     JobStore(Clock clock, JobPing jobPing) {
+        this(clock, jobPing, JobArchive.NONE);
+    }
+
+    JobStore(Clock clock, JobPing jobPing, JobArchive archive) {
         this.clock = clock;
         this.jobPing = jobPing;
+        this.archive = archive == null ? JobArchive.NONE : archive;
+        restore(this.archive.load());
     }
 
     @Inject
     void setJobPing(OpenBotJobPing jobPing) {
         this.jobPing = jobPing;
+    }
+
+    @Inject
+    void setArchive(MongoJobArchive archive) {
+        this.archive = archive == null ? JobArchive.NONE : archive;
+    }
+
+    @PostConstruct
+    void loadArchive() {
+        restore(archive.load());
     }
 
     private JobPing ping() {
@@ -208,6 +227,7 @@ public class JobStore {
             if (note != null && !note.isBlank()) {
                 assignment.note = note;
             }
+            remember(assignment);
             monitor.notifyAll();
             return view(assignment);
         }
@@ -304,6 +324,7 @@ public class JobStore {
                             UUID.randomUUID(), job.id, deviceId, request.agentName());
                     job.assignmentIds.add(assignment.id);
                     assignments.put(assignment.id, assignment);
+                    remember(assignment, job);
                     String hostname = devices.get(deviceId).hostname;
                     if (!hosts.contains(hostname)) {
                         hosts.add(hostname);
@@ -409,6 +430,7 @@ public class JobStore {
                 throw conflict("assignment is " + assignment.state);
             }
             assignment.state = AssignmentState.CLAIMED;
+            remember(assignment);
             monitor.notifyAll();
             return view(assignment);
         }
@@ -453,6 +475,7 @@ public class JobStore {
             if (request.note() != null) {
                 assignment.note = request.note();
             }
+            remember(assignment);
             monitor.notifyAll();
             return view(assignment);
         }
@@ -480,6 +503,7 @@ public class JobStore {
             Assignment assignment = assignments.get(id);
             if (!isTerminal(assignment.state)) {
                 assignment.state = AssignmentState.EXPIRED;
+                remember(assignment);
             }
         }
         monitor.notifyAll();
@@ -610,11 +634,111 @@ public class JobStore {
         private UUID grokSessionId;
         private String note;
 
+        private Instant createdAt;
+        private Instant updatedAt;
+
         private Assignment(UUID id, UUID jobId, String deviceId, String agentName) {
             this.id = id;
             this.jobId = jobId;
             this.deviceId = deviceId;
             this.agentName = agentName;
+        }
+    }
+
+    private void remember(Assignment assignment) {
+        remember(assignment, jobs.get(assignment.jobId));
+    }
+
+    private void remember(Assignment assignment, Job job) {
+        Instant now = clock.instant();
+        if (assignment.createdAt == null) {
+            assignment.createdAt = now;
+        }
+        assignment.updatedAt = now;
+        archive.save(new JobArchive.StoredJob(
+                assignment.id.toString(),
+                assignment.jobId.toString(),
+                assignment.deviceId,
+                assignment.agentName,
+                job == null ? "" : job.dispatcherSubject,
+                job == null ? "" : job.prompt,
+                job == null || job.channel == null ? "" : job.channel.name(),
+                assignment.state.name(),
+                assignment.note,
+                assignment.grokSessionId == null ? null : assignment.grokSessionId.toString(),
+                assignment.createdAt,
+                assignment.updatedAt));
+    }
+
+    private void restore(List<JobArchive.StoredJob> saved) {
+        if (saved == null || saved.isEmpty()) {
+            return;
+        }
+        synchronized (monitor) {
+            for (JobArchive.StoredJob stored : saved) {
+                if (stored == null || stored.assignmentId() == null || stored.jobId() == null) {
+                    continue;
+                }
+                UUID assignmentId;
+                UUID jobId;
+                try {
+                    assignmentId = UUID.fromString(stored.assignmentId());
+                    jobId = UUID.fromString(stored.jobId());
+                } catch (IllegalArgumentException ignored) {
+                    continue;
+                }
+                if (assignments.containsKey(assignmentId)) {
+                    continue;
+                }
+                Channel channel = parseChannel(stored.channel());
+                Job job = jobs.computeIfAbsent(jobId, id -> new Job(
+                        id,
+                        stored.dispatcherSubject() == null ? "" : stored.dispatcherSubject(),
+                        channel,
+                        stored.prompt() == null ? "" : stored.prompt()));
+                Assignment assignment = new Assignment(
+                        assignmentId,
+                        jobId,
+                        stored.deviceId() == null ? "" : stored.deviceId(),
+                        stored.agentName() == null ? "" : stored.agentName());
+                assignment.state = parseState(stored.status());
+                assignment.note = stored.note();
+                if (stored.sessionId() != null) {
+                    try {
+                        assignment.grokSessionId = UUID.fromString(stored.sessionId());
+                    } catch (IllegalArgumentException ignored) {
+                        assignment.grokSessionId = null;
+                    }
+                }
+                assignment.createdAt = stored.createdAt();
+                assignment.updatedAt = stored.updatedAt();
+                if (!job.assignmentIds.contains(assignmentId)) {
+                    job.assignmentIds.add(assignmentId);
+                }
+                assignments.put(assignmentId, assignment);
+            }
+        }
+    }
+
+    private static Channel parseChannel(String channel) {
+        if (channel == null) {
+            return Channel.TEXT;
+        }
+        try {
+            return Channel.valueOf(channel);
+        } catch (IllegalArgumentException ignored) {
+            return Channel.TEXT;
+        }
+    }
+
+    private static AssignmentState parseState(String status) {
+        if (status == null) {
+            return AssignmentState.QUEUED;
+        }
+        try {
+            return AssignmentState.valueOf(status);
+        } catch (IllegalArgumentException ignored) {
+            return AssignmentState.QUEUED;
         }
     }
 }
