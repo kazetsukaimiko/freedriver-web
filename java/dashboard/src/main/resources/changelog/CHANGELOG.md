@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.1.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.0.0...v1.1.0) (2026-11-10)
+## 2026-11_r5 (2026-11-10)
 
 
 ### Features
