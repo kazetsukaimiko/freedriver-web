@@ -401,6 +401,39 @@ class JobStoreTest {
     }
 
     @Test
+    void submit_now_leaves_the_job_queued_so_a_later_claim_works() {
+        JobStore store = store();
+        store.register("pc-a", "a.local", List.of("yuni"));
+
+        JobView submitted = store.submitNow("grok", job(List.of("pc-a"), "yuni"));
+
+        assertEquals(AssignmentState.QUEUED, submitted.assignments().get(0).state());
+        assertEquals(submitted, store.getJob("grok", submitted.jobId()));
+        AssignmentView claimed = store.claim("pc-a", submitted.assignments().get(0).assignmentId());
+        assertEquals(AssignmentState.CLAIMED, claimed.state());
+        store.finish("pc-a", claimed.assignmentId(), true, "done");
+        assertEquals(AssignmentState.SUCCEEDED, store.getJob("grok", submitted.jobId()).assignments().get(0).state());
+    }
+
+    @Test
+    void a_wait_inside_the_cap_returns_the_finished_job() throws Exception {
+        JobStore store = store();
+        store.register("pc-a", "a.local", List.of("yuni"));
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<JobView> pending = pool.submit(() -> store.submit(
+                    "grok", job(List.of("pc-a"), "yuni"), Duration.ofSeconds(30)));
+            AssignmentView queued = waitForQueued(store, "pc-a");
+            store.finish("pc-a", queued.assignmentId(), true, "done");
+            JobView finished = pending.get(5, TimeUnit.SECONDS);
+            assertEquals(AssignmentState.SUCCEEDED, finished.assignments().get(0).state());
+            assertEquals("done", store.getJob("grok", finished.jobId()).assignments().get(0).note());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
     void queued_job_pings_each_host_and_not_the_prompt() {
         List<String> hosts = new ArrayList<>();
         JobStore store = new JobStore(Clock.systemUTC(), hosts::add);
