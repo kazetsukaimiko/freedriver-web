@@ -85,14 +85,14 @@ The image build compiles `mqtt-contract`, `mqtt`, and `mqtt-paho` from this repo
 
 ### Build number
 
-A successful `main` deploy stamps `YEAR-MONTH_rBUILD_NUM`. Example: `2026-08_r45`. Not semver. Not `1.0.<run>`. Deploy sets the stamp from git tags for the current UTC month: the next `rN`, or `r1` when that month has none. The Release pull request title and changelog heading use that stamp.
+A successful `main` deploy stamps the semver in `version.txt`. Example: `1.2.0`. The Release pull request, owned by release-please, bumps that file, the changelog heading, and `.release-please-manifest.json`. Deploy reads `version.txt` and ships that version.
 
 That string is:
 
 1. Written to `BUILD_NUMBER` (rsynced; not committed), used as the GHCR image tag, and passed as the Compose build arg
 2. Baked into the image on the runner, before the VPS is contacted: Maven `versions:set` in the Docker builder (git POM stays `1.0.0-SNAPSHOT`) plus `-Dquarkus.application.version`
-3. Annotated-tagged on `GITHUB_SHA` **after** the VPS is up (not on PRs)
-4. Exposed for UX [#49](https://github.com/kazetsukaimiko/freedriver-web/issues/49) at public `GET /api/build` → `{"build":"2026-08_r45"}`
+3. Annotated-tagged as `v1.2.0` on `GITHUB_SHA` **after** the VPS is up (not on PRs), when release-please has not already created that tag
+4. Exposed for UX [#49](https://github.com/kazetsukaimiko/freedriver-web/issues/49) at public `GET /api/build` → `{"build":"1.2.0"}`
 
 Local `./mvnw` and Compose builds without `BUILD_NUMBER` report `1.0.0-SNAPSHOT`. Read the stamp from `/api/build` (or `quarkus.application.version`); do not put MQTT or port 8883 in webui.
 

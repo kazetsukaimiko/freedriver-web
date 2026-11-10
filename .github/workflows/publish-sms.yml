@@ -1,11 +1,11 @@
 name: Publish SMS
 
-# Publishes sms-model, sms-api, and sms-client for a tag sms/YEAR-MONTH_rBUILD.
-# Each digit is written out because Actions uses ? and + as quantifiers on the preceding character.
+# Publishes sms-model, sms-api, and sms-client for a tag sms/X.Y.Z.
+# + is a one-or-more quantifier in the Actions glob.
 on:
   push:
     tags:
-      - "sms/[0-9][0-9][0-9][0-9]-[0-9][0-9]_r[0-9]+"
+      - "sms/[0-9]+.[0-9]+.[0-9]+"
 
 # Workflow token permission is contents: read. The publish job adds packages: write.
 permissions:
@@ -34,9 +34,9 @@ jobs:
         run: |
           set -euo pipefail
           tag="${GITHUB_REF#refs/tags/}"
-          pattern='^sms/[0-9]{4}-(0[1-9]|1[0-2])_r[0-9]+$'
+          pattern='^sms/[0-9]+\.[0-9]+\.[0-9]+$'
           if [[ ! "$tag" =~ $pattern ]]; then
-            echo "refusing: ${tag} is not sms/YEAR-MONTH_rBUILD_NUM"
+            echo "refusing: ${tag} is not sms/X.Y.Z"
             exit 1
           fi
           git fetch origin main
