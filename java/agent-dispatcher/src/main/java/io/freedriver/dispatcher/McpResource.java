@@ -16,9 +16,8 @@ import io.smallrye.common.annotation.Blocking;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.Validator;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
-
 import java.time.Duration;
+import java.util.Optional;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -35,7 +34,8 @@ public class McpResource implements McpApi {
 
     private static final String LATEST_PROTOCOL = "2025-11-25";
     private static final Set<String> PROTOCOL_VERSIONS = Set.of("2025-03-26", "2025-06-18", LATEST_PROTOCOL);
-    private static final Set<String> SUBMIT_FIELDS = Set.of("server", "agentName", "prompt", "channel");
+    private static final Set<String> SUBMIT_FIELDS = Set.of(
+            "server", "agentName", "prompt", "channel", "blockForUpTo");
     private static final Set<String> JOB_FIELDS = Set.of("jobId");
 
     private final JobStore jobs;
@@ -44,7 +44,6 @@ public class McpResource implements McpApi {
     private final SecurityIdentity identity;
     private final ObjectMapper mapper;
     private final Validator validator;
-    private final Duration submitTimeout;
 
     @Inject
     public McpResource(
@@ -53,15 +52,13 @@ public class McpResource implements McpApi {
             McpSessionHeader sessionHeader,
             SecurityIdentity identity,
             ObjectMapper mapper,
-            Validator validator,
-            @ConfigProperty(name = "freedriver.dispatcher.submit-timeout", defaultValue = "75s") Duration submitTimeout) {
+            Validator validator) {
         this.jobs = jobs;
         this.sessions = sessions;
         this.sessionHeader = sessionHeader;
         this.identity = identity;
         this.mapper = mapper;
         this.validator = validator;
-        this.submitTimeout = submitTimeout;
     }
 
     @Override
@@ -205,7 +202,15 @@ public class McpResource implements McpApi {
         if (!validator.validate(request).isEmpty()) {
             throw McpProtocolException.invalidParams(id, "invalid params");
         }
-        JobView job = jobs.submit(subject, request, submitTimeout);
+        Optional<Duration> block;
+        try {
+            block = SubmitBlock.parse(arguments.get("blockForUpTo"));
+        } catch (IllegalArgumentException ex) {
+            throw McpProtocolException.invalidParams(id, "invalid params");
+        }
+        JobView job = block
+                .map(wait -> jobs.submit(subject, request, wait))
+                .orElseGet(() -> jobs.submitNow(subject, request));
         return toolResult(id, write(job), false);
     }
 
@@ -300,9 +305,16 @@ public class McpResource implements McpApi {
         channels.add("SPEECH");
         channel.set("enum", channels);
         submit.set("channel", channel);
+        ObjectNode blockForUpTo = mapper.createObjectNode();
+        blockForUpTo.put("type", "integer");
+        blockForUpTo.put("minimum", 0);
+        blockForUpTo.put("maximum", SubmitBlock.MAX_SECONDS);
+        submit.set("blockForUpTo", blockForUpTo);
         tools.add(tool(
                 "submit_job",
-                "Freedriver dispatch: queue a prompt for a named agent on one server from list_agents, such as Project Manager, and wait until the job finishes or times out. Returns the job id.",
+                "Freedriver dispatch: queue a prompt for a named agent on one server from list_agents, such as Project Manager. "
+                        + "blockForUpTo is optional seconds, at most 180. Omit it, or send 0, to return the job id while the job stays queued. "
+                        + "A positive value waits that long, then expires the job if it is not finished. get_job reads the result.",
                 submit,
                 "server",
                 "agentName",

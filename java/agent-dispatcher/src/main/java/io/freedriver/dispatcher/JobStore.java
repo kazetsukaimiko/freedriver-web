@@ -236,6 +236,36 @@ public class JobStore {
     }
 
     public JobView submit(String dispatcherSubject, SubmitJobRequest request, Duration wait) {
+        Duration budget = wait == null ? Duration.ZERO : wait;
+        long deadline = System.nanoTime() + budget.toNanos();
+        Queued queued = enqueue(dispatcherSubject, request);
+        try {
+            // The POST stays outside the queue lock so a host can claim during the wait.
+            // The deadline already started, so this call counts against the wait.
+            notifyHosts(queued.hosts);
+            synchronized (monitor) {
+                awaitTerminal(queued.job, deadline);
+                return view(queued.job);
+            }
+        } finally {
+            release(dispatcherSubject);
+        }
+    }
+
+    /**
+     * Queue the job and return its id. The assignment stays queued, including
+     * when the caller asked to wait zero seconds. A later claim still runs it.
+     */
+    public JobView submitNow(String dispatcherSubject, SubmitJobRequest request) {
+        Queued queued = enqueue(dispatcherSubject, request);
+        release(dispatcherSubject);
+        notifyHosts(queued.hosts);
+        synchronized (monitor) {
+            return view(queued.job);
+        }
+    }
+
+    private Queued enqueue(String dispatcherSubject, SubmitJobRequest request) {
         requireText(dispatcherSubject, "dispatcher");
         if (request == null) {
             throw badRequest("job is required");
@@ -252,10 +282,6 @@ public class JobStore {
         if (new HashSet<>(deviceIds).size() != deviceIds.size()) {
             throw badRequest("duplicate device");
         }
-        Duration budget = wait == null ? Duration.ZERO : wait;
-        long deadline = System.nanoTime() + budget.toNanos();
-        Job job;
-        List<String> hosts;
         synchronized (monitor) {
             for (String deviceId : deviceIds) {
                 requireText(deviceId, "deviceId");
@@ -271,8 +297,8 @@ public class JobStore {
                 throw conflict("submit already in flight");
             }
             try {
-                job = new Job(UUID.randomUUID(), dispatcherSubject, request.channel(), request.prompt());
-                hosts = new ArrayList<>();
+                Job job = new Job(UUID.randomUUID(), dispatcherSubject, request.channel(), request.prompt());
+                List<String> hosts = new ArrayList<>();
                 for (String deviceId : deviceIds) {
                     Assignment assignment = new Assignment(
                             UUID.randomUUID(), job.id, deviceId, request.agentName());
@@ -285,30 +311,31 @@ public class JobStore {
                 }
                 jobs.put(job.id, job);
                 monitor.notifyAll();
+                return new Queued(job, hosts);
             } catch (RuntimeException failure) {
                 inFlightSubmits.remove(dispatcherSubject);
                 throw failure;
             }
         }
-        try {
-            // The POST stays outside the queue lock so a host can claim during the wait.
-            // The deadline already started, so this call counts against the 75 second budget.
-            for (String hostname : hosts) {
-                try {
-                    ping().queued(hostname);
-                } catch (RuntimeException failure) {
-                    // A notifier bug must not drop a job that is already queued.
-                }
-            }
-            synchronized (monitor) {
-                awaitTerminal(job, deadline);
-                return view(job);
-            }
-        } finally {
-            synchronized (monitor) {
-                inFlightSubmits.remove(dispatcherSubject);
+    }
+
+    private void notifyHosts(List<String> hosts) {
+        for (String hostname : hosts) {
+            try {
+                ping().queued(hostname);
+            } catch (RuntimeException failure) {
+                // A notifier bug must not drop a job that is already queued.
             }
         }
+    }
+
+    private void release(String dispatcherSubject) {
+        synchronized (monitor) {
+            inFlightSubmits.remove(dispatcherSubject);
+        }
+    }
+
+    private record Queued(Job job, List<String> hosts) {
     }
 
     int jobCount() {

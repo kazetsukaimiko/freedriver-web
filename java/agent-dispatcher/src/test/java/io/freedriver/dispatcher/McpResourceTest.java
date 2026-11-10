@@ -30,7 +30,9 @@ import java.util.concurrent.TimeUnit;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -270,7 +272,10 @@ class McpResourceTest {
                 .body("result.tools.size()", is(3))
                 .body("result.tools.find { it.name == 'submit_job' }.inputSchema.properties.prompt.maxLength", is(16000))
                 .body("result.tools.find { it.name == 'submit_job' }.inputSchema.properties.server.maxLength", is(253))
+                .body("result.tools.find { it.name == 'submit_job' }.inputSchema.properties.blockForUpTo.maximum", is(180))
+                .body("result.tools.find { it.name == 'submit_job' }.inputSchema.properties.blockForUpTo.minimum", is(0))
                 .body("result.tools.find { it.name == 'submit_job' }.inputSchema.additionalProperties", is(false))
+                .body("result.tools.find { it.name == 'submit_job' }.inputSchema.required", not(hasItem("blockForUpTo")))
                 .body("result.tools.find { it.name == 'list_agents' }.inputSchema.additionalProperties", is(false));
         String toolsJson = listed.extract().asString();
         assertFalse(toolsJson.contains("allowlist"));
@@ -323,8 +328,13 @@ class McpResourceTest {
                 .extract()
                 .path("result.content[0].text");
         JsonNode submitted = mapper.readTree(submittedText);
-        assertEquals("EXPIRED", submitted.path("assignments").get(0).path("state").asText());
+        assertEquals("QUEUED", submitted.path("assignments").get(0).path("state").asText());
         String jobId = submitted.path("jobId").asText();
+        AssignmentView claimed = jobs.claim(
+                "pc-mcp-grok",
+                UUID.fromString(submitted.path("assignments").get(0).path("assignmentId").asText()));
+        assertEquals(AssignmentState.CLAIMED, claimed.state());
+        jobs.finish("pc-mcp-grok", claimed.assignmentId(), true, "done");
 
         String ownJob = call(session, getJob(jobId))
                 .statusCode(200)
@@ -333,6 +343,7 @@ class McpResourceTest {
                 .path("result.content[0].text");
         assertTrue(ownJob.contains("say hello"));
         assertTrue(ownJob.contains(jobId));
+        assertTrue(ownJob.contains("SUCCEEDED"));
 
         call(session, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}")
                 .statusCode(202);
@@ -407,6 +418,64 @@ class McpResourceTest {
                 .post("/mcp")
                 .then()
                 .statusCode(404);
+    }
+
+    @Test
+    @TestSecurity(user = "grok-block", roles = "dispatcher")
+    void submit_job_wait_is_optional_capped_and_zero_stays_queued() throws Exception {
+        jobs.register("pc-block", "block.local", List.of("yuni"));
+        String session = initialize();
+        int before = jobs.jobCount();
+
+        String rejected = call(session, submitBody("block.local", "over the cap", 181))
+                .statusCode(200)
+                .body("error.code", is(-32602))
+                .extract()
+                .asString();
+        assertFalse(rejected.contains("over the cap"));
+        assertEquals(before, jobs.jobCount());
+
+        String zeroText = call(session, submitBody("block.local", "wait zero", 0))
+                .statusCode(200)
+                .body("result.isError", is(false))
+                .extract()
+                .path("result.content[0].text");
+        JsonNode zero = mapper.readTree(zeroText);
+        assertEquals("QUEUED", zero.path("assignments").get(0).path("state").asText());
+        AssignmentView claimed = jobs.claim(
+                "pc-block",
+                UUID.fromString(zero.path("assignments").get(0).path("assignmentId").asText()));
+        jobs.finish("pc-block", claimed.assignmentId(), true, "done");
+        String readBack = call(session, getJob(zero.path("jobId").asText()))
+                .statusCode(200)
+                .body("result.isError", is(false))
+                .extract()
+                .path("result.content[0].text");
+        assertTrue(readBack.contains("SUCCEEDED"));
+        assertTrue(readBack.contains("wait zero"));
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<String> pending = pool.submit(() -> call(session, submitBody("block.local", "inside the cap", 30))
+                    .statusCode(200)
+                    .body("result.isError", is(false))
+                    .extract()
+                    .path("result.content[0].text"));
+            AssignmentView queued = waitForQueued("pc-block");
+            jobs.finish("pc-block", queued.assignmentId(), true, "finished in time");
+            JsonNode finished = mapper.readTree(pending.get(5, TimeUnit.SECONDS));
+            assertEquals("SUCCEEDED", finished.path("assignments").get(0).path("state").asText());
+            assertEquals("finished in time", finished.path("assignments").get(0).path("note").asText());
+        } finally {
+            pool.shutdownNow();
+        }
+
+        String expiredText = call(session, submitBody("block.local", "one second", 1))
+                .statusCode(200)
+                .body("result.isError", is(false))
+                .extract()
+                .path("result.content[0].text");
+        assertEquals("EXPIRED", mapper.readTree(expiredText).path("assignments").get(0).path("state").asText());
     }
 
     @Test
@@ -502,9 +571,14 @@ class McpResourceTest {
     }
 
     private static String submitBody(String server, String prompt) {
+        return submitBody(server, prompt, null);
+    }
+
+    private static String submitBody(String server, String prompt, Integer blockForUpTo) {
+        String block = blockForUpTo == null ? "" : ",\"blockForUpTo\":" + blockForUpTo;
         return """
-                {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"submit_job","arguments":{"server":"%s","agentName":"yuni","prompt":"%s","channel":"TEXT"}}}
-                """.formatted(server, prompt);
+                {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"submit_job","arguments":{"server":"%s","agentName":"yuni","prompt":"%s","channel":"TEXT"%s}}}
+                """.formatted(server, prompt, block);
     }
 
     private static String getJob(String jobId) {
