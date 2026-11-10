@@ -10,6 +10,7 @@ import io.freedriver.dispatcher.model.ReportedBot;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
 import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -32,6 +33,7 @@ public class JobStore {
 
     private final Clock clock;
     private final Object monitor = new Object();
+    private JobPing jobPing;
     private final ConcurrentHashMap<String, Device> devices = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Job> jobs = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Assignment> assignments = new ConcurrentHashMap<>();
@@ -39,11 +41,25 @@ public class JobStore {
     private final Set<String> inFlightSubmits = new HashSet<>();
 
     public JobStore() {
-        this(Clock.systemUTC());
+        this(Clock.systemUTC(), null);
     }
 
     JobStore(Clock clock) {
+        this(clock, null);
+    }
+
+    JobStore(Clock clock, JobPing jobPing) {
         this.clock = clock;
+        this.jobPing = jobPing;
+    }
+
+    @Inject
+    void setJobPing(OpenBotJobPing jobPing) {
+        this.jobPing = jobPing;
+    }
+
+    private JobPing ping() {
+        return jobPing == null ? JobPing.NONE : jobPing;
     }
 
     public DeviceView register(String deviceId, String hostname, List<String> agents) {
@@ -237,6 +253,9 @@ public class JobStore {
             throw badRequest("duplicate device");
         }
         Duration budget = wait == null ? Duration.ZERO : wait;
+        long deadline = System.nanoTime() + budget.toNanos();
+        Job job;
+        List<String> hosts;
         synchronized (monitor) {
             for (String deviceId : deviceIds) {
                 requireText(deviceId, "deviceId");
@@ -252,18 +271,41 @@ public class JobStore {
                 throw conflict("submit already in flight");
             }
             try {
-                Job job = new Job(UUID.randomUUID(), dispatcherSubject, request.channel(), request.prompt());
+                job = new Job(UUID.randomUUID(), dispatcherSubject, request.channel(), request.prompt());
+                hosts = new ArrayList<>();
                 for (String deviceId : deviceIds) {
                     Assignment assignment = new Assignment(
                             UUID.randomUUID(), job.id, deviceId, request.agentName());
                     job.assignmentIds.add(assignment.id);
                     assignments.put(assignment.id, assignment);
+                    String hostname = devices.get(deviceId).hostname;
+                    if (!hosts.contains(hostname)) {
+                        hosts.add(hostname);
+                    }
                 }
                 jobs.put(job.id, job);
                 monitor.notifyAll();
-                awaitTerminal(job, budget);
+            } catch (RuntimeException failure) {
+                inFlightSubmits.remove(dispatcherSubject);
+                throw failure;
+            }
+        }
+        try {
+            // The POST stays outside the queue lock so a host can claim during the wait.
+            // The deadline already started, so this call counts against the 75 second budget.
+            for (String hostname : hosts) {
+                try {
+                    ping().queued(hostname);
+                } catch (RuntimeException failure) {
+                    // A notifier bug must not drop a job that is already queued.
+                }
+            }
+            synchronized (monitor) {
+                awaitTerminal(job, deadline);
                 return view(job);
-            } finally {
+            }
+        } finally {
+            synchronized (monitor) {
                 inFlightSubmits.remove(dispatcherSubject);
             }
         }
@@ -389,8 +431,7 @@ public class JobStore {
         }
     }
 
-    private void awaitTerminal(Job job, Duration budget) {
-        long deadline = System.nanoTime() + budget.toNanos();
+    private void awaitTerminal(Job job, long deadline) {
         while (!allTerminal(job)) {
             long remaining = deadline - System.nanoTime();
             if (remaining <= 0) {

@@ -38,6 +38,9 @@ class DispatcherConfigTest {
         assertTrue(properties.contains("freedriver.dispatcher.submit-timeout=75s"));
         assertTrue(properties.contains("freedriver.dispatcher.poll-timeout=25s"));
         assertTrue(properties.contains("%test.freedriver.dispatcher.submit-timeout=300ms"));
+        assertTrue(properties.contains(
+                "freedriver.dispatcher.openbot-webhook-secret=${FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET:}"));
+        assertFalse(properties.contains("openbot-webhook-secret=test"));
         assertTrue(properties.contains("quarkus.http.auth.permission.authenticated.paths=/*"));
         assertTrue(properties.contains("quarkus.http.auth.permission.public.paths=/q/*"));
         assertTrue(properties.contains(
@@ -67,6 +70,8 @@ class DispatcherConfigTest {
         String compose = Files.readString(Path.of("../../docker-compose.yml"));
         assertTrue(compose.contains("QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver"));
         assertTrue(compose.contains("QUARKUS_OIDC_CREDENTIALS_SECRET: ${FREEDRIVER_DISPATCHER_OIDC_SECRET:-}"));
+        assertTrue(compose.contains(
+                "FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET: ${FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET:-}"));
         assertFalse(compose.contains("QUARKUS_OIDC_ENABLED"));
         assertFalse(compose.contains("QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8080"));
         assertFalse(compose.contains("QUARKUS_OIDC_AUTH_SERVER_URL: http://127.0.0.1:8081"));
