@@ -271,8 +271,8 @@ jobs:
             exit 1
           fi
 
-      - name: Release stamp is YEAR-MONTH_rN
-        run: ./scripts/test-stamp-release-pr.sh
+      - name: Release stamp is semver
+        run: ./scripts/test-semver-stamp.sh
 
       - name: Keycloak SMS OTP SPI tests
         run: |
@@ -383,11 +383,28 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          YEAR="$(date -u +%Y)"
-          MONTH="$(date -u +%m)"
-          NEW_VERSION="${YEAR}-${MONTH}_r${{ github.run_number }}"
+          set -euo pipefail
+          changed="$(python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+          names = set()
+          for commit in event.get("commits") or []:
+              names.update(commit.get("added") or [])
+              names.update(commit.get("modified") or [])
+          print("yes" if "version.txt" in names else "no")
+          PY
+          )"
+          if [ "$changed" != "yes" ]; then
+            echo "version.txt unchanged; skip mqtt-contract publish"
+            exit 0
+          fi
+          NEW_VERSION="$(tr -d '[:space:]' < version.txt)"
+          if [[ ! "$NEW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "version.txt must be semver X.Y.Z"
+            exit 1
+          fi
           echo "Publishing freedriver-mqtt-contract as ${NEW_VERSION}"
-          # Publishes mqtt-contract at the YEAR-MONTH_rRUN stamp with the build cache off.
           ./mvnw -B --no-transfer-progress \
             -Dmaven.build.cache.enabled=false \
             -Dmaven.build.cache.remote.enabled=false \

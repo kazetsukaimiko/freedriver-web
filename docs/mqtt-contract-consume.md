@@ -1,6 +1,6 @@
 # Consume freedriver-mqtt-contract
 
-Coordinates: `io.freedriver:freedriver-mqtt-contract` (reactor module in this repo; published from `main` as `YEAR-MONTH_rBUILD_NUM`).
+Coordinates: `io.freedriver:freedriver-mqtt-contract` (reactor module in this repo; published from `main` as the release semver, for example `1.2.0`).
 
 The portal owns the dialect. Topics are `freedriver/v1/{instanceId}/appliances|commands`. Autonomy is a leaf: it pins this artifact. `dashboard` and autonomy both take the records from this artifact as a Maven dependency. Do not vendor the records into `java/dashboard/` or into autonomy.
 
@@ -14,7 +14,7 @@ Repository (for out-of-repo consumers): `https://maven.pkg.github.com/kazetsukai
 
 ## Autonomy
 
-Pin a published `YEAR-MONTH_rBUILD_NUM` after `main` publishes. MQTT handler maps topic `{instanceId}` plus body; `instanceId` comes from the topic.
+Pin a published semver after `main` publishes. MQTT handler maps topic `{instanceId}` plus body; `instanceId` comes from the topic.
 
 ## CI
 
