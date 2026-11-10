@@ -1,12 +1,10 @@
 package io.freedriver.app.jobs;
 
 import com.mongodb.client.MongoClient;
-import jakarta.annotation.security.RolesAllowed;
+import io.freedriver.app.jobs.AgentJobsApi.JobList;
+import io.freedriver.app.jobs.AgentJobsApi.JobRow;
+import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
 import org.bson.Document;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -17,14 +15,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Portal-admin list of dispatch jobs copied into {@code agent-jobs}.
- * The session is the same cookie session as {@code /api/phones}.
- */
-@Path("/api/jobs")
-@RolesAllowed("portal-admin")
-@Produces(MediaType.APPLICATION_JSON)
-public class AgentJobsResource {
+/** Reads {@code agent-jobs}. The HTTP contract is {@link AgentJobsApi}. */
+@ApplicationScoped
+public class AgentJobsResource implements AgentJobsApi {
 
     private final MongoClient mongo;
     private final String database;
@@ -37,7 +30,7 @@ public class AgentJobsResource {
         this.database = database;
     }
 
-    @GET
+    @Override
     public JobList list() {
         List<JobRow> jobs = new ArrayList<>();
         for (Document document : mongo.getDatabase(database).getCollection("agent-jobs").find()) {
@@ -81,18 +74,5 @@ public class AgentJobsResource {
     private static String text(Object value, Object fallback) {
         Object chosen = value == null ? fallback : value;
         return chosen == null ? "" : chosen.toString();
-    }
-
-    public record JobList(List<JobRow> jobs) {
-    }
-
-    public record JobRow(
-            String assignmentId,
-            String jobId,
-            String prompt,
-            String channel,
-            String status,
-            String note,
-            Map<String, Object> document) {
     }
 }
