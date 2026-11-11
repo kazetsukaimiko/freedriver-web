@@ -28,7 +28,6 @@ public class PhoneDirectory {
 
     private final Path file;
     private final ObjectMapper json;
-    private Map<String, PhoneEntry> entries;
 
     @Inject
     public PhoneDirectory(SmsConfig config, ObjectMapper json) {
@@ -118,14 +117,11 @@ public class PhoneDirectory {
         } catch (IOException e) {
             throw new UncheckedIOException("Could not write " + FILE, e);
         }
-        entries = next;
     }
 
+    /** The file is the list. Each call reads it, so another process sees a write without a restart. */
     private Map<String, PhoneEntry> loaded() {
-        if (entries == null) {
-            entries = read();
-        }
-        return entries;
+        return read();
     }
 
     private Map<String, PhoneEntry> read() {
