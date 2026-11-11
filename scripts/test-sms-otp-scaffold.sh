@@ -678,8 +678,8 @@ for flag in (
     if flag not in timeouts:
         raise SystemExit(f"session timeouts must set {flag}")
 print("realm session timeouts 7200/28800/86400/1800")
-if script.count("31536000") != 2:
-    raise SystemExit("31536000 is the 1-year access token lifespan for dispatcher and grok-mcp")
+if script.count("31536000") != 3:
+    raise SystemExit("31536000 is the 1-year access token lifespan for dispatcher, grok-mcp, and OpenBot")
 for line in (
     """-s 'attributes."access.token.lifespan"=31536000'""",
     """-s 'attributes."client.session.idle.timeout"='"${SSO_SESSION_IDLE_TIMEOUT}\"""",
@@ -688,6 +688,23 @@ for line in (
     if line not in script:
         raise SystemExit(f"dispatcher client missing {line}")
 print("dispatcher and grok-mcp client sessions follow realm SSO")
+openbot = script.split("ensure_openbot_mcp_client() {", 1)[1]
+depth = 1
+kept = []
+for line in openbot.splitlines():
+    if line.strip() == "{":
+        depth += 1
+    elif line.strip() == "}":
+        depth -= 1
+        if depth == 0:
+            break
+    kept.append(line)
+openbot_fn = "\n".join(kept)
+if 'attributes."access.token.lifespan"=31536000' not in openbot_fn:
+    raise SystemExit("ensure_openbot_mcp_client must set a 1-year access token")
+if "OpenBot is connect-and-forget like grok.com" not in script:
+    raise SystemExit("provision script must say OpenBot is connect-and-forget like grok.com")
+print("OpenBot MCP client uses a 1-year access token")
 PY
 
 chmod +x scripts/test-invite-service-account.sh
