@@ -14,6 +14,8 @@ import { DISPATCHER_PATH } from './dispatcher'
 import { InvitePage } from './InvitePage'
 import { Instances } from './Instances'
 import { INSTANCES_PATH } from './instances'
+import { PhoneRecords } from './PhoneRecords'
+import { PHONE_RECORDS_PATH } from './phoneRecords'
 import { PhoneSignIn } from './PhoneSignIn'
 import { PHONES_PATH } from './phones'
 import { SignInRecords } from './SignInRecords'
@@ -28,6 +30,7 @@ type Page =
   | 'changelog'
   | 'phones'
   | 'sign-ins'
+  | 'phone-records'
   | 'instances'
   | 'dispatcher'
   | 'agent-jobs'
@@ -48,6 +51,9 @@ function pageFor(pathname: string): Page {
   }
   if (pathname === SIGN_IN_RECORDS_PATH) {
     return 'sign-ins'
+  }
+  if (pathname === PHONE_RECORDS_PATH) {
+    return 'phone-records'
   }
   if (pathname === AGENT_JOBS_PATH) {
     return 'agent-jobs'
@@ -72,6 +78,7 @@ function primaryNavItems(portalAdmin: boolean, dispatcher: boolean): PrimaryItem
     items.push({ to: INSTANCES_PATH, label: 'Instances', page: 'instances' })
     items.push({ to: PHONES_PATH, label: 'Phones/Accounts', page: 'phones' })
     items.push({ to: SIGN_IN_RECORDS_PATH, label: 'Sign-ins', page: 'sign-ins' })
+    items.push({ to: PHONE_RECORDS_PATH, label: 'Phone records', page: 'phone-records' })
     items.push({ to: AGENT_JOBS_PATH, label: 'Agent jobs', page: 'agent-jobs' })
   }
   if (dispatcher) {
@@ -299,6 +306,7 @@ function App() {
         {page === 'changelog' && <Changelog />}
         {page === 'phones' && <PhoneSignIn />}
         {page === 'sign-ins' && <SignInRecords />}
+        {page === 'phone-records' && <PhoneRecords />}
         {page === 'agent-jobs' && <AgentJobs />}
         {page === 'instances' && <Instances />}
         {page === 'dispatcher' && <DispatcherJobs path={path} onOpen={goTo} />}
