@@ -1,10 +1,10 @@
 # Device dispatcher
 
-Home PCs run a headless Grok session when a dispatcher (the Grok app, the car, or the CLI) submits a job. This service is that in-memory queue. Keycloak issues the tokens. The device daemon on each PC starts Grok. That daemon is the headless path in `java/device-daemon`. OpenBot connects to the same MCP server as grok.com, with client `freedriver-openbot` and role `device`.
+Home PCs run a headless Grok session when a dispatcher (the Grok app, the car, or the CLI) submits a job. This service stores that queue in Mongo. Keycloak issues the tokens. The device daemon on each PC starts Grok. That daemon is the headless path in `java/device-daemon`. OpenBot connects to the same MCP server as grok.com, with client `freedriver-openbot` and role `device`.
 
 Keycloak at `https://auth.freedriver.io/realms/freedriver` is the issuer. `%prod.quarkus.oidc.enabled` is true. The unprofiled property and the `%dev` and `%test` lines stay false. Anonymous callers receive 401, except the metadata GET below. A dispatcher token calls the dispatcher routes and must have `azp=freedriver-dispatcher`. A host token calls the host MCP tools and must have `azp=freedriver-openbot`. Host and dispatcher calls use `/dispatch/mcp` and `/mcp`.
 
-The live queue is in memory. Each assignment is also written to the dashboard Mongo database, collection `agent-jobs`, and loaded back after a dispatcher restart.
+Jobs, the host roster, and the in-flight submit lock are rows in the dashboard Mongo database. Assignments are the `agent-jobs` collection. Hosts are `agent-devices`. A restart reads those rows. There is no second copy in memory.
 
 ## Actors
 

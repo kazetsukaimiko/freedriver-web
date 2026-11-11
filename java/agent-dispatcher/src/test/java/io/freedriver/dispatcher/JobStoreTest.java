@@ -417,33 +417,22 @@ class JobStoreTest {
 
     @Test
     void a_restart_keeps_the_queued_job_for_a_later_claim() {
-        List<JobArchive.StoredJob> saved = new ArrayList<>();
-        JobArchive archive = new JobArchive() {
-            @Override
-            public void save(StoredJob job) {
-                saved.removeIf(existing -> existing.assignmentId().equals(job.assignmentId()));
-                saved.add(job);
-            }
-
-            @Override
-            public List<StoredJob> load() {
-                return List.copyOf(saved);
-            }
-        };
-        JobStore first = new JobStore(Clock.systemUTC(), null, archive);
+        JobDocuments saved = new MemoryJobDocuments();
+        JobStore first = new JobStore(saved, Clock.systemUTC(), null);
         first.register("pc-a", "a.local", List.of("yuni"));
         JobView submitted = first.submitNow("grok", job(List.of("pc-a"), "yuni"));
 
-        assertEquals(1, saved.size());
-        assertEquals("QUEUED", saved.get(0).status());
-        assertEquals("TEXT", saved.get(0).channel());
-        assertTrue(saved.get(0).prompt() != null && !saved.get(0).prompt().isBlank());
-        assertTrue(saved.get(0).createdAt() != null);
+        List<org.bson.Document> rows = saved.find(JobDocuments.JOBS);
+        assertEquals(1, rows.size());
+        assertEquals("QUEUED", rows.get(0).getString("status"));
+        assertEquals("TEXT", rows.get(0).getString("channel"));
+        assertTrue(rows.get(0).getString("prompt") != null && !rows.get(0).getString("prompt").isBlank());
+        assertTrue(rows.get(0).get("createdAt") != null);
 
-        JobStore restarted = new JobStore(Clock.systemUTC(), null, archive);
+        JobStore restarted = new JobStore(saved, Clock.systemUTC(), null);
         AssignmentView claimed = restarted.claim("pc-a", submitted.assignments().get(0).assignmentId());
         assertEquals(AssignmentState.CLAIMED, claimed.state());
-        assertEquals("CLAIMED", saved.get(0).status());
+        assertEquals("CLAIMED", saved.find(JobDocuments.JOBS).get(0).getString("status"));
         assertEquals(submitted.jobId(), restarted.getJob("grok", submitted.jobId()).jobId());
     }
 

@@ -41,8 +41,8 @@ class DispatcherConfigTest {
         assertTrue(properties.contains(
                 "freedriver.dispatcher.openbot-webhook-secret=${FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET:}"));
         assertFalse(properties.contains("openbot-webhook-secret=test"));
-        assertTrue(properties.contains("freedriver.dispatcher.job-archive=mongo"));
-        assertTrue(properties.contains("%test.freedriver.dispatcher.job-archive=off"));
+        assertTrue(properties.contains("freedriver.dispatcher.jobs=mongo"));
+        assertTrue(properties.contains("%test.freedriver.dispatcher.jobs=memory"));
         assertTrue(properties.contains("quarkus.mongodb.server-selection-timeout=2S"));
         assertTrue(properties.contains("quarkus.http.auth.permission.authenticated.paths=/*"));
         assertTrue(properties.contains("quarkus.http.auth.permission.public.paths=/q/*"));

@@ -1,5 +1,6 @@
 package io.freedriver.dispatcher;
 
+import com.mongodb.client.MongoClient;
 import io.freedriver.dispatcher.model.AgentRosterEntry;
 import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
@@ -9,57 +10,54 @@ import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.ReportedBot;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
 import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
-import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.bson.Document;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * In-memory queues. One assignment list per device, one job per dispatcher subject.
- * Each assignment is also copied to {@code agent-jobs} when that archive is on,
- * and those copies are loaded again after a restart.
+ * Dispatch queue. Jobs, host roster, and submit locks are rows in {@link JobDocuments}.
+ * MongoDB is that store in production. A read loads the rows again. There is no job map.
  */
 @ApplicationScoped
 public class JobStore {
 
+    private static final Duration LOCK_TTL = Duration.ofMinutes(3);
+
     private final Clock clock;
     private final Object monitor = new Object();
     private JobPing jobPing;
-    private JobArchive archive = JobArchive.NONE;
-    private final ConcurrentHashMap<String, Device> devices = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<UUID, Job> jobs = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<UUID, Assignment> assignments = new ConcurrentHashMap<>();
-    /** One in-flight submit per subject. REST and /mcp share this set. */
-    private final Set<String> inFlightSubmits = new HashSet<>();
+    private JobDocuments documents;
 
     public JobStore() {
-        this(Clock.systemUTC(), null, JobArchive.NONE);
+        this(Clock.systemUTC(), null);
     }
 
     JobStore(Clock clock) {
-        this(clock, null, JobArchive.NONE);
+        this(clock, null);
     }
 
     JobStore(Clock clock, JobPing jobPing) {
-        this(clock, jobPing, JobArchive.NONE);
+        this(new MemoryJobDocuments(), clock, jobPing);
     }
 
-    JobStore(Clock clock, JobPing jobPing, JobArchive archive) {
+    JobStore(JobDocuments documents, Clock clock, JobPing jobPing) {
+        this.documents = documents;
         this.clock = clock;
         this.jobPing = jobPing;
-        this.archive = archive == null ? JobArchive.NONE : archive;
-        restore(this.archive.load());
     }
 
     @Inject
@@ -67,14 +65,17 @@ public class JobStore {
         this.jobPing = jobPing;
     }
 
+    /**
+     * Production replaces the test collection with Mongo. Tests leave {@code memory} in place.
+     */
     @Inject
-    void setArchive(MongoJobArchive archive) {
-        this.archive = archive == null ? JobArchive.NONE : archive;
-    }
-
-    @PostConstruct
-    void loadArchive() {
-        restore(archive.load());
+    void useMongo(
+            MongoClient client,
+            @ConfigProperty(name = "freedriver.dispatcher.jobs", defaultValue = "mongo") String mode,
+            @ConfigProperty(name = "quarkus.mongodb.database", defaultValue = "freedriver") String database) {
+        if ("mongo".equals(mode)) {
+            this.documents = new MongoJobDocuments(client, database);
+        }
     }
 
     private JobPing ping() {
@@ -96,14 +97,15 @@ public class JobStore {
             copy.add(agent);
         }
         synchronized (monitor) {
-            Device device = devices.computeIfAbsent(deviceId, Device::new);
-            device.hostname = hostname;
-            device.agents = List.copyOf(copy);
-            device.activity = Map.of();
-            device.activityText = Map.of();
-            device.lastHeartbeat = clock.instant();
+            Document device = new Document("_id", deviceId)
+                    .append("hostname", hostname)
+                    .append("agents", List.copyOf(copy))
+                    .append("activity", new Document())
+                    .append("activityText", new Document())
+                    .append("lastHeartbeat", Date.from(clock.instant()));
+            documents.replace(JobDocuments.DEVICES, deviceId, device);
             monitor.notifyAll();
-            return view(device);
+            return viewDevice(device);
         }
     }
 
@@ -147,47 +149,46 @@ public class JobStore {
         }
         register(deviceId, hostname, new ArrayList<>(states.keySet()));
         synchronized (monitor) {
-            Device device = devices.get(deviceId);
-            device.activity = Map.copyOf(states);
-            device.activityText = Map.copyOf(notes);
-            return view(device);
+            Document device = mustDevice(deviceId);
+            device.put("activity", new Document(states));
+            device.put("activityText", new Document(notes));
+            documents.replace(JobDocuments.DEVICES, deviceId, device);
+            return viewDevice(device);
         }
     }
 
     public List<AgentRosterEntry> listAgents() {
-        synchronized (monitor) {
-            List<AgentRosterEntry> rows = new ArrayList<>();
-            for (Device device : devices.values()) {
-                for (String agent : device.agents) {
-                    String stored = device.activity.get(agent);
-                    String state = "busy".equals(stored) ? "BUSY" : "IDLE";
-                    String note = device.activityText.getOrDefault(agent, "");
-                    rows.add(new AgentRosterEntry("bot", agent, device.hostname, state, note));
-                }
+        List<AgentRosterEntry> rows = new ArrayList<>();
+        for (Document device : documents.find(JobDocuments.DEVICES)) {
+            Map<String, String> activity = map(device.get("activity"));
+            Map<String, String> notes = map(device.get("activityText"));
+            for (String agent : strings(device.get("agents"))) {
+                String stored = activity.get(agent);
+                String state = "busy".equals(stored) ? "BUSY" : "IDLE";
+                rows.add(new AgentRosterEntry(
+                        "bot", agent, device.getString("hostname"), state, notes.getOrDefault(agent, "")));
             }
-            return List.copyOf(rows);
         }
+        return List.copyOf(rows);
     }
 
     /** The one device whose hostname and agent match. */
     public String deviceIdFor(String server, String agentName) {
         requireText(server, "server");
         requireText(agentName, "agentName");
-        synchronized (monitor) {
-            String found = null;
-            for (Device device : devices.values()) {
-                if (server.equals(device.hostname) && device.agents.contains(agentName)) {
-                    if (found != null) {
-                        throw badRequest("server matches more than one host");
-                    }
-                    found = device.id;
+        String found = null;
+        for (Document device : documents.find(JobDocuments.DEVICES)) {
+            if (server.equals(device.getString("hostname")) && strings(device.get("agents")).contains(agentName)) {
+                if (found != null) {
+                    throw badRequest("server matches more than one host");
                 }
+                found = device.getString("_id");
             }
-            if (found == null) {
-                throw badRequest("unknown agent " + agentName + " on " + server);
-            }
-            return found;
         }
+        if (found == null) {
+            throw badRequest("unknown agent " + agentName + " on " + server);
+        }
+        return found;
     }
 
     private static String normalizeState(String raw) {
@@ -210,49 +211,53 @@ public class JobStore {
             throw badRequest("note is too long");
         }
         synchronized (monitor) {
-            Assignment assignment = own(deviceId, assignmentId);
-            if (isTerminal(assignment.state)) {
-                throw conflict("assignment is " + assignment.state);
+            Document row = own(deviceId, assignmentId);
+            String status = row.getString("status");
+            if (isTerminal(status)) {
+                throw conflict("assignment is " + status);
             }
-            if (assignment.state == AssignmentState.QUEUED) {
-                assignment.state = AssignmentState.CLAIMED;
+            if ("QUEUED".equals(status)) {
+                status = "CLAIMED";
             }
-            if (assignment.state == AssignmentState.CLAIMED) {
-                assignment.state = AssignmentState.RUNNING;
+            if ("CLAIMED".equals(status)) {
+                status = "RUNNING";
             }
-            if (assignment.state != AssignmentState.RUNNING) {
-                throw conflict("assignment is " + assignment.state);
+            if (!"RUNNING".equals(status)) {
+                throw conflict("assignment is " + row.getString("status"));
             }
-            assignment.state = succeeded ? AssignmentState.SUCCEEDED : AssignmentState.FAILED;
+            Document next = new Document(row);
+            next.put("status", succeeded ? "SUCCEEDED" : "FAILED");
             if (note != null && !note.isBlank()) {
-                assignment.note = note;
+                next.put("note", note);
             }
-            remember(assignment);
+            next.put("updatedAt", Date.from(clock.instant()));
+            if (!documents.replaceMatching(JobDocuments.JOBS,
+                    new Document("_id", id(assignmentId)).append("status", row.getString("status")), next)) {
+                throw conflict("assignment is " + row.getString("status"));
+            }
             monitor.notifyAll();
-            return view(assignment);
+            return viewAssignment(mustJob(assignmentId));
         }
     }
 
     public DeviceView heartbeat(String deviceId) {
-
         synchronized (monitor) {
-            Device device = devices.get(deviceId);
+            Document device = documents.findById(JobDocuments.DEVICES, deviceId);
             if (device == null) {
                 throw notFound("device");
             }
-            device.lastHeartbeat = clock.instant();
-            return view(device);
+            device.put("lastHeartbeat", Date.from(clock.instant()));
+            documents.replace(JobDocuments.DEVICES, deviceId, device);
+            return viewDevice(device);
         }
     }
 
     public List<DeviceView> listDevices() {
-        synchronized (monitor) {
-            List<DeviceView> views = new ArrayList<>();
-            for (Device device : devices.values()) {
-                views.add(view(device));
-            }
-            return List.copyOf(views);
+        List<DeviceView> views = new ArrayList<>();
+        for (Document device : documents.find(JobDocuments.DEVICES)) {
+            views.add(viewDevice(device));
         }
+        return List.copyOf(views);
     }
 
     public JobView submit(String dispatcherSubject, SubmitJobRequest request, Duration wait) {
@@ -260,13 +265,9 @@ public class JobStore {
         long deadline = System.nanoTime() + budget.toNanos();
         Queued queued = enqueue(dispatcherSubject, request);
         try {
-            // The POST stays outside the queue lock so a host can claim during the wait.
-            // The deadline already started, so this call counts against the wait.
             notifyHosts(queued.hosts);
-            synchronized (monitor) {
-                awaitTerminal(queued.job, deadline);
-                return view(queued.job);
-            }
+            awaitTerminal(queued.jobId, deadline);
+            return viewJob(queued.jobId, dispatcherSubject);
         } finally {
             release(dispatcherSubject);
         }
@@ -280,9 +281,7 @@ public class JobStore {
         Queued queued = enqueue(dispatcherSubject, request);
         release(dispatcherSubject);
         notifyHosts(queued.hosts);
-        synchronized (monitor) {
-            return view(queued.job);
-        }
+        return viewJob(queued.jobId, dispatcherSubject);
     }
 
     private Queued enqueue(String dispatcherSubject, SubmitJobRequest request) {
@@ -303,38 +302,51 @@ public class JobStore {
             throw badRequest("duplicate device");
         }
         synchronized (monitor) {
+            List<String> hosts = new ArrayList<>();
             for (String deviceId : deviceIds) {
                 requireText(deviceId, "deviceId");
-                Device device = devices.get(deviceId);
+                Document device = documents.findById(JobDocuments.DEVICES, deviceId);
                 if (device == null) {
                     throw badRequest("unknown device " + deviceId);
                 }
-                if (!device.agents.contains(request.agentName())) {
+                if (!strings(device.get("agents")).contains(request.agentName())) {
                     throw badRequest("unknown agent " + request.agentName() + " on " + deviceId);
                 }
-            }
-            if (!inFlightSubmits.add(dispatcherSubject)) {
-                throw conflict("submit already in flight");
-            }
-            try {
-                Job job = new Job(UUID.randomUUID(), dispatcherSubject, request.channel(), request.prompt());
-                List<String> hosts = new ArrayList<>();
-                for (String deviceId : deviceIds) {
-                    Assignment assignment = new Assignment(
-                            UUID.randomUUID(), job.id, deviceId, request.agentName());
-                    job.assignmentIds.add(assignment.id);
-                    assignments.put(assignment.id, assignment);
-                    remember(assignment, job);
-                    String hostname = devices.get(deviceId).hostname;
-                    if (!hosts.contains(hostname)) {
-                        hosts.add(hostname);
-                    }
+                String hostname = device.getString("hostname");
+                if (!hosts.contains(hostname)) {
+                    hosts.add(hostname);
                 }
-                jobs.put(job.id, job);
+            }
+            acquire(dispatcherSubject);
+            String jobId = UUID.randomUUID().toString();
+            List<String> written = new ArrayList<>();
+            try {
+                int ordinal = 0;
+                Instant now = clock.instant();
+                for (String deviceId : deviceIds) {
+                    String assignmentId = UUID.randomUUID().toString();
+                    Document row = new Document("_id", assignmentId)
+                            .append("assignmentId", assignmentId)
+                            .append("jobId", jobId)
+                            .append("deviceId", deviceId)
+                            .append("agentName", request.agentName())
+                            .append("dispatcherSubject", dispatcherSubject)
+                            .append("prompt", request.prompt())
+                            .append("channel", request.channel().name())
+                            .append("status", "QUEUED")
+                            .append("ordinal", ordinal++)
+                            .append("createdAt", Date.from(now))
+                            .append("updatedAt", Date.from(now));
+                    documents.replace(JobDocuments.JOBS, assignmentId, row);
+                    written.add(assignmentId);
+                }
                 monitor.notifyAll();
-                return new Queued(job, hosts);
+                return new Queued(jobId, hosts);
             } catch (RuntimeException failure) {
-                inFlightSubmits.remove(dispatcherSubject);
+                for (String assignmentId : written) {
+                    documents.delete(JobDocuments.JOBS, assignmentId);
+                }
+                release(dispatcherSubject);
                 throw failure;
             }
         }
@@ -350,89 +362,108 @@ public class JobStore {
         }
     }
 
-    private void release(String dispatcherSubject) {
-        synchronized (monitor) {
-            inFlightSubmits.remove(dispatcherSubject);
+    private void acquire(String dispatcherSubject) {
+        Instant now = clock.instant();
+        Document existing = documents.findById(JobDocuments.LOCKS, dispatcherSubject);
+        if (existing != null) {
+            Instant expires = instant(existing.get("expiresAt"));
+            if (expires != null && expires.isAfter(now)) {
+                throw conflict("submit already in flight");
+            }
+            documents.delete(JobDocuments.LOCKS, dispatcherSubject);
+        }
+        Document lock = new Document("_id", dispatcherSubject)
+                .append("expiresAt", Date.from(now.plus(LOCK_TTL)));
+        if (!documents.insertNew(JobDocuments.LOCKS, dispatcherSubject, lock)) {
+            throw conflict("submit already in flight");
         }
     }
 
-    private record Queued(Job job, List<String> hosts) {
+    private void release(String dispatcherSubject) {
+        documents.delete(JobDocuments.LOCKS, dispatcherSubject);
+    }
+
+    private record Queued(String jobId, List<String> hosts) {
     }
 
     int jobCount() {
-        synchronized (monitor) {
-            return jobs.size();
+        Set<String> ids = new HashSet<>();
+        for (Document row : documents.find(JobDocuments.JOBS)) {
+            if (row.getString("jobId") != null) {
+                ids.add(row.getString("jobId"));
+            }
         }
+        return ids.size();
     }
 
     public JobView getJob(String dispatcherSubject, UUID jobId) {
-        synchronized (monitor) {
-            Job job = jobs.get(jobId);
-            if (job == null || !job.dispatcherSubject.equals(dispatcherSubject)) {
-                throw notFound("job");
-            }
-            return view(job);
-        }
+        return viewJob(jobId.toString(), dispatcherSubject);
     }
 
     public List<JobView> listJobs(String dispatcherSubject) {
         requireText(dispatcherSubject, "dispatcher");
-        synchronized (monitor) {
-            List<JobView> views = new ArrayList<>();
-            for (Job job : jobs.values()) {
-                if (job.dispatcherSubject.equals(dispatcherSubject)) {
-                    views.add(view(job));
-                }
+        Set<String> seen = new HashSet<>();
+        List<JobView> views = new ArrayList<>();
+        for (Document row : documents.find(JobDocuments.JOBS)) {
+            if (!dispatcherSubject.equals(row.getString("dispatcherSubject"))) {
+                continue;
             }
-            return List.copyOf(views);
+            String jobId = row.getString("jobId");
+            if (jobId != null && seen.add(jobId)) {
+                views.add(viewJob(jobId, dispatcherSubject));
+            }
         }
+        return List.copyOf(views);
     }
 
     public List<AssignmentView> poll(String deviceId, Duration wait) {
         Duration budget = wait == null ? Duration.ZERO : wait;
-        synchronized (monitor) {
-            if (!devices.containsKey(deviceId)) {
-                throw notFound("device");
+        if (documents.findById(JobDocuments.DEVICES, deviceId) == null) {
+            throw notFound("device");
+        }
+        long deadline = System.nanoTime() + budget.toNanos();
+        List<Document> queued = queuedFor(deviceId);
+        while (queued.isEmpty()) {
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) {
+                break;
             }
-            long deadline = System.nanoTime() + budget.toNanos();
-            List<Assignment> queued = queuedFor(deviceId);
-            while (queued.isEmpty()) {
-                long remaining = deadline - System.nanoTime();
-                if (remaining <= 0) {
-                    break;
-                }
+            synchronized (monitor) {
                 try {
-                    monitor.wait(millisAtLeastOne(remaining));
+                    monitor.wait(millisAtLeastOne(Math.min(remaining, 200_000_000L)));
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
                     throw new DispatcherException(DispatcherException.Kind.CONFLICT, "wait interrupted");
                 }
-                queued = queuedFor(deviceId);
             }
-            List<AssignmentView> views = new ArrayList<>();
-            for (Assignment assignment : queued) {
-                views.add(view(assignment));
-            }
-            return List.copyOf(views);
+            queued = queuedFor(deviceId);
         }
+        List<AssignmentView> views = new ArrayList<>();
+        for (Document row : queued) {
+            views.add(viewAssignment(row));
+        }
+        return List.copyOf(views);
     }
 
     public AssignmentView assignment(String deviceId, UUID assignmentId) {
-        synchronized (monitor) {
-            return view(own(deviceId, assignmentId));
-        }
+        return viewAssignment(own(deviceId, assignmentId));
     }
 
     public AssignmentView claim(String deviceId, UUID assignmentId) {
         synchronized (monitor) {
-            Assignment assignment = own(deviceId, assignmentId);
-            if (assignment.state != AssignmentState.QUEUED) {
-                throw conflict("assignment is " + assignment.state);
+            Document row = own(deviceId, assignmentId);
+            if (!"QUEUED".equals(row.getString("status"))) {
+                throw conflict("assignment is " + row.getString("status"));
             }
-            assignment.state = AssignmentState.CLAIMED;
-            remember(assignment);
+            Document next = new Document(row);
+            next.put("status", "CLAIMED");
+            next.put("updatedAt", Date.from(clock.instant()));
+            if (!documents.replaceMatching(JobDocuments.JOBS,
+                    new Document("_id", id(assignmentId)).append("status", "QUEUED"), next)) {
+                throw conflict("assignment is " + row.getString("status"));
+            }
             monitor.notifyAll();
-            return view(assignment);
+            return viewAssignment(mustJob(assignmentId));
         }
     }
 
@@ -441,72 +472,82 @@ public class JobStore {
             throw badRequest("state is required");
         }
         synchronized (monitor) {
-            Assignment assignment = own(deviceId, assignmentId);
+            Document row = own(deviceId, assignmentId);
+            String status = row.getString("status");
             switch (request.state()) {
                 case RUNNING -> {
-                    if (assignment.state != AssignmentState.CLAIMED) {
-                        throw conflict("assignment is " + assignment.state);
-                    }
-                    if (request.grokSessionId() != null) {
-                        assignment.grokSessionId = request.grokSessionId();
+                    if (!"CLAIMED".equals(status)) {
+                        throw conflict("assignment is " + status);
                     }
                 }
                 case SUCCEEDED -> {
-                    if (assignment.state != AssignmentState.RUNNING) {
-                        throw conflict("assignment is " + assignment.state);
+                    if (!"RUNNING".equals(status)) {
+                        throw conflict("assignment is " + status);
                     }
                 }
-                // Claimed to failed is a refusal before work starts (speech, or the
-                // worker never entered running). Succeeded still requires running.
                 case FAILED -> {
-                    if (assignment.state != AssignmentState.RUNNING
-                            && assignment.state != AssignmentState.CLAIMED) {
-                        throw conflict("assignment is " + assignment.state);
+                    if (!"RUNNING".equals(status) && !"CLAIMED".equals(status)) {
+                        throw conflict("assignment is " + status);
                     }
                 }
                 case EXPIRED -> {
-                    if (isTerminal(assignment.state)) {
-                        throw conflict("assignment is " + assignment.state);
+                    if (isTerminal(status)) {
+                        throw conflict("assignment is " + status);
                     }
                 }
                 case QUEUED, CLAIMED -> throw conflict("cannot move to " + request.state());
             }
-            assignment.state = request.state();
-            if (request.note() != null) {
-                assignment.note = request.note();
+            Document next = new Document(row);
+            next.put("status", request.state().name());
+            if (request.state() == AssignmentState.RUNNING && request.grokSessionId() != null) {
+                next.put("sessionId", request.grokSessionId().toString());
             }
-            remember(assignment);
+            if (request.note() != null) {
+                next.put("note", request.note());
+            }
+            next.put("updatedAt", Date.from(clock.instant()));
+            if (!documents.replaceMatching(JobDocuments.JOBS,
+                    new Document("_id", id(assignmentId)).append("status", status), next)) {
+                throw conflict("assignment is " + status);
+            }
             monitor.notifyAll();
-            return view(assignment);
+            return viewAssignment(mustJob(assignmentId));
         }
     }
 
-    private void awaitTerminal(Job job, long deadline) {
-        while (!allTerminal(job)) {
+    private void awaitTerminal(String jobId, long deadline) {
+        while (!allTerminal(jobId)) {
             long remaining = deadline - System.nanoTime();
             if (remaining <= 0) {
-                // The caller is done waiting. A later claim must not run the prompt.
-                expireNonTerminal(job);
+                expireNonTerminal(jobId);
                 return;
             }
-            try {
-                monitor.wait(millisAtLeastOne(remaining));
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
-                throw new DispatcherException(DispatcherException.Kind.CONFLICT, "wait interrupted");
+            synchronized (monitor) {
+                try {
+                    monitor.wait(millisAtLeastOne(Math.min(remaining, 200_000_000L)));
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new DispatcherException(DispatcherException.Kind.CONFLICT, "wait interrupted");
+                }
             }
         }
     }
 
-    private void expireNonTerminal(Job job) {
-        for (UUID id : job.assignmentIds) {
-            Assignment assignment = assignments.get(id);
-            if (!isTerminal(assignment.state)) {
-                assignment.state = AssignmentState.EXPIRED;
-                remember(assignment);
+    private void expireNonTerminal(String jobId) {
+        for (Document row : jobsFor(jobId)) {
+            String status = row.getString("status");
+            if (isTerminal(status)) {
+                continue;
             }
+            Document next = new Document(row);
+            next.put("status", "EXPIRED");
+            next.put("updatedAt", Date.from(clock.instant()));
+            documents.replaceMatching(JobDocuments.JOBS,
+                    new Document("_id", row.getString("_id")).append("status", status), next);
         }
-        monitor.notifyAll();
+        synchronized (monitor) {
+            monitor.notifyAll();
+        }
     }
 
     private static long millisAtLeastOne(long nanos) {
@@ -514,69 +555,148 @@ public class JobStore {
         return millis <= 0 ? 1 : millis;
     }
 
-    private boolean allTerminal(Job job) {
-        for (UUID id : job.assignmentIds) {
-            if (!isTerminal(assignments.get(id).state)) {
+    private boolean allTerminal(String jobId) {
+        List<Document> rows = jobsFor(jobId);
+        if (rows.isEmpty()) {
+            return false;
+        }
+        for (Document row : rows) {
+            if (!isTerminal(row.getString("status"))) {
                 return false;
             }
         }
         return true;
     }
 
-    private static boolean isTerminal(AssignmentState state) {
-        return state == AssignmentState.SUCCEEDED
-                || state == AssignmentState.FAILED
-                || state == AssignmentState.EXPIRED;
+    private static boolean isTerminal(String status) {
+        return "SUCCEEDED".equals(status) || "FAILED".equals(status) || "EXPIRED".equals(status);
     }
 
-    private List<Assignment> queuedFor(String deviceId) {
-        List<Assignment> queued = new ArrayList<>();
-        for (Assignment assignment : assignments.values()) {
-            if (deviceId.equals(assignment.deviceId) && assignment.state == AssignmentState.QUEUED) {
-                queued.add(assignment);
+    private List<Document> queuedFor(String deviceId) {
+        List<Document> queued = new ArrayList<>();
+        for (Document row : documents.findEqual(JobDocuments.JOBS, "deviceId", deviceId)) {
+            if ("QUEUED".equals(row.getString("status"))) {
+                queued.add(row);
             }
         }
+        queued.sort(Comparator.comparingInt(row -> row.getInteger("ordinal", 0)));
         return queued;
     }
 
-    private Assignment own(String deviceId, UUID assignmentId) {
-        Assignment assignment = assignments.get(assignmentId);
-        if (assignment == null) {
+    private Document own(String deviceId, UUID assignmentId) {
+        Document row = documents.findById(JobDocuments.JOBS, id(assignmentId));
+        if (row == null) {
             throw notFound("assignment");
         }
-        if (!assignment.deviceId.equals(deviceId)) {
+        if (!deviceId.equals(row.getString("deviceId"))) {
             throw new DispatcherException(DispatcherException.Kind.FORBIDDEN, "assignment belongs to another device");
         }
-        return assignment;
+        return row;
     }
 
-    private DeviceView view(Device device) {
-        return new DeviceView(device.id, device.hostname, device.agents, device.lastHeartbeat, device.activity);
-    }
-
-    private JobView view(Job job) {
-        List<AssignmentView> views = new ArrayList<>();
-        for (UUID id : job.assignmentIds) {
-            views.add(view(assignments.get(id)));
+    private Document mustDevice(String deviceId) {
+        Document device = documents.findById(JobDocuments.DEVICES, deviceId);
+        if (device == null) {
+            throw notFound("device");
         }
-        return new JobView(job.id, job.dispatcherSubject, job.channel, job.prompt, List.copyOf(views));
+        return device;
     }
 
-    private AssignmentView view(Assignment assignment) {
-        Job job = jobs.get(assignment.jobId);
-        if (job == null) {
+    private Document mustJob(UUID assignmentId) {
+        Document row = documents.findById(JobDocuments.JOBS, id(assignmentId));
+        if (row == null) {
+            throw notFound("assignment");
+        }
+        return row;
+    }
+
+    private List<Document> jobsFor(String jobId) {
+        List<Document> rows = new ArrayList<>(documents.findEqual(JobDocuments.JOBS, "jobId", jobId));
+        rows.sort(Comparator.comparingInt(row -> row.getInteger("ordinal", 0)));
+        return rows;
+    }
+
+    private DeviceView viewDevice(Document device) {
+        return new DeviceView(
+                device.getString("_id"),
+                device.getString("hostname"),
+                strings(device.get("agents")),
+                instant(device.get("lastHeartbeat")),
+                map(device.get("activity")));
+    }
+
+    private JobView viewJob(String jobId, String dispatcherSubject) {
+        List<Document> rows = jobsFor(jobId);
+        if (rows.isEmpty() || !dispatcherSubject.equals(rows.get(0).getString("dispatcherSubject"))) {
             throw notFound("job");
         }
+        List<AssignmentView> views = new ArrayList<>();
+        for (Document row : rows) {
+            views.add(viewAssignment(row));
+        }
+        Document first = rows.get(0);
+        return new JobView(
+                UUID.fromString(jobId),
+                dispatcherSubject,
+                channel(first.getString("channel")),
+                first.getString("prompt"),
+                List.copyOf(views));
+    }
+
+    private AssignmentView viewAssignment(Document row) {
+        String session = row.getString("sessionId");
         return new AssignmentView(
-                assignment.id,
-                assignment.jobId,
-                assignment.deviceId,
-                assignment.agentName,
-                job.channel,
-                job.prompt,
-                assignment.state,
-                assignment.grokSessionId,
-                assignment.note);
+                UUID.fromString(row.getString("assignmentId")),
+                UUID.fromString(row.getString("jobId")),
+                row.getString("deviceId"),
+                row.getString("agentName"),
+                channel(row.getString("channel")),
+                row.getString("prompt"),
+                AssignmentState.valueOf(row.getString("status")),
+                session == null || session.isBlank() ? null : UUID.fromString(session),
+                row.getString("note"));
+    }
+
+    private static Channel channel(String name) {
+        return Channel.valueOf(name);
+    }
+
+    private static String id(UUID assignmentId) {
+        return assignmentId.toString();
+    }
+
+    private static List<String> strings(Object value) {
+        if (!(value instanceof List<?> list)) {
+            return List.of();
+        }
+        List<String> copy = new ArrayList<>();
+        for (Object item : list) {
+            if (item != null) {
+                copy.add(item.toString());
+            }
+        }
+        return List.copyOf(copy);
+    }
+
+    private static Map<String, String> map(Object value) {
+        if (!(value instanceof Document document)) {
+            return Map.of();
+        }
+        Map<String, String> copy = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : document.entrySet()) {
+            copy.put(entry.getKey(), entry.getValue() == null ? "" : entry.getValue().toString());
+        }
+        return Map.copyOf(copy);
+    }
+
+    private static Instant instant(Object value) {
+        if (value instanceof Date date) {
+            return date.toInstant();
+        }
+        if (value instanceof Instant instant) {
+            return instant;
+        }
+        return null;
     }
 
     private static void requireText(String value, String name) {
@@ -595,150 +715,5 @@ public class JobStore {
 
     private static DispatcherException conflict(String message) {
         return new DispatcherException(DispatcherException.Kind.CONFLICT, message);
-    }
-
-    private static final class Device {
-        private final String id;
-        private String hostname;
-        private List<String> agents = List.of();
-        private Map<String, String> activity = Map.of();
-        private Map<String, String> activityText = Map.of();
-        private Instant lastHeartbeat;
-
-        private Device(String id) {
-            this.id = id;
-        }
-    }
-
-    private static final class Job {
-        private final UUID id;
-        private final String dispatcherSubject;
-        private final Channel channel;
-        private final String prompt;
-        private final List<UUID> assignmentIds = new ArrayList<>();
-
-        private Job(UUID id, String dispatcherSubject, Channel channel, String prompt) {
-            this.id = id;
-            this.dispatcherSubject = dispatcherSubject;
-            this.channel = channel;
-            this.prompt = prompt;
-        }
-    }
-
-    private static final class Assignment {
-        private final UUID id;
-        private final UUID jobId;
-        private final String deviceId;
-        private final String agentName;
-        private AssignmentState state = AssignmentState.QUEUED;
-        private UUID grokSessionId;
-        private String note;
-
-        private Instant createdAt;
-        private Instant updatedAt;
-
-        private Assignment(UUID id, UUID jobId, String deviceId, String agentName) {
-            this.id = id;
-            this.jobId = jobId;
-            this.deviceId = deviceId;
-            this.agentName = agentName;
-        }
-    }
-
-    private void remember(Assignment assignment) {
-        remember(assignment, jobs.get(assignment.jobId));
-    }
-
-    private void remember(Assignment assignment, Job job) {
-        Instant now = clock.instant();
-        if (assignment.createdAt == null) {
-            assignment.createdAt = now;
-        }
-        assignment.updatedAt = now;
-        archive.save(new JobArchive.StoredJob(
-                assignment.id.toString(),
-                assignment.jobId.toString(),
-                assignment.deviceId,
-                assignment.agentName,
-                job == null ? "" : job.dispatcherSubject,
-                job == null ? "" : job.prompt,
-                job == null || job.channel == null ? "" : job.channel.name(),
-                assignment.state.name(),
-                assignment.note,
-                assignment.grokSessionId == null ? null : assignment.grokSessionId.toString(),
-                assignment.createdAt,
-                assignment.updatedAt));
-    }
-
-    private void restore(List<JobArchive.StoredJob> saved) {
-        if (saved == null || saved.isEmpty()) {
-            return;
-        }
-        synchronized (monitor) {
-            for (JobArchive.StoredJob stored : saved) {
-                if (stored == null || stored.assignmentId() == null || stored.jobId() == null) {
-                    continue;
-                }
-                UUID assignmentId;
-                UUID jobId;
-                try {
-                    assignmentId = UUID.fromString(stored.assignmentId());
-                    jobId = UUID.fromString(stored.jobId());
-                } catch (IllegalArgumentException ignored) {
-                    continue;
-                }
-                if (assignments.containsKey(assignmentId)) {
-                    continue;
-                }
-                Channel channel = parseChannel(stored.channel());
-                Job job = jobs.computeIfAbsent(jobId, id -> new Job(
-                        id,
-                        stored.dispatcherSubject() == null ? "" : stored.dispatcherSubject(),
-                        channel,
-                        stored.prompt() == null ? "" : stored.prompt()));
-                Assignment assignment = new Assignment(
-                        assignmentId,
-                        jobId,
-                        stored.deviceId() == null ? "" : stored.deviceId(),
-                        stored.agentName() == null ? "" : stored.agentName());
-                assignment.state = parseState(stored.status());
-                assignment.note = stored.note();
-                if (stored.sessionId() != null) {
-                    try {
-                        assignment.grokSessionId = UUID.fromString(stored.sessionId());
-                    } catch (IllegalArgumentException ignored) {
-                        assignment.grokSessionId = null;
-                    }
-                }
-                assignment.createdAt = stored.createdAt();
-                assignment.updatedAt = stored.updatedAt();
-                if (!job.assignmentIds.contains(assignmentId)) {
-                    job.assignmentIds.add(assignmentId);
-                }
-                assignments.put(assignmentId, assignment);
-            }
-        }
-    }
-
-    private static Channel parseChannel(String channel) {
-        if (channel == null) {
-            return Channel.TEXT;
-        }
-        try {
-            return Channel.valueOf(channel);
-        } catch (IllegalArgumentException ignored) {
-            return Channel.TEXT;
-        }
-    }
-
-    private static AssignmentState parseState(String status) {
-        if (status == null) {
-            return AssignmentState.QUEUED;
-        }
-        try {
-            return AssignmentState.valueOf(status);
-        } catch (IllegalArgumentException ignored) {
-            return AssignmentState.QUEUED;
-        }
     }
 }
