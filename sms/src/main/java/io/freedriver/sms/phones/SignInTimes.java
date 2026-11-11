@@ -16,7 +16,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * When a listed number last accepted a sign-in code. This is not the agreement log.
+ * When a listed number last accepted a sign-in code. {@code sign-ins.json} is that record.
+ * Each lookup reads the file. This is not the agreement log.
  * Removing the number forgets the time, so a later invite can show the login link again.
  */
 @ApplicationScoped
@@ -29,7 +30,6 @@ public class SignInTimes {
     private final Path file;
     private final ObjectMapper json;
     private final Clock clock;
-    private Map<String, Instant> times;
 
     @Inject
     public SignInTimes(SmsConfig config, ObjectMapper json) {
@@ -73,14 +73,11 @@ public class SignInTimes {
         } catch (IOException e) {
             throw new UncheckedIOException("Could not write " + FILE, e);
         }
-        times = next;
     }
 
+    /** The file is the record. Each call reads it, so another process sees a write without a restart. */
     private Map<String, Instant> loaded() {
-        if (times == null) {
-            times = read();
-        }
-        return times;
+        return read();
     }
 
     private Map<String, Instant> read() {
