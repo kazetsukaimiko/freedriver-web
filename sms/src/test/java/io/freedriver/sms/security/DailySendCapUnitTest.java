@@ -6,6 +6,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.HashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -46,6 +48,25 @@ class DailySendCapUnitTest {
         assertFalse(cap.tryAcquire());
         clock.now = Instant.parse("2026-09-28T00:00:01Z");
         assertTrue(cap.tryAcquire());
+    }
+
+    @Test
+    void a_send_on_one_process_counts_on_another_after_a_redis_flush() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-09-27T12:00:00Z"));
+        DailySendLedger shared = new MemoryDailySendLedger();
+        DailySendCap first = new DailySendCap(clock, 2, shared);
+        DailySendCap second = new DailySendCap(clock, 2, shared);
+        Map<String, Integer> redisWindows = new HashMap<>();
+
+        assertTrue(first.tryAcquire());
+        redisWindows.put("sms", 1);
+        redisWindows.clear();
+
+        assertTrue(second.tryAcquire());
+        assertFalse(second.tryAcquire());
+        assertTrue(redisWindows.isEmpty());
+        clock.now = Instant.parse("2026-09-28T00:00:01Z");
+        assertTrue(second.tryAcquire());
     }
 
     @Test

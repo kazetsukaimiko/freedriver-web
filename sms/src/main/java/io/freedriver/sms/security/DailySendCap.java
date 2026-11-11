@@ -11,7 +11,8 @@ import java.time.ZoneOffset;
 
 /**
  * Service-wide cap per UTC day on sends that reach the provider, on top of the per-number limits.
- * When it is reached, no more codes are sent until the next UTC day and the service logs an error.
+ * The count lives in {@link DailySendLedger}. When it is reached, no more codes are sent until the
+ * next UTC day and the service logs an error.
  */
 @ApplicationScoped
 public class DailySendCap {
@@ -20,41 +21,50 @@ public class DailySendCap {
 
     private final Clock clock;
     private final int cap;
-    private LocalDate day;
-    private int used;
+    private final DailySendLedger ledger;
+    private LocalDate announcedDay;
     private boolean announced;
 
     @Inject
-    public DailySendCap(SmsConfig config) {
-        this(Clock.systemUTC(), config.dailySendCap());
+    public DailySendCap(SmsConfig config, DailySendLedger ledger) {
+        this(Clock.systemUTC(), config.dailySendCap(), ledger);
     }
 
     DailySendCap(Clock clock, int cap) {
+        this(clock, cap, new MemoryDailySendLedger());
+    }
+
+    DailySendCap(Clock clock, int cap, DailySendLedger ledger) {
         this.clock = clock;
         this.cap = cap;
+        this.ledger = ledger;
     }
 
-    public synchronized boolean tryAcquire() {
+    public boolean tryAcquire() {
         LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
-        if (!today.equals(day)) {
-            day = today;
-            used = 0;
+        boolean allowed = ledger.tryAcquire(today, cap);
+        if (!allowed) {
+            announce(today);
+        }
+        return allowed;
+    }
+
+    private synchronized void announce(LocalDate today) {
+        if (!today.equals(announcedDay)) {
+            announcedDay = today;
             announced = false;
         }
-        if (used >= cap) {
-            if (!announced) {
-                announced = true;
-                LOG.errorf("SMS daily send cap of %d reached for %s UTC. No codes will be sent until 00:00 UTC.", cap, today);
-            }
-            return false;
+        if (!announced) {
+            announced = true;
+            LOG.errorf("SMS daily send cap of %d reached for %s UTC. No codes will be sent until 00:00 UTC.", cap, today);
         }
-        used++;
-        return true;
     }
 
-    public synchronized void reset() {
-        day = null;
-        used = 0;
-        announced = false;
+    public void reset() {
+        synchronized (this) {
+            announcedDay = null;
+            announced = false;
+        }
+        ledger.clear();
     }
 }
