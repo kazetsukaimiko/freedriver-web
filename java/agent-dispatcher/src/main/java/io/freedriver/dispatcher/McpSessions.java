@@ -23,8 +23,15 @@ public class McpSessions {
 
     public String open(String subject) {
         String id = UUID.randomUUID().toString();
-        subjectBySession.put(id, subject);
+        remember(id, subject);
         return id;
+    }
+
+    /** Bind a session id the MCP server already issued. */
+    public void remember(String sessionId, String subject) {
+        if (sessionId != null && !sessionId.isBlank() && subject != null && !subject.isBlank()) {
+            subjectBySession.put(sessionId, subject);
+        }
     }
 
     public Status check(String sessionId, String subject) {
