@@ -43,11 +43,12 @@ from pathlib import Path
 
 def service(text, name):
     # Column 2 only. find("  mosquitto:") also hits a deeper depends_on key.
-    match = re.search(rf"(?m)^  {re.escape(name)}:\n", text)
+    # Merge keys look like "dashboard: &dashboard" on the same line.
+    match = re.search(rf"(?m)^  {re.escape(name)}:(?: &[A-Za-z0-9_-]+)?\n", text)
     if match is None:
         raise SystemExit(f"missing service {name}")
     rest = text[match.start():]
-    nxt = re.search(r"(?m)^  [A-Za-z0-9_-]+:\n", rest[1:])
+    nxt = re.search(r"(?m)^  [A-Za-z0-9_-]+:(?: &[A-Za-z0-9_-]+)?\n", rest[1:])
     return rest if nxt is None else rest[: nxt.start() + 1]
 
 compose = Path("docker-compose.yml").read_text()
