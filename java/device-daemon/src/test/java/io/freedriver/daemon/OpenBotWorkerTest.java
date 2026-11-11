@@ -3,6 +3,7 @@ package io.freedriver.daemon;
 import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
+import io.freedriver.dispatcher.model.OnBusy;
 import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
 import org.junit.jupiter.api.Test;
 
@@ -162,7 +163,8 @@ class OpenBotWorkerTest {
 
     private static AssignmentView view(UUID id, String agent, Channel channel, String prompt, AssignmentState state) {
         return new AssignmentView(
-                id, UUID.randomUUID(), OpenBotWorker.DEVICE_ID, agent, channel, prompt, state, null, null);
+                id, UUID.randomUUID(), OpenBotWorker.DEVICE_ID, agent, channel, prompt, state, null, null,
+                OnBusy.supersede);
     }
 
     private static final class FakeRouter implements AgentRouter {
