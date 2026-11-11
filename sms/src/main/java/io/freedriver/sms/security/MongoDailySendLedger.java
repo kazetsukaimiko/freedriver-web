@@ -20,8 +20,7 @@ import static com.mongodb.client.model.Filters.lt;
 import static com.mongodb.client.model.Updates.inc;
 
 /**
- * {@code daily-send-cap} in the dashboard database. The document id is the UTC date.
- * Redis is not this counter. A flush of Redis does not remove the document.
+ * {@code daily-send-cap} stores one document per UTC date. The document id is the date string.
  */
 @ApplicationScoped
 @IfBuildProfile(anyOf = {"prod", "dev"})

@@ -3,8 +3,7 @@ package io.freedriver.sms.security;
 import java.time.LocalDate;
 
 /**
- * The UTC-day SMS send count. Production is one Mongo document per day.
- * A process map is not that record, and Redis is not this counter.
+ * Production stores the UTC-day count as one document per date in the dashboard Mongo collection {@code daily-send-cap}.
  */
 interface DailySendLedger {
 
