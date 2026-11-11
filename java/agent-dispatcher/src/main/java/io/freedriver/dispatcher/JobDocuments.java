@@ -28,4 +28,10 @@ interface JobDocuments {
     boolean insertNew(String collection, String id, Document document);
 
     boolean delete(String collection, String id);
+
+    /**
+     * Lock for a submit wait and a device long-poll.
+     * A write notifies every waiter that shares these documents.
+     */
+    Object waitLock();
 }

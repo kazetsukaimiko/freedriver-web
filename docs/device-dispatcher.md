@@ -4,7 +4,7 @@ Home PCs run a headless Grok session when a dispatcher (the Grok app, the car, o
 
 Keycloak at `https://auth.freedriver.io/realms/freedriver` is the issuer. `%prod.quarkus.oidc.enabled` is true. The unprofiled property and the `%dev` and `%test` lines stay false. Anonymous callers receive 401, except the metadata GET below. A dispatcher token calls the dispatcher routes and must have `azp=freedriver-dispatcher`. A host token calls the host MCP tools and must have `azp=freedriver-openbot`. Host and dispatcher calls use `/dispatch/mcp` and `/mcp`.
 
-Jobs, the host roster, and the in-flight submit lock are rows in the dashboard Mongo database. Assignments are the `agent-jobs` collection. Hosts are `agent-devices`. A restart reads those rows. There is no second copy in memory.
+Jobs, the host roster, and the in-flight submit lock are rows in the dashboard Mongo database. Assignments are the `agent-jobs` collection. Hosts are `agent-devices`. A restart reads those rows. There is no second copy in memory. A submit that is still waiting, and a device long-poll, wake when another dispatcher process writes those rows. The other process lists the job.
 
 ## Actors
 

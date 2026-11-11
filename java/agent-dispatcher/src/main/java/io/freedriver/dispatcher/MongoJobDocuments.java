@@ -17,6 +17,7 @@ final class MongoJobDocuments implements JobDocuments {
 
     private final MongoClient client;
     private final String database;
+    private final Object waitLock = new Object();
 
     MongoJobDocuments(MongoClient client, String database) {
         this.client = client;
@@ -82,6 +83,11 @@ final class MongoJobDocuments implements JobDocuments {
     @Override
     public boolean delete(String collection, String id) {
         return collection(collection).deleteOne(eq("_id", id)).getDeletedCount() > 0;
+    }
+
+    @Override
+    public Object waitLock() {
+        return waitLock;
     }
 
     private MongoCollection<Document> collection(String name) {
