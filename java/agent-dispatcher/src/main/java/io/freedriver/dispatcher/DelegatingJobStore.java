@@ -74,6 +74,11 @@ class DelegatingJobStore implements JobStore {
     }
 
     @Override
+    public JobView awaitTurn(String dispatcherSubject, UUID jobId, Duration delay) {
+        return store.awaitTurn(dispatcherSubject, jobId, delay);
+    }
+
+    @Override
     public JobView getJob(String dispatcherSubject, UUID jobId) {
         return store.getJob(dispatcherSubject, jobId);
     }

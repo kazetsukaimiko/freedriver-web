@@ -36,6 +36,12 @@ public interface JobStore {
 
     JobView submitNow(String dispatcherSubject, SubmitJobRequest request);
 
+    /**
+     * Wait until the job is terminal, or until {@code delay} elapses.
+     * A timeout leaves the job as it is. The longest delay is two minutes.
+     */
+    JobView awaitTurn(String dispatcherSubject, UUID jobId, Duration delay);
+
     JobView getJob(String dispatcherSubject, UUID jobId);
 
     List<JobView> listJobs(String dispatcherSubject);

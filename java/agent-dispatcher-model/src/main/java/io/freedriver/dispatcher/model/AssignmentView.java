@@ -1,5 +1,7 @@
 package io.freedriver.dispatcher.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.util.UUID;
 
 /**
@@ -15,5 +17,6 @@ public record AssignmentView(
         String prompt,
         AssignmentState state,
         UUID grokSessionId,
-        String note) {
+        String note,
+        @JsonProperty("on_busy") OnBusy onBusy) {
 }
