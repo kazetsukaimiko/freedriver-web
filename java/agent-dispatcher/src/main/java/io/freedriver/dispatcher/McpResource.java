@@ -17,7 +17,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.Validator;
 import java.time.Duration;
-import java.util.Optional;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -34,8 +33,10 @@ public class McpResource implements McpApi {
 
     private static final String LATEST_PROTOCOL = "2025-11-25";
     private static final Set<String> PROTOCOL_VERSIONS = Set.of("2025-03-26", "2025-06-18", LATEST_PROTOCOL);
-    private static final Set<String> SUBMIT_FIELDS = Set.of(
-            "server", "agentName", "prompt", "channel", "blockForUpTo");
+    private static final int AWAIT_MAX_SECONDS = 120;
+    private static final Set<String> SEND_FIELDS = Set.of(
+            "server", "agentName", "prompt", "channel");
+    private static final Set<String> AWAIT_FIELDS = Set.of("jobId", "delaySeconds");
     private static final Set<String> JOB_FIELDS = Set.of("jobId");
 
     private final JobStore jobs;
@@ -146,7 +147,10 @@ public class McpResource implements McpApi {
         boolean deviceRole = caller.hasRole("device");
         boolean dispatcherRole = caller.hasRole("dispatcher");
         boolean hostTool = "report_host".equals(name) || "finish_job".equals(name);
-        boolean callerTool = "list_agents".equals(name) || "submit_job".equals(name) || "get_job".equals(name);
+        boolean callerTool = "list_agents".equals(name)
+                || "openbot_send_prompt".equals(name)
+                || "openbot_await_turn".equals(name)
+                || "get_job".equals(name);
         if (hostTool && !deviceRole) {
             return toolResult(id, "wrong role", true);
         }
@@ -156,7 +160,8 @@ public class McpResource implements McpApi {
         try {
             return switch (name) {
                 case "list_agents" -> listAgents(id, arguments);
-                case "submit_job" -> submitJob(subject, id, arguments);
+                case "openbot_send_prompt" -> sendPrompt(subject, id, arguments);
+                case "openbot_await_turn" -> awaitTurn(subject, id, arguments);
                 case "get_job" -> getJob(subject, id, arguments);
                 case "report_host" -> reportHost(caller, id, arguments);
                 case "finish_job" -> finishJob(caller, id, arguments);
@@ -176,8 +181,8 @@ public class McpResource implements McpApi {
         return toolResult(id, write(jobs.listAgents()), false);
     }
 
-    private JsonRpcResponse submitJob(String subject, JsonNode id, JsonNode arguments) {
-        if (!onlyFields(arguments, SUBMIT_FIELDS)
+    private JsonRpcResponse sendPrompt(String subject, JsonNode id, JsonNode arguments) {
+        if (!onlyFields(arguments, SEND_FIELDS)
                 || !textual(arguments, "server")
                 || !textual(arguments, "agentName")
                 || !textual(arguments, "prompt")
@@ -202,16 +207,27 @@ public class McpResource implements McpApi {
         if (!validator.validate(request).isEmpty()) {
             throw McpProtocolException.invalidParams(id, "invalid params");
         }
-        Optional<Duration> block;
+        return toolResult(id, write(jobs.submitNow(subject, request)), false);
+    }
+
+    private JsonRpcResponse awaitTurn(String subject, JsonNode id, JsonNode arguments) {
+        if (!onlyFields(arguments, AWAIT_FIELDS)
+                || !textual(arguments, "jobId")
+                || arguments.get("delaySeconds") == null
+                || !arguments.get("delaySeconds").isIntegralNumber()) {
+            throw McpProtocolException.invalidParams(id, "invalid params");
+        }
+        int delay = arguments.get("delaySeconds").asInt();
+        if (delay < 0 || delay > AWAIT_MAX_SECONDS || !arguments.get("delaySeconds").canConvertToInt()) {
+            throw McpProtocolException.invalidParams(id, "invalid params");
+        }
+        UUID jobId;
         try {
-            block = SubmitBlock.parse(arguments.get("blockForUpTo"));
+            jobId = UUID.fromString(arguments.get("jobId").asText());
         } catch (IllegalArgumentException ex) {
             throw McpProtocolException.invalidParams(id, "invalid params");
         }
-        JobView job = block
-                .map(wait -> jobs.submit(subject, request, wait))
-                .orElseGet(() -> jobs.submitNow(subject, request));
-        return toolResult(id, write(job), false);
+        return toolResult(id, write(jobs.awaitTurn(subject, jobId, Duration.ofSeconds(delay))), false);
     }
 
     private JsonRpcResponse getJob(String subject, JsonNode id, JsonNode arguments) {
@@ -305,26 +321,32 @@ public class McpResource implements McpApi {
         channels.add("SPEECH");
         channel.set("enum", channels);
         submit.set("channel", channel);
-        ObjectNode blockForUpTo = mapper.createObjectNode();
-        blockForUpTo.put("type", "integer");
-        blockForUpTo.put("minimum", 0);
-        blockForUpTo.put("maximum", SubmitBlock.MAX_SECONDS);
-        submit.set("blockForUpTo", blockForUpTo);
         tools.add(tool(
-                "submit_job",
+                "openbot_send_prompt",
                 "Freedriver dispatch: queue a prompt for a named agent on one server from list_agents, such as Project Manager. "
-                        + "blockForUpTo is optional seconds, at most 180. Omit it, or send 0, to return the job id while the job stays queued. "
-                        + "A positive value waits that long, then expires the job if it is not finished. get_job reads the result.",
+                        + "Returns the job id as soon as the job is stored. It does not wait for OpenBot. "
+                        + "openbot_await_turn waits for that id.",
                 submit,
                 "server",
                 "agentName",
                 "prompt",
                 "channel"));
+        ObjectNode await = mapper.createObjectNode();
+        await.set("jobId", jobIdNode());
+        ObjectNode delaySeconds = mapper.createObjectNode();
+        delaySeconds.put("type", "integer");
+        delaySeconds.put("minimum", 0);
+        delaySeconds.put("maximum", AWAIT_MAX_SECONDS);
+        await.set("delaySeconds", delaySeconds);
+        tools.add(tool(
+                "openbot_await_turn",
+                "Freedriver dispatch: wait until the job is done, or until delaySeconds elapses. "
+                        + "The longest delay is 120 seconds. A timeout leaves the job as it is.",
+                await,
+                "jobId",
+                "delaySeconds"));
         ObjectNode job = mapper.createObjectNode();
-        ObjectNode jobId = mapper.createObjectNode();
-        jobId.put("type", "string");
-        jobId.put("format", "uuid");
-        job.set("jobId", jobId);
+        job.set("jobId", jobIdNode());
         tools.add(tool("get_job", "Freedriver dispatch: read one job this caller submitted, including its id and result.", job, "jobId"));
         }
         if (deviceRole) {
@@ -367,7 +389,8 @@ public class McpResource implements McpApi {
             report.set("bots", bots);
             tools.add(tool(
                     "report_host",
-                    "Freedriver dispatch: publish this host's bots, each idle or busy, with a short activity note. Returns queued jobs.",
+                    "Freedriver dispatch: publish this host's bots, each idle or busy, with a short activity note. "
+                            + "Returns this host's jobs whose status is QUEUED.",
                     report,
                     "hostname",
                     "bots"));
@@ -393,6 +416,13 @@ public class McpResource implements McpApi {
         ObjectNode result = mapper.createObjectNode();
         result.set("tools", tools);
         return result;
+    }
+
+    private ObjectNode jobIdNode() {
+        ObjectNode jobId = mapper.createObjectNode();
+        jobId.put("type", "string");
+        jobId.put("format", "uuid");
+        return jobId;
     }
 
     private ObjectNode tool(String name, String description, ObjectNode properties, String... required) {

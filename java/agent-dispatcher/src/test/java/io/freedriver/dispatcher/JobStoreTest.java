@@ -15,6 +15,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -483,6 +484,55 @@ class JobStoreTest {
                 Duration.ZERO));
 
         assertTrue(hosts.isEmpty());
+    }
+
+    @Test
+    void send_writes_the_row_before_the_webhook_returns() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        MemoryJobDocuments documents = new MemoryJobDocuments();
+        JobStore store = new DocumentJobStore(documents, Clock.systemUTC(), hostname -> {
+            started.countDown();
+            try {
+                if (!release.await(5, TimeUnit.SECONDS)) {
+                    throw new AssertionError("webhook was not released");
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(interrupted);
+            }
+        });
+        store.register("pc-a", "a.local", List.of("yuni"));
+
+        JobView sent = store.submitNow(
+                "grok", new SubmitJobRequest(List.of("pc-a"), "yuni", "prompt", Channel.TEXT));
+
+        assertEquals(1, documents.find(JobDocuments.JOBS).size());
+        assertEquals(sent.jobId().toString(), documents.find(JobDocuments.JOBS).get(0).getString("jobId"));
+        assertEquals("QUEUED", documents.find(JobDocuments.JOBS).get(0).getString("status"));
+        assertTrue(started.await(2, TimeUnit.SECONDS));
+        release.countDown();
+    }
+
+    @Test
+    void await_returns_the_finished_job_and_a_timeout_leaves_it_queued() throws Exception {
+        JobStore store = store();
+        store.register("pc-a", "a.local", List.of("yuni"));
+        JobView sent = store.submitNow("grok", job(List.of("pc-a"), "yuni"));
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<JobView> waiting = pool.submit(() -> store.awaitTurn("grok", sent.jobId(), Duration.ofSeconds(30)));
+            AssignmentView queued = waitForQueued(store, "pc-a");
+            store.finish("pc-a", queued.assignmentId(), true, "done");
+            assertEquals(AssignmentState.SUCCEEDED, waiting.get(5, TimeUnit.SECONDS).assignments().get(0).state());
+        } finally {
+            pool.shutdownNow();
+        }
+
+        JobView second = store.submitNow("grok", job(List.of("pc-a"), "yuni"));
+        JobView timedOut = store.awaitTurn("grok", second.jobId(), Duration.ofSeconds(1));
+        assertEquals(AssignmentState.QUEUED, timedOut.assignments().get(0).state());
+        assertEquals(2, store.jobCount());
     }
 
     private static JobStore store() {
