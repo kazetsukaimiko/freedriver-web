@@ -82,6 +82,7 @@ HUNT LIST (CLASSES OF PROBLEM — GENERALIZE PAST THESE STRINGS)
 - Scope bleed: a wire-contract rename that also changes validation, auth, or HTTP mapping.
 - Persistence and in-process maps: when the ticket asked for a durable store, Mongo or the existing database is the source of truth. ConcurrentHashMap and sibling in-process maps are a transparent cache: named keys, invalidation, expiry. A dual-write archive beside those maps, with the maps remaining the runtime store, is a should-fix.
 - Scalability: horizontal (replicas, more than one dispatcher) and vertical (jobs, agents, hosts growing). A design that only works as one process holding the maps is a should-fix when the ticket asked for a durable store.
+- Interface comments that name implementations: an interface comment describes the contract. It names implementations only when the interface is sealed, and then only the permitted members.
 
 When you see a new instance of a class already ticketed (#57 service/JAX-RS, #58 auth/rate-limit), name the ticket and still flag it when the pull request makes it worse.
 
