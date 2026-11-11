@@ -18,6 +18,8 @@ import { PhoneRecords } from './PhoneRecords'
 import { PHONE_RECORDS_PATH } from './phoneRecords'
 import { PhoneSignIn } from './PhoneSignIn'
 import { PHONES_PATH } from './phones'
+import { SignInRecords } from './SignInRecords'
+import { SIGN_IN_RECORDS_PATH } from './signInRecords'
 import './App.css'
 
 type Splash = 'playing' | 'docking' | 'revealing' | 'done'
@@ -27,6 +29,7 @@ type Page =
   | 'account'
   | 'changelog'
   | 'phones'
+  | 'sign-ins'
   | 'phone-records'
   | 'instances'
   | 'dispatcher'
@@ -45,6 +48,9 @@ function pageFor(pathname: string): Page {
   }
   if (pathname === PHONES_PATH) {
     return 'phones'
+  }
+  if (pathname === SIGN_IN_RECORDS_PATH) {
+    return 'sign-ins'
   }
   if (pathname === PHONE_RECORDS_PATH) {
     return 'phone-records'
@@ -71,6 +77,7 @@ function primaryNavItems(portalAdmin: boolean, dispatcher: boolean): PrimaryItem
   if (portalAdmin) {
     items.push({ to: INSTANCES_PATH, label: 'Instances', page: 'instances' })
     items.push({ to: PHONES_PATH, label: 'Phones/Accounts', page: 'phones' })
+    items.push({ to: SIGN_IN_RECORDS_PATH, label: 'Sign-ins', page: 'sign-ins' })
     items.push({ to: PHONE_RECORDS_PATH, label: 'Phone records', page: 'phone-records' })
     items.push({ to: AGENT_JOBS_PATH, label: 'Agent jobs', page: 'agent-jobs' })
   }
@@ -298,6 +305,7 @@ function App() {
         {page === 'account' && <Account />}
         {page === 'changelog' && <Changelog />}
         {page === 'phones' && <PhoneSignIn />}
+        {page === 'sign-ins' && <SignInRecords />}
         {page === 'phone-records' && <PhoneRecords />}
         {page === 'agent-jobs' && <AgentJobs />}
         {page === 'instances' && <Instances />}

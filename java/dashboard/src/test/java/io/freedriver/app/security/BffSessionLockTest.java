@@ -47,6 +47,8 @@ class BffSessionLockTest {
                 "quarkus.http.auth.permission.invite-redeem.paths=/api/invites/redeem,/api/invites/redeem/*"));
         assertTrue(properties.contains("quarkus.http.auth.permission.invite-redeem.policy=permit"));
         assertTrue(properties.contains("quarkus.http.auth.permission.phones.paths=/api/phones,/api/phones/*"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.sign-ins.paths=/api/sign-ins,/api/sign-ins/*"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.sign-ins.policy=authenticated"));
         assertTrue(properties.contains("quarkus.http.auth.permission.phones.policy=authenticated"));
         assertTrue(properties.contains("quarkus.http.auth.permission.jobs.paths=/api/jobs,/api/jobs/*"));
         assertTrue(properties.contains("quarkus.http.auth.permission.jobs.policy=authenticated"));
