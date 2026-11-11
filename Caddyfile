@@ -13,6 +13,20 @@ auth.freedriver.io {
 	}
 }
 
+# Unpublished dashboard replicas on the compose network. Health is the public build stamp.
+(dashboard_proxy) {
+	reverse_proxy dashboard:8080 dashboard-2:8080 {
+		health_uri /api/build
+		health_interval 10s
+		health_timeout 3s
+		fail_duration 10s
+		lb_policy round_robin
+		header_up -X-Freedriver-Internal
+		header_up -X-Freedriver-Subject
+		header_up -X-Freedriver-Roles
+	}
+}
+
 app.freedriver.io {
 	encode gzip
 	@dispatcher path /mcp /mcp/* /dispatch/mcp /dispatch/mcp/* /api/dispatcher /api/dispatcher/*
@@ -26,18 +40,10 @@ app.freedriver.io {
 	@invite path /invite /invite/*
 	handle @invite {
 		header Referrer-Policy "no-referrer"
-		reverse_proxy dashboard:8080 {
-			header_up -X-Freedriver-Internal
-			header_up -X-Freedriver-Subject
-			header_up -X-Freedriver-Roles
-		}
+		import dashboard_proxy
 	}
 	handle {
-		reverse_proxy dashboard:8080 {
-			header_up -X-Freedriver-Internal
-			header_up -X-Freedriver-Subject
-			header_up -X-Freedriver-Roles
-		}
+		import dashboard_proxy
 	}
 }
 

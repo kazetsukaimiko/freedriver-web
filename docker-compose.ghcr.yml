@@ -9,6 +9,9 @@ services:
   dashboard:
     image: ghcr.io/kazetsukaimiko/freedriver-web/dashboard:${BUILD_NUMBER:-1.0.0-SNAPSHOT}
     pull_policy: missing
+  dashboard-2:
+    image: ghcr.io/kazetsukaimiko/freedriver-web/dashboard:${BUILD_NUMBER:-1.0.0-SNAPSHOT}
+    pull_policy: missing
   agent-dispatcher:
     image: ghcr.io/kazetsukaimiko/freedriver-web/agent-dispatcher:${BUILD_NUMBER:-1.0.0-SNAPSHOT}
     pull_policy: missing

@@ -485,6 +485,7 @@ jobs:
           BUILD_NUMBER=ci
           SOURCE_COMMIT=ci
           QUARKUS_OIDC_CREDENTIALS_SECRET=ci-not-a-secret
+          QUARKUS_OIDC_TOKEN_STATE_MANAGER_ENCRYPTION_SECRET=ci-oidc-token-state-enc-secret01
           KC_DB_PASSWORD=ci-not-a-secret
           KC_BOOTSTRAP_ADMIN_PASSWORD=ci-not-a-secret
           GF_SECURITY_ADMIN_PASSWORD=ci-not-a-secret
@@ -499,6 +500,7 @@ jobs:
               "agent-dispatcher",
               "autonomy-mcp",
               "dashboard",
+              "dashboard-2",
               "docker-logs-proxy",
               "keycloak",
               "mosquitto",
@@ -536,5 +538,14 @@ jobs:
           for name in ("keycloak", "sms"):
               if base["services"][name].get("pull_policy") != "build":
                   raise SystemExit(f"local {name} pull_policy must stay build")
+          for name in ("dashboard", "dashboard-2"):
+              ports = prod["services"][name].get("ports") or []
+              if ports:
+                  raise SystemExit(f"{name} must not publish host ports: {ports}")
+              env = prod["services"][name].get("environment") or {}
+              if not env.get("QUARKUS_OIDC_TOKEN_STATE_MANAGER_ENCRYPTION_SECRET"):
+                  raise SystemExit(f"{name} missing shared OIDC encryption secret")
+              if env.get("FREEDRIVER_APPLIANCES_LIVE_COMMANDS") != "true":
+                  raise SystemExit(f"{name} live-commands must stay on")
           print("compose config ok")
           PY

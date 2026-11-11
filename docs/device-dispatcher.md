@@ -27,7 +27,7 @@ Assignment states: `queued` → `claimed` → `running` → `succeeded` | `faile
 
 ## Deploy
 
-Compose service `agent-dispatcher` has no host port. On `app.freedriver.io`, Caddy sends `/mcp`, `/mcp/*`, `/dispatch/mcp`, `/dispatch/mcp/*`, `/api/dispatcher`, and `/api/dispatcher/*` to `agent-dispatcher:8080`. `/autonomy/mcp` and `/api/autonomy` go to `autonomy-mcp:8080`. Every other path stays on `dashboard:8080`.
+Compose service `agent-dispatcher` has no host port. On `app.freedriver.io`, Caddy sends `/mcp`, `/mcp/*`, `/dispatch/mcp`, `/dispatch/mcp/*`, `/api/dispatcher`, and `/api/dispatcher/*` to `agent-dispatcher:8080`. `/autonomy/mcp` and `/api/autonomy` go to `autonomy-mcp:8080`. Every other path stays on the dashboard replicas.
 
 `/dispatch/mcp` is the Quarkus MCP server. `/mcp` is the same tools. Role `dispatcher` sees `list_agents`, `openbot_send_prompt`, `openbot_await_turn`, and `get_job`. Role `device` sees `report_host` and `finish_job`. They call this same queue. The server's SSE paths `/mcp/sse` and `/dispatch/mcp/sse` use the same bearer check. A session id is bound to the bearer token subject and is not itself a credential. Anonymous `GET` and `POST` on `/dispatch/mcp` and `/mcp` receive 401 with `WWW-Authenticate: Bearer` and `resource_metadata="https://app.freedriver.io/api/dispatcher/oauth-protected-resource"`, and they do not run a tool. A token whose client id and role do not pair receives 403. `McpApi` in `agent-dispatcher-api` is the `/mcp` and `/dispatch/mcp` contract, beside the REST interfaces a RestEasy proxy client can call.
 

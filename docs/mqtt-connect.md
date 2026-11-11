@@ -101,11 +101,12 @@ Run the issuer on the VPS before the broker restarts onto the two-listener confi
 
 On the compose network, Quarkus connects to hostname `mosquitto` port 8883. That socket presents `DNS:mosquitto`, not the public Let's Encrypt leaf. `mqtt.freedriver.io:8883` is the name for public and home clients. Prod mounts `/opt/freedriver-secrets/mqtt-internal/ca.crt` into the API. Instance ids come from `FREEDRIVER_MQTT_INSTANCE_IDS` when that is set, otherwise from `freedriver/v1/<uuid>/appliances` lines in `/opt/freedriver-secrets/mosquitto/acl`. Password is `FREEDRIVER_MQTT_API_PASSWORD` when that is set, otherwise `/opt/freedriver-secrets/mosquitto/api.pass`.
 
-Compose injects OIDC on the `dashboard` service only (not the image, not the SPA):
+Compose injects OIDC on the `dashboard` and `dashboard-2` services only (not the image, not the SPA):
 
 - `QUARKUS_OIDC_AUTH_SERVER_URL=https://auth.freedriver.io/realms/freedriver`
 - `QUARKUS_OIDC_CLIENT_ID=freedriver-api`
 - `QUARKUS_OIDC_CREDENTIALS_SECRET` from `/opt/freedriver-secrets/.env` (copied from `keycloak-freedriver-api.secret`)
+- `QUARKUS_OIDC_TOKEN_STATE_MANAGER_ENCRYPTION_SECRET` from that same file, 32 characters, shared so a login cookie from one replica is accepted on the other
 
 The BFF (web-app, HTTP-only cookie, `freedriver-api` confidential client) is wired, and compose already injects the env.
 

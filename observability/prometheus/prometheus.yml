@@ -15,7 +15,7 @@ scrape_configs:
   - job_name: dashboard
     metrics_path: /q/metrics
     static_configs:
-      - targets: ["dashboard:8080"]
+      - targets: ["dashboard:8080", "dashboard-2:8080"]
 
   # Down until the dispatcher exports Micrometer.
   - job_name: agent-dispatcher

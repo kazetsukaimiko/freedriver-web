@@ -14,11 +14,14 @@ services:
     depends_on:
       - keycloak
       - dashboard
+      - dashboard-2
       - agent-dispatcher
       - autonomy-mcp
       - grafana
 
-  dashboard:
+  # Two unpublished processes. Caddy on app.freedriver.io load-balances both.
+  # dashboard-2 is the same image and mounts. MQTT client ids are random per process.
+  dashboard: &dashboard
     build:
       context: .
       dockerfile: java/dashboard/src/main/docker/Dockerfile.compose
@@ -32,6 +35,8 @@ services:
       QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver
       QUARKUS_OIDC_CLIENT_ID: freedriver-api
       QUARKUS_OIDC_CREDENTIALS_SECRET: ${QUARKUS_OIDC_CREDENTIALS_SECRET:?QUARKUS_OIDC_CREDENTIALS_SECRET is required}
+      # 32 characters. Shared so a login cookie from one replica is accepted on the other.
+      QUARKUS_OIDC_TOKEN_STATE_MANAGER_ENCRYPTION_SECRET: ${QUARKUS_OIDC_TOKEN_STATE_MANAGER_ENCRYPTION_SECRET:?QUARKUS_OIDC_TOKEN_STATE_MANAGER_ENCRYPTION_SECRET is required}
       SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
       FREEDRIVER_SMS_BASE_URL: http://sms:8080
       FREEDRIVER_INVITES_DIR: /deployments/data/invites
@@ -65,6 +70,9 @@ services:
       - /opt/freedriver-secrets/mosquitto/api.pass:/opt/freedriver-secrets/mosquitto/api.pass:ro
     expose:
       - "8080"
+
+  dashboard-2:
+    <<: *dashboard
 
   # No host port. Caddy on app.freedriver.io sends /mcp, /dispatch/mcp, and /api/dispatcher here.
   agent-dispatcher:
