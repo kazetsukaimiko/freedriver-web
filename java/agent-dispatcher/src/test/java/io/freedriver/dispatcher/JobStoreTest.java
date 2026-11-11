@@ -379,7 +379,7 @@ class JobStoreTest {
     @Test
     void heartbeat_advances_and_unknown_device_is_missing() {
         MutableClock clock = new MutableClock(Instant.parse("2026-10-19T12:00:00Z"));
-        JobStore store = new JobStore(clock);
+        JobStore store = new DocumentJobStore(new MemoryJobDocuments(), clock, null);
         store.register("pc-a", "a.local", List.of("yuni"));
         clock.now = clock.now.plusSeconds(30);
 
@@ -416,6 +416,27 @@ class JobStoreTest {
     }
 
     @Test
+    void a_restart_keeps_the_queued_job_for_a_later_claim() {
+        JobDocuments saved = new MemoryJobDocuments();
+        JobStore first = new DocumentJobStore(saved, Clock.systemUTC(), null);
+        first.register("pc-a", "a.local", List.of("yuni"));
+        JobView submitted = first.submitNow("grok", job(List.of("pc-a"), "yuni"));
+
+        List<org.bson.Document> rows = saved.find(JobDocuments.JOBS);
+        assertEquals(1, rows.size());
+        assertEquals("QUEUED", rows.get(0).getString("status"));
+        assertEquals("TEXT", rows.get(0).getString("channel"));
+        assertTrue(rows.get(0).getString("prompt") != null && !rows.get(0).getString("prompt").isBlank());
+        assertTrue(rows.get(0).get("createdAt") != null);
+
+        JobStore restarted = new DocumentJobStore(saved, Clock.systemUTC(), null);
+        AssignmentView claimed = restarted.claim("pc-a", submitted.assignments().get(0).assignmentId());
+        assertEquals(AssignmentState.CLAIMED, claimed.state());
+        assertEquals("CLAIMED", saved.find(JobDocuments.JOBS).get(0).getString("status"));
+        assertEquals(submitted.jobId(), restarted.getJob("grok", submitted.jobId()).jobId());
+    }
+
+    @Test
     void a_wait_inside_the_cap_returns_the_finished_job() throws Exception {
         JobStore store = store();
         store.register("pc-a", "a.local", List.of("yuni"));
@@ -436,7 +457,7 @@ class JobStoreTest {
     @Test
     void queued_job_pings_each_host_and_not_the_prompt() {
         List<String> hosts = new ArrayList<>();
-        JobStore store = new JobStore(Clock.systemUTC(), hosts::add);
+        JobStore store = new DocumentJobStore(new MemoryJobDocuments(), Clock.systemUTC(), hosts::add);
         store.register("pc-a", "a.local", List.of("yuni"));
         store.register("pc-b", "b.local", List.of("yuni"));
         store.register("pc-c", "a.local", List.of("yuni"));
@@ -453,7 +474,7 @@ class JobStoreTest {
     @Test
     void rejected_submit_does_not_ping() {
         List<String> hosts = new ArrayList<>();
-        JobStore store = new JobStore(Clock.systemUTC(), hosts::add);
+        JobStore store = new DocumentJobStore(new MemoryJobDocuments(), Clock.systemUTC(), hosts::add);
         store.register("pc-a", "a.local", List.of("yuni"));
 
         assertThrows(DispatcherException.class, () -> store.submit(
@@ -465,7 +486,7 @@ class JobStoreTest {
     }
 
     private static JobStore store() {
-        return new JobStore(Clock.systemUTC());
+        return new DocumentJobStore(new MemoryJobDocuments(), Clock.systemUTC(), null);
     }
 
     private static void succeed(JobStore store, AssignmentView queued) {

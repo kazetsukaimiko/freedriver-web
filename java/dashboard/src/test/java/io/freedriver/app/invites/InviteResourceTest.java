@@ -218,6 +218,7 @@ class InviteResourceTest {
         given().when().get("/api/invites").then().statusCode(401);
         given().contentType(ContentType.JSON).body("{\"phone\":\"+15555550123\"}").post("/api/invites").then().statusCode(401);
         given().when().get("/api/phones").then().statusCode(401);
+        given().when().get("/api/jobs").then().statusCode(401);
         given().contentType(ContentType.JSON).body("{\"phone\":\"+15555550123\"}")
                 .post("/api/phones/remove").then().statusCode(401);
     }
@@ -226,6 +227,7 @@ class InviteResourceTest {
     @TestSecurity(user = "bob", roles = {"user"})
     void a_non_admin_is_refused() {
         given().when().get("/api/invites").then().statusCode(403);
+        given().when().get("/api/jobs").then().statusCode(403);
         given().contentType(ContentType.JSON).body("{\"phone\":\"+15555550123\"}").post("/api/invites").then().statusCode(403);
     }
 

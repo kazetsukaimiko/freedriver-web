@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
 import { Account } from './Account'
+import { AgentJobs } from './AgentJobs'
+import { AGENT_JOBS_PATH } from './agentJobs'
 import { ACCOUNT_PATH } from './account'
 import { SIGN_OUT_PATH, apiFetch } from './api'
 import { Brand } from './Brand'
@@ -18,7 +20,7 @@ import './App.css'
 
 type Splash = 'playing' | 'docking' | 'revealing' | 'done'
 
-type Page = 'dashboard' | 'account' | 'changelog' | 'phones' | 'instances' | 'dispatcher' | 'not-found'
+type Page = 'dashboard' | 'account' | 'changelog' | 'phones' | 'instances' | 'dispatcher' | 'agent-jobs' | 'not-found'
 
 function pageFor(pathname: string): Page {
   if (pathname === '/' || pathname === '/dashboard') {
@@ -32,6 +34,9 @@ function pageFor(pathname: string): Page {
   }
   if (pathname === PHONES_PATH) {
     return 'phones'
+  }
+  if (pathname === AGENT_JOBS_PATH) {
+    return 'agent-jobs'
   }
   if (pathname === INSTANCES_PATH) {
     return 'instances'
@@ -52,6 +57,7 @@ function primaryNavItems(portalAdmin: boolean, dispatcher: boolean): PrimaryItem
   if (portalAdmin) {
     items.push({ to: INSTANCES_PATH, label: 'Instances', page: 'instances' })
     items.push({ to: PHONES_PATH, label: 'Phones/Accounts', page: 'phones' })
+    items.push({ to: AGENT_JOBS_PATH, label: 'Agent jobs', page: 'agent-jobs' })
   }
   if (dispatcher) {
     items.push({ to: DISPATCHER_PATH, label: 'Dispatcher MCP', page: 'dispatcher' })
@@ -277,6 +283,7 @@ function App() {
         {page === 'account' && <Account />}
         {page === 'changelog' && <Changelog />}
         {page === 'phones' && <PhoneSignIn />}
+        {page === 'agent-jobs' && <AgentJobs />}
         {page === 'instances' && <Instances />}
         {page === 'dispatcher' && <DispatcherJobs path={path} onOpen={goTo} />}
         {page === 'not-found' && <NotFound />}
