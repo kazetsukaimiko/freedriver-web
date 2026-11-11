@@ -10,6 +10,7 @@ COPY mqtt/pom.xml mqtt/pom.xml
 COPY mqtt-paho/pom.xml mqtt-paho/pom.xml
 COPY java/pom.xml java/pom.xml
 COPY java/bom/pom.xml java/bom/pom.xml
+COPY java/hit-window/pom.xml java/hit-window/pom.xml
 COPY java/dashboard-model/pom.xml java/dashboard-model/pom.xml
 COPY java/dashboard-api/pom.xml java/dashboard-api/pom.xml
 COPY java/dashboard/pom.xml java/dashboard/pom.xml
@@ -23,6 +24,7 @@ COPY sms-model/pom.xml sms-model/pom.xml
 COPY sms-api/pom.xml sms-api/pom.xml
 COPY sms-client/pom.xml sms-client/pom.xml
 COPY sms/pom.xml sms/pom.xml
+COPY java/hit-window/src java/hit-window/src
 COPY sms-model/src sms-model/src
 COPY sms-api/src sms-api/src
 COPY sms-client/src sms-client/src
