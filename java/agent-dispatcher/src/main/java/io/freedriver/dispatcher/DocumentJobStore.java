@@ -6,6 +6,7 @@ import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
 import io.freedriver.dispatcher.model.DeviceView;
 import io.freedriver.dispatcher.model.JobView;
+import io.freedriver.dispatcher.model.OnBusy;
 import io.freedriver.dispatcher.model.ReportedBot;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
 import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
@@ -227,7 +228,7 @@ class DocumentJobStore implements JobStore {
     public JobView submit(String dispatcherSubject, SubmitJobRequest request, Duration wait) {
         Duration budget = wait == null ? Duration.ZERO : wait;
         long deadline = System.nanoTime() + budget.toNanos();
-        Queued queued = enqueue(dispatcherSubject, request);
+        Queued queued = enqueue(dispatcherSubject, request, true);
         try {
             notifyHosts(queued.hosts);
             awaitTerminal(queued.jobId, deadline);
@@ -238,17 +239,45 @@ class DocumentJobStore implements JobStore {
     }
 
     /**
-     * Queue the job and return its id. The assignment stays queued, including
-     * when the caller asked to wait zero seconds. A later claim still runs it.
+     * Write the job, return its id, and nudge the OpenBot webhook on another
+     * thread. The caller does not wait for that POST. A second send is another row.
      */
     public JobView submitNow(String dispatcherSubject, SubmitJobRequest request) {
-        Queued queued = enqueue(dispatcherSubject, request);
-        release(dispatcherSubject);
-        notifyHosts(queued.hosts);
+        Queued queued = enqueue(dispatcherSubject, request, false);
+        Thread.ofVirtual().name("openbot-job-ping").start(() -> notifyHosts(queued.hosts));
         return viewJob(queued.jobId, dispatcherSubject);
     }
 
-    private Queued enqueue(String dispatcherSubject, SubmitJobRequest request) {
+    public JobView awaitTurn(String dispatcherSubject, UUID jobId, Duration delay) {
+        if (jobId == null) {
+            throw badRequest("jobId is required");
+        }
+        if (delay == null || delay.isNegative() || delay.compareTo(Duration.ofMinutes(2)) > 0) {
+            throw badRequest("delay");
+        }
+        String id = jobId.toString();
+        viewJob(id, dispatcherSubject);
+        if (!delay.isZero()) {
+            long deadline = System.nanoTime() + delay.toNanos();
+            while (!allTerminal(id)) {
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0) {
+                    break;
+                }
+                synchronized (monitor) {
+                    try {
+                        monitor.wait(millisAtLeastOne(Math.min(remaining, 200_000_000L)));
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        throw new DispatcherException(DispatcherException.Kind.CONFLICT, "wait interrupted");
+                    }
+                }
+            }
+        }
+        return viewJob(id, dispatcherSubject);
+    }
+
+    private Queued enqueue(String dispatcherSubject, SubmitJobRequest request, boolean lock) {
         requireText(dispatcherSubject, "dispatcher");
         if (request == null) {
             throw badRequest("job is required");
@@ -281,7 +310,9 @@ class DocumentJobStore implements JobStore {
                     hosts.add(hostname);
                 }
             }
-            acquire(dispatcherSubject);
+            if (lock) {
+                acquire(dispatcherSubject);
+            }
             String jobId = UUID.randomUUID().toString();
             List<String> written = new ArrayList<>();
             try {
@@ -297,6 +328,7 @@ class DocumentJobStore implements JobStore {
                             .append("dispatcherSubject", dispatcherSubject)
                             .append("prompt", request.prompt())
                             .append("channel", request.channel().name())
+                            .append("on_busy", onBusy(request).name())
                             .append("status", "QUEUED")
                             .append("ordinal", ordinal++)
                             .append("createdAt", Date.from(now))
@@ -310,7 +342,9 @@ class DocumentJobStore implements JobStore {
                 for (String assignmentId : written) {
                     documents.delete(JobDocuments.JOBS, assignmentId);
                 }
-                release(dispatcherSubject);
+                if (lock) {
+                    release(dispatcherSubject);
+                }
                 throw failure;
             }
         }
@@ -619,7 +653,20 @@ class DocumentJobStore implements JobStore {
                 row.getString("prompt"),
                 AssignmentState.valueOf(row.getString("status")),
                 session == null || session.isBlank() ? null : UUID.fromString(session),
-                row.getString("note"));
+                row.getString("note"),
+                onBusy(row.getString("on_busy")));
+    }
+
+    private static OnBusy onBusy(SubmitJobRequest request) {
+        OnBusy value = request.onBusy();
+        return value == null ? OnBusy.supersede : value;
+    }
+
+    private static OnBusy onBusy(String name) {
+        if (name == null || name.isBlank()) {
+            return OnBusy.supersede;
+        }
+        return OnBusy.valueOf(name);
     }
 
     private static Channel channel(String name) {

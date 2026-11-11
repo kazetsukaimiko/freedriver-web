@@ -202,6 +202,11 @@ services:
       FREEDRIVER_SEED_PHONE: ${FREEDRIVER_SEED_PHONE:-}
       # Daily cap on texts that reach Twilio. Required. sms only (#175).
       FREEDRIVER_SMS_DAILY_SEND_CAP: ${FREEDRIVER_SMS_DAILY_SEND_CAP:?FREEDRIVER_SMS_DAILY_SEND_CAP is required}
+      QUARKUS_MONGODB_CONNECTION_STRING: ${QUARKUS_MONGODB_CONNECTION_STRING:-mongodb://mongodb:27017/freedriver}
+      QUARKUS_MONGODB_DATABASE: freedriver
+    depends_on:
+      mongodb:
+        condition: service_healthy
     expose:
       - "8080"
     # Agreement records. The deploy workflow creates this directory for uid 185.
