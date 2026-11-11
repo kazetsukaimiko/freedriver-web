@@ -38,6 +38,7 @@ it('shows a flat left nav and sends a portal admin to Phones/Accounts', async ()
   expect(screen.getByRole('link', { name: 'Account' }).getAttribute('href')).toBe('/account?splash=0')
   expect(screen.queryByRole('link', { name: 'Dispatcher MCP' })).toBeNull()
   expect(screen.getByRole('link', { name: 'Agent jobs' }).getAttribute('href')).toBe('/agent-jobs?splash=0')
+  expect(screen.getByRole('link', { name: 'Phone records' }).getAttribute('href')).toBe('/phone-records?splash=0')
 
   fireEvent.click(phone)
   await act(async () => {
@@ -63,6 +64,7 @@ it('keeps Phones/Accounts and Instances out of the nav without portal-admin', as
 
   expect(screen.queryByRole('link', { name: 'Phones/Accounts' })).toBeNull()
   expect(screen.queryByRole('link', { name: 'Agent jobs' })).toBeNull()
+  expect(screen.queryByRole('link', { name: 'Phone records' })).toBeNull()
   expect(screen.queryByRole('link', { name: 'Instances' })).toBeNull()
   expect(screen.queryByRole('link', { name: 'Dispatcher MCP' })).toBeNull()
   expect(screen.getByRole('link', { name: 'Home/Appliances' })).toBeTruthy()

@@ -14,13 +14,24 @@ import { DISPATCHER_PATH } from './dispatcher'
 import { InvitePage } from './InvitePage'
 import { Instances } from './Instances'
 import { INSTANCES_PATH } from './instances'
+import { PhoneRecords } from './PhoneRecords'
+import { PHONE_RECORDS_PATH } from './phoneRecords'
 import { PhoneSignIn } from './PhoneSignIn'
 import { PHONES_PATH } from './phones'
 import './App.css'
 
 type Splash = 'playing' | 'docking' | 'revealing' | 'done'
 
-type Page = 'dashboard' | 'account' | 'changelog' | 'phones' | 'instances' | 'dispatcher' | 'agent-jobs' | 'not-found'
+type Page =
+  | 'dashboard'
+  | 'account'
+  | 'changelog'
+  | 'phones'
+  | 'phone-records'
+  | 'instances'
+  | 'dispatcher'
+  | 'agent-jobs'
+  | 'not-found'
 
 function pageFor(pathname: string): Page {
   if (pathname === '/' || pathname === '/dashboard') {
@@ -34,6 +45,9 @@ function pageFor(pathname: string): Page {
   }
   if (pathname === PHONES_PATH) {
     return 'phones'
+  }
+  if (pathname === PHONE_RECORDS_PATH) {
+    return 'phone-records'
   }
   if (pathname === AGENT_JOBS_PATH) {
     return 'agent-jobs'
@@ -57,6 +71,7 @@ function primaryNavItems(portalAdmin: boolean, dispatcher: boolean): PrimaryItem
   if (portalAdmin) {
     items.push({ to: INSTANCES_PATH, label: 'Instances', page: 'instances' })
     items.push({ to: PHONES_PATH, label: 'Phones/Accounts', page: 'phones' })
+    items.push({ to: PHONE_RECORDS_PATH, label: 'Phone records', page: 'phone-records' })
     items.push({ to: AGENT_JOBS_PATH, label: 'Agent jobs', page: 'agent-jobs' })
   }
   if (dispatcher) {
@@ -283,6 +298,7 @@ function App() {
         {page === 'account' && <Account />}
         {page === 'changelog' && <Changelog />}
         {page === 'phones' && <PhoneSignIn />}
+        {page === 'phone-records' && <PhoneRecords />}
         {page === 'agent-jobs' && <AgentJobs />}
         {page === 'instances' && <Instances />}
         {page === 'dispatcher' && <DispatcherJobs path={path} onOpen={goTo} />}
