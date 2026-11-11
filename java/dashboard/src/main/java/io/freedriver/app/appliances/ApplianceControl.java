@@ -22,7 +22,7 @@ import java.util.concurrent.TimeoutException;
 
 /**
  * The single appliance router. {@link MockAutonomy} and {@link MqttLiveClient} both talk to
- * this bean over the CDI bus.
+ * this bean over the CDI bus. Instance rows live in {@link ApplianceRoster}.
  */
 @ApplicationScoped
 public class ApplianceControl {
@@ -30,24 +30,32 @@ public class ApplianceControl {
     @Inject
     Event<ApplianceCommandRouted> commands;
 
-    private final ConcurrentHashMap<UUID, KnownInstance> known = new ConcurrentHashMap<>();
+    private final ApplianceRoster roster;
     private final ConcurrentHashMap<String, CompletableFuture<ApplianceSnapshot>> waiters = new ConcurrentHashMap<>();
 
+    /** Arc builds the client proxy with this constructor. */
+    ApplianceControl() {
+        this.roster = null;
+    }
+
+    @Inject
+    ApplianceControl(ApplianceRoster roster) {
+        this.roster = roster;
+    }
+
     public Optional<String> instanceName(@NonNull UUID instanceId) {
-        KnownInstance slot = known.get(instanceId);
-        return slot == null ? Optional.empty() : Optional.of(slot.instanceName);
+        return roster.find(instanceId).map(ApplianceRoster.Row::instanceName);
     }
 
     public Optional<ApplianceSnapshot> instanceSnapshot(@NonNull UUID instanceId) {
-        KnownInstance slot = known.get(instanceId);
-        return slot == null ? Optional.empty() : Optional.of(slot.snapshot);
+        return roster.find(instanceId).map(ApplianceRoster.Row::snapshot);
     }
 
     /**
      * @return true if this instance is known and the command was fired on the bus
      */
     public boolean publishCommand(@NonNull UUID instanceId, @NonNull ApplianceCommandMessage command) {
-        if (!known.containsKey(instanceId)) {
+        if (roster.find(instanceId).isEmpty()) {
             return false;
         }
         commands.fire(new ApplianceCommandRouted(instanceId, command));
@@ -78,13 +86,13 @@ public class ApplianceControl {
     /** Map key = instanceId. Each instanceName is a dashboard tab. */
     public Map<UUID, ApplianceSnapshot> allKnownInstances() {
         Map<UUID, ApplianceSnapshot> out = new LinkedHashMap<>();
-        known.forEach((id, slot) -> out.put(id, slot.snapshot));
+        roster.list().forEach((id, row) -> out.put(id, row.snapshot()));
         return Map.copyOf(out);
     }
 
     public Map<UUID, String> instanceNames() {
         Map<UUID, String> out = new LinkedHashMap<>();
-        known.forEach((id, slot) -> out.put(id, slot.instanceName));
+        roster.list().forEach((id, row) -> out.put(id, row.instanceName()));
         return Map.copyOf(out);
     }
 
@@ -96,7 +104,7 @@ public class ApplianceControl {
         }
         Instant when = Instant.now();
         ApplianceSnapshot snapshot = new ApplianceSnapshot(when, state.appliances());
-        known.put(instanceId, new KnownInstance(state.instanceName(), snapshot));
+        roster.save(instanceId, state.instanceName(), snapshot);
         String applied = state.appliedCommandId();
         if (applied != null) {
             CompletableFuture<ApplianceSnapshot> waiter = waiters.get(applied);
@@ -108,18 +116,19 @@ public class ApplianceControl {
 
     /** Drop a known instance. Used by tests and later expiry. */
     public void forget(@NonNull UUID instanceId) {
-        known.remove(instanceId);
+        roster.remove(instanceId);
     }
 
     /** Pretend the last state is older than the stale window. */
     public void markStale(@NonNull UUID instanceId, Duration window) {
-        KnownInstance slot = known.get(instanceId);
-        if (slot == null) {
+        Optional<ApplianceRoster.Row> row = roster.find(instanceId);
+        if (row.isEmpty()) {
             return;
         }
         Instant when = Instant.now().minus(window).minusSeconds(1);
-        known.put(instanceId, new KnownInstance(slot.instanceName, new ApplianceSnapshot(when, slot.snapshot.appliances())));
+        roster.save(
+                instanceId,
+                row.get().instanceName(),
+                new ApplianceSnapshot(when, row.get().snapshot().appliances()));
     }
-
-    private record KnownInstance(String instanceName, ApplianceSnapshot snapshot) {}
 }

@@ -24,7 +24,7 @@ class ApplianceServiceTest {
 
     @Test
     void currentMap_empty_has_no_instances() {
-        ApplianceControl control = new ApplianceControl();
+        ApplianceControl control = new ApplianceControl(new MemoryApplianceRoster());
         ApplianceMapResponse map = service(control).currentMap();
         assertTrue(map.instances().isEmpty());
     }
@@ -136,6 +136,10 @@ class ApplianceServiceTest {
         private boolean confirm = true;
         private ApplianceSnapshot snapshot;
         private final java.util.List<ApplianceCommandMessage> published = new java.util.ArrayList<>();
+
+        RecordingControl() {
+            super(new MemoryApplianceRoster());
+        }
 
         static RecordingControl withCabin(boolean on) {
             RecordingControl control = new RecordingControl();
