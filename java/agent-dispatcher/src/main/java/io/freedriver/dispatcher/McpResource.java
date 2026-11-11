@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.freedriver.dispatcher.api.McpApi;
 import io.freedriver.dispatcher.model.Channel;
+import io.freedriver.dispatcher.model.OnBusy;
 import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.JsonRpcResponse;
 import io.freedriver.dispatcher.model.ReportedBot;
@@ -35,7 +36,7 @@ public class McpResource implements McpApi {
     private static final Set<String> PROTOCOL_VERSIONS = Set.of("2025-03-26", "2025-06-18", LATEST_PROTOCOL);
     private static final int AWAIT_MAX_SECONDS = 120;
     private static final Set<String> SEND_FIELDS = Set.of(
-            "server", "agentName", "prompt", "channel");
+            "server", "agentName", "prompt", "channel", "on_busy");
     private static final Set<String> AWAIT_FIELDS = Set.of("jobId", "delaySeconds");
     private static final Set<String> JOB_FIELDS = Set.of("jobId");
 
@@ -202,8 +203,9 @@ public class McpResource implements McpApi {
         } catch (IllegalArgumentException ex) {
             throw McpProtocolException.invalidParams(id, "invalid params");
         }
+        OnBusy onBusy = onBusy(id, arguments.get("on_busy"));
         String deviceId = jobs.deviceIdFor(server, agentName);
-        SubmitJobRequest request = new SubmitJobRequest(List.of(deviceId), agentName, prompt, channel);
+        SubmitJobRequest request = new SubmitJobRequest(List.of(deviceId), agentName, prompt, channel, onBusy);
         if (!validator.validate(request).isEmpty()) {
             throw McpProtocolException.invalidParams(id, "invalid params");
         }
@@ -321,10 +323,23 @@ public class McpResource implements McpApi {
         channels.add("SPEECH");
         channel.set("enum", channels);
         submit.set("channel", channel);
+        ObjectNode onBusy = mapper.createObjectNode();
+        ArrayNode onBusyTypes = mapper.createArrayNode();
+        onBusyTypes.add("string");
+        onBusyTypes.add("null");
+        onBusy.set("type", onBusyTypes);
+        ArrayNode onBusyValues = mapper.createArrayNode();
+        onBusyValues.add("supersede");
+        onBusyValues.add("queue");
+        onBusyValues.addNull();
+        onBusy.set("enum", onBusyValues);
+        submit.set("on_busy", onBusy);
         tools.add(tool(
                 "openbot_send_prompt",
                 "Freedriver dispatch: queue a prompt for a named agent on one server from list_agents, such as Project Manager. "
                         + "Returns the job id as soon as the job is stored. It does not wait for OpenBot. "
+                        + "on_busy is supersede or queue. Omit it or pass null for supersede. "
+                        + "The value is stored on the job and returned with queued jobs. "
                         + "openbot_await_turn waits for that id.",
                 submit,
                 "server",
@@ -390,7 +405,7 @@ public class McpResource implements McpApi {
             tools.add(tool(
                     "report_host",
                     "Freedriver dispatch: publish this host's bots, each idle or busy, with a short activity note. "
-                            + "Returns this host's jobs whose status is QUEUED.",
+                            + "Returns this host's jobs whose status is QUEUED, including each job's on_busy.",
                     report,
                     "hostname",
                     "bots"));
@@ -416,6 +431,20 @@ public class McpResource implements McpApi {
         ObjectNode result = mapper.createObjectNode();
         result.set("tools", tools);
         return result;
+    }
+
+    private static OnBusy onBusy(JsonNode id, JsonNode value) {
+        if (value == null || value.isNull() || value.isMissingNode()) {
+            return OnBusy.supersede;
+        }
+        if (!value.isTextual()) {
+            throw McpProtocolException.invalidParams(id, "invalid params");
+        }
+        try {
+            return OnBusy.valueOf(value.asText());
+        } catch (IllegalArgumentException ex) {
+            throw McpProtocolException.invalidParams(id, "invalid params");
+        }
     }
 
     private ObjectNode jobIdNode() {

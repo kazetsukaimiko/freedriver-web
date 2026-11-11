@@ -8,6 +8,7 @@ import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
 import io.freedriver.dispatcher.model.JobView;
+import io.freedriver.dispatcher.model.OnBusy;
 import io.freedriver.dispatcher.model.ReportedBot;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
 import io.quarkus.test.junit.QuarkusTest;
@@ -30,7 +31,9 @@ import java.util.concurrent.TimeUnit;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -289,6 +292,8 @@ class McpResourceTest {
                 .body("result.tools.find { it.name == 'openbot_send_prompt' }.inputSchema.properties.server.maxLength", is(253))
                 .body("result.tools.find { it.name == 'openbot_send_prompt' }.inputSchema.additionalProperties", is(false))
                 .body("result.tools.find { it.name == 'openbot_send_prompt' }.inputSchema.properties.blockForUpTo", nullValue())
+                .body("result.tools.find { it.name == 'openbot_send_prompt' }.inputSchema.properties.on_busy.enum", hasItems("supersede", "queue"))
+                .body("result.tools.find { it.name == 'openbot_send_prompt' }.inputSchema.required", not(hasItem("on_busy")))
                 .body("result.tools.find { it.name == 'openbot_await_turn' }.inputSchema.properties.delaySeconds.maximum", is(120))
                 .body("result.tools.find { it.name == 'openbot_await_turn' }.inputSchema.properties.delaySeconds.minimum", is(0))
                 .body("result.tools.find { it.name == 'openbot_await_turn' }.inputSchema.required", hasItem("delaySeconds"))
@@ -494,6 +499,80 @@ class McpResourceTest {
                 .extract()
                 .path("result.content[0].text");
         assertEquals("QUEUED", mapper.readTree(timedOut).path("assignments").get(0).path("state").asText());
+        assertEquals("supersede", first.path("assignments").get(0).path("on_busy").asText());
+    }
+
+    @Test
+    @TestSecurity(user = "grok-on-busy", roles = "dispatcher")
+    void on_busy_defaults_to_supersede_and_rejects_anything_else() throws Exception {
+        jobs.register("pc-on-busy", "on-busy.local", List.of("yuni"));
+        String session = initialize();
+        int before = jobs.jobCount();
+
+        String omitted = call(session, submitBody("on-busy.local", "plain"))
+                .statusCode(200)
+                .body("result.isError", is(false))
+                .extract()
+                .path("result.content[0].text");
+        assertEquals("supersede", mapper.readTree(omitted).path("assignments").get(0).path("on_busy").asText());
+
+        String nulled = call(session, """
+                {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"openbot_send_prompt","arguments":{"server":"on-busy.local","agentName":"yuni","prompt":"empty","channel":"TEXT","on_busy":null}}}
+                """)
+                .statusCode(200)
+                .body("result.isError", is(false))
+                .extract()
+                .path("result.content[0].text");
+        assertEquals("supersede", mapper.readTree(nulled).path("assignments").get(0).path("on_busy").asText());
+
+        String queued = call(session, """
+                {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"openbot_send_prompt","arguments":{"server":"on-busy.local","agentName":"yuni","prompt":"behind","channel":"TEXT","on_busy":"queue"}}}
+                """)
+                .statusCode(200)
+                .body("result.isError", is(false))
+                .extract()
+                .path("result.content[0].text");
+        JsonNode queuedJob = mapper.readTree(queued);
+        assertEquals("queue", queuedJob.path("assignments").get(0).path("on_busy").asText());
+        assertEquals(OnBusy.queue, jobs.poll("pc-on-busy", Duration.ZERO).stream()
+                .filter(row -> queuedJob.path("jobId").asText().equals(row.jobId().toString()))
+                .findFirst()
+                .orElseThrow()
+                .onBusy());
+
+        int written = jobs.jobCount();
+        assertEquals(before + 3, written);
+        call(session, """
+                {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"openbot_send_prompt","arguments":{"server":"on-busy.local","agentName":"yuni","prompt":"nope","channel":"TEXT","on_busy":"interrupt"}}}
+                """)
+                .statusCode(200)
+                .body("error.code", is(-32602));
+        call(session, """
+                {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"openbot_send_prompt","arguments":{"server":"on-busy.local","agentName":"yuni","prompt":"nope","channel":"TEXT","on_busy":1}}}
+                """)
+                .statusCode(200)
+                .body("error.code", is(-32602));
+        assertEquals(written, jobs.jobCount());
+    }
+
+    @Test
+    @TestSecurity(user = "pc-busy-flag", roles = "device")
+    void report_host_includes_on_busy_for_queued_jobs() throws Exception {
+        jobs.register("pc-busy-flag", "busy-flag.local", List.of("yuni"));
+        jobs.submitNow("grok", new SubmitJobRequest(
+                List.of("pc-busy-flag"), "yuni", "behind", Channel.TEXT, OnBusy.queue));
+        String session = initialize();
+        String text = call(session, """
+                {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"report_host","arguments":{"hostname":"busy-flag.local","bots":[{"name":"yuni","state":"busy","activity":"on a job"}]}}}
+                """)
+                .statusCode(200)
+                .body("result.isError", is(false))
+                .extract()
+                .path("result.content[0].text");
+        JsonNode pending = mapper.readTree(text).path("jobs");
+        assertEquals(1, pending.size());
+        assertEquals("QUEUED", pending.get(0).path("state").asText());
+        assertEquals("queue", pending.get(0).path("on_busy").asText());
     }
 
     @Test

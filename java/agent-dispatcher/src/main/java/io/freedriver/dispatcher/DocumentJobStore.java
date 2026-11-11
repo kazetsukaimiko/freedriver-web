@@ -6,6 +6,7 @@ import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
 import io.freedriver.dispatcher.model.DeviceView;
 import io.freedriver.dispatcher.model.JobView;
+import io.freedriver.dispatcher.model.OnBusy;
 import io.freedriver.dispatcher.model.ReportedBot;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
 import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
@@ -327,6 +328,7 @@ class DocumentJobStore implements JobStore {
                             .append("dispatcherSubject", dispatcherSubject)
                             .append("prompt", request.prompt())
                             .append("channel", request.channel().name())
+                            .append("on_busy", onBusy(request).name())
                             .append("status", "QUEUED")
                             .append("ordinal", ordinal++)
                             .append("createdAt", Date.from(now))
@@ -651,7 +653,20 @@ class DocumentJobStore implements JobStore {
                 row.getString("prompt"),
                 AssignmentState.valueOf(row.getString("status")),
                 session == null || session.isBlank() ? null : UUID.fromString(session),
-                row.getString("note"));
+                row.getString("note"),
+                onBusy(row.getString("on_busy")));
+    }
+
+    private static OnBusy onBusy(SubmitJobRequest request) {
+        OnBusy value = request.onBusy();
+        return value == null ? OnBusy.supersede : value;
+    }
+
+    private static OnBusy onBusy(String name) {
+        if (name == null || name.isBlank()) {
+            return OnBusy.supersede;
+        }
+        return OnBusy.valueOf(name);
     }
 
     private static Channel channel(String name) {

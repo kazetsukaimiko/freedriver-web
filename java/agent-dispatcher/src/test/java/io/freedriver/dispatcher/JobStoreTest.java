@@ -4,6 +4,7 @@ import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
 import io.freedriver.dispatcher.model.JobView;
+import io.freedriver.dispatcher.model.OnBusy;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
 import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
 import org.junit.jupiter.api.Test;
@@ -510,6 +511,36 @@ class JobStoreTest {
         assertEquals(1, documents.find(JobDocuments.JOBS).size());
         assertEquals(sent.jobId().toString(), documents.find(JobDocuments.JOBS).get(0).getString("jobId"));
         assertEquals("QUEUED", documents.find(JobDocuments.JOBS).get(0).getString("status"));
+        assertEquals("supersede", documents.find(JobDocuments.JOBS).get(0).getString("on_busy"));
+        assertEquals(OnBusy.supersede, store.poll("pc-a", Duration.ZERO).get(0).onBusy());
+        assertTrue(started.await(2, TimeUnit.SECONDS));
+        release.countDown();
+    }
+
+    @Test
+    void queue_is_stored_before_the_webhook_returns() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        MemoryJobDocuments documents = new MemoryJobDocuments();
+        JobStore store = new DocumentJobStore(documents, Clock.systemUTC(), hostname -> {
+            started.countDown();
+            try {
+                if (!release.await(5, TimeUnit.SECONDS)) {
+                    throw new AssertionError("webhook was not released");
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(interrupted);
+            }
+        });
+        store.register("pc-a", "a.local", List.of("yuni"));
+
+        store.submitNow("grok", new SubmitJobRequest(
+                List.of("pc-a"), "yuni", "prompt", Channel.TEXT, OnBusy.queue));
+
+        assertEquals(1, documents.find(JobDocuments.JOBS).size());
+        assertEquals("queue", documents.find(JobDocuments.JOBS).get(0).getString("on_busy"));
+        assertEquals(OnBusy.queue, store.poll("pc-a", Duration.ZERO).get(0).onBusy());
         assertTrue(started.await(2, TimeUnit.SECONDS));
         release.countDown();
     }
