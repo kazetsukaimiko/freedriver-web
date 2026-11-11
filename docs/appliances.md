@@ -6,7 +6,7 @@ The browser speaks REST. Quarkus is the portal's MQTT client, connecting to the 
 
 This page is the portal REST contract. MQTT topics, JSON, TLS, and passwords: [autonomy-mqtt.md](autonomy-mqtt.md). Broker, ACL, and first-house apply: [mqtt-connect.md](mqtt-connect.md). Wire types: [mqtt-contract-consume.md](mqtt-contract-consume.md) (`io.freedriver:freedriver-mqtt-contract`). Grok MCP for the same house: [autonomy-mcp.md](autonomy-mcp.md).
 
-`ApplianceControl` is the one router, keyed by `instanceId`. Mock event sources and the MQTT client fire/observe the same CDI bus.
+`ApplianceControl` is the one router, keyed by `instanceId`. Mock event sources and the MQTT client fire/observe the same CDI bus. The last snapshot for each instance is a document in `appliance-roster`, so another dashboard process lists that instance.
 
 ## REST
 
