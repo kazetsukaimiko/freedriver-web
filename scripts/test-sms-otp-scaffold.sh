@@ -18,6 +18,36 @@ if grep -q 'sms.freedriver.io' docker-compose.yml; then
 fi
 
 python3 - <<'PY'
+from pathlib import Path
+script = Path("scripts/provision-keycloak-freedriver.sh").read_text()
+dcr = script.split("ensure_dcr_trusted_hosts() {", 1)
+if len(dcr) != 2:
+    raise SystemExit("provision script must define ensure_dcr_trusted_hosts")
+depth = 1
+kept = []
+for line in dcr[1].splitlines():
+    if line.strip() == "{":
+        depth += 1
+    elif line.strip() == "}":
+        depth -= 1
+        if depth == 0:
+            break
+    kept.append(line)
+dcr_fn = "\n".join(kept)
+if '"trusted-hosts": ["*.x.ai", "console.x.ai", "grok.com", "x.ai"]' not in dcr_fn:
+    raise SystemExit("DCR Trusted Hosts must be grok.com, console.x.ai, x.ai, and *.x.ai")
+if '"host-sending-registration-request-must-match": ["false"]' not in dcr_fn:
+    raise SystemExit("DCR sender-host match must be false")
+if '"client-uris-must-match": ["true"]' not in dcr_fn:
+    raise SystemExit("DCR client URI match must stay true")
+if '"trusted-hosts": ["*"]' in dcr_fn or '"trusted-hosts": []' in dcr_fn:
+    raise SystemExit("DCR Trusted Hosts must stay the grok.com/x.ai allowlist")
+if "ensure_dcr_trusted_hosts\n" not in script.split("ensure_dcr_trusted_hosts() {", 1)[1]:
+    raise SystemExit("ensure_dcr_trusted_hosts must run")
+print("anonymous DCR Trusted Hosts are grok.com and x.ai")
+PY
+
+python3 - <<'PY'
 import re
 from pathlib import Path
 compose = Path("docker-compose.yml").read_text()
