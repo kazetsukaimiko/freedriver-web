@@ -15,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 final class MemoryJobDocuments implements JobDocuments {
 
     private final Map<String, Map<String, Document>> collections = new ConcurrentHashMap<>();
+    private final Object waitLock = new Object();
 
     private Map<String, Document> collection(String name) {
         return collections.computeIfAbsent(name, key -> new ConcurrentHashMap<>());
@@ -83,6 +84,18 @@ final class MemoryJobDocuments implements JobDocuments {
     @Override
     public synchronized boolean delete(String collection, String id) {
         return collection(collection).remove(id) != null;
+    }
+
+    @Override
+    public Object waitLock() {
+        return waitLock;
+    }
+
+    @Override
+    public void wake() {
+        synchronized (waitLock) {
+            waitLock.notifyAll();
+        }
     }
 
     private static Document copy(Document document, String id) {

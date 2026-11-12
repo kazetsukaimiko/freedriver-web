@@ -566,6 +566,46 @@ class JobStoreTest {
         assertEquals(2, store.jobCount());
     }
 
+    @Test
+    void a_wait_or_list_written_on_one_process_is_visible_on_the_other() throws Exception {
+        JobDocuments shared = new MemoryJobDocuments();
+        JobStore first = new DocumentJobStore(shared, Clock.systemUTC(), null);
+        JobStore second = new DocumentJobStore(shared, Clock.systemUTC(), null);
+        first.register("pc-a", "a.local", List.of("yuni"));
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<List<AssignmentView>> waiting = pool.submit(
+                    () -> second.poll("pc-a", Duration.ofSeconds(5)));
+            JobView submitted = first.submitNow("grok", job(List.of("pc-a"), "yuni"));
+            List<AssignmentView> seen = waiting.get(2, TimeUnit.SECONDS);
+            assertEquals(submitted.assignments().get(0).assignmentId(), seen.get(0).assignmentId());
+            assertEquals(submitted.jobId(), second.listJobs("grok").get(0).jobId());
+
+            Future<JobView> blocking = pool.submit(() -> first.submit(
+                    "grok", job(List.of("pc-a"), "yuni"), Duration.ofSeconds(5)));
+            UUID earlier = seen.get(0).assignmentId();
+            AssignmentView queued = null;
+            long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+            while (queued == null && System.nanoTime() < deadline) {
+                for (AssignmentView row : second.poll("pc-a", Duration.ofMillis(200))) {
+                    if (!row.assignmentId().equals(earlier) && row.state() == AssignmentState.QUEUED) {
+                        queued = row;
+                    }
+                }
+            }
+            assertTrue(queued != null);
+            second.finish("pc-a", queued.assignmentId(), true, "from-the-other-process");
+            JobView finished = blocking.get(2, TimeUnit.SECONDS);
+            assertEquals(AssignmentState.SUCCEEDED, finished.assignments().get(0).state());
+            assertEquals(
+                    "from-the-other-process",
+                    second.getJob("grok", finished.jobId()).assignments().get(0).note());
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
     private static JobStore store() {
         return new DocumentJobStore(new MemoryJobDocuments(), Clock.systemUTC(), null);
     }

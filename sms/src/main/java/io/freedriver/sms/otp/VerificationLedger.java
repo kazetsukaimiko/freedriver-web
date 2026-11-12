@@ -1,23 +1,33 @@
 package io.freedriver.sms.otp;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Send time of the open verification for every number that asks for a code, listed or not.
- * A check more than {@link #TTL} after that send is expired. A new send replaces the open one.
+ * Open verification for every number that asks for a code, listed or not.
+ * A check after the row's expiry is expired. A new send replaces the open one.
  */
 @ApplicationScoped
 public class VerificationLedger {
 
     static final Duration TTL = Duration.ofMinutes(5);
 
-    private final ConcurrentHashMap<String, Open> open = new ConcurrentHashMap<>();
+    private final VerificationRecords records;
     private volatile Clock clock = Clock.systemUTC();
+
+    /** Arc builds the client proxy with this constructor. */
+    VerificationLedger() {
+        this.records = null;
+    }
+
+    @Inject
+    VerificationLedger(VerificationRecords records) {
+        this.records = records;
+    }
 
     /** Tests move the clock that the 5-minute expiry reads. */
     public void setClock(Clock clock) {
@@ -25,7 +35,7 @@ public class VerificationLedger {
     }
 
     public void reset() {
-        open.clear();
+        records.clearAll();
         clock = Clock.systemUTC();
     }
 
@@ -35,61 +45,47 @@ public class VerificationLedger {
      * @return the previous Twilio sid to cancel, or null
      */
     public synchronized String replace(String phone) {
-        Open previous = open.put(phone, new Open(clock.instant(), null, false));
-        return previous == null ? null : previous.sid;
+        Instant startedAt = clock.instant();
+        return records.replace(phone, startedAt, startedAt.plus(TTL));
     }
 
     public synchronized void rememberSid(String phone, String sid) {
         if (!VerificationSid.matches(sid)) {
             return;
         }
-        open.computeIfPresent(phone, (ignored, current) -> current.withSid(sid));
+        records.rememberSid(phone, sid);
     }
 
-    /** True when no verification is open, or the open one started more than 5 minutes ago. */
+    /** True when no verification is open, or the open one is past its expiry. */
     public synchronized boolean expired(String phone) {
-        Open current = open.get(phone);
-        return current == null || clock.instant().isAfter(current.startedAt.plus(TTL));
+        VerificationRecords.Open current = records.read(phone);
+        return current == null || clock.instant().isAfter(current.expiresAt());
     }
 
     /** Sid of an expired verification that still needs a Twilio cancel, or null. */
     public synchronized String peekExpiredSid(String phone) {
-        Open current = open.get(phone);
-        if (current == null || current.sid == null) {
+        VerificationRecords.Open current = records.read(phone);
+        if (current == null || current.sid() == null || !clock.instant().isAfter(current.expiresAt())) {
             return null;
         }
-        if (!clock.instant().isAfter(current.startedAt.plus(TTL))) {
-            return null;
-        }
-        return current.sid;
+        return current.sid();
     }
 
     public synchronized void dropSid(String phone) {
-        open.computeIfPresent(phone, (ignored, current) -> current.withSid(null));
+        records.dropSid(phone);
     }
 
     /** The check after the fifth attempt, including Twilio 60202, closes the open verification. */
     public synchronized void exhaust(String phone) {
-        open.computeIfPresent(phone, (ignored, current) -> current.exhaust());
+        records.exhaust(phone);
     }
 
     public synchronized boolean exhausted(String phone) {
-        Open current = open.get(phone);
-        return current != null && current.exhausted && !clock.instant().isAfter(current.startedAt.plus(TTL));
+        VerificationRecords.Open current = records.read(phone);
+        return current != null && current.exhausted() && !clock.instant().isAfter(current.expiresAt());
     }
 
     public synchronized void clear(String phone) {
-        open.remove(phone);
-    }
-
-    private record Open(Instant startedAt, String sid, boolean exhausted) {
-
-        Open withSid(String sid) {
-            return new Open(startedAt, sid, exhausted);
-        }
-
-        Open exhaust() {
-            return new Open(startedAt, sid, true);
-        }
+        records.clear(phone);
     }
 }

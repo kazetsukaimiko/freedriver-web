@@ -1,5 +1,70 @@
 # Changelog
 
+## [1.4.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.3.0...v1.4.0) (2026-11-12)
+
+
+### Features
+
+* **dashboard:** accept an optional delay on switch_appliance ([0966026](https://github.com/kazetsukaimiko/freedriver-web/commit/096602641c535fd0a4780016e34a48a1beaf07f2))
+* **dashboard:** accept an optional delay on switch_appliance ([db29919](https://github.com/kazetsukaimiko/freedriver-web/commit/db299191c18fae00b4b0143361ac6b0cba1a5cbb))
+* **keycloak:** map mcp-user onto DCR autonomy tokens ([556176a](https://github.com/kazetsukaimiko/freedriver-web/commit/556176a9584bd0411e1f4e20862b13103f2895a3))
+* **keycloak:** map mcp-user onto DCR autonomy tokens ([1437405](https://github.com/kazetsukaimiko/freedriver-web/commit/1437405475f861fd28a9923136b169a2e8f10e43)), closes [#453](https://github.com/kazetsukaimiko/freedriver-web/issues/453)
+* **keycloak:** trust grok.com for anonymous DCR ([047b60b](https://github.com/kazetsukaimiko/freedriver-web/commit/047b60bbc9754d91a0f9ed8390d1c747429ba653))
+* **keycloak:** trust grok.com for anonymous DCR ([b3a3a20](https://github.com/kazetsukaimiko/freedriver-web/commit/b3a3a200fe04cccdb7676791b808904fbb23dcfa)), closes [#112](https://github.com/kazetsukaimiko/freedriver-web/issues/112)
+
+
+### Bug Fixes
+
+* **dashboard:** accept DCR client ids on autonomy MCP ([05c91ce](https://github.com/kazetsukaimiko/freedriver-web/commit/05c91ce76ec90f6a98eda025819e80ef7a1a7602))
+* **dashboard:** accept DCR client ids on autonomy MCP ([1854b7b](https://github.com/kazetsukaimiko/freedriver-web/commit/1854b7b1d84a890a3ef6755a697faae0655b1e08))
+
+## [1.3.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.2.0...v1.3.0) (2026-11-12)
+
+
+### Features
+
+* **dashboard:** store autonomy MCP sessions in Redis ([9a28bbc](https://github.com/kazetsukaimiko/freedriver-web/commit/9a28bbcb0e3f4d0dd7339135cda8c31b29e1aca4))
+* **dashboard:** store autonomy MCP sessions in Redis ([78eec79](https://github.com/kazetsukaimiko/freedriver-web/commit/78eec79399531186e9b76c4756bc373d49af05c0)), closes [#419](https://github.com/kazetsukaimiko/freedriver-web/issues/419)
+* **dashboard:** store the appliance roster in Mongo ([e77d585](https://github.com/kazetsukaimiko/freedriver-web/commit/e77d5852682a920e0a0269f423c704444f627717))
+* **dashboard:** store the appliance roster in Mongo ([542cca5](https://github.com/kazetsukaimiko/freedriver-web/commit/542cca5ba0ed2587cf4bbbd32f59f32e972a6be3))
+* **deploy:** add unpublished Redis singleton ([291668f](https://github.com/kazetsukaimiko/freedriver-web/commit/291668f99c3cdacfa694582f56e8a2736fce19d8))
+* **deploy:** add unpublished Redis singleton ([541627e](https://github.com/kazetsukaimiko/freedriver-web/commit/541627e0b32ed7bdb9d600d9f633a9d601ddc282)), closes [#444](https://github.com/kazetsukaimiko/freedriver-web/issues/444)
+* **dispatcher:** keep dispatch jobs in the dashboard Mongo database ([f535b1d](https://github.com/kazetsukaimiko/freedriver-web/commit/f535b1dd79c38076e7ff47904720acce5494ce61))
+* **dispatcher:** keep dispatch jobs in the dashboard Mongo database ([ddde6fc](https://github.com/kazetsukaimiko/freedriver-web/commit/ddde6fcbc3e38a1eaf5cfd33f4c06708e42d9a1f))
+* **dispatcher:** return a job id without waiting on OpenBot ([3c0fe8a](https://github.com/kazetsukaimiko/freedriver-web/commit/3c0fe8a542ec1065cf58350153fefd5bab72b030))
+* **dispatcher:** return a job id without waiting on OpenBot ([31c5f5f](https://github.com/kazetsukaimiko/freedriver-web/commit/31c5f5fefdd0c46e547662031e0c949f56655810))
+* **dispatcher:** return submit_job immediately when the wait is omitted ([1c7f688](https://github.com/kazetsukaimiko/freedriver-web/commit/1c7f688198acf95b14d2c28fb49556fca469e427))
+* **dispatcher:** return submit_job immediately when the wait is omitted ([4c22541](https://github.com/kazetsukaimiko/freedriver-web/commit/4c22541998756c648c70133ff157a246594d130b)), closes [#398](https://github.com/kazetsukaimiko/freedriver-web/issues/398)
+* **dispatcher:** serve dispatcher MCP with Quarkus MCP server ([92aa2a2](https://github.com/kazetsukaimiko/freedriver-web/commit/92aa2a2f6213154635daa2c969d17befde3d1345))
+* **dispatcher:** serve dispatcher MCP with the Quarkus MCP server ([58eaddd](https://github.com/kazetsukaimiko/freedriver-web/commit/58eaddd04b1c812699637491f5974ecd846f9b88))
+* **dispatcher:** share job waits across processes ([965f38f](https://github.com/kazetsukaimiko/freedriver-web/commit/965f38f24e1397e668b6a7fc07eb46b341a51bec))
+* **dispatcher:** share job waits across processes ([6183f9a](https://github.com/kazetsukaimiko/freedriver-web/commit/6183f9a7ddf34b098a2774bf2332864e8586eaae))
+* **dispatcher:** store MCP sessions in Redis ([eda859f](https://github.com/kazetsukaimiko/freedriver-web/commit/eda859ff54bc6951f9f3ead12656213c2af218da))
+* **dispatcher:** store on_busy with each sent job ([2529518](https://github.com/kazetsukaimiko/freedriver-web/commit/252951817eb86cdb82a6a177630aa530dba72d16))
+* **dispatcher:** wake job waits through Redis ([98d2baf](https://github.com/kazetsukaimiko/freedriver-web/commit/98d2bafee77dcdfca66d71a550304e1ef3061992))
+* **sms:** keep short rate-limit windows in Redis ([9f4f43f](https://github.com/kazetsukaimiko/freedriver-web/commit/9f4f43fca504acaa09477efcb4843c857a2c08b1))
+* **sms:** keep short rate-limit windows in Redis ([b501d20](https://github.com/kazetsukaimiko/freedriver-web/commit/b501d20145ab9ac91cfb2344e4ba0ce6f3e4815e)), closes [#446](https://github.com/kazetsukaimiko/freedriver-web/issues/446)
+* **sms:** keep the daily send cap in Mongo ([517d146](https://github.com/kazetsukaimiko/freedriver-web/commit/517d1466c91e7d313ec299548045285b01111195))
+* **sms:** keep the daily send cap in Mongo ([d81feaf](https://github.com/kazetsukaimiko/freedriver-web/commit/d81feaf52fe620f493347b6271657d6fd1cfdcff)), closes [#447](https://github.com/kazetsukaimiko/freedriver-web/issues/447)
+* **sms:** store each phone number as its own document ([c7187e1](https://github.com/kazetsukaimiko/freedriver-web/commit/c7187e12fc04136cdd6045a748e55fbc1954f99a))
+* **sms:** store each phone number as its own document ([b492205](https://github.com/kazetsukaimiko/freedriver-web/commit/b4922057fc5750adf22e430bafaabb4cb623aff5))
+* **sms:** store each sign-in time as its own document ([1d63627](https://github.com/kazetsukaimiko/freedriver-web/commit/1d636274e118b4fc354c7aa79865896bf0209a7d))
+* **sms:** store each sign-in time as its own document ([bab027d](https://github.com/kazetsukaimiko/freedriver-web/commit/bab027d128fff846622f570fb0e09c05a9ba63de))
+* **sms:** store open verifications in Redis ([d8dfde7](https://github.com/kazetsukaimiko/freedriver-web/commit/d8dfde77ffac49e38a6770e70e80dfe852eb74b6))
+* **sms:** store open verifications in Redis ([35d467c](https://github.com/kazetsukaimiko/freedriver-web/commit/35d467c814f8b66dabf9ed4220e6cc49497e35a5))
+
+
+### Bug Fixes
+
+* **deploy:** copy hit-window into the image builds ([9ad40d9](https://github.com/kazetsukaimiko/freedriver-web/commit/9ad40d96d604e8584202534a6e67bec83228e6f0)), closes [#446](https://github.com/kazetsukaimiko/freedriver-web/issues/446)
+* **dispatcher:** make JobStore the Mongo-backed queue ([95821d2](https://github.com/kazetsukaimiko/freedriver-web/commit/95821d28c6c4c686e8c5036d2b0082aaa400786f))
+* **dispatcher:** read dispatch jobs from Mongo on each call ([c19ea9a](https://github.com/kazetsukaimiko/freedriver-web/commit/c19ea9ade37c1fd7a4eda723c38c5104cfa70229))
+
+
+### Reverts
+
+* **dispatcher:** restore the hand-rolled MCP server ([4adb253](https://github.com/kazetsukaimiko/freedriver-web/commit/4adb2531650d6d6c6ea80f8ddb6488dcc1d82b04))
+
 ## [1.2.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.1.0...v1.2.0) (2026-11-10)
 
 

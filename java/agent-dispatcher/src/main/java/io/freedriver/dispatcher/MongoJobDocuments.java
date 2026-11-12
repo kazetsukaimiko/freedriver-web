@@ -17,10 +17,12 @@ final class MongoJobDocuments implements JobDocuments {
 
     private final MongoClient client;
     private final String database;
+    private final RedisJobWake wake;
 
-    MongoJobDocuments(MongoClient client, String database) {
+    MongoJobDocuments(MongoClient client, String database, String redisUrl) {
         this.client = client;
         this.database = database;
+        this.wake = new RedisJobWake(redisUrl);
     }
 
     @Override
@@ -82,6 +84,16 @@ final class MongoJobDocuments implements JobDocuments {
     @Override
     public boolean delete(String collection, String id) {
         return collection(collection).deleteOne(eq("_id", id)).getDeletedCount() > 0;
+    }
+
+    @Override
+    public Object waitLock() {
+        return wake.lock();
+    }
+
+    @Override
+    public void wake() {
+        wake.wake();
     }
 
     private MongoCollection<Document> collection(String name) {

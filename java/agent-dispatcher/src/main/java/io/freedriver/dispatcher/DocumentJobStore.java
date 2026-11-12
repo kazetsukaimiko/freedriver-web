@@ -27,13 +27,13 @@ import java.util.UUID;
 
 /**
  * Reads and writes {@link JobDocuments} on every call. {@link MongoJobStore} is the production bean.
+ * A submit wait and a device poll share {@link JobDocuments#waitLock()} with every other store on these documents.
  */
 class DocumentJobStore implements JobStore {
 
     private static final Duration LOCK_TTL = Duration.ofMinutes(3);
 
     private final Clock clock;
-    private final Object monitor = new Object();
     private final JobPing jobPing;
     private final JobDocuments documents;
 
@@ -45,6 +45,11 @@ class DocumentJobStore implements JobStore {
 
     private JobPing ping() {
         return jobPing == null ? JobPing.NONE : jobPing;
+    }
+
+    /** Submit waits and device polls on every store that shares {@link #documents}. */
+    private Object monitor() {
+        return documents.waitLock();
     }
 
     public DeviceView register(String deviceId, String hostname, List<String> agents) {
@@ -61,7 +66,7 @@ class DocumentJobStore implements JobStore {
             }
             copy.add(agent);
         }
-        synchronized (monitor) {
+        synchronized (monitor()) {
             Document device = new Document("_id", deviceId)
                     .append("hostname", hostname)
                     .append("agents", List.copyOf(copy))
@@ -69,7 +74,7 @@ class DocumentJobStore implements JobStore {
                     .append("activityText", new Document())
                     .append("lastHeartbeat", Date.from(clock.instant()));
             documents.replace(JobDocuments.DEVICES, deviceId, device);
-            monitor.notifyAll();
+            documents.wake();
             return viewDevice(device);
         }
     }
@@ -113,7 +118,7 @@ class DocumentJobStore implements JobStore {
             throw badRequest("hostname is too long");
         }
         register(deviceId, hostname, new ArrayList<>(states.keySet()));
-        synchronized (monitor) {
+        synchronized (monitor()) {
             Document device = mustDevice(deviceId);
             device.put("activity", new Document(states));
             device.put("activityText", new Document(notes));
@@ -175,7 +180,7 @@ class DocumentJobStore implements JobStore {
         if (note != null && note.length() > 2000) {
             throw badRequest("note is too long");
         }
-        synchronized (monitor) {
+        synchronized (monitor()) {
             Document row = own(deviceId, assignmentId);
             String status = row.getString("status");
             if (isTerminal(status)) {
@@ -200,13 +205,13 @@ class DocumentJobStore implements JobStore {
                     new Document("_id", id(assignmentId)).append("status", row.getString("status")), next)) {
                 throw conflict("assignment is " + row.getString("status"));
             }
-            monitor.notifyAll();
+            documents.wake();
             return viewAssignment(mustJob(assignmentId));
         }
     }
 
     public DeviceView heartbeat(String deviceId) {
-        synchronized (monitor) {
+        synchronized (monitor()) {
             Document device = documents.findById(JobDocuments.DEVICES, deviceId);
             if (device == null) {
                 throw notFound("device");
@@ -264,9 +269,9 @@ class DocumentJobStore implements JobStore {
                 if (remaining <= 0) {
                     break;
                 }
-                synchronized (monitor) {
+                synchronized (monitor()) {
                     try {
-                        monitor.wait(millisAtLeastOne(Math.min(remaining, 200_000_000L)));
+                        monitor().wait(millisAtLeastOne(Math.min(remaining, 200_000_000L)));
                     } catch (InterruptedException interrupted) {
                         Thread.currentThread().interrupt();
                         throw new DispatcherException(DispatcherException.Kind.CONFLICT, "wait interrupted");
@@ -294,7 +299,7 @@ class DocumentJobStore implements JobStore {
         if (new HashSet<>(deviceIds).size() != deviceIds.size()) {
             throw badRequest("duplicate device");
         }
-        synchronized (monitor) {
+        synchronized (monitor()) {
             List<String> hosts = new ArrayList<>();
             for (String deviceId : deviceIds) {
                 requireText(deviceId, "deviceId");
@@ -336,7 +341,7 @@ class DocumentJobStore implements JobStore {
                     documents.replace(JobDocuments.JOBS, assignmentId, row);
                     written.add(assignmentId);
                 }
-                monitor.notifyAll();
+                documents.wake();
                 return new Queued(jobId, hosts);
             } catch (RuntimeException failure) {
                 for (String assignmentId : written) {
@@ -427,9 +432,9 @@ class DocumentJobStore implements JobStore {
             if (remaining <= 0) {
                 break;
             }
-            synchronized (monitor) {
+            synchronized (monitor()) {
                 try {
-                    monitor.wait(millisAtLeastOne(Math.min(remaining, 200_000_000L)));
+                    monitor().wait(millisAtLeastOne(Math.min(remaining, 200_000_000L)));
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
                     throw new DispatcherException(DispatcherException.Kind.CONFLICT, "wait interrupted");
@@ -449,7 +454,7 @@ class DocumentJobStore implements JobStore {
     }
 
     public AssignmentView claim(String deviceId, UUID assignmentId) {
-        synchronized (monitor) {
+        synchronized (monitor()) {
             Document row = own(deviceId, assignmentId);
             if (!"QUEUED".equals(row.getString("status"))) {
                 throw conflict("assignment is " + row.getString("status"));
@@ -461,7 +466,7 @@ class DocumentJobStore implements JobStore {
                     new Document("_id", id(assignmentId)).append("status", "QUEUED"), next)) {
                 throw conflict("assignment is " + row.getString("status"));
             }
-            monitor.notifyAll();
+            documents.wake();
             return viewAssignment(mustJob(assignmentId));
         }
     }
@@ -470,7 +475,7 @@ class DocumentJobStore implements JobStore {
         if (request == null || request.state() == null) {
             throw badRequest("state is required");
         }
-        synchronized (monitor) {
+        synchronized (monitor()) {
             Document row = own(deviceId, assignmentId);
             String status = row.getString("status");
             switch (request.state()) {
@@ -509,7 +514,7 @@ class DocumentJobStore implements JobStore {
                     new Document("_id", id(assignmentId)).append("status", status), next)) {
                 throw conflict("assignment is " + status);
             }
-            monitor.notifyAll();
+            documents.wake();
             return viewAssignment(mustJob(assignmentId));
         }
     }
@@ -521,9 +526,9 @@ class DocumentJobStore implements JobStore {
                 expireNonTerminal(jobId);
                 return;
             }
-            synchronized (monitor) {
+            synchronized (monitor()) {
                 try {
-                    monitor.wait(millisAtLeastOne(Math.min(remaining, 200_000_000L)));
+                    monitor().wait(millisAtLeastOne(Math.min(remaining, 200_000_000L)));
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
                     throw new DispatcherException(DispatcherException.Kind.CONFLICT, "wait interrupted");
@@ -544,8 +549,8 @@ class DocumentJobStore implements JobStore {
             documents.replaceMatching(JobDocuments.JOBS,
                     new Document("_id", row.getString("_id")).append("status", status), next);
         }
-        synchronized (monitor) {
-            monitor.notifyAll();
+        synchronized (monitor()) {
+            documents.wake();
         }
     }
 

@@ -12,7 +12,7 @@
 # member of phone-sign-in with the realm role dashboard. Group and role checks
 # run before that write. Effective realm roles must be inside dashboard,
 # default-roles-freedriver, offline_access, uma_authorization, grafana-viewer,
-# grafana-editor, and grafana-admin. Any client role stops the script. A +1
+# grafana-editor, grafana-admin, and mcp-user. Any client role stops the script. A +1
 # number is ten digits whose first digit is 2-9.
 # Run scripts/provision-keycloak-sms-otp.sh first; it creates the group and
 # the attribute.
@@ -40,6 +40,8 @@
 # Authorization code + PKCE S256, no secret, no service account. Enabled with
 # the grok.com connector callback (same URI as freedriver-dispatcher).
 # webOrigins stay empty. offline_access stays optional. 1-year access token.
+# Anonymous DCR grok.com clients inherit mcp-user and dashboard from the roles
+# client scope so an autonomy token can call tools/list and switch_appliance.
 #
 # MQTT broker client (#317) is confidential client freedriver-mqtt. Direct access
 # grants. Client scope mqtt-acl fills mqtt_acl.publish and mqtt_acl.subscribe from
@@ -270,6 +272,7 @@ ensure_role portal-admin
 ensure_role grafana-viewer
 ensure_role grafana-editor
 ensure_role grafana-admin
+ensure_role mcp-user
 
 ensure_user() {
   local username="$1"
@@ -619,6 +622,111 @@ ensure_openbot_mcp_client() {
 }
 ensure_openbot_mcp_client
 
+# Anonymous DCR Trusted Hosts for Grok Connect Apps: grok.com, console.x.ai, x.ai, *.x.ai.
+# host-sending-registration-request-must-match is false (Grok POSTs from xAI egress, not those names).
+# client-uris-must-match stays true so new clients use redirect URIs on those hosts.
+ensure_dcr_trusted_hosts() {
+  local action comp_id
+  kcadm get "realms/${REALM}" --fields id > "$work/realm-id.json"
+  kcadm get components -r "$REALM" \
+    -q type=org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy \
+    > "$work/dcr-policies.json"
+  action="$(python3 - "$work/realm-id.json" "$work/dcr-policies.json" "$work/dcr-trusted-hosts.json" <<'PY'
+import json, sys
+realm = json.load(open(sys.argv[1], encoding="utf-8"))
+policies = json.load(open(sys.argv[2], encoding="utf-8"))
+realm_id = realm.get("id") or ""
+comp = next(
+    (
+        c
+        for c in policies
+        if c.get("providerId") == "trusted-hosts" and c.get("subType") == "anonymous"
+    ),
+    None,
+)
+body = {
+    "name": "Trusted Hosts",
+    "providerId": "trusted-hosts",
+    "providerType": "org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy",
+    "subType": "anonymous",
+    "parentId": realm_id,
+    "config": {
+        "host-sending-registration-request-must-match": ["false"],
+        "client-uris-must-match": ["true"],
+        "trusted-hosts": ["*.x.ai", "console.x.ai", "grok.com", "x.ai"],
+    },
+}
+if comp and comp.get("id"):
+    body["id"] = comp["id"]
+    json.dump(body, open(sys.argv[3], "w", encoding="utf-8"))
+    print("update " + comp["id"])
+else:
+    json.dump(body, open(sys.argv[3], "w", encoding="utf-8"))
+    print("create")
+PY
+)"
+  if [[ "$action" == create ]]; then
+    kcadm_stdin create components -r "$REALM" -f - < "$work/dcr-trusted-hosts.json" >/dev/null
+    echo "Created anonymous DCR Trusted Hosts for grok.com and x.ai."
+  else
+    comp_id="${action#update }"
+    kcadm_stdin update "components/${comp_id}" -r "$REALM" -f - < "$work/dcr-trusted-hosts.json" >/dev/null
+    echo "Anonymous DCR Trusted Hosts are grok.com, console.x.ai, x.ai, and *.x.ai."
+  fi
+}
+ensure_dcr_trusted_hosts
+
+# Anonymous DCR clients keep Full Scope Disabled. Map mcp-user and dashboard onto
+# the built-in roles client scope so those clients inherit the two autonomy roles
+# when the signed-in user holds them. grafana-admin stays off that mapping.
+ensure_dcr_autonomy_role_scope() {
+  local scope_id missing
+  ensure_role mcp-user
+  kcadm get client-scopes -r "$REALM" --fields id,name,protocol > "$work/client-scopes.json"
+  scope_id="$(python3 - "$work/client-scopes.json" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+ids = [
+    s["id"]
+    for s in scopes
+    if s.get("name") == "roles" and s.get("protocol") == "openid-connect" and s.get("id")
+]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+  if [[ -z "$scope_id" ]]; then
+    echo "Failed to read client scope roles." >&2
+    exit 1
+  fi
+  kcadm get roles/mcp-user -r "$REALM" --fields id,name > "$work/role-mcp-user.json"
+  kcadm get roles/dashboard -r "$REALM" --fields id,name > "$work/role-dashboard.json"
+  kcadm get "client-scopes/${scope_id}/scope-mappings/realm" -r "$REALM" --fields id,name \
+    > "$work/roles-scope-mappings.json"
+  missing="$(python3 - "$work/role-mcp-user.json" "$work/role-dashboard.json" \
+    "$work/roles-scope-mappings.json" "$work/roles-scope-add.json" <<'PY'
+import json, sys
+mcp = json.load(open(sys.argv[1], encoding="utf-8"))
+dash = json.load(open(sys.argv[2], encoding="utf-8"))
+have = {item.get("name") for item in json.load(open(sys.argv[3], encoding="utf-8"))}
+wanted = [mcp, dash]
+for role in wanted:
+    if not role.get("id") or not role.get("name"):
+        raise SystemExit("autonomy role id is missing")
+add = [role for role in wanted if role.get("name") not in have]
+json.dump(add, open(sys.argv[4], "w", encoding="utf-8"))
+print("add" if add else "ok")
+PY
+)"
+  if [[ "$missing" == add ]]; then
+    kcadm_stdin create "client-scopes/${scope_id}/scope-mappings/realm" -r "$REALM" -f - \
+      < "$work/roles-scope-add.json" >/dev/null
+    echo "Client scope roles includes mcp-user and dashboard."
+  else
+    echo "Client scope roles already includes mcp-user and dashboard."
+  fi
+}
+ensure_dcr_autonomy_role_scope
+
 lookup_phone_group() {
   kcadm get groups -r "$REALM" -q "search=${PHONE_GROUP}" -q exact=true > "$work/groups.json"
   python3 - "$work/groups.json" "$PHONE_GROUP" <<'PY'
@@ -942,6 +1050,18 @@ assign_grafana_admin_users() {
     kcadm add-roles -r "$REALM" --uid "$id" --rolename grafana-admin >/dev/null
     echo "Assigned grafana-admin to ${username}."
   done
+}
+
+# Autonomy MCP tools/list needs mcp-user on the grok.com sign-in user. That user is kaze.
+assign_mcp_user_to_kaze() {
+  local id
+  id="$(kcadm get users -r "$REALM" -q "username=${PHONE_USER}" -q exact=true --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
+  if [[ -z "$id" ]]; then
+    echo "User ${PHONE_USER} is missing; mcp-user not assigned."
+    return
+  fi
+  kcadm add-roles -r "$REALM" --uid "$id" --rolename mcp-user >/dev/null
+  echo "Assigned mcp-user to ${PHONE_USER}."
 }
 
 ensure_grafana_client() {
@@ -1492,3 +1612,4 @@ fi
 echo "User ${PHONE_USER} has ${PHONE_GROUP}, ${PHONE_ROLE}, and no realm role outside the allow-list."
 
 assign_grafana_admin_users
+assign_mcp_user_to_kaze

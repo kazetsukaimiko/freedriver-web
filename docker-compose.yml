@@ -114,8 +114,10 @@ services:
       FREEDRIVER_MCP_DASHBOARD_URL: http://dashboard:8080
       FREEDRIVER_MCP_INTERNAL_SECRET: ${FREEDRIVER_MCP_INTERNAL_SECRET:-}
       FREEDRIVER_MCP_ENABLED: ${FREEDRIVER_AUTONOMY_MCP_ENABLED:-false}
+      FREEDRIVER_REDIS_URL: ${FREEDRIVER_REDIS_URL:-redis://redis:6379}
     depends_on:
-      - dashboard
+      dashboard:
+        condition: service_started
     expose:
       - "8080"
 
