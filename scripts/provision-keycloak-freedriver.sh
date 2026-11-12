@@ -530,6 +530,7 @@ fi
 # remain for the worker. Realm role device. Existing secret files stay as they
 # are. Throwaway realms skip the host secret file. This runs after
 # ensure_device_client so shizuku and other device ids stay client-credentials.
+# OpenBot is connect-and-forget like grok.com.
 OPENBOT_MCP_CLIENT=freedriver-openbot
 OPENBOT_MCP_SECRET_FILE="${OPENBOT_MCP_SECRET_FILE:-/opt/freedriver-secrets/keycloak-device-${OPENBOT_MCP_CLIENT}.secret}"
 OPENBOT_MCP_REDIRECT_URI='http://127.0.0.1:28417/mcp-auth'
@@ -572,7 +573,8 @@ ensure_openbot_mcp_client() {
     -s implicitFlowEnabled=false \
     -s directAccessGrantsEnabled=false \
     -s "redirectUris=${OPENBOT_MCP_REDIRECT_URIS}" \
-    -s 'attributes."pkce.code.challenge.method"=S256' >/dev/null
+    -s 'attributes."pkce.code.challenge.method"=S256' \
+    -s 'attributes."access.token.lifespan"=31536000' >/dev/null
   kcadm add-roles -r "$REALM" --uusername "service-account-${id}" --rolename device >/dev/null
   ensure_mapper "$uuid" actor-device \
     -s protocolMapper=oidc-hardcoded-claim-mapper \
