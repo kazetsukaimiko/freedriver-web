@@ -3,6 +3,7 @@ package io.freedriver.dispatcher;
 import io.freedriver.dispatcher.model.AgentRosterEntry;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.DeviceView;
+import io.freedriver.dispatcher.model.JobPage;
 import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.ReportedBot;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
@@ -45,6 +46,14 @@ public interface JobStore {
     JobView getJob(String dispatcherSubject, UUID jobId);
 
     List<JobView> listJobs(String dispatcherSubject);
+
+    /**
+     * One page of jobs this caller submitted, newest first.
+     * {@code agentName} and {@code state} are optional. {@code state} is
+     * queued, in-progress, or done. {@code limit} is 1 through 50.
+     * The rows do not include the prompt.
+     */
+    JobPage listJobPage(String dispatcherSubject, String agentName, String state, int limit, String cursor);
 
     List<AssignmentView> poll(String deviceId, Duration wait);
 

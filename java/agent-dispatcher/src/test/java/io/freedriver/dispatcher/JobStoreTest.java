@@ -3,6 +3,8 @@ package io.freedriver.dispatcher;
 import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
+import io.freedriver.dispatcher.model.JobPage;
+import io.freedriver.dispatcher.model.JobSummary;
 import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.OnBusy;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
@@ -606,6 +608,39 @@ class JobStoreTest {
         }
     }
 
+    @Test
+    void list_job_page_is_this_caller_newest_first_without_the_prompt() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-11-12T12:00:00Z"));
+        JobStore store = new DocumentJobStore(new MemoryJobDocuments(), clock, null);
+        store.register("pc-a", "a.local", List.of("yuni", "miko"));
+        JobView older = store.submitNow("grok", job(List.of("pc-a"), "yuni"));
+        clock.advance(Duration.ofSeconds(1));
+        JobView newer = store.submitNow("grok", job(List.of("pc-a"), "miko"));
+        clock.advance(Duration.ofSeconds(1));
+        JobView hidden = store.submitNow("alice", job(List.of("pc-a"), "yuni"));
+        store.finish("pc-a", newer.assignments().get(0).assignmentId(), true, "shipped");
+
+        JobPage first = store.listJobPage("grok", null, null, 1, null);
+        assertEquals(1, first.jobs().size());
+        assertEquals(newer.jobId(), first.jobs().get(0).jobId());
+        assertEquals("miko", first.jobs().get(0).agentName());
+        assertEquals("a.local", first.jobs().get(0).server());
+        assertEquals("done", first.jobs().get(0).state());
+        assertEquals("shipped", first.jobs().get(0).note());
+        assertEquals(Instant.parse("2026-11-12T12:00:01Z"), first.jobs().get(0).submittedAt());
+
+        JobPage second = store.listJobPage("grok", null, null, 1, first.nextCursor());
+        assertEquals(List.of(older.jobId()), second.jobs().stream().map(JobSummary::jobId).toList());
+        assertEquals("queued", second.jobs().get(0).state());
+        assertNull(second.nextCursor());
+
+        JobPage filtered = store.listJobPage("grok", "yuni", "queued", 20, null);
+        assertEquals(List.of(older.jobId()), filtered.jobs().stream().map(JobSummary::jobId).toList());
+        assertEquals(List.of(), store.listJobPage("alice", null, "done", 20, null).jobs());
+        assertEquals(hidden.jobId(), store.listJobPage("alice", null, "queued", 20, null).jobs().get(0).jobId());
+        assertThrows(DispatcherException.class, () -> store.listJobPage("grok", null, "later", 20, null));
+    }
+
     private static JobStore store() {
         return new DocumentJobStore(new MemoryJobDocuments(), Clock.systemUTC(), null);
     }
@@ -652,6 +687,10 @@ class JobStoreTest {
         @Override
         public Instant instant() {
             return now;
+        }
+
+        private void advance(Duration step) {
+            now = now.plus(step);
         }
     }
 }
