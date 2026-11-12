@@ -91,6 +91,13 @@ final class MemoryJobDocuments implements JobDocuments {
         return waitLock;
     }
 
+    @Override
+    public void wake() {
+        synchronized (waitLock) {
+            waitLock.notifyAll();
+        }
+    }
+
     private static Document copy(Document document, String id) {
         Document copy = new Document(document);
         copy.put("_id", id);

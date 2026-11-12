@@ -17,11 +17,12 @@ final class MongoJobDocuments implements JobDocuments {
 
     private final MongoClient client;
     private final String database;
-    private final Object waitLock = new Object();
+    private final RedisJobWake wake;
 
-    MongoJobDocuments(MongoClient client, String database) {
+    MongoJobDocuments(MongoClient client, String database, String redisUrl) {
         this.client = client;
         this.database = database;
+        this.wake = new RedisJobWake(redisUrl);
     }
 
     @Override
@@ -87,7 +88,12 @@ final class MongoJobDocuments implements JobDocuments {
 
     @Override
     public Object waitLock() {
-        return waitLock;
+        return wake.lock();
+    }
+
+    @Override
+    public void wake() {
+        wake.wake();
     }
 
     private MongoCollection<Document> collection(String name) {

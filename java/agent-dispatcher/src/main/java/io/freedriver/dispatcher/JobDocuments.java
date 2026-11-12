@@ -31,7 +31,10 @@ interface JobDocuments {
 
     /**
      * Lock for a submit wait and a device long-poll.
-     * A write notifies every waiter that shares these documents.
+     * {@link #wake()} notifies every waiter that shares these documents.
      */
     Object waitLock();
+
+    /** Wakes waiters on these documents, including another dispatcher process. */
+    void wake();
 }

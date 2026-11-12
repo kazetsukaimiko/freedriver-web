@@ -74,7 +74,7 @@ class DocumentJobStore implements JobStore {
                     .append("activityText", new Document())
                     .append("lastHeartbeat", Date.from(clock.instant()));
             documents.replace(JobDocuments.DEVICES, deviceId, device);
-            monitor().notifyAll();
+            documents.wake();
             return viewDevice(device);
         }
     }
@@ -205,7 +205,7 @@ class DocumentJobStore implements JobStore {
                     new Document("_id", id(assignmentId)).append("status", row.getString("status")), next)) {
                 throw conflict("assignment is " + row.getString("status"));
             }
-            monitor().notifyAll();
+            documents.wake();
             return viewAssignment(mustJob(assignmentId));
         }
     }
@@ -269,9 +269,9 @@ class DocumentJobStore implements JobStore {
                 if (remaining <= 0) {
                     break;
                 }
-                synchronized (monitor) {
+                synchronized (monitor()) {
                     try {
-                        monitor.wait(millisAtLeastOne(Math.min(remaining, 200_000_000L)));
+                        monitor().wait(millisAtLeastOne(Math.min(remaining, 200_000_000L)));
                     } catch (InterruptedException interrupted) {
                         Thread.currentThread().interrupt();
                         throw new DispatcherException(DispatcherException.Kind.CONFLICT, "wait interrupted");
@@ -341,7 +341,7 @@ class DocumentJobStore implements JobStore {
                     documents.replace(JobDocuments.JOBS, assignmentId, row);
                     written.add(assignmentId);
                 }
-                monitor().notifyAll();
+                documents.wake();
                 return new Queued(jobId, hosts);
             } catch (RuntimeException failure) {
                 for (String assignmentId : written) {
@@ -466,7 +466,7 @@ class DocumentJobStore implements JobStore {
                     new Document("_id", id(assignmentId)).append("status", "QUEUED"), next)) {
                 throw conflict("assignment is " + row.getString("status"));
             }
-            monitor().notifyAll();
+            documents.wake();
             return viewAssignment(mustJob(assignmentId));
         }
     }
@@ -514,7 +514,7 @@ class DocumentJobStore implements JobStore {
                     new Document("_id", id(assignmentId)).append("status", status), next)) {
                 throw conflict("assignment is " + status);
             }
-            monitor().notifyAll();
+            documents.wake();
             return viewAssignment(mustJob(assignmentId));
         }
     }
@@ -550,7 +550,7 @@ class DocumentJobStore implements JobStore {
                     new Document("_id", row.getString("_id")).append("status", status), next);
         }
         synchronized (monitor()) {
-            monitor().notifyAll();
+            documents.wake();
         }
     }
 
