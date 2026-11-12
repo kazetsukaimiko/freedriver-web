@@ -40,6 +40,8 @@
 # Authorization code + PKCE S256, no secret, no service account. Enabled with
 # the grok.com connector callback (same URI as freedriver-dispatcher).
 # webOrigins stay empty. offline_access stays optional. 1-year access token.
+# Anonymous DCR grok.com clients inherit mcp-user and dashboard from the roles
+# client scope so an autonomy token can call tools/list and switch_appliance.
 #
 # MQTT broker client (#317) is confidential client freedriver-mqtt. Direct access
 # grants. Client scope mqtt-acl fills mqtt_acl.publish and mqtt_acl.subscribe from
@@ -672,6 +674,57 @@ PY
   fi
 }
 ensure_dcr_trusted_hosts
+
+# Anonymous DCR clients keep Full Scope Disabled. Map mcp-user and dashboard onto
+# the built-in roles client scope so those clients inherit the two autonomy roles
+# when the signed-in user holds them. grafana-admin stays off that mapping.
+ensure_dcr_autonomy_role_scope() {
+  local scope_id missing
+  ensure_role mcp-user
+  kcadm get client-scopes -r "$REALM" --fields id,name,protocol > "$work/client-scopes.json"
+  scope_id="$(python3 - "$work/client-scopes.json" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+ids = [
+    s["id"]
+    for s in scopes
+    if s.get("name") == "roles" and s.get("protocol") == "openid-connect" and s.get("id")
+]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+  if [[ -z "$scope_id" ]]; then
+    echo "Failed to read client scope roles." >&2
+    exit 1
+  fi
+  kcadm get roles/mcp-user -r "$REALM" --fields id,name > "$work/role-mcp-user.json"
+  kcadm get roles/dashboard -r "$REALM" --fields id,name > "$work/role-dashboard.json"
+  kcadm get "client-scopes/${scope_id}/scope-mappings/realm" -r "$REALM" --fields id,name \
+    > "$work/roles-scope-mappings.json"
+  missing="$(python3 - "$work/role-mcp-user.json" "$work/role-dashboard.json" \
+    "$work/roles-scope-mappings.json" "$work/roles-scope-add.json" <<'PY'
+import json, sys
+mcp = json.load(open(sys.argv[1], encoding="utf-8"))
+dash = json.load(open(sys.argv[2], encoding="utf-8"))
+have = {item.get("name") for item in json.load(open(sys.argv[3], encoding="utf-8"))}
+wanted = [mcp, dash]
+for role in wanted:
+    if not role.get("id") or not role.get("name"):
+        raise SystemExit("autonomy role id is missing")
+add = [role for role in wanted if role.get("name") not in have]
+json.dump(add, open(sys.argv[4], "w", encoding="utf-8"))
+print("add" if add else "ok")
+PY
+)"
+  if [[ "$missing" == add ]]; then
+    kcadm_stdin create "client-scopes/${scope_id}/scope-mappings/realm" -r "$REALM" -f - \
+      < "$work/roles-scope-add.json" >/dev/null
+    echo "Client scope roles includes mcp-user and dashboard."
+  else
+    echo "Client scope roles already includes mcp-user and dashboard."
+  fi
+}
+ensure_dcr_autonomy_role_scope
 
 lookup_phone_group() {
   kcadm get groups -r "$REALM" -q "search=${PHONE_GROUP}" -q exact=true > "$work/groups.json"

@@ -48,6 +48,36 @@ print("anonymous DCR Trusted Hosts are grok.com and x.ai")
 PY
 
 python3 - <<'PY'
+from pathlib import Path
+script = Path("scripts/provision-keycloak-freedriver.sh").read_text()
+parts = script.split("ensure_dcr_autonomy_role_scope() {", 1)
+if len(parts) != 2:
+    raise SystemExit("provision script must define ensure_dcr_autonomy_role_scope")
+depth = 1
+kept = []
+for line in parts[1].splitlines():
+    if line.strip() == "{":
+        depth += 1
+    elif line.strip() == "}":
+        depth -= 1
+        if depth == 0:
+            break
+    kept.append(line)
+fn = "\n".join(kept)
+if "client-scopes/" not in fn or "scope-mappings/realm" not in fn:
+    raise SystemExit("DCR autonomy roles must map onto the roles client scope")
+if "mcp-user" not in fn or "dashboard" not in fn:
+    raise SystemExit("DCR autonomy roles must include mcp-user and dashboard")
+if "grafana-admin" in fn:
+    raise SystemExit("DCR autonomy roles must not map grafana-admin")
+if "fullScopeAllowed=true" in fn:
+    raise SystemExit("DCR autonomy roles must leave Full Scope Disabled")
+if "ensure_dcr_autonomy_role_scope\n" not in parts[1]:
+    raise SystemExit("ensure_dcr_autonomy_role_scope must run")
+print("anonymous DCR roles client scope includes mcp-user and dashboard")
+PY
+
+python3 - <<'PY'
 import re
 from pathlib import Path
 compose = Path("docker-compose.yml").read_text()
