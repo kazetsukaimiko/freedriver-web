@@ -240,7 +240,7 @@ class McpResourceTest {
         String session = initialize();
         String listed = call(session, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}")
                 .statusCode(200)
-                .body("result.tools.name", containsInAnyOrder("list_agents", "openbot_send_prompt", "openbot_await_turn", "get_job"))
+                .body("result.tools.name", containsInAnyOrder("list_agents", "openbot_send_prompt", "openbot_await_turn", "get_job", "list_jobs"))
                 .extract()
                 .asString();
         assertTrue(listed.contains("Freedriver dispatch"));
@@ -286,8 +286,8 @@ class McpResourceTest {
         ValidatableResponse listed = call(session, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}")
                 .statusCode(200)
                 .contentType("application/json")
-                .body("result.tools.name", containsInAnyOrder("list_agents", "openbot_send_prompt", "openbot_await_turn", "get_job"))
-                .body("result.tools.size()", is(4))
+                .body("result.tools.name", containsInAnyOrder("list_agents", "openbot_send_prompt", "openbot_await_turn", "get_job", "list_jobs"))
+                .body("result.tools.size()", is(5))
                 .body("result.tools.find { it.name == 'openbot_send_prompt' }.inputSchema.properties.prompt.maxLength", is(16000))
                 .body("result.tools.find { it.name == 'openbot_send_prompt' }.inputSchema.properties.server.maxLength", is(253))
                 .body("result.tools.find { it.name == 'openbot_send_prompt' }.inputSchema.additionalProperties", is(false))
@@ -297,7 +297,12 @@ class McpResourceTest {
                 .body("result.tools.find { it.name == 'openbot_await_turn' }.inputSchema.properties.delaySeconds.maximum", is(120))
                 .body("result.tools.find { it.name == 'openbot_await_turn' }.inputSchema.properties.delaySeconds.minimum", is(0))
                 .body("result.tools.find { it.name == 'openbot_await_turn' }.inputSchema.required", hasItem("delaySeconds"))
-                .body("result.tools.find { it.name == 'list_agents' }.inputSchema.additionalProperties", is(false));
+                .body("result.tools.find { it.name == 'list_agents' }.inputSchema.additionalProperties", is(false))
+                .body("result.tools.find { it.name == 'list_jobs' }.inputSchema.additionalProperties", is(false))
+                .body("result.tools.find { it.name == 'list_jobs' }.inputSchema.properties.limit.maximum", is(50))
+                .body("result.tools.find { it.name == 'list_jobs' }.inputSchema.properties.state.enum",
+                        hasItems("queued", "in-progress", "done"))
+                .body("result.tools.find { it.name == 'list_jobs' }.inputSchema.required", nullValue());
         String toolsJson = listed.extract().asString();
         assertFalse(toolsJson.contains("allowlist"));
         assertFalse(toolsJson.contains("\"shell\""));
@@ -433,7 +438,7 @@ class McpResourceTest {
                 .post("/dispatch/mcp")
                 .then()
                 .statusCode(200)
-                .body("result.tools.name", containsInAnyOrder("list_agents", "openbot_send_prompt", "openbot_await_turn", "get_job"));
+                .body("result.tools.name", containsInAnyOrder("list_agents", "openbot_send_prompt", "openbot_await_turn", "get_job", "list_jobs"));
 
         given()
                 .header(McpApi.SESSION_HEADER, session)
@@ -611,6 +616,61 @@ class McpResourceTest {
                 .extract()
                 .path("result.content[0].text");
         assertFalse(listed.contains(PROMPT));
+    }
+
+    @Test
+    @TestSecurity(user = "grok-pages", roles = "dispatcher")
+    void list_jobs_returns_this_callers_rows_and_not_another_prompt() throws Exception {
+        jobs.register("pc-pages", "pages.local", List.of("yuni", "miko"));
+        JobView mine = jobs.submitNow("grok-pages", new SubmitJobRequest(
+                List.of("pc-pages"), "yuni", "secret-prompt-mine", Channel.TEXT, OnBusy.queue));
+        jobs.finish("pc-pages", mine.assignments().get(0).assignmentId(), true, "finished-note");
+        JobView queued = jobs.submitNow("grok-pages", new SubmitJobRequest(
+                List.of("pc-pages"), "miko", "secret-prompt-queued", Channel.TEXT, OnBusy.queue));
+        JobView hidden = jobs.submitNow("alice-pages", new SubmitJobRequest(
+                List.of("pc-pages"), "yuni", "secret-prompt-alice", Channel.TEXT, OnBusy.queue));
+        String session = initialize();
+
+        String text = call(session, "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\",\"params\":{\"name\":\"list_jobs\",\"arguments\":{}}}")
+                .statusCode(200)
+                .body("result.isError", is(false))
+                .extract()
+                .path("result.content[0].text");
+        JsonNode page = mapper.readTree(text);
+        assertEquals(2, page.path("jobs").size());
+        assertFalse(text.contains("secret-prompt"));
+        assertFalse(text.contains(hidden.jobId().toString()));
+        assertTrue(text.contains(mine.jobId().toString()));
+        assertTrue(text.contains("finished-note"));
+        assertTrue(text.contains("pages.local"));
+        assertTrue(text.contains("\"done\""));
+        assertTrue(text.contains("\"queued\""));
+
+        String done = call(session, """
+                {"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"list_jobs","arguments":{"agentName":"yuni","state":"done","limit":1}}}
+                """)
+                .statusCode(200)
+                .body("result.isError", is(false))
+                .extract()
+                .path("result.content[0].text");
+        JsonNode donePage = mapper.readTree(done);
+        assertEquals(1, donePage.path("jobs").size());
+        assertEquals(mine.jobId().toString(), donePage.path("jobs").get(0).path("jobId").asText());
+        assertFalse(done.contains(queued.jobId().toString()));
+        assertFalse(done.contains("secret-prompt"));
+
+        String got = call(session, getJob(mine.jobId().toString()))
+                .statusCode(200)
+                .body("result.isError", is(false))
+                .extract()
+                .path("result.content[0].text");
+        assertTrue(got.contains("secret-prompt-mine"));
+
+        call(session, """
+                {"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"list_jobs","arguments":{"state":"later"}}}
+                """)
+                .statusCode(200)
+                .body("error.code", is(-32602));
     }
 
     @Test

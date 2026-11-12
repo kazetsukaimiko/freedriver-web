@@ -33,6 +33,13 @@ public class DispatcherToolSchemas implements InputSchemaGenerator<Map<String, O
                             "delaySeconds", integer(0, 120)),
                     List.of("jobId", "delaySeconds"));
             case "get_job" -> object(Map.of("jobId", uuid()), List.of("jobId"));
+            case "list_jobs" -> object(
+                    Map.of(
+                            "agentName", string(1, 64),
+                            "state", enumOf("queued", "in-progress", "done"),
+                            "limit", integer(1, 50),
+                            "cursor", string(1, 80)),
+                    List.of());
             case "report_host" -> object(
                     Map.of(
                             "hostname", string(1, 253),

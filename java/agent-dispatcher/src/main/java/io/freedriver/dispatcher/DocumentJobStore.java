@@ -5,6 +5,8 @@ import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
 import io.freedriver.dispatcher.model.DeviceView;
+import io.freedriver.dispatcher.model.JobPage;
+import io.freedriver.dispatcher.model.JobSummary;
 import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.OnBusy;
 import io.freedriver.dispatcher.model.ReportedBot;
@@ -418,6 +420,156 @@ class DocumentJobStore implements JobStore {
             }
         }
         return List.copyOf(views);
+    }
+
+    @Override
+    public JobPage listJobPage(String dispatcherSubject, String agentName, String state, int limit, String cursor) {
+        requireText(dispatcherSubject, "dispatcher");
+        if (agentName != null && (agentName.isBlank() || agentName.length() > 64)) {
+            throw badRequest("agentName");
+        }
+        if (state != null && !state.equals("queued") && !state.equals("in-progress") && !state.equals("done")) {
+            throw badRequest("state");
+        }
+        if (limit < 1 || limit > 50) {
+            throw badRequest("limit");
+        }
+        PageCursor after = cursor == null || cursor.isBlank() ? null : pageCursor(cursor);
+        Map<String, List<Document>> byJob = new LinkedHashMap<>();
+        for (Document row : documents.find(JobDocuments.JOBS)) {
+            if (!dispatcherSubject.equals(row.getString("dispatcherSubject"))) {
+                continue;
+            }
+            String jobId = row.getString("jobId");
+            if (jobId == null) {
+                continue;
+            }
+            byJob.computeIfAbsent(jobId, id -> new ArrayList<>()).add(row);
+        }
+        List<JobSummary> summaries = new ArrayList<>();
+        for (Map.Entry<String, List<Document>> entry : byJob.entrySet()) {
+            List<Document> rows = entry.getValue();
+            rows.sort(Comparator.comparingInt(row -> row.getInteger("ordinal", 0)));
+            if (agentName != null && rows.stream().noneMatch(row -> agentName.equals(row.getString("agentName")))) {
+                continue;
+            }
+            JobSummary summary = summarize(entry.getKey(), rows);
+            if (state != null && !state.equals(summary.state())) {
+                continue;
+            }
+            if (after != null && !olderThan(summary, after)) {
+                continue;
+            }
+            summaries.add(summary);
+        }
+        summaries.sort(Comparator
+                .comparing(JobSummary::submittedAt, Comparator.reverseOrder())
+                .thenComparing(summary -> summary.jobId().toString(), Comparator.reverseOrder()));
+        boolean more = summaries.size() > limit;
+        List<JobSummary> page = List.copyOf(summaries.subList(0, Math.min(limit, summaries.size())));
+        String next = more ? pageCursor(page.get(page.size() - 1)) : null;
+        return new JobPage(page, next);
+    }
+
+    private JobSummary summarize(String jobId, List<Document> rows) {
+        Document first = rows.get(0);
+        String deviceId = first.getString("deviceId");
+        Document device = deviceId == null ? null : documents.findById(JobDocuments.DEVICES, deviceId);
+        String server = device == null || device.getString("hostname") == null
+                ? deviceId
+                : device.getString("hostname");
+        Instant submitted = null;
+        for (Document row : rows) {
+            Instant created = instant(row.get("createdAt"));
+            if (created != null && (submitted == null || created.isBefore(submitted))) {
+                submitted = created;
+            }
+        }
+        if (submitted == null) {
+            submitted = Instant.EPOCH;
+        }
+        return new JobSummary(
+                UUID.fromString(jobId),
+                first.getString("agentName"),
+                server,
+                rollup(rows),
+                submitted,
+                shortNote(rows));
+    }
+
+    private static String rollup(List<Document> rows) {
+        boolean queued = false;
+        boolean active = false;
+        for (Document row : rows) {
+            String status = row.getString("status");
+            if ("QUEUED".equals(status)) {
+                queued = true;
+            } else if ("CLAIMED".equals(status) || "RUNNING".equals(status)) {
+                active = true;
+            }
+        }
+        if (active) {
+            return "in-progress";
+        }
+        if (queued) {
+            return "queued";
+        }
+        return "done";
+    }
+
+    private static String shortNote(List<Document> rows) {
+        String fallback = "";
+        for (Document row : rows) {
+            String candidate = row.getString("note");
+            if (candidate == null || candidate.isBlank()) {
+                continue;
+            }
+            String status = row.getString("status");
+            if ("SUCCEEDED".equals(status) || "FAILED".equals(status)) {
+                return trimNote(candidate);
+            }
+            if (fallback.isEmpty()) {
+                fallback = candidate;
+            }
+        }
+        return trimNote(fallback);
+    }
+
+    private static String trimNote(String note) {
+        if (note.length() <= 200) {
+            return note;
+        }
+        return note.substring(0, 200);
+    }
+
+    private static boolean olderThan(JobSummary summary, PageCursor cursor) {
+        int time = Long.compare(summary.submittedAt().toEpochMilli(), cursor.millis());
+        if (time != 0) {
+            return time < 0;
+        }
+        return summary.jobId().toString().compareTo(cursor.jobId()) < 0;
+    }
+
+    private static String pageCursor(JobSummary summary) {
+        return summary.submittedAt().toEpochMilli() + "/" + summary.jobId();
+    }
+
+    private static PageCursor pageCursor(String cursor) {
+        int slash = cursor.indexOf('/');
+        if (slash <= 0 || slash == cursor.length() - 1) {
+            throw badRequest("cursor");
+        }
+        long millis;
+        try {
+            millis = Long.parseLong(cursor.substring(0, slash));
+            UUID.fromString(cursor.substring(slash + 1));
+        } catch (IllegalArgumentException | StringIndexOutOfBoundsException ex) {
+            throw badRequest("cursor");
+        }
+        return new PageCursor(millis, cursor.substring(slash + 1));
+    }
+
+    private record PageCursor(long millis, String jobId) {
     }
 
     public List<AssignmentView> poll(String deviceId, Duration wait) {

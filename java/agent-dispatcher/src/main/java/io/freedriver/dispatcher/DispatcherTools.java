@@ -42,6 +42,9 @@ public class DispatcherTools {
             "server", "agentName", "prompt", "channel", "on_busy");
     private static final Set<String> AWAIT_FIELDS = Set.of("jobId", "delaySeconds");
     private static final Set<String> JOB_FIELDS = Set.of("jobId");
+    private static final Set<String> LIST_FIELDS = Set.of("agentName", "state", "limit", "cursor");
+    private static final int PAGE_DEFAULT = 20;
+    private static final int PAGE_MAX = 50;
 
     private final JobStore jobs;
     private final SecurityIdentity identity;
@@ -122,6 +125,44 @@ public class DispatcherTools {
     }
 
     @Tool(
+            name = "list_jobs",
+            description = "Freedriver dispatch: list jobs this caller submitted, newest first. "
+                    + "Each row has the job id, agent name, server, state, submitted time, and a short result note. "
+                    + "state is queued, in-progress, or done. agentName and state narrow the list. "
+                    + "limit is 1 to 50 and defaults to 20. Pass nextCursor back as cursor for the next page. "
+                    + "The prompt is not included.",
+            inputSchema = @Tool.InputSchema(generator = DispatcherToolSchemas.class))
+    String listJobs(
+            RawMessage raw,
+            @ToolArg(name = "agentName", required = false) String agentName,
+            @ToolArg(name = "state", required = false) String state,
+            @ToolArg(name = "limit", required = false) Integer limit,
+            @ToolArg(name = "cursor", required = false) String cursor) {
+        require("dispatcher");
+        only(raw, LIST_FIELDS);
+        if (!textOrAbsent(raw, "agentName") || !textOrAbsent(raw, "state") || !textOrAbsent(raw, "cursor")) {
+            throw invalid();
+        }
+        if (present(raw, "limit") && !integral(raw, "limit")) {
+            throw invalid();
+        }
+        int size = limit == null ? PAGE_DEFAULT : limit;
+        if (size < 1 || size > PAGE_MAX) {
+            throw invalid();
+        }
+        if (agentName != null && (agentName.isBlank() || agentName.length() > 64)) {
+            throw invalid();
+        }
+        if (state != null && !state.equals("queued") && !state.equals("in-progress") && !state.equals("done")) {
+            throw invalid();
+        }
+        if (cursor != null && !cursor.matches("[0-9]+/[0-9a-fA-F-]{36}")) {
+            throw invalid();
+        }
+        return guard(() -> jobs.listJobPage(CallerIds.subject(identity), agentName, state, size, cursor));
+    }
+
+    @Tool(
             name = "get_job",
             description = "Freedriver dispatch: read one job this caller submitted, including its id and result.",
             inputSchema = @Tool.InputSchema(generator = DispatcherToolSchemas.class))
@@ -199,6 +240,19 @@ public class DispatcherTools {
             return true;
         }
         return arguments.getValue("on_busy") instanceof String;
+    }
+
+    private static boolean present(RawMessage raw, String name) {
+        JsonObject arguments = arguments(raw);
+        return arguments != null && arguments.containsKey(name) && arguments.getValue(name) != null;
+    }
+
+    private static boolean textOrAbsent(RawMessage raw, String name) {
+        JsonObject arguments = arguments(raw);
+        if (arguments == null || !arguments.containsKey(name) || arguments.getValue(name) == null) {
+            return true;
+        }
+        return arguments.getValue(name) instanceof String;
     }
 
     private static boolean integral(RawMessage raw, String name) {
