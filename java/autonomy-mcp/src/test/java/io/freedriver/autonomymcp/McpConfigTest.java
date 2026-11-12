@@ -24,6 +24,8 @@ class McpConfigTest {
         assertTrue(properties.contains("quarkus.oidc.token.required-claims.azp=freedriver-grok-mcp"));
         assertTrue(properties.contains("quarkus.tls.trust-all=false"));
         assertFalse(properties.contains("quarkus.tls.trust-all=true"));
+        assertTrue(properties.contains("freedriver.redis.url=${FREEDRIVER_REDIS_URL:redis://redis:6379}"));
+        assertFalse(properties.contains("quarkus.mongodb"));
         assertTrue(properties.contains("freedriver.mcp.enabled=false"));
         assertTrue(properties.contains("freedriver.mcp.dashboard-url=http://dashboard:8080"));
         assertFalse(properties.contains("freedriver.appliances.live-commands=true"));

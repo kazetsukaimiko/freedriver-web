@@ -19,7 +19,7 @@ Every tool requires `mcp-user`. Switch also requires `dashboard` or `portal-admi
 
 Rate limit is 30 calls per 60 seconds per subject per tool. Switch also takes the dashboard command limiter. Spoken replies name appliances and omit instance ids.
 
-`GET /api/autonomy/oauth-protected-resource` is the only unauthenticated autonomy response. It is OAuth protected-resource metadata. `/autonomy/mcp` requires a bearer.
+`GET /api/autonomy/oauth-protected-resource` is the only unauthenticated autonomy response. It is OAuth protected-resource metadata. `/autonomy/mcp` requires a bearer. A session id names the bearer subject that opened it. That binding is the Redis key `freedriver:mcp:autonomy:` plus the session id, and the key expires 24 hours after it is stored, so another autonomy-mcp process accepts the same id.
 
 ## Deploy
 
