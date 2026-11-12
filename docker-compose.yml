@@ -15,6 +15,7 @@ services:
       - keycloak
       - dashboard
       - agent-dispatcher
+      - agent-dispatcher-2
       - autonomy-mcp
       - grafana
 
@@ -66,8 +67,9 @@ services:
     expose:
       - "8080"
 
-  # No host port. Caddy on app.freedriver.io sends /mcp, /dispatch/mcp, and /api/dispatcher here.
-  agent-dispatcher:
+  # Two unpublished processes. Caddy on app.freedriver.io load-balances both
+  # on the compose network. Matcher is /mcp, /dispatch/mcp, and /api/dispatcher.
+  agent-dispatcher: &dispatcher
     build:
       context: .
       dockerfile: java/agent-dispatcher/src/main/docker/Dockerfile.compose
@@ -88,6 +90,9 @@ services:
         condition: service_healthy
     expose:
       - "8080"
+
+  agent-dispatcher-2:
+    <<: *dispatcher
 
   # No host port. Caddy on app.freedriver.io sends /autonomy/mcp here.
   # Off unless FREEDRIVER_AUTONOMY_MCP_ENABLED is true. Not /mcp or /appliances/mcp.

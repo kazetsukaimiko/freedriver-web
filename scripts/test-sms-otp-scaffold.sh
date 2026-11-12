@@ -120,7 +120,7 @@ if TWILIO_ENV not in block:
     raise SystemExit("sms loads /opt/freedriver-secrets/twilio-verify.env as a required env_file")
 if compose.count("twilio-verify.env") != 1:
     raise SystemExit("twilio-verify.env is loaded once, by sms")
-dash = compose.split("\n  dashboard:\n", 1)[1].split("\n  agent-dispatcher:\n", 1)[0]
+dash = compose.split("\n  dashboard:\n", 1)[1].split("\n  agent-dispatcher:", 1)[0]
 invite_env = (
     "    env_file:\n"
     "      - path: /opt/freedriver-secrets/keycloak-freedriver-invite.env\n"

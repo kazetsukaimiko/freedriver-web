@@ -44,6 +44,7 @@ class DispatcherConfigTest {
         assertTrue(properties.contains("quarkus.mongodb.server-selection-timeout=2S"));
         assertTrue(properties.contains("quarkus.http.auth.permission.authenticated.paths=/*"));
         assertTrue(properties.contains("quarkus.http.auth.permission.public.paths=/q/*"));
+        assertTrue(properties.contains("quarkus.smallrye-health.ui.enabled=false"));
         assertTrue(properties.contains(
                 "quarkus.http.auth.permission.metadata.paths=/api/dispatcher/oauth-protected-resource"));
         assertTrue(properties.contains("quarkus.http.auth.permission.metadata.policy=mcp-metadata"));
@@ -57,6 +58,12 @@ class DispatcherConfigTest {
         String caddy = Files.readString(Path.of("../../Caddyfile"));
         assertTrue(caddy.contains(
                 "@dispatcher path /mcp /mcp/* /dispatch/mcp /dispatch/mcp/* /api/dispatcher /api/dispatcher/*"));
+        assertFalse(caddy.contains("/api/device"));
+        assertTrue(caddy.contains("import dispatcher_proxy"));
+        assertTrue(caddy.contains("reverse_proxy agent-dispatcher:8080 agent-dispatcher-2:8080"));
+        assertTrue(caddy.contains("health_uri /q/health"));
+        assertFalse(caddy.contains("lb_policy cookie"));
+        assertFalse(caddy.contains("sticky"));
         assertTrue(caddy.contains(
                 "@autonomy path /autonomy/mcp /autonomy/mcp/* /api/autonomy /api/autonomy/*"));
         int autonomy = caddy.indexOf(
@@ -68,7 +75,13 @@ class DispatcherConfigTest {
         assertFalse(caddy.contains(".well-known"));
         assertFalse(caddy.contains("@dispatcher path /autonomy/mcp"));
 
+        String pom = Files.readString(Path.of("pom.xml"));
+        assertTrue(pom.contains("quarkus-smallrye-health"));
+
         String compose = Files.readString(Path.of("../../docker-compose.yml"));
+        assertTrue(compose.contains("agent-dispatcher: &dispatcher"));
+        assertTrue(compose.contains("agent-dispatcher-2:"));
+        assertTrue(compose.contains("<<: *dispatcher"));
         assertTrue(compose.contains("QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver"));
         assertTrue(compose.contains("QUARKUS_OIDC_CREDENTIALS_SECRET: ${FREEDRIVER_DISPATCHER_OIDC_SECRET:-}"));
         assertTrue(compose.contains(

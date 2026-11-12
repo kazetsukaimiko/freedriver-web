@@ -13,11 +13,22 @@ auth.freedriver.io {
 	}
 }
 
+# Unpublished dispatcher replicas on the compose network. Health is Quarkus /q/health.
+(dispatcher_proxy) {
+	reverse_proxy agent-dispatcher:8080 agent-dispatcher-2:8080 {
+		health_uri /q/health
+		health_interval 10s
+		health_timeout 3s
+		fail_duration 10s
+		lb_policy round_robin
+	}
+}
+
 app.freedriver.io {
 	encode gzip
 	@dispatcher path /mcp /mcp/* /dispatch/mcp /dispatch/mcp/* /api/dispatcher /api/dispatcher/*
 	handle @dispatcher {
-		reverse_proxy agent-dispatcher:8080
+		import dispatcher_proxy
 	}
 	@autonomy path /autonomy/mcp /autonomy/mcp/* /api/autonomy /api/autonomy/*
 	handle @autonomy {
