@@ -42,6 +42,10 @@
 # webOrigins stay empty. offline_access stays optional. 1-year access token.
 # Anonymous DCR grok.com clients inherit mcp-user and dashboard from the roles
 # client scope so an autonomy token can call tools/list and switch_appliance.
+# Mapper audience-autonomy-mcp on freedriver-grok-mcp and grok.com DCR clients
+# puts access-token aud https://app.freedriver.io/autonomy/mcp. The same mapper
+# lives on client scope autonomy-mcp, a realm default so a later DCR client
+# gets that audience at registration.
 #
 # MQTT broker client (#317) is confidential client freedriver-mqtt. Direct access
 # grants. Client scope mqtt-acl fills mqtt_acl.publish and mqtt_acl.subscribe from
@@ -726,6 +730,176 @@ PY
   fi
 }
 ensure_dcr_autonomy_role_scope
+
+# Autonomy MCP verifies aud https://app.freedriver.io/autonomy/mcp. Put that
+# audience on freedriver-grok-mcp and grok.com DCR clients (JSON stdin; kcadm -s
+# cannot parse included.custom.audience). Client scope autonomy-mcp is a realm
+# default so a later DCR registration inherits it. freedriver-dispatcher keeps
+# its own audience unset.
+ensure_autonomy_mcp_audience() {
+  local audience='https://app.freedriver.io/autonomy/mcp'
+  local mapper_name='audience-autonomy-mcp'
+  local grok_redirect='https://grok.com/connectors-oauth-exchange-code/'
+  local scope_id mapper_id have_default
+  python3 - "$work/audience-mapper.json" "$mapper_name" "$audience" <<'PY'
+import json, sys
+json.dump({
+    "name": sys.argv[2],
+    "protocol": "openid-connect",
+    "protocolMapper": "oidc-audience-mapper",
+    "config": {
+        "included.custom.audience": sys.argv[3],
+        "access.token.claim": "true",
+        "id.token.claim": "false",
+    },
+}, open(sys.argv[1], "w", encoding="utf-8"))
+PY
+
+  kcadm get client-scopes -r "$REALM" --fields id,name,protocol > "$work/client-scopes.json"
+  scope_id="$(python3 - "$work/client-scopes.json" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+ids = [
+    s["id"]
+    for s in scopes
+    if s.get("name") == "autonomy-mcp" and s.get("protocol") == "openid-connect" and s.get("id")
+]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+  if [[ -z "$scope_id" ]]; then
+    python3 - "$work/autonomy-mcp-scope.json" <<'PY'
+import json, sys
+json.dump({
+    "name": "autonomy-mcp",
+    "protocol": "openid-connect",
+    "description": "Access token audience https://app.freedriver.io/autonomy/mcp",
+    "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false",
+    },
+}, open(sys.argv[1], "w", encoding="utf-8"))
+PY
+    kcadm_stdin create client-scopes -r "$REALM" -f - < "$work/autonomy-mcp-scope.json" >/dev/null
+    kcadm get client-scopes -r "$REALM" --fields id,name,protocol > "$work/client-scopes.json"
+    scope_id="$(python3 - "$work/client-scopes.json" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+ids = [
+    s["id"]
+    for s in scopes
+    if s.get("name") == "autonomy-mcp" and s.get("protocol") == "openid-connect" and s.get("id")
+]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+    echo "Created client scope autonomy-mcp."
+  else
+    echo "Client scope autonomy-mcp already exists."
+  fi
+  if [[ -z "$scope_id" ]]; then
+    echo "Failed to read client scope autonomy-mcp." >&2
+    exit 1
+  fi
+
+  kcadm get "client-scopes/${scope_id}/protocol-mappers/models" -r "$REALM" > "$work/autonomy-mcp-mappers.json"
+  mapper_id="$(python3 - "$work/autonomy-mcp-mappers.json" "$mapper_name" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+ids = [item["id"] for item in data if isinstance(item, dict) and item.get("name") == wanted and item.get("id")]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+  if [[ -z "$mapper_id" ]]; then
+    kcadm_stdin create "client-scopes/${scope_id}/protocol-mappers/models" -r "$REALM" -f - \
+      < "$work/audience-mapper.json" >/dev/null
+    echo "Client scope autonomy-mcp includes audience-autonomy-mcp."
+  else
+    echo "Client scope autonomy-mcp already includes audience-autonomy-mcp."
+  fi
+
+  kcadm get default-default-client-scopes -r "$REALM" --fields id,name > "$work/realm-default-scopes.json"
+  have_default="$(python3 - "$work/realm-default-scopes.json" "$scope_id" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+print("yes" if any(s.get("id") == wanted for s in scopes) else "no")
+PY
+)"
+  if [[ "$have_default" != yes ]]; then
+    echo '{}' | kcadm_stdin update "default-default-client-scopes/${scope_id}" -r "$REALM" >/dev/null
+    echo "Realm default client scopes include autonomy-mcp."
+  else
+    echo "Realm default client scopes already include autonomy-mcp."
+  fi
+
+  kcadm get clients -r "$REALM" > "$work/audience-clients-raw.json"
+  python3 - "$work/audience-clients-raw.json" "$work/audience-clients.json" "$work/audience-targets.json" "$grok_redirect" <<'PY'
+import json, sys
+raw_path, slim_path, targets_path, redirect = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+clients = json.load(open(raw_path, encoding="utf-8"))
+slim = []
+targets = []
+for client in clients:
+    if not isinstance(client, dict):
+        continue
+    client.pop("secret", None)
+    slim.append({
+        "id": client.get("id"),
+        "clientId": client.get("clientId"),
+        "redirectUris": client.get("redirectUris") or [],
+    })
+    client_id = client.get("clientId") or ""
+    uid = client.get("id") or ""
+    uris = client.get("redirectUris") or []
+    if client_id == "freedriver-dispatcher" or not uid:
+        continue
+    if redirect in uris:
+        targets.append({"id": uid, "clientId": client_id})
+json.dump(slim, open(slim_path, "w", encoding="utf-8"))
+json.dump(targets, open(targets_path, "w", encoding="utf-8"))
+PY
+  rm -f "$work/audience-clients-raw.json"
+  while IFS=$'\t' read -r client_uuid client_id; do
+    [[ -n "$client_uuid" ]] || continue
+    kcadm get "clients/${client_uuid}/protocol-mappers/models" -r "$REALM" --fields name \
+      > "$work/client-mappers.json"
+    if python3 - "$work/client-mappers.json" "$mapper_name" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+raise SystemExit(0 if any(item.get("name") == wanted for item in data) else 1)
+PY
+    then
+      echo "Mapper ${mapper_name} already exists on ${client_id}."
+    else
+      kcadm_stdin create "clients/${client_uuid}/protocol-mappers/models" -r "$REALM" -f - \
+        < "$work/audience-mapper.json" >/dev/null
+      echo "Created mapper ${mapper_name} on ${client_id}."
+    fi
+    kcadm get "clients/${client_uuid}/default-client-scopes" -r "$REALM" > "$work/client-scopes-assigned.json"
+    if python3 - "$work/client-scopes-assigned.json" "$scope_id" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+raise SystemExit(0 if any(s.get("id") == wanted for s in scopes) else 1)
+PY
+    then
+      echo "Client ${client_id} already has default scope autonomy-mcp."
+    else
+      echo '{}' | kcadm_stdin update "clients/${client_uuid}/default-client-scopes/${scope_id}" -r "$REALM" >/dev/null
+      echo "Client ${client_id} default scopes include autonomy-mcp."
+    fi
+  done < <(python3 - "$work/audience-targets.json" <<'PY'
+import json, sys
+targets = json.load(open(sys.argv[1], encoding="utf-8"))
+for item in targets:
+    print(item["id"] + "\t" + item["clientId"])
+PY
+)
+}
+ensure_autonomy_mcp_audience
 
 lookup_phone_group() {
   kcadm get groups -r "$REALM" -q "search=${PHONE_GROUP}" -q exact=true > "$work/groups.json"
