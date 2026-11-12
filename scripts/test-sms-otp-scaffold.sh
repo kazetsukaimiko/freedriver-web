@@ -78,6 +78,44 @@ print("anonymous DCR roles client scope includes mcp-user and dashboard")
 PY
 
 python3 - <<'PY'
+from pathlib import Path
+script = Path("scripts/provision-keycloak-freedriver.sh").read_text()
+parts = script.split("ensure_autonomy_mcp_audience() {", 1)
+if len(parts) != 2:
+    raise SystemExit("provision script must define ensure_autonomy_mcp_audience")
+depth = 1
+kept = []
+for line in parts[1].splitlines():
+    if line.strip() == "{":
+        depth += 1
+    elif line.strip() == "}":
+        depth -= 1
+        if depth == 0:
+            break
+    kept.append(line)
+fn = "\n".join(kept)
+if "oidc-audience-mapper" not in fn:
+    raise SystemExit("autonomy MCP audience must use oidc-audience-mapper")
+if "https://app.freedriver.io/autonomy/mcp" not in fn:
+    raise SystemExit("autonomy MCP audience must be the live MCP resource")
+if "audience-autonomy-mcp" not in fn:
+    raise SystemExit("autonomy MCP audience mapper must be named audience-autonomy-mcp")
+if "kcadm_stdin create" not in fn or "audience-mapper.json" not in fn:
+    raise SystemExit("autonomy MCP audience mapper must be created from JSON stdin")
+if "freedriver-dispatcher" not in fn:
+    raise SystemExit("autonomy MCP audience must leave freedriver-dispatcher on its own audience")
+if "default-default-client-scopes" not in fn:
+    raise SystemExit("autonomy MCP audience scope must be a realm default for later DCR clients")
+if "display.on.consent.screen" not in fn:
+    raise SystemExit("autonomy MCP audience scope stays off the consent screen")
+if "ensure_autonomy_mcp_audience\n" not in parts[1]:
+    raise SystemExit("ensure_autonomy_mcp_audience must run")
+if "audience-clients-raw.json" not in fn or 'client.pop("secret"' not in fn:
+    raise SystemExit("autonomy MCP audience client list must drop secrets before it keeps redirect URIs")
+print("autonomy MCP audience mapper is on grok.com DCR clients and freedriver-grok-mcp")
+PY
+
+python3 - <<'PY'
 import re
 from pathlib import Path
 compose = Path("docker-compose.yml").read_text()
