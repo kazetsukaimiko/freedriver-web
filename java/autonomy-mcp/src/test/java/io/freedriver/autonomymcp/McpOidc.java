@@ -23,7 +23,6 @@ public class McpOidc extends OidcWiremockTestResource {
         conf.put("quarkus.oidc.roles.source", "accesstoken");
         conf.put("quarkus.oidc.token.issuer", "https://server.example.com");
         conf.put("quarkus.oidc.token.audience", McpProtectedResource.RESOURCE);
-        conf.put("quarkus.oidc.token.required-claims.azp", McpProtectedResource.CLIENT_ID);
         conf.put("quarkus.oidc.token.subject-required", "true");
         return conf;
     }

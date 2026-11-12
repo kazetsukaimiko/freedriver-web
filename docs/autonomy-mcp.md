@@ -2,7 +2,7 @@
 
 Grok talks to house appliances over Streamable HTTP MCP at `https://app.freedriver.io/autonomy/mcp`. That URL is its own Quarkus process (`java/autonomy-mcp/`).
 
-Keycloak at `https://auth.freedriver.io/realms/freedriver` is the issuer. The access token audience is `https://app.freedriver.io/autonomy/mcp`. `azp` must be `freedriver-grok-mcp`. `%prod.quarkus.oidc.enabled` is true. The unprofiled property and the `%dev` and `%test` lines stay false. Anonymous callers receive 401 with `WWW-Authenticate: Bearer resource_metadata="https://app.freedriver.io/api/autonomy/oauth-protected-resource"` and no login redirect. The grok.com Custom connector uses public client `freedriver-grok-mcp` (authorization code + PKCE S256) with redirect `https://grok.com/connectors-oauth-exchange-code/`.
+Keycloak at `https://auth.freedriver.io/realms/freedriver` is the issuer. The access token audience is `https://app.freedriver.io/autonomy/mcp`. `azp` is the Keycloak client id: `freedriver-grok-mcp` for the public client, or the client id Keycloak assigned when grok.com registered through Dynamic Client Registration. `%prod.quarkus.oidc.enabled` is true. The unprofiled property and the `%dev` and `%test` lines stay false. Anonymous callers receive 401 with `WWW-Authenticate: Bearer resource_metadata="https://app.freedriver.io/api/autonomy/oauth-protected-resource"` and no login redirect. The grok.com Custom connector uses public client `freedriver-grok-mcp` (authorization code + PKCE S256) with redirect `https://grok.com/connectors-oauth-exchange-code/`.
 
 The process is off unless compose sets `FREEDRIVER_AUTONOMY_MCP_ENABLED=true`. Off answers 404 on `/autonomy/mcp`. Live-commands remain a dashboard setting.
 
