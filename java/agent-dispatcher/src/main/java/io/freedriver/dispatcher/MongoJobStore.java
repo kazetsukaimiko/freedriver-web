@@ -19,7 +19,8 @@ public class MongoJobStore extends DelegatingJobStore implements JobStore {
     MongoJobStore(
             MongoClient client,
             @ConfigProperty(name = "quarkus.mongodb.database", defaultValue = "freedriver") String database,
+            @ConfigProperty(name = "freedriver.redis.url", defaultValue = "redis://redis:6379") String redisUrl,
             OpenBotJobPing ping) {
-        super(new DocumentJobStore(new MongoJobDocuments(client, database), Clock.systemUTC(), ping));
+        super(new DocumentJobStore(new MongoJobDocuments(client, database, redisUrl), Clock.systemUTC(), ping));
     }
 }
