@@ -497,6 +497,7 @@ jobs:
           env = os.environ["DUMMY_ENV"]
           expect = [
               "agent-dispatcher",
+              "agent-dispatcher-2",
               "autonomy-mcp",
               "dashboard",
               "docker-logs-proxy",
@@ -536,5 +537,9 @@ jobs:
           for name in ("keycloak", "sms"):
               if base["services"][name].get("pull_policy") != "build":
                   raise SystemExit(f"local {name} pull_policy must stay build")
+          for name in ("agent-dispatcher", "agent-dispatcher-2"):
+              ports = prod["services"][name].get("ports") or []
+              if ports:
+                  raise SystemExit(f"{name} published host ports: {ports}")
           print("compose config ok")
           PY

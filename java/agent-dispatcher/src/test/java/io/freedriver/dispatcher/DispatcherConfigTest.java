@@ -82,6 +82,8 @@ class DispatcherConfigTest {
         assertTrue(compose.contains("agent-dispatcher: &dispatcher"));
         assertTrue(compose.contains("agent-dispatcher-2:"));
         assertTrue(compose.contains("<<: *dispatcher"));
+        String ci = Files.readString(Path.of("../../.github/workflows/ci.yml"));
+        assertTrue(ci.contains("\"agent-dispatcher-2\""));
         assertTrue(compose.contains("QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver"));
         assertTrue(compose.contains("QUARKUS_OIDC_CREDENTIALS_SECRET: ${FREEDRIVER_DISPATCHER_OIDC_SECRET:-}"));
         assertTrue(compose.contains(
