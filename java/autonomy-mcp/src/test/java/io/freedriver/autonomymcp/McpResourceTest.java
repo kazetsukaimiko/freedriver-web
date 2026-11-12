@@ -8,10 +8,15 @@ import jakarta.inject.Inject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
+
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -24,6 +29,9 @@ class McpResourceTest {
 
     @Inject
     DashboardClient client;
+
+    @Inject
+    DelayedSwitchPump switches;
 
     @BeforeEach
     void reset() {
@@ -126,6 +134,92 @@ class McpResourceTest {
     }
 
     @Test
+    @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
+    void zero_delay_still_waits_for_the_dashboard() {
+        String session = initialize();
+        given().contentType("application/json")
+                .header(McpApi.SESSION_HEADER, session)
+                .body(switchBody("fridge", false, 0))
+                .post("/autonomy/mcp")
+                .then()
+                .statusCode(200)
+                .body("result.isError", is(false))
+                .body("result.content[0].text", is("Fridge turned off."));
+        assertEquals(1, posts());
+    }
+
+    @Test
+    @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
+    void switch_schema_offers_optional_delay_seconds() {
+        String session = initialize();
+        given().contentType("application/json")
+                .header(McpApi.SESSION_HEADER, session)
+                .body("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}")
+                .post("/autonomy/mcp")
+                .then()
+                .statusCode(200)
+                .body("result.tools.find { it.name == 'switch_appliance' }.inputSchema.properties.delaySeconds.type", is("integer"))
+                .body("result.tools.find { it.name == 'switch_appliance' }.inputSchema.properties.delaySeconds.minimum", is(0))
+                .body("result.tools.find { it.name == 'switch_appliance' }.inputSchema.properties.delaySeconds.maximum", is(86400))
+                .body("result.tools.find { it.name == 'switch_appliance' }.inputSchema.properties.delaySeconds.description", containsString("300"))
+                .body("result.tools.find { it.name == 'switch_appliance' }.inputSchema.required", hasItem("on"))
+                .body("result.tools.find { it.name == 'switch_appliance' }.inputSchema.required", not(hasItem("delaySeconds")));
+    }
+
+    @Test
+    @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
+    void delayed_switch_returns_before_the_house_and_fires_when_due() {
+        DashboardStub.down.set(true);
+        String session = initialize();
+        given().contentType("application/json")
+                .header(McpApi.SESSION_HEADER, session)
+                .body(switchBody("fridge", false, 300))
+                .post("/autonomy/mcp")
+                .then()
+                .statusCode(200)
+                .body("result.isError", is(false))
+                .body("result.content[0].text", is("Fridge will turn off in 5 minutes."));
+        assertEquals(0, posts());
+        switches.fireDue(Instant.now());
+        assertEquals(0, posts());
+        DashboardStub.down.set(false);
+        switches.fireDue(Instant.now().plusSeconds(301));
+        assertEquals(1, posts());
+        assertTrue(DashboardStub.recorded.stream().anyMatch(r ->
+                "POST".equals(r.method())
+                        && r.path().endsWith("/fridge")
+                        && "{\"on\":false}".equals(r.body())
+                        && r.authorization() == null
+                        && "mcp-switch".equals(r.subject())));
+        switches.fireDue(Instant.now().plusSeconds(301));
+        assertEquals(1, posts());
+    }
+
+    @Test
+    @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
+    void delay_rejects_a_duration_a_fraction_and_an_out_of_range_wait() {
+        String session = initialize();
+        for (String arguments : new String[] {
+            baseSwitch() + ",\"duration\":300",
+            baseSwitch() + ",\"delaySeconds\":-1",
+            baseSwitch() + ",\"delaySeconds\":1.5",
+            baseSwitch() + ",\"delaySeconds\":86401",
+            baseSwitch() + ",\"delaySeconds\":\"300\""
+        }) {
+            given().contentType("application/json")
+                    .header(McpApi.SESSION_HEADER, session)
+                    .body("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{"
+                            + "\"name\":\"switch_appliance\",\"arguments\":{" + arguments + "}}}")
+                    .post("/autonomy/mcp")
+                    .then()
+                    .statusCode(200)
+                    .body("error.code", is(-32602))
+                    .body("error.message", is("invalid params"));
+        }
+        assertEquals(0, posts());
+    }
+
+    @Test
     @TestSecurity(user = "mcp-reader", roles = "mcp-user")
     void home_status_is_spoken() {
         String session = initialize();
@@ -207,9 +301,22 @@ class McpResourceTest {
     }
 
     private static String switchBody(String appliance, boolean on) {
+        return switchBody(appliance, on, null);
+    }
+
+    private static String switchBody(String appliance, boolean on, Integer delaySeconds) {
+        String delay = delaySeconds == null ? "" : ",\"delaySeconds\":" + delaySeconds;
         return "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{"
                 + "\"name\":\"switch_appliance\",\"arguments\":{"
                 + "\"instanceId\":\"11111111-1111-1111-1111-111111111111\","
-                + "\"applianceName\":\"" + appliance + "\",\"on\":" + on + "}}}";
+                + "\"applianceName\":\"" + appliance + "\",\"on\":" + on + delay + "}}}";
+    }
+
+    private static String baseSwitch() {
+        return "\"instanceId\":\"11111111-1111-1111-1111-111111111111\",\"applianceName\":\"fridge\",\"on\":false";
+    }
+
+    private static long posts() {
+        return DashboardStub.recorded.stream().filter(r -> "POST".equals(r.method())).count();
     }
 }

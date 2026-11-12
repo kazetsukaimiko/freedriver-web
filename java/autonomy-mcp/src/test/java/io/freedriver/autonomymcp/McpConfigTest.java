@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class McpConfigTest {
 
     @Test
-    void oidc_pins_issuer_audience_and_azp_and_stays_off_by_default() throws IOException {
+    void oidc_pins_issuer_and_audience_and_stays_off_by_default() throws IOException {
         String properties = Files.readString(Path.of("src/main/resources/application.properties"));
         assertTrue(properties.contains("\nquarkus.oidc.enabled=false\n"));
         assertTrue(properties.contains("\n%prod.quarkus.oidc.enabled=true\n"));
@@ -21,7 +21,7 @@ class McpConfigTest {
         assertTrue(properties.contains("quarkus.oidc.application-type=service"));
         assertTrue(properties.contains("quarkus.oidc.auth-server-url=https://auth.freedriver.io/realms/freedriver"));
         assertTrue(properties.contains("quarkus.oidc.token.audience=https://app.freedriver.io/autonomy/mcp"));
-        assertTrue(properties.contains("quarkus.oidc.token.required-claims.azp=freedriver-grok-mcp"));
+        assertFalse(properties.contains("quarkus.oidc.token.required-claims.azp"));
         assertTrue(properties.contains("quarkus.tls.trust-all=false"));
         assertFalse(properties.contains("quarkus.tls.trust-all=true"));
         assertTrue(properties.contains("freedriver.redis.url=${FREEDRIVER_REDIS_URL:redis://redis:6379}"));

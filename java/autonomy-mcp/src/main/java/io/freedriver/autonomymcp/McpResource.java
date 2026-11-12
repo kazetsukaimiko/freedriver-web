@@ -26,7 +26,8 @@ public class McpResource implements McpApi {
 
     private static final String LATEST_PROTOCOL = "2025-11-25";
     private static final Set<String> PROTOCOL_VERSIONS = Set.of("2025-03-26", "2025-06-18", LATEST_PROTOCOL);
-    private static final Set<String> SWITCH_FIELDS = Set.of("instanceId", "applianceName", "on");
+    private static final Set<String> SWITCH_REQUIRED = Set.of("instanceId", "applianceName", "on");
+    private static final Set<String> SWITCH_OPTIONAL = Set.of("delaySeconds");
 
     private final SecurityIdentity identity;
     private final McpSessions sessions;
@@ -35,6 +36,7 @@ public class McpResource implements McpApi {
     private final DashboardClient dashboard;
     private final ToolRateLimiter limiter;
     private final McpAudit audit;
+    private final DelayedSwitchQueue delays;
 
     @Inject
     public McpResource(
@@ -44,7 +46,8 @@ public class McpResource implements McpApi {
             ObjectMapper mapper,
             DashboardClient dashboard,
             ToolRateLimiter limiter,
-            McpAudit audit) {
+            McpAudit audit,
+            DelayedSwitchQueue delays) {
         this.identity = identity;
         this.sessions = sessions;
         this.sessionHeader = sessionHeader;
@@ -52,6 +55,7 @@ public class McpResource implements McpApi {
         this.dashboard = dashboard;
         this.limiter = limiter;
         this.audit = audit;
+        this.delays = delays;
     }
 
     @Override
@@ -171,11 +175,13 @@ public class McpResource implements McpApi {
     }
 
     private JsonRpcResponse switchAppliance(String subject, JsonNode id, JsonNode arguments) {
-        if (!onlyFields(arguments, SWITCH_FIELDS)
+        int delay = delaySeconds(arguments);
+        if (!acceptedFields(arguments, SWITCH_REQUIRED, SWITCH_OPTIONAL)
                 || !textual(arguments, "instanceId")
                 || !textual(arguments, "applianceName")
                 || !arguments.has("on")
-                || !arguments.get("on").isBoolean()) {
+                || !arguments.get("on").isBoolean()
+                || delay < 0) {
             throw McpProtocolException.invalidParams(id, "invalid params");
         }
         if (!identity.hasRole(Actors.DASHBOARD) && !identity.hasRole(Actors.PORTAL_ADMIN)) {
@@ -194,6 +200,32 @@ public class McpResource implements McpApi {
             audit(subject, "switch_appliance", instanceId.toString(), applianceName, "rate-limited");
             return toolResult(id, Spoken.refusal(429), true);
         }
+        if (delay > 0) {
+            return scheduleSwitch(subject, id, instanceId, applianceName, on, delay);
+        }
+        return switchNow(subject, id, instanceId, applianceName, on);
+    }
+
+    private JsonRpcResponse scheduleSwitch(
+            String subject, JsonNode id, UUID instanceId, String applianceName, boolean on, int delay) {
+        String payload = DelayedSwitchPayload.json(
+                mapper,
+                instanceId,
+                applianceName,
+                on,
+                subject,
+                CallerIds.azp(identity),
+                CallerIds.roles(identity));
+        delays.schedule(
+                UUID.randomUUID().toString(),
+                Instant.now().plusSeconds(delay).toEpochMilli(),
+                payload,
+                SwitchDelay.payloadTtlSeconds(delay));
+        audit(subject, "switch_appliance", instanceId.toString(), applianceName, "scheduled");
+        return toolResult(id, Spoken.scheduled(applianceName, on, delay), false);
+    }
+
+    private JsonRpcResponse switchNow(String subject, JsonNode id, UUID instanceId, String applianceName, boolean on) {
         String json = "{\"on\":" + on + "}";
         DashboardClient.Call call = dashboard.post(
                 "/api/appliances/" + instanceId + "/" + applianceName,
@@ -250,9 +282,19 @@ public class McpResource implements McpApi {
         ObjectNode on = mapper.createObjectNode();
         on.put("type", "boolean");
         switchProps.set("on", on);
+        ObjectNode delay = mapper.createObjectNode();
+        delay.put("type", "integer");
+        delay.put("minimum", 0);
+        delay.put("maximum", SwitchDelay.MAX_DELAY_SECONDS);
+        delay.put("description", "Seconds before this switch. Five minutes is 300. The maximum is 86400.");
+        switchProps.set("delaySeconds", delay);
         tools.add(tool(
                 "switch_appliance",
-                "Switch one named appliance on or off. Same command path as the dashboard.",
+                "Switch one named appliance on or off. Same command path as the dashboard. "
+                        + "delaySeconds waits that many seconds, then switches. "
+                        + "Omit it or pass 0 to switch now. "
+                        + "To leave the fridge light on for five minutes, switch it on with no delay, "
+                        + "then switch it off with delaySeconds 300.",
                 switchProps,
                 "instanceId",
                 "applianceName",
@@ -334,7 +376,7 @@ public class McpResource implements McpApi {
                 result));
     }
 
-    private static String resultOf(int status) {
+    static String resultOf(int status) {
         if (status == 429) {
             return "rate-limited";
         }
@@ -387,16 +429,34 @@ public class McpResource implements McpApi {
         return node != null && node.isTextual() && !node.asText().isBlank();
     }
 
-    private static boolean onlyFields(JsonNode object, Set<String> allowed) {
+    private static boolean acceptedFields(JsonNode object, Set<String> required, Set<String> optional) {
         Iterator<String> names = object.fieldNames();
-        int count = 0;
+        int requiredSeen = 0;
         while (names.hasNext()) {
-            if (!allowed.contains(names.next())) {
+            String name = names.next();
+            if (required.contains(name)) {
+                requiredSeen++;
+            } else if (!optional.contains(name)) {
                 return false;
             }
-            count++;
         }
-        return count == allowed.size();
+        return requiredSeen == required.size();
+    }
+
+    /** Seconds to wait, 0 when the field is omitted, or -1 when the field is unusable. */
+    private static int delaySeconds(JsonNode arguments) {
+        if (!arguments.has("delaySeconds")) {
+            return 0;
+        }
+        JsonNode node = arguments.get("delaySeconds");
+        if (node == null || !node.isIntegralNumber() || !node.canConvertToInt()) {
+            return -1;
+        }
+        int value = node.intValue();
+        if (value < 0 || value > SwitchDelay.MAX_DELAY_SECONDS) {
+            return -1;
+        }
+        return value;
     }
 
     @FunctionalInterface

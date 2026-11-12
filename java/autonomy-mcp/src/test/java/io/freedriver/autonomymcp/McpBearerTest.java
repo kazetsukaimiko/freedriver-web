@@ -1,5 +1,6 @@
 package io.freedriver.autonomymcp;
 
+import io.freedriver.autonomymcp.api.McpApi;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
@@ -13,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.nullValue;
 
 @QuarkusTest
@@ -29,7 +31,6 @@ class McpBearerTest {
             conf.put("quarkus.oidc.client-id", McpProtectedResource.CLIENT_ID);
             conf.put("quarkus.oidc.token.issuer", "https://server.example.com");
             conf.put("quarkus.oidc.token.audience", McpProtectedResource.RESOURCE);
-            conf.put("quarkus.oidc.token.required-claims.azp", McpProtectedResource.CLIENT_ID);
             conf.put("quarkus.http.test-port", "0");
             return conf;
         }
@@ -88,16 +89,31 @@ class McpBearerTest {
     }
 
     @Test
-    void wrong_azp_is_401() {
-        String token = token("mcp-sub-azp", Set.of("mcp-user"), McpProtectedResource.RESOURCE, "freedriver-dispatcher", null, null);
-        given().header("Authorization", "Bearer " + token)
-                .redirects().follow(false)
+    void dcr_client_reaches_tools_list() {
+        String token = token(
+                "mcp-sub-dcr",
+                Set.of("mcp-user"),
+                McpProtectedResource.RESOURCE,
+                "9d0238fd-47cb-4e86-bf03-ac4c16f6107c",
+                null,
+                null);
+        String session = given().header("Authorization", "Bearer " + token)
                 .contentType("application/json")
-                .body(call("list_appliances"))
+                .body("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}")
                 .post("/autonomy/mcp")
                 .then()
-                .statusCode(401)
-                .header("Location", nullValue());
+                .statusCode(200)
+                .extract()
+                .header(McpApi.SESSION_HEADER);
+        given().header("Authorization", "Bearer " + token)
+                .header(McpApi.SESSION_HEADER, session)
+                .contentType("application/json")
+                .body("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}")
+                .post("/autonomy/mcp")
+                .then()
+                .statusCode(200)
+                .body("result.tools.name", hasItem("list_appliances"))
+                .body("result.tools.name", hasItem("switch_appliance"));
     }
 
     @Test
