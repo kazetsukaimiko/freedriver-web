@@ -707,6 +707,43 @@ if "OpenBot is connect-and-forget like grok.com" not in script:
 print("OpenBot MCP client uses a 1-year access token")
 PY
 
+python3 - <<'PY'
+import re
+from pathlib import Path
+
+def service(text, name):
+    match = re.search(rf"(?m)^  {re.escape(name)}:\n", text)
+    if match is None:
+        raise SystemExit(f"missing service {name}")
+    rest = text[match.start():]
+    nxt = re.search(r"(?m)^  [A-Za-z0-9_-]+:\n", rest[1:])
+    return rest if nxt is None else rest[: nxt.start() + 1]
+
+compose = Path("docker-compose.yml").read_text()
+caddy = Path("Caddyfile").read_text()
+deploy = Path(".github/workflows/deploy.yml").read_text()
+redis = service(compose, "redis")
+if re.search(r"^\s+ports:\s*$", redis, re.M):
+    raise SystemExit("redis publishes no host ports")
+if "6379:6379" in redis or '"6379:' in redis:
+    raise SystemExit("redis maps no host 6379")
+if 'expose:\n      - "6379"' not in redis:
+    raise SystemExit("redis exposes 6379 on the compose network")
+if "/opt/freedriver-storage/redis:/data" not in redis:
+    raise SystemExit("redis persists on /opt/freedriver-storage/redis")
+if "redis:7.4-alpine" not in redis:
+    raise SystemExit("redis image is redis:7.4-alpine")
+if "--appendonly" not in redis:
+    raise SystemExit("redis AOF is on")
+if compose.count("\n  redis:\n") != 1:
+    raise SystemExit("redis is one compose service")
+if "redis.freedriver.io" in compose or "redis.freedriver.io" in caddy:
+    raise SystemExit("redis has a public hostname")
+if "999:999 /opt/freedriver-storage/redis" not in deploy:
+    raise SystemExit("deploy checks the redis data directory owner")
+print("redis is an unpublished compose singleton")
+PY
+
 chmod +x scripts/test-invite-service-account.sh
 ./scripts/test-invite-service-account.sh
 

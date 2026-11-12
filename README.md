@@ -7,7 +7,7 @@ Public site for [freedriver.io](https://freedriver.io). Caddy terminates TLS and
 ```
 /opt/freedriver-web/       this repo (rsync on deploy)
 /opt/freedriver-secrets/   .env and other secrets (not in git)
-/opt/freedriver-storage/   Docker bind mounts (Caddy certs, Postgres, Grafana, Loki, Prometheus, Mosquitto, sms)
+/opt/freedriver-storage/   Docker bind mounts (Caddy certs, Postgres, Grafana, Loki, Prometheus, Mosquitto, sms, Redis)
 ```
 
 The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{grafana,loki,prometheus,mosquitto,sms}` if they are missing. The sms directory is owned by uid 185.
@@ -22,6 +22,7 @@ The host stays thin (SSH + Docker). Deploy creates `/opt/freedriver-storage/{gra
   - `mqtt.freedriver.io` — 404 on purpose (ACME HTTP-01). MQTTS is host 8883, not Caddy.
 - Keycloak 26.7.5 + local Postgres 16. The image build compiles `sms-model`, `sms-api`, and `sms-client` from this checkout and adds the phone OTP provider at `/opt/keycloak/providers/freedriver-sms-otp.jar`. The jar manifest records that commit.
 - `sms` — internal service at `http://sms:8080` on the compose network. The Quarkus service in `sms/` ([#107](https://github.com/kazetsukaimiko/freedriver-web/issues/107)) sends and checks sign-in codes through Twilio Verify. Compose builds `sms/src/main/docker/Dockerfile.compose`. Agreement records live on `/opt/freedriver-storage/sms`.
+- Redis 7.4 on the compose network at `redis:6379` for sessions and SMS codes. Data on `/opt/freedriver-storage/redis`.
 - Grafana + Loki + Prometheus + Alloy (see Observability)
 - Mosquitto 2.1.2 MQTTS at `mqtt.freedriver.io:8883` (host 8883 is the public listener only; container 8883 is unpublished; no 1883). The image is `eclipse-mosquitto:2.1.2-alpine` with `iotinga/mosquitto-oauth-plugin`. Broker client id `freedriver-mqtt`. Connect notes: [docs/mqtt-connect.md](docs/mqtt-connect.md).
 

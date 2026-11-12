@@ -318,7 +318,8 @@ jobs:
             "10001:10001 /opt/freedriver-storage/loki" \
             "65534:65534 /opt/freedriver-storage/prometheus" \
             "1883:1883 /opt/freedriver-storage/mosquitto" \
-            "185:0 /opt/freedriver-storage/sms"
+            "185:0 /opt/freedriver-storage/sms" \
+            "999:999 /opt/freedriver-storage/redis"
           do
             want="${spec%% *}"
             path="${spec#* }"

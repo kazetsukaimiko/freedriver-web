@@ -180,6 +180,23 @@ services:
       start_period: 20s
     mem_limit: 512m
 
+  # Host Redis for Redisson sessions and SMS codes. Compose hostname redis,
+  # port 6379. Appliance roster stays Mongo.
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--protected-mode", "no"]
+    volumes:
+      - /opt/freedriver-storage/redis:/data
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    mem_limit: 256m
+
   # Internal OTP service. Keycloak calls http://sms:8080 on the compose
   # network. HTTP contract and limits: docs/sms-otp.md.
   sms:
