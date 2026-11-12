@@ -619,6 +619,60 @@ ensure_openbot_mcp_client() {
 }
 ensure_openbot_mcp_client
 
+# Anonymous DCR Trusted Hosts for Grok Connect Apps: grok.com, console.x.ai, x.ai, *.x.ai.
+# host-sending-registration-request-must-match is false (Grok POSTs from xAI egress, not those names).
+# client-uris-must-match stays true so new clients use redirect URIs on those hosts.
+ensure_dcr_trusted_hosts() {
+  local action comp_id
+  kcadm get "realms/${REALM}" --fields id > "$work/realm-id.json"
+  kcadm get components -r "$REALM" \
+    -q type=org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy \
+    > "$work/dcr-policies.json"
+  action="$(python3 - "$work/realm-id.json" "$work/dcr-policies.json" "$work/dcr-trusted-hosts.json" <<'PY'
+import json, sys
+realm = json.load(open(sys.argv[1], encoding="utf-8"))
+policies = json.load(open(sys.argv[2], encoding="utf-8"))
+realm_id = realm.get("id") or ""
+comp = next(
+    (
+        c
+        for c in policies
+        if c.get("providerId") == "trusted-hosts" and c.get("subType") == "anonymous"
+    ),
+    None,
+)
+body = {
+    "name": "Trusted Hosts",
+    "providerId": "trusted-hosts",
+    "providerType": "org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy",
+    "subType": "anonymous",
+    "parentId": realm_id,
+    "config": {
+        "host-sending-registration-request-must-match": ["false"],
+        "client-uris-must-match": ["true"],
+        "trusted-hosts": ["*.x.ai", "console.x.ai", "grok.com", "x.ai"],
+    },
+}
+if comp and comp.get("id"):
+    body["id"] = comp["id"]
+    json.dump(body, open(sys.argv[3], "w", encoding="utf-8"))
+    print("update " + comp["id"])
+else:
+    json.dump(body, open(sys.argv[3], "w", encoding="utf-8"))
+    print("create")
+PY
+)"
+  if [[ "$action" == create ]]; then
+    kcadm_stdin create components -r "$REALM" -f - < "$work/dcr-trusted-hosts.json" >/dev/null
+    echo "Created anonymous DCR Trusted Hosts for grok.com and x.ai."
+  else
+    comp_id="${action#update }"
+    kcadm_stdin update "components/${comp_id}" -r "$REALM" -f - < "$work/dcr-trusted-hosts.json" >/dev/null
+    echo "Anonymous DCR Trusted Hosts are grok.com, console.x.ai, x.ai, and *.x.ai."
+  fi
+}
+ensure_dcr_trusted_hosts
+
 lookup_phone_group() {
   kcadm get groups -r "$REALM" -q "search=${PHONE_GROUP}" -q exact=true > "$work/groups.json"
   python3 - "$work/groups.json" "$PHONE_GROUP" <<'PY'
