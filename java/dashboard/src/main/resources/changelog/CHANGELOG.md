@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.4.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.3.0...v1.4.0) (2026-11-12)
+
+
+### Features
+
+* **dashboard:** accept an optional delay on switch_appliance ([0966026](https://github.com/kazetsukaimiko/freedriver-web/commit/096602641c535fd0a4780016e34a48a1beaf07f2))
+* **dashboard:** accept an optional delay on switch_appliance ([db29919](https://github.com/kazetsukaimiko/freedriver-web/commit/db299191c18fae00b4b0143361ac6b0cba1a5cbb))
+* **keycloak:** map mcp-user onto DCR autonomy tokens ([556176a](https://github.com/kazetsukaimiko/freedriver-web/commit/556176a9584bd0411e1f4e20862b13103f2895a3))
+* **keycloak:** map mcp-user onto DCR autonomy tokens ([1437405](https://github.com/kazetsukaimiko/freedriver-web/commit/1437405475f861fd28a9923136b169a2e8f10e43)), closes [#453](https://github.com/kazetsukaimiko/freedriver-web/issues/453)
+* **keycloak:** trust grok.com for anonymous DCR ([047b60b](https://github.com/kazetsukaimiko/freedriver-web/commit/047b60bbc9754d91a0f9ed8390d1c747429ba653))
+* **keycloak:** trust grok.com for anonymous DCR ([b3a3a20](https://github.com/kazetsukaimiko/freedriver-web/commit/b3a3a200fe04cccdb7676791b808904fbb23dcfa)), closes [#112](https://github.com/kazetsukaimiko/freedriver-web/issues/112)
+
+
+### Bug Fixes
+
+* **dashboard:** accept DCR client ids on autonomy MCP ([05c91ce](https://github.com/kazetsukaimiko/freedriver-web/commit/05c91ce76ec90f6a98eda025819e80ef7a1a7602))
+* **dashboard:** accept DCR client ids on autonomy MCP ([1854b7b](https://github.com/kazetsukaimiko/freedriver-web/commit/1854b7b1d84a890a3ef6755a697faae0655b1e08))
+
 ## [1.3.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.2.0...v1.3.0) (2026-11-12)
 
 
