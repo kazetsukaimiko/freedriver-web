@@ -1,6 +1,7 @@
 package io.freedriver.app.security;
 
 import io.freedriver.app.appliances.AppliancesConfig;
+import io.freedriver.ratelimit.MemoryHitWindow;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
@@ -23,6 +24,14 @@ class CommandRateLimiterTest {
         assertTrue(limiter.tryAcquire("ada"));
         assertFalse(limiter.tryAcquire("ada"));
         assertTrue(limiter.tryAcquire("yuni"));
+
+        MemoryHitWindow shared = new MemoryHitWindow();
+        CommandRateLimiter first = new CommandRateLimiter(config, shared);
+        CommandRateLimiter second = new CommandRateLimiter(config, shared);
+        assertTrue(first.tryAcquire("ada"));
+        assertTrue(second.tryAcquire("ada"));
+        assertFalse(first.tryAcquire("ada"));
+        assertTrue(second.tryAcquire("yuni"));
     }
 
     private static void set(AppliancesConfig config, String name, Object value) {

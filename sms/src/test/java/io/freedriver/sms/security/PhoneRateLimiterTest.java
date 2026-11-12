@@ -1,5 +1,7 @@
 package io.freedriver.sms.security;
 
+import io.freedriver.ratelimit.HitWindow;
+import io.freedriver.ratelimit.MemoryHitWindow;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -166,6 +168,20 @@ class PhoneRateLimiterTest {
         assertFalse(limiter.codeChecksLocked(phone));
         assertEquals(0, limiter.wrongCodeEntries());
         assertNotNull(limiter.tryAcquireCodeCheck(phone));
+    }
+
+    @Test
+    void two_processes_share_one_short_window() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-09-27T12:00:00Z"));
+        HitWindow shared = new MemoryHitWindow();
+        PhoneRateLimiter first = new PhoneRateLimiter(clock, Duration.ofMinutes(15), 2, 2, shared);
+        PhoneRateLimiter second = new PhoneRateLimiter(clock, Duration.ofMinutes(15), 2, 2, shared);
+        String phone = "+15555550100";
+
+        assertTrue(first.tryAcquireSend(phone));
+        assertTrue(second.tryAcquireSend(phone));
+        assertFalse(first.tryAcquireSend(phone));
+        assertTrue(second.tryAcquireSend("+15555550101"));
     }
 
     private static String phone(int n) {

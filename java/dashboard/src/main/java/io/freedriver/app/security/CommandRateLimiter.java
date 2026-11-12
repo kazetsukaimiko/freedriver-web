@@ -1,40 +1,33 @@
 package io.freedriver.app.security;
 
 import io.freedriver.app.appliances.AppliancesConfig;
+import io.freedriver.ratelimit.HitWindow;
+import io.freedriver.ratelimit.MemoryHitWindow;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import lombok.NonNull;
-
-import java.util.ArrayDeque;
-import java.util.Deque;
-import java.util.concurrent.ConcurrentHashMap;
 
 @ApplicationScoped
 public class CommandRateLimiter {
 
     private final AppliancesConfig config;
-    private final ConcurrentHashMap<String, Deque<Long>> hits = new ConcurrentHashMap<>();
+    private final HitWindow hits;
 
     @Inject
-    public CommandRateLimiter(AppliancesConfig config) {
+    public CommandRateLimiter(AppliancesConfig config, HitWindow hits) {
         this.config = config;
+        this.hits = hits;
+    }
+
+    CommandRateLimiter(AppliancesConfig config) {
+        this(config, new MemoryHitWindow());
     }
 
     public boolean tryAcquire(@NonNull String user) {
         int max = Math.max(1, config.rateLimit().permits());
         long windowMs = Math.max(1, config.rateLimit().window().toMillis());
         long now = System.currentTimeMillis();
-        Deque<Long> queue = hits.computeIfAbsent(user, ignored -> new ArrayDeque<>());
-        synchronized (queue) {
-            while (!queue.isEmpty() && now - queue.peekFirst() >= windowMs) {
-                queue.pollFirst();
-            }
-            if (queue.size() >= max) {
-                return false;
-            }
-            queue.addLast(now);
-            return true;
-        }
+        return hits.tryAdd("command:" + user, now, windowMs, max) != null;
     }
 
     public void reset() {

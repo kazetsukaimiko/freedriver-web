@@ -65,6 +65,11 @@
             <artifactId>quarkus-arc</artifactId>
         </dependency>
         <dependency>
+            <groupId>io.freedriver</groupId>
+            <artifactId>hit-window</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-mongodb-client</artifactId>
         </dependency>
