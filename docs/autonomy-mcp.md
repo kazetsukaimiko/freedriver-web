@@ -13,9 +13,11 @@ The process is off unless compose sets `FREEDRIVER_AUTONOMY_MCP_ENABLED=true`. O
 | `list_appliances` | `mcp-user` | `GET /api/mcp/appliances` |
 | `home_status` | `mcp-user` | `GET /api/mcp/home-status` |
 | `debug` | `mcp-user` and `mcp-debug` | `GET /api/mcp/debug` |
-| `switch_appliance` | `mcp-user` and (`dashboard` or `portal-admin`) | `POST /api/appliances/{id}/{name}` |
+| `switch_appliance` | `mcp-user` and (`dashboard` or `portal-admin`) | `POST /api/appliances/{id}/{name}` now, or after `delaySeconds` |
 
 Every tool requires `mcp-user`. Switch also requires `dashboard` or `portal-admin`. After the bearer check, the process calls `http://dashboard:8080` with `X-Freedriver-Subject`, `X-Freedriver-Roles`, and `X-Freedriver-Internal`. Caddy strips those three headers on the public dashboard proxy. Switch uses the same command path, live-commands gate, command limiter, and appliance audit subject as the portal.
+
+`switch_appliance` takes optional `delaySeconds`, an integer from 0 through 86400. Five minutes is 300. Omit it, or pass 0, and the call switches now and waits for the dashboard result. A positive delay stores the switch in Redis under `freedriver:mcp:autonomy:switch-due` and the call returns when that row is stored. The reply names the appliance and the wait, for example "Fridge will turn off in 5 minutes." To leave the fridge light on for five minutes, switch it on with no delay, then switch it off with `delaySeconds` 300. Any autonomy-mcp process that can read Redis fires the row when it is due. The row remains readable for an hour after that time.
 
 Rate limit is 30 calls per 60 seconds per subject per tool. Switch also takes the dashboard command limiter. Spoken replies name appliances and omit instance ids.
 

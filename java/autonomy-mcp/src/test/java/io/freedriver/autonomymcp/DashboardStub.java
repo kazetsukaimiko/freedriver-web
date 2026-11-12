@@ -34,11 +34,13 @@ public final class DashboardStub implements QuarkusTestResourceLifecycleManager 
                 exchange.close();
                 return;
             }
+            String requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             recorded.add(new Recorded(
                     exchange.getRequestMethod(),
                     exchange.getRequestURI().getPath(),
                     exchange.getRequestHeaders().getFirst("Authorization"),
-                    exchange.getRequestHeaders().getFirst(DashboardClient.SUBJECT_HEADER)));
+                    exchange.getRequestHeaders().getFirst(DashboardClient.SUBJECT_HEADER),
+                    requestBody));
             String path = exchange.getRequestURI().getPath();
             String body;
             int status = 200;
@@ -78,6 +80,6 @@ public final class DashboardStub implements QuarkusTestResourceLifecycleManager 
         }
     }
 
-    record Recorded(String method, String path, String authorization, String subject) {
+    record Recorded(String method, String path, String authorization, String subject, String body) {
     }
 }
