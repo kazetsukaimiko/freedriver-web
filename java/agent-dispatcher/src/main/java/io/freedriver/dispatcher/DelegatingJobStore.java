@@ -3,6 +3,7 @@ package io.freedriver.dispatcher;
 import io.freedriver.dispatcher.model.AgentRosterEntry;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.DeviceView;
+import io.freedriver.dispatcher.model.JobPage;
 import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.ReportedBot;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
@@ -86,6 +87,11 @@ class DelegatingJobStore implements JobStore {
     @Override
     public List<JobView> listJobs(String dispatcherSubject) {
         return store.listJobs(dispatcherSubject);
+    }
+
+    @Override
+    public JobPage listJobPage(String dispatcherSubject, String agentName, String state, int limit, String cursor) {
+        return store.listJobPage(dispatcherSubject, agentName, state, limit, cursor);
     }
 
     @Override
