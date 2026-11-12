@@ -35,6 +35,20 @@ final class Spoken {
         return label(applianceName) + (on ? " turned on." : " turned off.");
     }
 
+    static String scheduled(String applianceName, boolean on, int delaySeconds) {
+        String action = on ? "turn on" : "turn off";
+        return label(applianceName) + " will " + action + " in " + span(delaySeconds) + ".";
+    }
+
+    private static String span(int delaySeconds) {
+        if (delaySeconds > 0 && delaySeconds % 60 == 0) {
+            int minutes = delaySeconds / 60;
+            return minutes + (minutes == 1 ? " minute" : " minutes");
+        }
+        int seconds = Math.max(delaySeconds, 0);
+        return seconds + (seconds == 1 ? " second" : " seconds");
+    }
+
     static String home(HomeStatusResponse status) {
         if (status == null) {
             return "Home status is not available.";
