@@ -1,10 +1,14 @@
 package io.freedriver.autonomymcp;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Streamable HTTP session ids name a stored key. Each id is bound to the
+ * bearer-token subject that opened it.
+ */
 @ApplicationScoped
 public class McpSessions {
 
@@ -15,11 +19,21 @@ public class McpSessions {
         MATCH
     }
 
-    private final ConcurrentHashMap<String, String> subjectBySession = new ConcurrentHashMap<>();
+    private final McpSessionRecords records;
+
+    /** Arc builds the client proxy with this constructor. It does not serve calls. */
+    McpSessions() {
+        this.records = null;
+    }
+
+    @Inject
+    McpSessions(McpSessionRecords records) {
+        this.records = records;
+    }
 
     public String open(String subject) {
         String id = UUID.randomUUID().toString();
-        subjectBySession.put(id, subject);
+        records.insert(id, subject);
         return id;
     }
 
@@ -27,7 +41,7 @@ public class McpSessions {
         if (sessionId == null || sessionId.isBlank()) {
             return Status.ABSENT;
         }
-        String bound = subjectBySession.get(sessionId);
+        String bound = records.subject(sessionId);
         if (bound == null) {
             return Status.UNKNOWN;
         }
@@ -39,7 +53,7 @@ public class McpSessions {
 
     public void close(String sessionId, String subject) {
         if (sessionId != null) {
-            subjectBySession.remove(sessionId, subject);
+            records.delete(sessionId, subject);
         }
     }
 }
