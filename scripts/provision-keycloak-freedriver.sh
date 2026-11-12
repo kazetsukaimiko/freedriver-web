@@ -12,7 +12,7 @@
 # member of phone-sign-in with the realm role dashboard. Group and role checks
 # run before that write. Effective realm roles must be inside dashboard,
 # default-roles-freedriver, offline_access, uma_authorization, grafana-viewer,
-# grafana-editor, and grafana-admin. Any client role stops the script. A +1
+# grafana-editor, grafana-admin, and mcp-user. Any client role stops the script. A +1
 # number is ten digits whose first digit is 2-9.
 # Run scripts/provision-keycloak-sms-otp.sh first; it creates the group and
 # the attribute.
@@ -270,6 +270,7 @@ ensure_role portal-admin
 ensure_role grafana-viewer
 ensure_role grafana-editor
 ensure_role grafana-admin
+ensure_role mcp-user
 
 ensure_user() {
   local username="$1"
@@ -944,6 +945,18 @@ assign_grafana_admin_users() {
   done
 }
 
+# Autonomy MCP tools/list needs mcp-user on the grok.com sign-in user. That user is kaze.
+assign_mcp_user_to_kaze() {
+  local id
+  id="$(kcadm get users -r "$REALM" -q "username=${PHONE_USER}" -q exact=true --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
+  if [[ -z "$id" ]]; then
+    echo "User ${PHONE_USER} is missing; mcp-user not assigned."
+    return
+  fi
+  kcadm add-roles -r "$REALM" --uid "$id" --rolename mcp-user >/dev/null
+  echo "Assigned mcp-user to ${PHONE_USER}."
+}
+
 ensure_grafana_client() {
   local client_uuid secret tmp
   client_uuid="$(kcadm get clients -r "$REALM" -q clientId="$GRAFANA_CLIENT" --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
@@ -1492,3 +1505,4 @@ fi
 echo "User ${PHONE_USER} has ${PHONE_GROUP}, ${PHONE_ROLE}, and no realm role outside the allow-list."
 
 assign_grafana_admin_users
+assign_mcp_user_to_kaze

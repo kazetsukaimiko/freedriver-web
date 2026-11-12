@@ -18,6 +18,7 @@ def main() -> int:
         "grafana-viewer",
         "grafana-editor",
         "grafana-admin",
+        "mcp-user",
     }
     composite = json.load(open(composite_path, encoding="utf-8"))
     mappings = json.load(open(mappings_path, encoding="utf-8"))

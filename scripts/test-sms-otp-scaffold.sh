@@ -472,10 +472,12 @@ allowed = [
     {"name": "grafana-viewer"},
     {"name": "grafana-editor"},
     {"name": "grafana-admin"},
+    {"name": "mcp-user"},
 ]
 run(allowed, {}, True)
 run([{"name": "dashboard"}, {"name": "default-roles-freedriver"}], {}, True)
 run([{"name": "grafana-admin"}], {}, True)
+run([{"name": "mcp-user"}], {}, True)
 run([{"name": "portal-admin"}], {}, False)
 run([{"name": "changelog"}], {}, False)
 run(allowed + [{"name": "extra"}], {}, False)

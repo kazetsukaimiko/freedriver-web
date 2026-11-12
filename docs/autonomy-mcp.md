@@ -15,7 +15,7 @@ The process is off unless compose sets `FREEDRIVER_AUTONOMY_MCP_ENABLED=true`. O
 | `debug` | `mcp-user` and `mcp-debug` | `GET /api/mcp/debug` |
 | `switch_appliance` | `mcp-user` and (`dashboard` or `portal-admin`) | `POST /api/appliances/{id}/{name}` |
 
-Every tool requires `mcp-user`. Switch also requires `dashboard` or `portal-admin`. After the bearer check, the process calls `http://dashboard:8080` with `X-Freedriver-Subject`, `X-Freedriver-Roles`, and `X-Freedriver-Internal`. Caddy strips those three headers on the public dashboard proxy. Switch uses the same command path, live-commands gate, command limiter, and appliance audit subject as the portal.
+Every tool requires `mcp-user`. Switch also requires `dashboard` or `portal-admin`. The grok.com sign-in user is `kaze`; that account holds `mcp-user` and `dashboard`. After the bearer check, the process calls `http://dashboard:8080` with `X-Freedriver-Subject`, `X-Freedriver-Roles`, and `X-Freedriver-Internal`. Caddy strips those three headers on the public dashboard proxy. Switch uses the same command path, live-commands gate, command limiter, and appliance audit subject as the portal.
 
 Rate limit is 30 calls per 60 seconds per subject per tool. Switch also takes the dashboard command limiter. Spoken replies name appliances and omit instance ids.
 
