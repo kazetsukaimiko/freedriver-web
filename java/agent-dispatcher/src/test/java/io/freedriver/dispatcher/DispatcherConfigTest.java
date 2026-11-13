@@ -44,6 +44,7 @@ class DispatcherConfigTest {
         assertTrue(properties.contains("quarkus.mongodb.server-selection-timeout=2S"));
         assertTrue(properties.contains("quarkus.http.auth.permission.authenticated.paths=/*"));
         assertTrue(properties.contains("quarkus.http.auth.permission.public.paths=/q/*"));
+        assertTrue(properties.contains("quarkus.smallrye-health.ui.enabled=false"));
         assertTrue(properties.contains(
                 "quarkus.http.auth.permission.metadata.paths=/api/dispatcher/oauth-protected-resource"));
         assertTrue(properties.contains("quarkus.http.auth.permission.metadata.policy=mcp-metadata"));
@@ -67,6 +68,9 @@ class DispatcherConfigTest {
         assertFalse(caddy.contains("oauth-protected-resource"));
         assertFalse(caddy.contains(".well-known"));
         assertFalse(caddy.contains("@dispatcher path /autonomy/mcp"));
+
+        String pom = Files.readString(Path.of("pom.xml"));
+        assertTrue(pom.contains("quarkus-smallrye-health"));
 
         String compose = Files.readString(Path.of("../../docker-compose.yml"));
         assertTrue(compose.contains("QUARKUS_OIDC_AUTH_SERVER_URL: https://auth.freedriver.io/realms/freedriver"));

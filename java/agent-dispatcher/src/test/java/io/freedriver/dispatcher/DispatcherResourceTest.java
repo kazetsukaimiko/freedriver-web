@@ -20,6 +20,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
@@ -29,6 +30,12 @@ class DispatcherResourceTest {
 
     @Inject
     JobStore jobs;
+
+    @Test
+    void anonymous_health_is_open() {
+        given().get("/q/health/live").then().statusCode(200);
+        given().get("/q/health").then().statusCode(anyOf(is(200), is(503)));
+    }
 
     @Test
     void anonymous_submit_is_rejected() {
