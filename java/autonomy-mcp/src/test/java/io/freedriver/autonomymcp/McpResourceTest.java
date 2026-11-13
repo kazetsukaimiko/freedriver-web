@@ -8,8 +8,6 @@ import jakarta.inject.Inject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.time.Instant;
-
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.is;
@@ -29,9 +27,6 @@ class McpResourceTest {
 
     @Inject
     DashboardClient client;
-
-    @Inject
-    DelayedSwitchPump switches;
 
     @BeforeEach
     void reset() {
@@ -175,8 +170,7 @@ class McpResourceTest {
 
     @Test
     @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
-    void delayed_switch_returns_before_the_house_and_fires_when_due() {
-        DashboardStub.down.set(true);
+    void delayed_switch_stores_the_row_and_does_not_switch_yet() {
         String session = initialize();
         given().contentType("application/json")
                 .header(McpApi.SESSION_HEADER, session)
@@ -186,20 +180,31 @@ class McpResourceTest {
                 .statusCode(200)
                 .body("result.isError", is(false))
                 .body("result.content[0].text", is("Fridge will turn off in 5 minutes."));
-        assertEquals(0, posts());
-        switches.fireDue(Instant.now());
-        assertEquals(0, posts());
-        DashboardStub.down.set(false);
-        switches.fireDue(Instant.now().plusSeconds(301));
         assertEquals(1, posts());
         assertTrue(DashboardStub.recorded.stream().anyMatch(r ->
                 "POST".equals(r.method())
-                        && r.path().endsWith("/fridge")
-                        && "{\"on\":false}".equals(r.body())
+                        && "/api/mcp/scheduled-switches".equals(r.path())
                         && r.authorization() == null
-                        && "mcp-switch".equals(r.subject())));
-        switches.fireDue(Instant.now().plusSeconds(301));
-        assertEquals(1, posts());
+                        && "mcp-switch".equals(r.subject())
+                        && r.body().contains("\"on\":false")
+                        && r.body().contains("fridge")
+                        && r.body().contains("11111111-1111-1111-1111-111111111111")));
+        assertTrue(DashboardStub.recorded.stream().noneMatch(r -> r.path().startsWith("/api/appliances/")));
+    }
+
+    @Test
+    @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
+    void delayed_switch_does_not_claim_success_when_the_store_is_down() {
+        DashboardStub.down.set(true);
+        String session = initialize();
+        given().contentType("application/json")
+                .header(McpApi.SESSION_HEADER, session)
+                .body(switchBody("fridge", false, 5))
+                .post("/autonomy/mcp")
+                .then()
+                .statusCode(200)
+                .body("result.isError", is(true));
+        assertEquals(0, posts());
     }
 
     @Test

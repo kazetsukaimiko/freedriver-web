@@ -36,8 +36,6 @@ public class McpResource implements McpApi {
     private final DashboardClient dashboard;
     private final ToolRateLimiter limiter;
     private final McpAudit audit;
-    private final DelayedSwitchQueue delays;
-
     @Inject
     public McpResource(
             SecurityIdentity identity,
@@ -46,8 +44,7 @@ public class McpResource implements McpApi {
             ObjectMapper mapper,
             DashboardClient dashboard,
             ToolRateLimiter limiter,
-            McpAudit audit,
-            DelayedSwitchQueue delays) {
+            McpAudit audit) {
         this.identity = identity;
         this.sessions = sessions;
         this.sessionHeader = sessionHeader;
@@ -55,7 +52,6 @@ public class McpResource implements McpApi {
         this.dashboard = dashboard;
         this.limiter = limiter;
         this.audit = audit;
-        this.delays = delays;
     }
 
     @Override
@@ -208,21 +204,22 @@ public class McpResource implements McpApi {
 
     private JsonRpcResponse scheduleSwitch(
             String subject, JsonNode id, UUID instanceId, String applianceName, boolean on, int delay) {
-        String payload = DelayedSwitchPayload.json(
-                mapper,
-                instanceId,
-                applianceName,
-                on,
+        ObjectNode body = mapper.createObjectNode();
+        body.put("instanceId", instanceId.toString());
+        body.put("applianceName", applianceName);
+        body.put("on", on);
+        body.put("dueAt", Instant.now().plusSeconds(delay).toString());
+        DashboardClient.Call call = dashboard.post(
+                "/api/mcp/scheduled-switches",
+                body.toString(),
                 subject,
-                CallerIds.azp(identity),
                 CallerIds.roles(identity));
-        delays.schedule(
-                UUID.randomUUID().toString(),
-                Instant.now().plusSeconds(delay).toEpochMilli(),
-                payload,
-                SwitchDelay.payloadTtlSeconds(delay));
-        audit(subject, "switch_appliance", instanceId.toString(), applianceName, "scheduled");
-        return toolResult(id, Spoken.scheduled(applianceName, on, delay), false);
+        boolean stored = call.status() >= 200 && call.status() < 300;
+        audit(subject, "switch_appliance", instanceId.toString(), applianceName, stored ? "scheduled" : resultOf(call.status()));
+        if (stored) {
+            return toolResult(id, Spoken.scheduled(applianceName, on, delay), false);
+        }
+        return toolResult(id, Spoken.refusal(call.status()), true);
     }
 
     private JsonRpcResponse switchNow(String subject, JsonNode id, UUID instanceId, String applianceName, boolean on) {
