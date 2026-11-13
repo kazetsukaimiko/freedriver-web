@@ -151,11 +151,9 @@ if should_build agent-dispatcher java/agent-dispatcher/ java/agent-dispatcher-ap
 else
   pull_or_build agent-dispatcher || build_service agent-dispatcher
 fi
-if should_build autonomy-mcp java/autonomy-mcp/ java/autonomy-mcp-api/; then
-  build_service autonomy-mcp
-else
-  pull_or_build autonomy-mcp || build_service autonomy-mcp
-fi
+# Smoke calls switch_appliance on Hallway (test). This branch's REST client
+# percent-encodes the name. GHCR 1.5.1 concatenates it into URI.create.
+build_service autonomy-mcp
 if should_build keycloak keycloak/ sms-client/ sms-api/ sms-model/; then
   build_service keycloak
 else

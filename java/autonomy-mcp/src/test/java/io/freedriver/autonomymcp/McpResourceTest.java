@@ -134,6 +134,26 @@ class McpResourceTest {
 
     @Test
     @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
+    void switch_sends_a_fixture_name_with_a_space() {
+        String session = initialize();
+        given().contentType("application/json")
+                .header(McpApi.SESSION_HEADER, session)
+                .body(switchBody("Hallway (test)", false))
+                .post("/autonomy/mcp")
+                .then()
+                .statusCode(200)
+                .body("result.isError", is(false))
+                .body("result.content[0].text", is("Hallway (test) turned off."));
+        assertTrue(DashboardStub.recorded.stream().anyMatch(r ->
+                "POST".equals(r.method())
+                        && (r.path().contains("/Hallway (test)")
+                                || r.path().contains("/Hallway%20(test)"))
+                        && r.authorization() == null
+                        && "mcp-switch".equals(r.subject())));
+    }
+
+    @Test
+    @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
     void zero_delay_still_waits_for_the_dashboard() {
         String session = initialize();
         given().contentType("application/json")
