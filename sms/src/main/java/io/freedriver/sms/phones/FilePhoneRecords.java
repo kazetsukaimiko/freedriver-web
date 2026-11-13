@@ -4,7 +4,9 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.freedriver.sms.SmsConfig;
 import io.quarkus.arc.profile.IfBuildProfile;
+import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Alternative;
 import jakarta.inject.Inject;
 
 import java.io.IOException;
@@ -18,7 +20,10 @@ import java.util.Optional;
 
 /**
  * File allowlist for the test profile and direct tests. Production uses {@link MongoPhoneRecords}.
+ * The test build has both beans; this alternative is the {@link PhoneRecords} there.
  */
+@Alternative
+@Priority(1)
 @ApplicationScoped
 @IfBuildProfile("test")
 public class FilePhoneRecords implements PhoneRecords {

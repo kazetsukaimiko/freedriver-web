@@ -8,7 +8,6 @@ import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
 import com.mongodb.client.model.Sorts;
-import io.quarkus.arc.profile.IfBuildProfile;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.bson.Document;
@@ -18,9 +17,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-/** Production allowlist. One document per number in {@code phones}, inserted or deleted on its own. */
+/**
+ * Production allowlist. One document per number in {@code phones}, inserted or deleted on its own.
+ * The test build also has this bean so a store test can inject it by class; {@link FilePhoneRecords}
+ * is the {@link PhoneRecords} there.
+ */
 @ApplicationScoped
-@IfBuildProfile(anyOf = {"prod", "dev"})
 public class MongoPhoneRecords implements PhoneRecords {
 
     private final MongoCollection<Document> phones;
