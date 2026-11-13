@@ -25,9 +25,6 @@ class McpResourceTest {
     @Inject
     ToolRateLimiter limiter;
 
-    @Inject
-    DashboardClient client;
-
     @BeforeEach
     void reset() {
         limiter.reset();
@@ -92,7 +89,7 @@ class McpResourceTest {
                 .body("result.content[0].text", not(containsString("Fridge is on.")))
                 .body("result.isError", is(false))
                 .header("Set-Cookie", nullValue());
-        assertFalse(client.sentAuthorization());
+        assertFalse(sentAuthorization());
         assertTrue(DashboardStub.recorded.stream().anyMatch(r ->
                 "GET".equals(r.method())
                         && "/api/mcp/appliances".equals(r.path())
@@ -127,7 +124,7 @@ class McpResourceTest {
                 .statusCode(200)
                 .body("result.isError", is(false))
                 .body("result.content[0].text", is("Fridge turned off."));
-        assertFalse(client.sentAuthorization());
+        assertFalse(sentAuthorization());
         assertTrue(DashboardStub.recorded.stream().anyMatch(r ->
                 "POST".equals(r.method())
                         && r.path().contains("/api/appliances/")
@@ -244,7 +241,7 @@ class McpResourceTest {
                 .body("result.isError", is(false))
                 .body("result.content[0].text", containsString("The broker is connected."))
                 .body("result.content[0].text", containsString("Last state update"));
-        assertFalse(client.sentAuthorization());
+        assertFalse(sentAuthorization());
         assertTrue(DashboardStub.recorded.stream().anyMatch(r ->
                 "GET".equals(r.method()) && "/api/mcp/home-status".equals(r.path()) && r.authorization() == null));
     }
@@ -294,7 +291,7 @@ class McpResourceTest {
                 .body("result.isError", is(false))
                 .body("result.content[0].text", containsString("Health UP"))
                 .body("result.content[0].text", containsString("none"));
-        assertFalse(client.sentAuthorization());
+        assertFalse(sentAuthorization());
     }
 
     private static String initialize() {
@@ -330,5 +327,10 @@ class McpResourceTest {
 
     private static long posts() {
         return DashboardStub.recorded.stream().filter(r -> "POST".equals(r.method())).count();
+    }
+
+    /** True when any call that reached the stub dashboard carried an Authorization header. */
+    private static boolean sentAuthorization() {
+        return DashboardStub.recorded.stream().anyMatch(call -> call.authorization() != null);
     }
 }

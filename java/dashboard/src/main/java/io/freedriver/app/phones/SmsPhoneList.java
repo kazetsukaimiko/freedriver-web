@@ -18,32 +18,22 @@ public interface SmsPhoneList {
     void requireSharedSecret();
 
     /** Stores the invite agreement and texts one code. The number is not on the list yet. */
-    default InviteText sendInviteCode(String phone, UUID inviteId) {
-        throw new UnsupportedOperationException();
-    }
+    InviteText sendInviteCode(String phone, UUID inviteId);
 
     /** Checks the code for that number. The attempt limit matches sign-in. */
-    default InviteCheck checkInviteCode(String phone, String code) {
-        throw new UnsupportedOperationException();
-    }
+    InviteCheck checkInviteCode(String phone, String code);
 
     /** @return true when the number was added */
-    default boolean addInvited(String phone, String name, String username) {
-        throw new UnsupportedOperationException();
-    }
+    boolean addInvited(String phone, String name, String username);
 
     /**
      * Lists the number before the Keycloak user exists. Role is {@code dashboard}.
      * {@code name} may be null. @return false when the number is already listed.
      */
-    default boolean whitelist(String phone, String name) {
-        throw new UnsupportedOperationException();
-    }
+    boolean whitelist(String phone, String name);
 
     /** Stores the username created for a listed number. @return false when the row cannot take it. */
-    default boolean attachUsername(String phone, String username) {
-        throw new UnsupportedOperationException();
-    }
+    boolean attachUsername(String phone, String username);
 
     enum InviteText {
         SENT, ALREADY_LISTED, LIMITED, UNAVAILABLE

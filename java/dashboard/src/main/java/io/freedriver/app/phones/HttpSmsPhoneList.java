@@ -1,209 +1,135 @@
 package io.freedriver.app.phones;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.freedriver.app.invites.InviteUpstreamException;
 import io.freedriver.app.invites.InviteWording;
 import io.freedriver.app.metrics.BlockingIo;
+import io.freedriver.sms.api.SmsInviteApi;
+import io.freedriver.sms.api.SmsPhonesApi;
+import io.freedriver.sms.model.AddPhone;
+import io.freedriver.sms.model.AttachUser;
+import io.freedriver.sms.model.InviteSend;
+import io.freedriver.sms.model.ListedPhone;
+import io.freedriver.sms.model.RemovePhone;
+import io.freedriver.sms.model.VerifyRequest;
+import io.freedriver.sms.model.WhitelistPhone;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.validation.ConstraintViolationException;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.microprofile.rest.client.inject.RestClient;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
-/** Calls the sms service. The shared secret never goes to the browser. */
+/** Calls the sms service through the two sms REST clients. The shared secret never goes to the browser. */
 @BlockingIo
 @ApplicationScoped
 public class HttpSmsPhoneList implements SmsPhoneList {
 
-    private static final TypeReference<PhoneListBody> LIST = new TypeReference<>() {
-    };
-
-    private final HttpClient http;
-    private final ObjectMapper json;
-    private final String base;
+    private final SmsPhonesApi phones;
+    private final SmsInviteApi invites;
     private final String secret;
 
     @Inject
-    public HttpSmsPhoneList(ObjectMapper json,
-                            @ConfigProperty(name = "freedriver.sms.base-url", defaultValue = "http://sms:8080") String base,
-                            @ConfigProperty(name = "sms.otp.shared-secret") Optional<String> secret) {
-        this(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(), json, base,
-                secret.orElse(""));
+    HttpSmsPhoneList(@RestClient SmsPhones phones,
+                     @RestClient SmsInvite invites,
+                     @ConfigProperty(name = "sms.otp.shared-secret") Optional<String> secret) {
+        this((SmsPhonesApi) phones, invites, secret.orElse(""));
     }
 
-    HttpSmsPhoneList(HttpClient http, ObjectMapper json, String base, String secret) {
-        this.http = http;
-        this.json = json;
-        this.base = base.endsWith("/") ? base.substring(0, base.length() - 1) : base;
+    HttpSmsPhoneList(SmsPhonesApi phones, SmsInviteApi invites, String secret) {
+        this.phones = phones;
+        this.invites = invites;
         this.secret = secret == null ? "" : secret;
     }
 
     @Override
     public List<PhoneRow> list() {
-        HttpResponse<String> response = send(HttpRequest.newBuilder(URI.create(base + "/sms/phones")).GET());
-        try {
-            return json.readValue(response.body(), LIST).phones();
-        } catch (Exception e) {
-            throw new InviteUpstreamException("sms phone list was not readable", e);
-        }
+        return call(() -> phones.list().phones().stream().map(HttpSmsPhoneList::row).toList());
     }
 
     @Override
     public boolean remove(String phone) {
-        HttpResponse<String> response = send(HttpRequest.newBuilder(URI.create(base + "/sms/phones/remove"))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString("{\"phone\":\"" + phone + "\"}")));
-        try {
-            return json.readTree(response.body()).path("removed").asBoolean(false);
-        } catch (Exception e) {
-            throw new InviteUpstreamException("sms remove was not readable", e);
-        }
+        return call(() -> phones.remove(new RemovePhone(phone)).removed());
     }
 
     @Override
     public void requireSharedSecret() {
-        // The blank-secret refusal stays in send. A null request does not open a connection.
-        send(null);
+        requireSecret();
     }
 
     @Override
     public InviteText sendInviteCode(String phone, UUID inviteId) {
-        HttpResponse<String> response = call(HttpRequest.newBuilder(URI.create(base + "/sms/invite/send"))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body(Map.of(
-                        "phone", phone,
-                        "wording", InviteWording.TEXT,
-                        "inviteId", inviteId.toString())))));
-        return switch (response.statusCode()) {
-            case 200 -> InviteText.SENT;
-            case 409 -> InviteText.ALREADY_LISTED;
-            case 429 -> InviteText.LIMITED;
-            default -> InviteText.UNAVAILABLE;
-        };
+        try {
+            call(() -> invites.send(new InviteSend(phone, InviteWording.TEXT, inviteId.toString())));
+            return InviteText.SENT;
+        } catch (SmsRefused refused) {
+            return switch (refused.status()) {
+                case 409 -> InviteText.ALREADY_LISTED;
+                case 429 -> InviteText.LIMITED;
+                default -> InviteText.UNAVAILABLE;
+            };
+        }
     }
 
     @Override
     public InviteCheck checkInviteCode(String phone, String code) {
-        HttpResponse<String> response = call(HttpRequest.newBuilder(URI.create(base + "/sms/invite/verify"))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body(Map.of("phone", phone, "code", code)))));
-        return switch (response.statusCode()) {
-            case 200 -> InviteCheck.APPROVED;
-            case 400 -> InviteCheck.WRONG;
-            case 429 -> InviteCheck.LIMITED;
-            default -> InviteCheck.UNAVAILABLE;
-        };
+        try {
+            call(() -> invites.verify(new VerifyRequest(phone, code)));
+            return InviteCheck.APPROVED;
+        } catch (SmsRefused refused) {
+            return switch (refused.status()) {
+                case 400 -> InviteCheck.WRONG;
+                case 429 -> InviteCheck.LIMITED;
+                default -> InviteCheck.UNAVAILABLE;
+            };
+        }
     }
 
     @Override
     public boolean addInvited(String phone, String name, String username) {
-        HttpResponse<String> response = call(HttpRequest.newBuilder(URI.create(base + "/sms/phones/add"))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body(Map.of(
-                        "phone", phone, "name", name, "username", username, "role", "dashboard")))));
-        if (response.statusCode() / 100 != 2) {
-            throw new InviteUpstreamException("sms add answered " + response.statusCode());
-        }
-        try {
-            return json.readTree(response.body()).path("added").asBoolean(false);
-        } catch (Exception e) {
-            throw new InviteUpstreamException("sms add was not readable", e);
-        }
+        return call(() -> phones.add(new AddPhone(phone, name, username, "dashboard")).added());
     }
 
     @Override
     public boolean whitelist(String phone, String name) {
-        Map<String, String> fields = new LinkedHashMap<>();
-        fields.put("phone", phone);
-        if (name != null && !name.isBlank()) {
-            fields.put("name", name);
-        }
-        HttpResponse<String> response = call(HttpRequest.newBuilder(URI.create(base + "/sms/phones/whitelist"))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body(fields))));
-        if (response.statusCode() / 100 != 2) {
-            throw new InviteUpstreamException("sms whitelist answered " + response.statusCode());
-        }
-        try {
-            return json.readTree(response.body()).path("added").asBoolean(false);
-        } catch (Exception e) {
-            throw new InviteUpstreamException("sms whitelist was not readable", e);
-        }
+        String listed = name == null || name.isBlank() ? null : name;
+        return call(() -> phones.whitelist(new WhitelistPhone(phone, listed)).added());
     }
 
     @Override
     public boolean attachUsername(String phone, String username) {
-        HttpResponse<String> response = call(HttpRequest.newBuilder(URI.create(base + "/sms/phones/attach"))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body(Map.of("phone", phone, "username", username)))));
-        if (response.statusCode() / 100 != 2) {
-            throw new InviteUpstreamException("sms attach answered " + response.statusCode());
-        }
-        try {
-            return json.readTree(response.body()).path("attached").asBoolean(false);
-        } catch (Exception e) {
-            throw new InviteUpstreamException("sms attach was not readable", e);
-        }
+        return call(() -> phones.attach(new AttachUser(phone, username)).attached());
     }
 
-    private String body(Map<String, String> fields) {
+    /**
+     * Refuses before any connection when the secret is unset. An argument the client's validation
+     * refuses answers like a 400 from sms, which would refuse it the same way. A transport or body
+     * failure is upstream.
+     */
+    private <T> T call(Supplier<T> request) {
+        requireSecret();
         try {
-            return json.writeValueAsString(fields);
-        } catch (Exception e) {
-            throw new InviteUpstreamException("sms body was not writable", e);
-        }
-    }
-
-    /** Like {@link #send}, but a non-2xx status is returned so the caller can tell the answers apart. */
-    private HttpResponse<String> call(HttpRequest.Builder request) {
-        if (secret == null || secret.isBlank()) {
-            throw new InviteUpstreamException("sms shared secret is unset");
-        }
-        try {
-            return http.send(request
-                            .header("X-Freedriver-Sms-Secret", secret)
-                            .timeout(Duration.ofSeconds(5))
-                            .build(),
-                    HttpResponse.BodyHandlers.ofString());
-        } catch (Exception e) {
-            throw new InviteUpstreamException("sms phone list failed", e);
-        }
-    }
-
-    private HttpResponse<String> send(HttpRequest.Builder request) {
-        if (secret == null || secret.isBlank()) {
-            throw new InviteUpstreamException("sms shared secret is unset");
-        }
-        if (request == null) {
-            return null;
-        }
-        try {
-            HttpResponse<String> response = http.send(request
-                            .header("X-Freedriver-Sms-Secret", secret)
-                            .timeout(Duration.ofSeconds(5))
-                            .build(),
-                    HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() / 100 != 2) {
-                throw new InviteUpstreamException("sms answered " + response.statusCode());
-            }
-            return response;
+            return request.get();
         } catch (InviteUpstreamException e) {
             throw e;
-        } catch (Exception e) {
+        } catch (ConstraintViolationException invalid) {
+            throw new SmsRefused(400);
+        } catch (RuntimeException e) {
             throw new InviteUpstreamException("sms phone list failed", e);
         }
     }
 
-    record PhoneListBody(List<PhoneRow> phones) {
+    private void requireSecret() {
+        if (secret.isBlank()) {
+            throw new InviteUpstreamException("sms shared secret is unset");
+        }
+    }
+
+    private static PhoneRow row(ListedPhone phone) {
+        return new PhoneRow(phone.phone(), phone.name(), phone.role(), phone.addedAt(), phone.consentedAt(),
+                phone.lastSignIn());
     }
 }
