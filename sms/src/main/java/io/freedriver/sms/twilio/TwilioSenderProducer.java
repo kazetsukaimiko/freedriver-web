@@ -23,15 +23,21 @@ public class TwilioSenderProducer {
     @Singleton
     @LookupIfProperty(name = "freedriver.sms.sender", stringValue = "twilio", lookupIfMissing = true)
     TwilioVerifySender twilioSender(SmsConfig config, Config raw, ConsentLedger consents) {
+        boolean testProfile = LaunchMode.current() == LaunchMode.TEST;
         return create(name -> raw.getOptionalValue(name, String.class).orElse(null),
                 config.twilio().baseUrl(), config.twilio().timeout(),
-                LaunchMode.current() == LaunchMode.TEST, consents);
+                testProfile, testProfile || config.twilio().allowStub(), consents);
     }
 
     static TwilioVerifySender create(Function<String, String> env, String baseUrl, Duration timeout,
                                      boolean testProfile, ConsentLedger consents) {
+        return create(env, baseUrl, timeout, testProfile, testProfile, consents);
+    }
+
+    static TwilioVerifySender create(Function<String, String> env, String baseUrl, Duration timeout,
+                                     boolean testProfile, boolean allowStub, ConsentLedger consents) {
         TwilioCredentials credentials = TwilioCredentials.load(env);
-        TwilioEndpoint endpoint = TwilioEndpoint.resolve(baseUrl, testProfile);
+        TwilioEndpoint endpoint = TwilioEndpoint.resolve(baseUrl, testProfile || allowStub);
         if (timeout.isZero() || timeout.isNegative()) {
             throw new IllegalStateException("freedriver.sms.twilio.timeout must be positive");
         }
