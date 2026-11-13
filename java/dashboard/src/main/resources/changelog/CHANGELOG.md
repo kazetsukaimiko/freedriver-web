@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.5.0...v1.5.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **dashboard:** fire a delayed switch from mongo ([#467](https://github.com/kazetsukaimiko/freedriver-web/issues/467)) ([fb8f976](https://github.com/kazetsukaimiko/freedriver-web/commit/fb8f97620134c570b3f45a5749527a4a5c27c921))
+
 ## [1.5.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.4.0...v1.5.0) (2026-11-13)
 
 
