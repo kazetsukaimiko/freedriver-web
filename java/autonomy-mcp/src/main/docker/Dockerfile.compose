@@ -25,7 +25,9 @@ COPY java/autonomy-mcp-api/pom.xml java/autonomy-mcp-api/pom.xml
 COPY java/autonomy-mcp/pom.xml java/autonomy-mcp/pom.xml
 COPY java/device-daemon/pom.xml java/device-daemon/pom.xml
 COPY java/hit-window/src java/hit-window/src
+COPY mqtt-contract/src mqtt-contract/src
 COPY java/dashboard-model/src java/dashboard-model/src
+COPY java/dashboard-api/src java/dashboard-api/src
 COPY java/autonomy-mcp-api/src java/autonomy-mcp-api/src
 COPY java/autonomy-mcp/src java/autonomy-mcp/src
 
