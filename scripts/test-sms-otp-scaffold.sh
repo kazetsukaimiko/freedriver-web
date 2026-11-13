@@ -116,6 +116,42 @@ print("autonomy MCP audience mapper is on grok.com DCR clients and freedriver-gr
 PY
 
 python3 - <<'PY'
+from pathlib import Path
+script = Path("scripts/provision-keycloak-freedriver.sh").read_text()
+parts = script.split("ensure_autonomy_mcp_token_exchange() {", 1)
+if len(parts) != 2:
+    raise SystemExit("provision script must define ensure_autonomy_mcp_token_exchange")
+depth = 1
+kept = []
+for line in parts[1].splitlines():
+    if line.strip() == "{":
+        depth += 1
+    elif line.strip() == "}":
+        depth -= 1
+        if depth == 0:
+            break
+    kept.append(line)
+fn = "\n".join(kept)
+if 'clientId=freedriver-autonomy-mcp' not in fn and 'clientId=${client_id}' not in fn:
+    raise SystemExit("token exchange client must be freedriver-autonomy-mcp")
+if "standard.token.exchange.enabled" not in fn:
+    raise SystemExit("token exchange client must enable standard.token.exchange.enabled")
+if "included.client.audience" not in fn or "freedriver-api" not in fn:
+    raise SystemExit("token exchange client must map audience freedriver-api")
+if "audience-autonomy-mcp-client" not in fn:
+    raise SystemExit("DCR tokens must list freedriver-autonomy-mcp in aud")
+if "FREEDRIVER_AUTONOMY_MCP_CLIENT_SECRET" not in fn:
+    raise SystemExit("token exchange client secret must be written once")
+if "standardFlowEnabled=true" in fn:
+    raise SystemExit("token exchange client keeps the authorization code flow off")
+if "directAccessGrantsEnabled=true" in fn:
+    raise SystemExit("token exchange client keeps direct access grants off")
+if "ensure_autonomy_mcp_token_exchange\n" not in parts[1]:
+    raise SystemExit("ensure_autonomy_mcp_token_exchange must run")
+print("autonomy MCP token exchange client is confidential with standard token exchange")
+PY
+
+python3 - <<'PY'
 import re
 from pathlib import Path
 compose = Path("docker-compose.yml").read_text()
@@ -695,6 +731,15 @@ if [[ "$(grep -c 'GRAFANA_ENV_FILE=' scripts/test-invite-service-account.sh)" -l
 fi
 if [[ "$(grep -c 'MQTT_ENV_FILE=' scripts/test-invite-service-account.sh)" -lt 3 ]]; then
   fail "invite throwaway provision must set MQTT_ENV_FILE on each run"
+fi
+if [[ "$(grep -c 'AUTONOMY_MCP_ENV_FILE=' scripts/test-invite-service-account.sh)" -lt 3 ]]; then
+  fail "invite throwaway provision must set AUTONOMY_MCP_ENV_FILE on each run"
+fi
+if ! grep -q 'consentRequired=false' scripts/test-autonomy-token-exchange.sh; then
+  fail "scratch DCR ROPC must skip client consent"
+fi
+if ! grep -q 'refusing to run the token-exchange proof against the production Keycloak container' scripts/test-autonomy-token-exchange.sh; then
+  fail "token-exchange proof must refuse the production container"
 fi
 python3 - <<'PY'
 from pathlib import Path

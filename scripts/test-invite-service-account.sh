@@ -260,6 +260,7 @@ PROVISION_ALLOW_NON_ROOT=1 \
   GRAFANA_ENV_FILE="$work/secrets/grafana.env" \
   MQTT_ENV_FILE="$work/secrets/mqtt.env" \
   MQTT_OAUTH_DIR="$work/secrets/mqtt-oauth.d" \
+  AUTONOMY_MCP_ENV_FILE="$work/secrets/autonomy-mcp.env" \
   SECRETS_ENV="$work/secrets.env" \
   bash scripts/provision-keycloak-freedriver.sh
 
@@ -301,6 +302,14 @@ if grep -q 'FREEDRIVER_MQTT_CLIENT_SECRET\|FREEDRIVER_MQTT_SA_PASSWORD' "$work/s
 fi
 if [[ ! -s "$work/secrets/mqtt-oauth.d/plugin.conf" ]]; then
   echo "mqtt plugin options file is missing" >&2
+  exit 1
+fi
+if ! grep -q '^FREEDRIVER_AUTONOMY_MCP_CLIENT_SECRET=.\+' "$work/secrets/autonomy-mcp.env"; then
+  echo "autonomy MCP env file is missing a secret value" >&2
+  exit 1
+fi
+if grep -q 'FREEDRIVER_AUTONOMY_MCP_CLIENT_SECRET' "$work/secrets/api.secret" "$work/secrets.env" "$work/secrets/invite.env" "$work/secrets/instances.env" "$work/secrets/grafana.env" "$work/secrets/mqtt.env"; then
+  echo "autonomy MCP secret leaked into another file" >&2
   exit 1
 fi
 instances_client="$(admin get clients -r freedriver -q clientId=freedriver-instances --fields id --format csv --noquotes | csv_id)"
@@ -366,6 +375,7 @@ PROVISION_ALLOW_NON_ROOT=1 \
   GRAFANA_ENV_FILE="$work/secrets/grafana.env" \
   MQTT_ENV_FILE="$work/secrets/mqtt.env" \
   MQTT_OAUTH_DIR="$work/secrets/mqtt-oauth.d" \
+  AUTONOMY_MCP_ENV_FILE="$work/secrets/autonomy-mcp.env" \
   SECRETS_ENV="$work/secrets.env" \
   bash scripts/provision-keycloak-freedriver.sh
 assert_invite_scopes
@@ -653,6 +663,7 @@ PROVISION_ALLOW_NON_ROOT=1 \
   GRAFANA_ENV_FILE="$work/secrets/grafana.env" \
   MQTT_ENV_FILE="$work/secrets/mqtt.env" \
   MQTT_OAUTH_DIR="$work/secrets/mqtt-oauth.d" \
+  AUTONOMY_MCP_ENV_FILE="$work/secrets/autonomy-mcp.env" \
   SECRETS_ENV="$work/secrets.env" \
   bash scripts/provision-keycloak-freedriver.sh >"$work/second.out" 2>&1
 second=$?
