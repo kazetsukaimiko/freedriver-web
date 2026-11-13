@@ -1,27 +1,26 @@
 package io.freedriver.app.phones;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.freedriver.app.api.LoginLinks;
 import io.freedriver.app.invites.InviteUpstreamException;
+import io.freedriver.sms.api.SmsInviteApi;
+import io.freedriver.sms.api.SmsPhonesApi;
+import io.freedriver.sms.model.AddPhone;
+import io.freedriver.sms.model.Added;
+import io.freedriver.sms.model.AttachUser;
+import io.freedriver.sms.model.Attached;
+import io.freedriver.sms.model.InviteSend;
+import io.freedriver.sms.model.PhoneList;
+import io.freedriver.sms.model.RemovePhone;
+import io.freedriver.sms.model.Removed;
+import io.freedriver.sms.model.SentResponse;
+import io.freedriver.sms.model.VerifiedResponse;
+import io.freedriver.sms.model.VerifyRequest;
+import io.freedriver.sms.model.WhitelistPhone;
 import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.Test;
 
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLParameters;
-import javax.net.ssl.SSLSession;
-import java.net.Authenticator;
-import java.net.CookieHandler;
-import java.net.ProxySelector;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpHeaders;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -31,9 +30,9 @@ class PhoneRemovalBlankSecretTest {
     @Test
     void blank_secret_throws_before_keycloak_and_the_http_client() {
         for (String secret : new String[] {null, "", " ", "\t", " \n "}) {
-            CountingHttp http = new CountingHttp(null);
-            HttpSmsPhoneList sms = new HttpSmsPhoneList(http, new ObjectMapper(), "http://sms:8080", secret);
-            AtomicInteger keycloak = new AtomicInteger();
+            CountingSms http = new CountingSms();
+            HttpSmsPhoneList sms = new HttpSmsPhoneList(http, http, secret);
+            java.util.concurrent.atomic.AtomicInteger keycloak = new java.util.concurrent.atomic.AtomicInteger();
             PhoneSignInDirectory directory = phone -> {
                 keycloak.incrementAndGet();
                 return true;
@@ -44,20 +43,23 @@ class PhoneRemovalBlankSecretTest {
                     "secret [" + secret + "]");
             assertEquals("sms shared secret is unset", error.getMessage());
             assertEquals(0, keycloak.get());
-            assertEquals(0, http.sends());
+            assertEquals(0, http.calls);
             assertThrows(InviteUpstreamException.class, sms::list);
             assertThrows(InviteUpstreamException.class, () -> sms.remove("+15555550123"));
-            assertEquals(0, http.sends());
+            assertThrows(InviteUpstreamException.class, () -> sms.sendInviteCode("+15555550123", UUID.randomUUID()));
+            assertThrows(InviteUpstreamException.class, () -> sms.checkInviteCode("+15555550123", "123456"));
+            assertThrows(InviteUpstreamException.class, () -> sms.whitelist("+15555550123", null));
+            assertEquals(0, http.calls);
         }
     }
 
     @Test
     void configured_secret_still_calls_keycloak_before_the_http_client() {
-        CountingHttp http = new CountingHttp(removed());
-        HttpSmsPhoneList sms = new HttpSmsPhoneList(http, new ObjectMapper(), "http://sms:8080", "secret-value");
-        AtomicInteger keycloak = new AtomicInteger();
+        CountingSms http = new CountingSms();
+        HttpSmsPhoneList sms = new HttpSmsPhoneList(http, http, "secret-value");
+        java.util.concurrent.atomic.AtomicInteger keycloak = new java.util.concurrent.atomic.AtomicInteger();
         PhoneSignInDirectory directory = phone -> {
-            assertEquals(0, http.sends());
+            assertEquals(0, http.calls);
             keycloak.incrementAndGet();
             return true;
         };
@@ -69,132 +71,98 @@ class PhoneRemovalBlankSecretTest {
             response.close();
         }
         assertEquals(1, keycloak.get());
-        assertEquals(1, http.sends());
+        assertEquals(1, http.calls);
     }
 
-    private static HttpResponse<String> removed() {
-        return new HttpResponse<>() {
-            @Override
-            public int statusCode() {
-                return 200;
-            }
+    @Test
+    void sms_statuses_become_the_invite_answers() {
+        CountingSms http = new CountingSms();
+        HttpSmsPhoneList sms = new HttpSmsPhoneList(http, http, "secret-value");
 
-            @Override
-            public HttpRequest request() {
-                throw new UnsupportedOperationException();
-            }
+        http.refuse = 409;
+        assertEquals(SmsPhoneList.InviteText.ALREADY_LISTED, sms.sendInviteCode("+15555550123", UUID.randomUUID()));
+        http.refuse = 429;
+        assertEquals(SmsPhoneList.InviteText.LIMITED, sms.sendInviteCode("+15555550123", UUID.randomUUID()));
+        assertEquals(SmsPhoneList.InviteCheck.LIMITED, sms.checkInviteCode("+15555550123", "123456"));
+        http.refuse = 400;
+        assertEquals(SmsPhoneList.InviteCheck.WRONG, sms.checkInviteCode("+15555550123", "123456"));
+        http.refuse = 503;
+        assertEquals(SmsPhoneList.InviteText.UNAVAILABLE, sms.sendInviteCode("+15555550123", UUID.randomUUID()));
+        assertEquals(SmsPhoneList.InviteCheck.UNAVAILABLE, sms.checkInviteCode("+15555550123", "123456"));
+        InviteUpstreamException add = assertThrows(InviteUpstreamException.class,
+                () -> sms.addInvited("+15555550123", "Ada", "inv" + "0".repeat(32)));
+        assertEquals("sms answered 503", add.getMessage());
 
-            @Override
-            public Optional<HttpResponse<String>> previousResponse() {
-                return Optional.empty();
-            }
-
-            @Override
-            public HttpHeaders headers() {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public String body() {
-                return "{\"removed\":true}";
-            }
-
-            @Override
-            public Optional<SSLSession> sslSession() {
-                return Optional.empty();
-            }
-
-            @Override
-            public URI uri() {
-                return URI.create("http://sms:8080/sms/phones/remove");
-            }
-
-            @Override
-            public HttpClient.Version version() {
-                return HttpClient.Version.HTTP_1_1;
-            }
-        };
+        http.refuse = 0;
+        assertEquals(SmsPhoneList.InviteText.SENT, sms.sendInviteCode("+15555550123", UUID.randomUUID()));
+        assertEquals(SmsPhoneList.InviteCheck.APPROVED, sms.checkInviteCode("+15555550123", "123456"));
     }
 
-    private static final class CountingHttp extends HttpClient {
-        private final HttpResponse<String> response;
-        private int sends;
+    @Test
+    void a_transport_failure_is_an_upstream_failure() {
+        CountingSms http = new CountingSms();
+        http.broken = true;
+        HttpSmsPhoneList sms = new HttpSmsPhoneList(http, http, "secret-value");
+        InviteUpstreamException error = assertThrows(InviteUpstreamException.class, sms::list);
+        assertEquals("sms phone list failed", error.getMessage());
+    }
 
-        private CountingHttp(HttpResponse<String> response) {
-            this.response = response;
-        }
+    /** Both sms clients. {@code refuse} is the status the mapper would turn into {@link SmsRefused}. */
+    private static final class CountingSms implements SmsPhonesApi, SmsInviteApi {
+        int calls;
+        int refuse;
+        boolean broken;
 
-        int sends() {
-            return sends;
-        }
-
-        @Override
-        public Optional<CookieHandler> cookieHandler() {
-            return Optional.empty();
-        }
-
-        @Override
-        public Optional<Duration> connectTimeout() {
-            return Optional.empty();
-        }
-
-        @Override
-        public Redirect followRedirects() {
-            return Redirect.NEVER;
-        }
-
-        @Override
-        public Optional<ProxySelector> proxy() {
-            return Optional.empty();
-        }
-
-        @Override
-        public SSLContext sslContext() {
-            return null;
-        }
-
-        @Override
-        public SSLParameters sslParameters() {
-            return new SSLParameters();
-        }
-
-        @Override
-        public Optional<Authenticator> authenticator() {
-            return Optional.empty();
-        }
-
-        @Override
-        public Version version() {
-            return Version.HTTP_1_1;
-        }
-
-        @Override
-        public Optional<Executor> executor() {
-            return Optional.empty();
-        }
-
-        @Override
-        public <T> HttpResponse<T> send(HttpRequest request, HttpResponse.BodyHandler<T> responseBodyHandler) {
-            sends++;
-            if (response == null) {
-                throw new AssertionError("http client was called");
+        private void answer() {
+            calls++;
+            if (broken) {
+                throw new jakarta.ws.rs.ProcessingException("connection refused");
             }
-            @SuppressWarnings("unchecked")
-            HttpResponse<T> sent = (HttpResponse<T>) response;
-            return sent;
+            if (refuse != 0) {
+                throw new SmsRefused(refuse);
+            }
         }
 
         @Override
-        public <T> CompletableFuture<HttpResponse<T>> sendAsync(HttpRequest request,
-                HttpResponse.BodyHandler<T> responseBodyHandler) {
-            throw new AssertionError("http client was called");
+        public PhoneList list() {
+            answer();
+            return new PhoneList(List.of());
         }
 
         @Override
-        public <T> CompletableFuture<HttpResponse<T>> sendAsync(HttpRequest request,
-                HttpResponse.BodyHandler<T> responseBodyHandler,
-                HttpResponse.PushPromiseHandler<T> pushPromiseHandler) {
-            throw new AssertionError("http client was called");
+        public Removed remove(RemovePhone request) {
+            answer();
+            return new Removed(true);
+        }
+
+        @Override
+        public Added add(AddPhone request) {
+            answer();
+            return new Added(true);
+        }
+
+        @Override
+        public Added whitelist(WhitelistPhone request) {
+            answer();
+            return new Added(true);
+        }
+
+        @Override
+        public Attached attach(AttachUser request) {
+            answer();
+            return new Attached(true);
+        }
+
+        @Override
+        public SentResponse send(InviteSend request) {
+            answer();
+            return SentResponse.otp(request.phone());
+        }
+
+        @Override
+        public VerifiedResponse verify(VerifyRequest request) {
+            answer();
+            return VerifiedResponse.otp(request.phone());
         }
     }
 }
