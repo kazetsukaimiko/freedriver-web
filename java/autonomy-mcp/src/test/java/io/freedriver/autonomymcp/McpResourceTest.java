@@ -91,11 +91,18 @@ class McpResourceTest {
                 .post("/autonomy/mcp")
                 .then()
                 .statusCode(200)
-                .body("result.content[0].text", containsString("Fridge is on."))
+                .body("result.content[0].text", is(
+                        "[{\"houseName\":\"home\",\"instanceId\":\"11111111-1111-1111-1111-111111111111\","
+                                + "\"appliances\":[{\"name\":\"fridge\",\"state\":\"on\"}]}]"))
+                .body("result.content[0].text", not(containsString("Fridge is on.")))
+                .body("result.isError", is(false))
                 .header("Set-Cookie", nullValue());
         assertFalse(client.sentAuthorization());
         assertTrue(DashboardStub.recorded.stream().anyMatch(r ->
-                "GET".equals(r.method()) && "/api/mcp/appliances".equals(r.path()) && r.authorization() == null));
+                "GET".equals(r.method())
+                        && "/api/mcp/appliances".equals(r.path())
+                        && r.authorization() == null
+                        && "mcp-reader".equals(r.subject())));
     }
 
     @Test

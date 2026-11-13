@@ -151,7 +151,7 @@ public class McpResource implements McpApi {
             throw McpProtocolException.invalidParams(id, "invalid params");
         }
         return toolGet(subject, id, "list_appliances", "/api/mcp/appliances", null, null, body ->
-                Spoken.list(mapper.readValue(body, ApplianceMapResponse.class)));
+                ApplianceList.json(mapper, mapper.readValue(body, ApplianceMapResponse.class)));
     }
 
     private JsonRpcResponse homeStatus(String subject, JsonNode id, JsonNode arguments) {
@@ -268,7 +268,12 @@ public class McpResource implements McpApi {
 
     private ObjectNode toolsList() {
         ArrayNode tools = mapper.createArrayNode();
-        tools.add(tool("list_appliances", "List appliances and whether each is on.", mapper.createObjectNode()));
+        tools.add(tool(
+                "list_appliances",
+                "Return a JSON array. Each object has houseName, instanceId, and appliances. "
+                        + "Each appliance has name and state, on or off. "
+                        + "Pass instanceId to switch_appliance.",
+                mapper.createObjectNode()));
         ObjectNode switchProps = mapper.createObjectNode();
         ObjectNode instanceId = mapper.createObjectNode();
         instanceId.put("type", "string");
