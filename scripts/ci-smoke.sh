@@ -84,9 +84,10 @@ TWILIO_VERIFY_SERVICE_SID=VA$(hex32)
 EOF
 chmod 600 "$SECRETS/twilio-verify.env"
 
-# Dummy MQTT host files so the dashboard bind mounts exist. Mock appliances
-# never open the broker.
-printf '%s\n' '# smoke' >"$SECRETS/mosquitto/acl"
+# Bind-mount sources for the dashboard. A topic line with the template
+# placeholder is an ACL with no house UUID, so MetricsMqttForwarder keeps
+# the idle MQTT client while mock appliances run.
+printf '%s\n' 'topic read freedriver/v1/__INSTANCE_ID__/appliances' >"$SECRETS/mosquitto/acl"
 printf '%s\n' 'smoke' >"$SECRETS/mosquitto/api.pass"
 if [[ ! -s "$SECRETS/mqtt-internal/ca.crt" ]]; then
   openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
