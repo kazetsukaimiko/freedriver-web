@@ -14,7 +14,6 @@ import io.freedriver.sms.model.VerifyRequest;
 import io.freedriver.sms.model.WhitelistPhone;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
@@ -63,12 +62,8 @@ public class HttpSmsPhoneList implements SmsPhoneList {
     @Override
     public InviteText sendInviteCode(String phone, UUID inviteId) {
         try {
-            int status = call(() -> {
-                try (Response response = invites.send(new InviteSend(phone, InviteWording.TEXT, inviteId.toString()))) {
-                    return response.getStatus();
-                }
-            });
-            return status == 200 ? InviteText.SENT : InviteText.UNAVAILABLE;
+            call(() -> invites.send(new InviteSend(phone, InviteWording.TEXT, inviteId.toString())));
+            return InviteText.SENT;
         } catch (SmsRefused refused) {
             return switch (refused.status()) {
                 case 409 -> InviteText.ALREADY_LISTED;

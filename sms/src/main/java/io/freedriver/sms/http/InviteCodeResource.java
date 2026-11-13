@@ -9,6 +9,7 @@ import io.freedriver.sms.model.VerifiedResponse;
 import io.freedriver.sms.model.VerifyRequest;
 import io.freedriver.sms.otp.OtpService;
 import io.freedriver.sms.otp.SendOutcome;
+import io.freedriver.sms.otp.SenderUnavailableException;
 import io.freedriver.sms.phones.ConsentLedger;
 import io.freedriver.sms.phones.ConsentPurpose;
 import io.freedriver.sms.phones.ConsentRecord;
@@ -19,6 +20,8 @@ import io.freedriver.sms.security.DailySendCap;
 import io.freedriver.sms.security.PhoneRateLimiter;
 import io.freedriver.sms.security.RateLimitedException;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
@@ -57,18 +60,18 @@ public class InviteCodeResource implements SmsInviteApi {
     }
 
     @Override
-    public Response send(InviteSend request) {
+    public SentResponse send(InviteSend request) {
         if (!InviteWording.TEXT.equals(request.wording())) {
-            return Response.status(400).entity(ErrorResponse.BAD_REQUEST).build();
+            throw refused(400, ErrorResponse.BAD_REQUEST);
         }
         UUID inviteId;
         try {
             inviteId = UUID.fromString(request.inviteId());
         } catch (IllegalArgumentException e) {
-            return Response.status(400).entity(ErrorResponse.BAD_REQUEST).build();
+            throw refused(400, ErrorResponse.BAD_REQUEST);
         }
         if (directory.find(request.phone()).isPresent()) {
-            return Response.status(409).entity(new ErrorResponse("already-listed")).build();
+            throw refused(409, new ErrorResponse("already-listed"));
         }
         if (!limiter.tryAcquireSend(request.phone())) {
             throw new RateLimitedException(limiter.window());
@@ -77,14 +80,21 @@ public class InviteCodeResource implements SmsInviteApi {
                 ConsentSource.INVITE_PAGE, clock.instant(), inviteId.toString()));
         LOG.infof("Invite agreement stored for %s", PhoneMask.mask(request.phone()));
         if (!dailyCap.tryAcquire()) {
-            return Response.status(503).entity(ErrorResponse.UNAVAILABLE).build();
+            throw new SenderUnavailableException();
         }
         SendOutcome outcome = otp.sendAgreed(request.phone());
         if (outcome != SendOutcome.SENT) {
             LOG.warnf("Invite code was not sent to %s", PhoneMask.mask(request.phone()));
-            return Response.status(503).entity(ErrorResponse.UNAVAILABLE).build();
+            throw new SenderUnavailableException();
         }
-        return Response.ok(SentResponse.otp(request.phone())).build();
+        return SentResponse.otp(request.phone());
+    }
+
+    private static WebApplicationException refused(int status, ErrorResponse body) {
+        return new WebApplicationException(Response.status(status)
+                .type(MediaType.APPLICATION_JSON_TYPE)
+                .entity(body)
+                .build());
     }
 
     @Override

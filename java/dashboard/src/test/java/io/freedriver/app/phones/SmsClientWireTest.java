@@ -7,7 +7,6 @@ import io.freedriver.sms.model.RemovePhone;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.common.QuarkusTestResourceLifecycleManager;
 import io.quarkus.test.junit.QuarkusTest;
-import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,11 +56,8 @@ class SmsClientWireTest {
 
     @Test
     void an_error_status_becomes_sms_refused() {
-        SmsRefused refused = assertThrows(SmsRefused.class, () -> {
-            try (Response ignored = invites.send(new InviteSend("+15555550199", "wording", "id"))) {
-                return;
-            }
-        });
+        SmsRefused refused = assertThrows(SmsRefused.class,
+                () -> invites.send(new InviteSend("+15555550199", "wording", "id")));
         assertEquals(409, refused.status());
     }
 

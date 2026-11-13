@@ -12,6 +12,7 @@ import io.freedriver.sms.model.InviteSend;
 import io.freedriver.sms.model.PhoneList;
 import io.freedriver.sms.model.RemovePhone;
 import io.freedriver.sms.model.Removed;
+import io.freedriver.sms.model.SentResponse;
 import io.freedriver.sms.model.VerifiedResponse;
 import io.freedriver.sms.model.VerifyRequest;
 import io.freedriver.sms.model.WhitelistPhone;
@@ -153,9 +154,9 @@ class PhoneRemovalBlankSecretTest {
         }
 
         @Override
-        public Response send(InviteSend request) {
+        public SentResponse send(InviteSend request) {
             answer();
-            return Response.ok().build();
+            return SentResponse.otp(request.phone());
         }
 
         @Override
