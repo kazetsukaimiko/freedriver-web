@@ -87,10 +87,15 @@ class BffSessionLockTest {
         assertTrue(properties.contains("quarkus.oidc.auth-server-url=https://auth.freedriver.io/realms/freedriver"));
         assertTrue(properties.contains("quarkus.oidc.client-id=freedriver-api"));
         assertTrue(properties.contains("quarkus.oidc.credentials.secret=${QUARKUS_OIDC_CREDENTIALS_SECRET:}"));
+        assertTrue(properties.contains(
+                "quarkus.oidc.token-state-manager.encryption-secret=${QUARKUS_OIDC_TOKEN_STATE_MANAGER_ENCRYPTION_SECRET:}"));
         assertTrue(properties.contains("\n%prod.quarkus.oidc.enabled=true\n"));
         assertTrue(properties.contains("\n%prod.quarkus.oidc.credentials.secret=${QUARKUS_OIDC_CREDENTIALS_SECRET}\n"));
+        assertTrue(properties.contains(
+                "\n%prod.quarkus.oidc.token-state-manager.encryption-secret=${QUARKUS_OIDC_TOKEN_STATE_MANAGER_ENCRYPTION_SECRET}\n"));
         assertTrue(properties.contains("\n%prod.quarkus.oidc.authentication.force-redirect-https-scheme=true\n"));
         assertFalse(properties.contains("quarkus.oidc.credentials.secret=secret"));
+        assertTrue(compose.contains("QUARKUS_OIDC_TOKEN_STATE_MANAGER_ENCRYPTION_SECRET:"));
     }
 
     @Test

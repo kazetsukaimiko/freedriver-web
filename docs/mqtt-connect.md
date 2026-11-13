@@ -106,6 +106,7 @@ Compose injects OIDC on the `dashboard` service only (not the image, not the SPA
 - `QUARKUS_OIDC_AUTH_SERVER_URL=https://auth.freedriver.io/realms/freedriver`
 - `QUARKUS_OIDC_CLIENT_ID=freedriver-api`
 - `QUARKUS_OIDC_CREDENTIALS_SECRET` from `/opt/freedriver-secrets/.env` (copied from `keycloak-freedriver-api.secret`)
+- `QUARKUS_OIDC_TOKEN_STATE_MANAGER_ENCRYPTION_SECRET` from that same file, 32 characters, shared so a login cookie from one instance is accepted on another
 
 The BFF (web-app, HTTP-only cookie, `freedriver-api` confidential client) is wired, and compose already injects the env.
 

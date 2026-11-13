@@ -485,6 +485,7 @@ jobs:
           BUILD_NUMBER=ci
           SOURCE_COMMIT=ci
           QUARKUS_OIDC_CREDENTIALS_SECRET=ci-not-a-secret
+          QUARKUS_OIDC_TOKEN_STATE_MANAGER_ENCRYPTION_SECRET=ci-oidc-token-state-enc-secret01
           KC_DB_PASSWORD=ci-not-a-secret
           KC_BOOTSTRAP_ADMIN_PASSWORD=ci-not-a-secret
           GF_SECURITY_ADMIN_PASSWORD=ci-not-a-secret
@@ -536,5 +537,8 @@ jobs:
           for name in ("keycloak", "sms"):
               if base["services"][name].get("pull_policy") != "build":
                   raise SystemExit(f"local {name} pull_policy must stay build")
+          dash_env = prod["services"]["dashboard"].get("environment") or {}
+          if not dash_env.get("QUARKUS_OIDC_TOKEN_STATE_MANAGER_ENCRYPTION_SECRET"):
+              raise SystemExit("dashboard missing shared OIDC encryption secret")
           print("compose config ok")
           PY
