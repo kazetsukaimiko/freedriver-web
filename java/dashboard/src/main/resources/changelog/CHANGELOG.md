@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.5.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.4.0...v1.5.0) (2026-11-13)
+
+
+### Features
+
+* **dashboard:** return the house list from list appliances ([8db6780](https://github.com/kazetsukaimiko/freedriver-web/commit/8db6780407414a41cc9f745c2a0354ef903b9224))
+* **dashboard:** return the house list from list appliances ([c85cf64](https://github.com/kazetsukaimiko/freedriver-web/commit/c85cf64f5aa2d30b0e2dcc12fa7cfe47456deb9b)), closes [#464](https://github.com/kazetsukaimiko/freedriver-web/issues/464)
+* **dispatcher:** list jobs this caller submitted ([9a0940b](https://github.com/kazetsukaimiko/freedriver-web/commit/9a0940b14ba657cdf27a2464989c38d0db5e5f27))
+* **dispatcher:** list jobs this caller submitted ([1bbc9d9](https://github.com/kazetsukaimiko/freedriver-web/commit/1bbc9d94ef5ce55cd94a876b39cc7dad1565e711)), closes [#460](https://github.com/kazetsukaimiko/freedriver-web/issues/460)
+* **keycloak:** grant kaze mcp-user for autonomy MCP ([b51274e](https://github.com/kazetsukaimiko/freedriver-web/commit/b51274e9cce7038b6169f77536292a3c2f144130))
+* **keycloak:** put autonomy MCP audience on Grok DCR tokens ([a840b5b](https://github.com/kazetsukaimiko/freedriver-web/commit/a840b5b2daf77ff5886fd748d7bc6fb265ef6dbc))
+* **keycloak:** put autonomy MCP audience on Grok DCR tokens ([1b32f58](https://github.com/kazetsukaimiko/freedriver-web/commit/1b32f58b51120c380d74e413decfe378dca01e46)), closes [#462](https://github.com/kazetsukaimiko/freedriver-web/issues/462)
+
 ## [1.4.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.3.0...v1.4.0) (2026-11-12)
 
 
