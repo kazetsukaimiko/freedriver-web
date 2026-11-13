@@ -4,7 +4,7 @@ Home PCs run a headless Grok session when a dispatcher (the Grok app, the car, o
 
 Keycloak at `https://auth.freedriver.io/realms/freedriver` is the issuer. `%prod.quarkus.oidc.enabled` is true. The unprofiled property and the `%dev` and `%test` lines stay false. Anonymous callers receive 401, except the metadata GET below. A dispatcher token calls the dispatcher routes and must have `azp=freedriver-dispatcher`. A host token calls the host MCP tools and must have `azp=freedriver-openbot`. Host and dispatcher calls use `/dispatch/mcp` and `/mcp`.
 
-Jobs, the host roster, and the in-flight submit lock are rows in the dashboard Mongo database. Assignments are the `agent-jobs` collection. Hosts are `agent-devices`. A restart reads those rows. There is no second copy in memory. Each state change is one conditional Mongo write, so two dispatcher processes cannot both claim or finish an assignment, and two submits for one subject cannot both take the lock. A submit wait, a job wait, and a device long-poll re-read the rows every 250 ms, rising to 1 s, until the deadline.
+Jobs, the host roster, and the in-flight submit lock are rows in the dashboard Mongo database. Assignments are the `agent-jobs` collection. Hosts are `agent-devices`. A restart reads those rows. All job state, the device roster, and submit locks are read from the `agent-jobs`, `agent-devices`, and `agent-locks` collections on every operation. Each state change is one conditional Mongo write, so two dispatcher processes cannot both claim or finish an assignment, and two submits for one subject cannot both take the lock. A submit wait, a job wait, and a device long-poll re-read the rows every 250 ms, rising to 1 s, until the deadline.
 
 ## Actors
 
