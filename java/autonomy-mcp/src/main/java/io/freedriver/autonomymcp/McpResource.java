@@ -8,18 +8,26 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.freedriver.autonomymcp.api.Actors;
 import io.freedriver.autonomymcp.api.McpApi;
 import io.freedriver.autonomymcp.model.JsonRpcResponse;
+import io.freedriver.dashboard.api.AppliancesApi;
+import io.freedriver.dashboard.api.McpOpsApi;
+import io.freedriver.dashboard.model.ApplianceCommandRequest;
 import io.freedriver.dashboard.model.ApplianceMapResponse;
 import io.freedriver.dashboard.model.HomeStatusResponse;
 import io.freedriver.dashboard.model.McpDebugResponse;
+import io.freedriver.dashboard.model.ScheduledSwitchRequest;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.common.annotation.Blocking;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.validation.ConstraintViolationException;
+import jakarta.ws.rs.ProcessingException;
+import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 import java.time.Instant;
 import java.util.Iterator;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 @ApplicationScoped
 public class McpResource implements McpApi {
@@ -33,7 +41,8 @@ public class McpResource implements McpApi {
     private final McpSessions sessions;
     private final McpSessionHeader sessionHeader;
     private final ObjectMapper mapper;
-    private final DashboardClient dashboard;
+    private final AppliancesApi appliances;
+    private final McpOpsApi ops;
     private final ToolRateLimiter limiter;
     private final McpAudit audit;
     @Inject
@@ -42,14 +51,16 @@ public class McpResource implements McpApi {
             McpSessions sessions,
             McpSessionHeader sessionHeader,
             ObjectMapper mapper,
-            DashboardClient dashboard,
+            @RestClient DashboardAppliances appliances,
+            @RestClient DashboardMcpOps ops,
             ToolRateLimiter limiter,
             McpAudit audit) {
         this.identity = identity;
         this.sessions = sessions;
         this.sessionHeader = sessionHeader;
         this.mapper = mapper;
-        this.dashboard = dashboard;
+        this.appliances = appliances;
+        this.ops = ops;
         this.limiter = limiter;
         this.audit = audit;
     }
@@ -146,16 +157,16 @@ public class McpResource implements McpApi {
         if (arguments.size() != 0) {
             throw McpProtocolException.invalidParams(id, "invalid params");
         }
-        return toolGet(subject, id, "list_appliances", "/api/mcp/appliances", null, null, body ->
-                ApplianceList.json(mapper, mapper.readValue(body, ApplianceMapResponse.class)));
+        return toolGet(subject, id, "list_appliances", null, null, ops::appliances,
+                (ApplianceMapResponse map) -> ApplianceList.json(mapper, map));
     }
 
     private JsonRpcResponse homeStatus(String subject, JsonNode id, JsonNode arguments) {
         if (arguments.size() != 0) {
             throw McpProtocolException.invalidParams(id, "invalid params");
         }
-        return toolGet(subject, id, "home_status", "/api/mcp/home-status", null, null, body ->
-                Spoken.home(mapper.readValue(body, HomeStatusResponse.class)));
+        return toolGet(subject, id, "home_status", null, null, ops::homeStatus,
+                (HomeStatusResponse status) -> Spoken.home(status));
     }
 
     private JsonRpcResponse debug(String subject, JsonNode id, JsonNode arguments) {
@@ -166,8 +177,8 @@ public class McpResource implements McpApi {
             audit(subject, "debug", null, null, "denied");
             return toolResult(id, "That was refused.", true);
         }
-        return toolGet(subject, id, "debug", "/api/mcp/debug", null, null, body ->
-                Spoken.debug(mapper.readValue(body, McpDebugResponse.class)));
+        return toolGet(subject, id, "debug", null, null, ops::debug,
+                (McpDebugResponse debug) -> Spoken.debug(debug));
     }
 
     private JsonRpcResponse switchAppliance(String subject, JsonNode id, JsonNode arguments) {
@@ -204,63 +215,77 @@ public class McpResource implements McpApi {
 
     private JsonRpcResponse scheduleSwitch(
             String subject, JsonNode id, UUID instanceId, String applianceName, boolean on, int delay) {
-        ObjectNode body = mapper.createObjectNode();
-        body.put("instanceId", instanceId.toString());
-        body.put("applianceName", applianceName);
-        body.put("on", on);
-        body.put("dueAt", Instant.now().plusSeconds(delay).toString());
-        DashboardClient.Call call = dashboard.post(
-                "/api/mcp/scheduled-switches",
-                body.toString(),
-                subject,
-                CallerIds.roles(identity));
-        boolean stored = call.status() >= 200 && call.status() < 300;
-        audit(subject, "switch_appliance", instanceId.toString(), applianceName, stored ? "scheduled" : resultOf(call.status()));
+        ScheduledSwitchRequest body = new ScheduledSwitchRequest();
+        body.setInstanceId(instanceId);
+        body.setApplianceName(applianceName);
+        body.setOn(on);
+        body.setDueAt(Instant.now().plusSeconds(delay));
+        int status = dashboard(() -> {
+            ops.schedule(body).close();
+            return Boolean.TRUE;
+        }).status();
+        boolean stored = status >= 200 && status < 300;
+        audit(subject, "switch_appliance", instanceId.toString(), applianceName, stored ? "scheduled" : resultOf(status));
         if (stored) {
             return toolResult(id, Spoken.scheduled(applianceName, on, delay), false);
         }
-        return toolResult(id, Spoken.refusal(call.status()), true);
+        return toolResult(id, Spoken.refusal(status), true);
     }
 
     private JsonRpcResponse switchNow(String subject, JsonNode id, UUID instanceId, String applianceName, boolean on) {
-        String json = "{\"on\":" + on + "}";
-        DashboardClient.Call call = dashboard.post(
-                "/api/appliances/" + instanceId + "/" + applianceName,
-                json,
-                subject,
-                CallerIds.roles(identity));
-        String result = resultOf(call.status());
-        audit(subject, "switch_appliance", instanceId.toString(), applianceName, result);
-        if (call.status() >= 200 && call.status() < 300) {
+        ApplianceCommandRequest command = new ApplianceCommandRequest();
+        command.setOn(on);
+        int status = dashboard(() -> appliances.command(instanceId, applianceName, command)).status();
+        audit(subject, "switch_appliance", instanceId.toString(), applianceName, resultOf(status));
+        if (status >= 200 && status < 300) {
             return toolResult(id, Spoken.switched(applianceName, on), false);
         }
-        return toolResult(id, Spoken.refusal(call.status()), true);
+        return toolResult(id, Spoken.refusal(status), true);
     }
 
-    private JsonRpcResponse toolGet(
+    private <T> JsonRpcResponse toolGet(
             String subject,
             JsonNode id,
             String tool,
-            String path,
             String instance,
             String appliance,
-            BodyText bodyText) {
+            Supplier<T> read,
+            BodyText<T> bodyText) {
         if (!limiter.tryAcquire(subject, tool)) {
             audit(subject, tool, instance, appliance, "rate-limited");
             return toolResult(id, Spoken.refusal(429), true);
         }
-        DashboardClient.Call call = dashboard.get(path, subject, CallerIds.roles(identity));
-        String result = resultOf(call.status());
-        audit(subject, tool, instance, appliance, result);
-        if (call.status() >= 200 && call.status() < 300) {
+        DashboardAnswer<T> answer = dashboard(read);
+        int status = answer.status();
+        audit(subject, tool, instance, appliance, resultOf(status));
+        if (status >= 200 && status < 300) {
             try {
-                return toolResult(id, bodyText.render(call.body()), false);
+                return toolResult(id, bodyText.render(answer.body()), false);
             } catch (Exception e) {
                 audit(subject, tool, instance, appliance, "error");
                 return toolResult(id, Spoken.refusal(500), true);
             }
         }
-        return toolResult(id, Spoken.refusal(call.status()), true);
+        return toolResult(id, Spoken.refusal(status), true);
+    }
+
+    /**
+     * One dashboard call: 200 with the body, the refused status from the mapper, 400 when the
+     * client refuses an invalid argument, or 503 when the dashboard is unreachable.
+     */
+    private static <T> DashboardAnswer<T> dashboard(Supplier<T> call) {
+        try {
+            return new DashboardAnswer<>(200, call.get());
+        } catch (DashboardRefused refused) {
+            return new DashboardAnswer<>(refused.status(), null);
+        } catch (ConstraintViolationException invalid) {
+            return new DashboardAnswer<>(400, null);
+        } catch (ProcessingException unreachable) {
+            return new DashboardAnswer<>(503, null);
+        }
+    }
+
+    private record DashboardAnswer<T>(int status, T body) {
     }
 
     private ObjectNode toolsList() {
@@ -462,7 +487,7 @@ public class McpResource implements McpApi {
     }
 
     @FunctionalInterface
-    private interface BodyText {
-        String render(String body) throws Exception;
+    private interface BodyText<T> {
+        String render(T body) throws Exception;
     }
 }

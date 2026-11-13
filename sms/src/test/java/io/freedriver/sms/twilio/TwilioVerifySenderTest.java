@@ -13,6 +13,7 @@ import io.freedriver.sms.support.Json;
 import io.freedriver.sms.support.LogCapture;
 import io.freedriver.sms.support.TestNumbers;
 import org.jboss.logging.MDC;
+import io.quarkus.test.junit.QuarkusTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The Twilio client called directly against a fake Verify endpoint. */
+@QuarkusTest
 class TwilioVerifySenderTest {
 
     private static final String VERIFICATIONS = "/v2/Services/" + TestNumbers.SID_SERVICE + "/Verifications";

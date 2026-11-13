@@ -36,7 +36,7 @@ class PhoneRemovalOrderTest {
     }
 
     private static PhoneRemovalResource resource(List<String> order, PhoneSignInDirectory keycloak) {
-        SmsPhoneList sms = new SmsPhoneList() {
+        SmsPhoneList sms = new SmsPhoneListStub() {
             @Override
             public List<PhoneRow> list() {
                 return List.of();

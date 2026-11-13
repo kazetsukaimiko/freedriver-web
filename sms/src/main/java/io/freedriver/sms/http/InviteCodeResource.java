@@ -1,8 +1,9 @@
 package io.freedriver.sms.http;
 
 import io.freedriver.sms.PhoneMask;
-import io.freedriver.sms.api.PhoneRateLimited;
+import io.freedriver.sms.api.SmsInviteApi;
 import io.freedriver.sms.model.ErrorResponse;
+import io.freedriver.sms.model.InviteSend;
 import io.freedriver.sms.model.SentResponse;
 import io.freedriver.sms.model.VerifiedResponse;
 import io.freedriver.sms.model.VerifyRequest;
@@ -18,14 +19,6 @@ import io.freedriver.sms.security.DailySendCap;
 import io.freedriver.sms.security.PhoneRateLimiter;
 import io.freedriver.sms.security.RateLimitedException;
 import jakarta.inject.Inject;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
@@ -36,10 +29,7 @@ import java.util.UUID;
  * Invite-page codes. The number is not on the list yet. The agreement is stored first, then one
  * code is sent. Verify uses the same attempt limit and provider expiry as sign-in.
  */
-@Path("/sms/invite")
-@Consumes(MediaType.APPLICATION_JSON)
-@Produces(MediaType.APPLICATION_JSON)
-public class InviteCodeResource {
+public class InviteCodeResource implements SmsInviteApi {
 
     private static final Logger LOG = Logger.getLogger(InviteCodeResource.class);
 
@@ -66,9 +56,8 @@ public class InviteCodeResource {
         this.clock = clock;
     }
 
-    @POST
-    @Path("send")
-    public Response send(@Valid @NotNull InviteSend request) {
+    @Override
+    public Response send(InviteSend request) {
         if (!InviteWording.TEXT.equals(request.wording())) {
             return Response.status(400).entity(ErrorResponse.BAD_REQUEST).build();
         }
@@ -98,16 +87,9 @@ public class InviteCodeResource {
         return Response.ok(SentResponse.otp(request.phone())).build();
     }
 
-    @POST
-    @Path("verify")
-    @PhoneRateLimited(PhoneRateLimited.Kind.CODE_CHECK)
-    public VerifiedResponse verify(@Valid @NotNull VerifyRequest request) {
+    @Override
+    public VerifiedResponse verify(VerifyRequest request) {
         otp.verifyAgreed(request.phone(), request.code());
         return VerifiedResponse.otp(request.phone());
-    }
-
-    public record InviteSend(@io.freedriver.sms.validation.UsPhoneNumber String phone,
-                             @NotBlank String wording,
-                             @NotBlank String inviteId) {
     }
 }
