@@ -237,6 +237,25 @@ as_root env \
 # throwaway files into compose, so restore world-read after provision.
 as_root chmod -R a+rX "$SECRETS"
 
+# kaze is created with username only. The user profile then asks for
+# firstName, lastName, and email (VERIFY_PROFILE) after OTP, which leaves
+# MCP authorization-code on a 200 page. Fill those fields on the throwaway
+# user so phone sign-in finishes.
+KAZE_ID="$(docker exec "$KEYCLOAK_CONTAINER" /opt/keycloak/bin/kcadm.sh get users \
+  --config /tmp/kcadm-smoke-admin.config -r freedriver \
+  -q username=kaze -q exact=true --fields id --format csv --noquotes \
+  | sed '/^id$/d' | awk 'NF { print; exit }')"
+if [[ -z "$KAZE_ID" ]]; then
+  echo "user kaze missing after provision" >&2
+  exit 1
+fi
+docker exec "$KEYCLOAK_CONTAINER" /opt/keycloak/bin/kcadm.sh update "users/${KAZE_ID}" \
+  --config /tmp/kcadm-smoke-admin.config -r freedriver \
+  -s firstName=Kaze -s lastName=Smoke \
+  -s email=kaze@freedriver.invalid -s emailVerified=true \
+  -s 'requiredActions=[]' >/dev/null
+unset KAZE_ID
+
 API_SECRET="$(tr -d '\n' <"$SECRETS/keycloak-freedriver-api.secret")"
 python3 - "$ENV_FILE" "$API_SECRET" <<'PY'
 from pathlib import Path

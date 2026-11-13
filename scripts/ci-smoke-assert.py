@@ -240,8 +240,22 @@ def assert_phone_sign_in(client: Client) -> None:
     status, headers, body, url = post_form(client, form, {"code": code})
     if status >= 400:
         raise SystemExit(f"code submit HTTP {status} body={body[:300]!r}")
-    # Signed-in dashboard or a redirect onto app.freedriver.io.
-    if "app.freedriver.io" not in url and status not in {200, 302, 303}:
+    html = body.decode("utf-8", "replace")
+    forms = parse_forms(html)
+    if any("firstName" in (form.get("fields") or {}) for form in forms):
+        form = find_form(forms, "firstName")
+        status, headers, body, url = post_form(
+            client,
+            form,
+            {
+                "firstName": "Kaze",
+                "lastName": "Smoke",
+                "email": "kaze@freedriver.invalid",
+            },
+        )
+        if status >= 400:
+            raise SystemExit(f"profile submit HTTP {status} body={body[:300]!r}")
+    if "app.freedriver.io" not in url:
         raise SystemExit(f"phone sign-in landed on {url} HTTP {status}")
     print("phone sign-in", status, url.split("?", 1)[0])
 
@@ -259,12 +273,14 @@ def assert_mcp_tools(client: Client) -> None:
             "code_challenge_method": "S256",
         }
     )
-    status, headers, _, location = client.request(
+    status, headers, body, location = client.request(
         f"{AUTH}/realms/freedriver/protocol/openid-connect/auth?{params}",
         follow=False,
     )
     if status not in {302, 303}:
-        raise SystemExit(f"mcp auth HTTP {status}")
+        raise SystemExit(
+            f"mcp auth HTTP {status} location={headers.get('location') or location} body={body[:200]!r}"
+        )
     target = headers.get("location") or location
     parsed = urllib.parse.urlparse(target)
     code = urllib.parse.parse_qs(parsed.query).get("code", [""])[0]
