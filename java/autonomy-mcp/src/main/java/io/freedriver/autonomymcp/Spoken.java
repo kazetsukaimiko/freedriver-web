@@ -1,34 +1,11 @@
 package io.freedriver.autonomymcp;
 
-import io.freedriver.dashboard.model.ApplianceMapResponse;
-import io.freedriver.dashboard.model.ApplianceStatus;
 import io.freedriver.dashboard.model.HomeStatusResponse;
-import io.freedriver.dashboard.model.InstanceView;
 import io.freedriver.dashboard.model.McpDebugResponse;
 
 final class Spoken {
 
     private Spoken() {
-    }
-
-    static String list(ApplianceMapResponse map) {
-        if (map == null || map.instances() == null || map.instances().isEmpty()) {
-            return "No appliances are listed.";
-        }
-        StringBuilder text = new StringBuilder();
-        for (InstanceView instance : map.instances()) {
-            if (instance.appliances() == null) {
-                continue;
-            }
-            for (ApplianceStatus appliance : instance.appliances()) {
-                if (!text.isEmpty()) {
-                    text.append(' ');
-                }
-                text.append(label(appliance.applianceName()));
-                text.append(appliance.on() ? " is on." : " is off.");
-            }
-        }
-        return text.isEmpty() ? "No appliances are listed." : text.toString();
     }
 
     static String switched(String applianceName, boolean on) {
