@@ -56,6 +56,9 @@ public final class DashboardStub implements QuarkusTestResourceLifecycleManager 
                 body = "{\"brokerConnected\":true,\"lastUpdated\":\"2026-11-01T00:00:00Z\",\"stale\":false}";
             } else if ("/api/mcp/debug".equals(path)) {
                 body = "{\"health\":\"UP\",\"errorCategory\":\"none\"}";
+            } else if ("/api/mcp/scheduled-switches".equals(path)) {
+                status = 202;
+                body = "{}";
             } else {
                 status = 404;
                 body = "{}";
