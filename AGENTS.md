@@ -41,3 +41,16 @@ When Deploy succeeds, `GET https://app.freedriver.io/api/build` returns the stam
 ## Failed Actions
 
 When GitHub Actions fails, debug and open the fix as a pull request under [Pull requests](#pull-requests). After that pull request merges, follow [Merge and deploy](#merge-and-deploy). That post-merge check is part of the obligation for this repo.
+
+## Engineering conventions
+
+Each line names the mechanism this repo uses for that job.
+
+- **HTTP between services.** The JAX-RS interface in a `-api` module is the contract. The server implements it. A caller injects a REST client built from that interface with `quarkus-rest-client-jackson`.
+- **Keycloak administration.** `quarkus-keycloak-admin-rest-client` makes Admin API calls. `quarkus-oidc-client` obtains service-account tokens.
+- **Mongo.** Panache entities and repositories hold persistence. Filters, sorts, limits, and atomic updates run in Mongo. The repository's module creates its indexes at startup.
+- **MCP servers.** A tool is a `@Tool` method on `quarkus-mcp-server`. Bean Validation constraints on its arguments are the validation and the input schema. Security annotations carry its role checks.
+- **MCP identity.** A tool call runs with the permissions of the user who connected.
+- **Plain-Java modules.** `sms-client` runs inside Keycloak and `device-daemon` runs on user devices. Both use the JDK HTTP client and Jackson.
+
+A pull request that hand-writes what a Quarkus extension provides says in its description what the extension lacks.
