@@ -2,6 +2,7 @@
 """Assert the compose smoke job through Caddy (#484)."""
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -171,7 +172,7 @@ def stub_code() -> str:
 def pkce() -> tuple[str, str]:
     verifier = secrets.token_urlsafe(32)
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
-    challenge = urllib.parse.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+    challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
     return verifier, challenge
 
 
