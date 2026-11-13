@@ -58,7 +58,7 @@ class McpResourceTest {
     @Test
     void anonymous_mcp_is_401_and_the_tool_does_not_run() {
         jobs.register("pc-anon", "anon.local", List.of("yuni"));
-        int before = jobs.jobCount();
+        int before = jobCount();
 
         String posted = given()
                 .contentType("application/json")
@@ -81,7 +81,7 @@ class McpResourceTest {
         assertFalse(posted.contains(PROMPT));
         assertFalse(got.contains(PROMPT));
         assertFalse(posted.contains("authorization_servers"));
-        assertEquals(before, jobs.jobCount());
+        assertEquals(before, jobCount());
         given().get("/mcp/sse").then().statusCode(401);
         given().post("/mcp/oauth-protected-resource").then().statusCode(401);
         given()
@@ -97,7 +97,7 @@ class McpResourceTest {
     @Test
     void session_without_a_token_is_401() {
         String sessionId = sessions.open("alice-bare");
-        int before = jobs.jobCount();
+        int before = jobCount();
 
         given()
                 .contentType("application/json")
@@ -107,7 +107,7 @@ class McpResourceTest {
                 .then()
                 .statusCode(401);
 
-        assertEquals(before, jobs.jobCount());
+        assertEquals(before, jobCount());
         assertEquals(McpSessions.Status.MATCH, sessions.check(sessionId, "alice-bare"));
     }
 
@@ -120,11 +120,11 @@ class McpResourceTest {
                 .body("result.tools.name", containsInAnyOrder("report_host", "finish_job"))
                 .body("result.tools.size()", is(2));
 
-        int before = jobs.jobCount();
+        int before = jobCount();
         call(session, submitBody("freedriver-openbot", PROMPT))
                 .statusCode(200)
                 .body("result.isError", is(true));
-        assertEquals(before, jobs.jobCount());
+        assertEquals(before, jobCount());
         assertFalse(call(session, submitBody("freedriver-openbot", PROMPT)).extract().asString().contains(PROMPT));
 
         call(session, """
@@ -182,7 +182,7 @@ class McpResourceTest {
     void session_for_another_subject_is_403_and_the_tool_does_not_run() {
         String alice = sessions.open("alice-session");
         jobs.register("pc-bob-session", "bob.local", List.of("yuni"));
-        int before = jobs.jobCount();
+        int before = jobCount();
 
         String body = given()
                 .contentType("application/json")
@@ -195,7 +195,7 @@ class McpResourceTest {
                 .asString();
 
         assertFalse(body.contains(PROMPT));
-        assertEquals(before, jobs.jobCount());
+        assertEquals(before, jobCount());
         assertEquals(McpSessions.Status.MATCH, sessions.check(alice, "alice-session"));
         assertEquals(McpSessions.Status.OTHER_SUBJECT, sessions.check(alice, "bob-session"));
     }
@@ -218,7 +218,7 @@ class McpResourceTest {
     @TestSecurity(user = "grok-no-session", roles = "dispatcher")
     void dispatcher_without_a_session_does_not_run_the_tool() {
         jobs.register("pc-no-session", "nosession.local", List.of("yuni"));
-        int before = jobs.jobCount();
+        int before = jobCount();
 
         String body = given()
                 .contentType("application/json")
@@ -231,7 +231,7 @@ class McpResourceTest {
                 .asString();
 
         assertFalse(body.contains(PROMPT));
-        assertEquals(before, jobs.jobCount());
+        assertEquals(before, jobCount());
     }
 
     @Test
@@ -263,7 +263,7 @@ class McpResourceTest {
     @TestSecurity(user = "grok-unknown", roles = "dispatcher")
     void unknown_session_is_404_and_the_tool_does_not_run() {
         jobs.register("pc-unknown-session", "unknown.local", List.of("yuni"));
-        int before = jobs.jobCount();
+        int before = jobCount();
 
         given()
                 .contentType("application/json")
@@ -274,7 +274,7 @@ class McpResourceTest {
                 .then()
                 .statusCode(404);
 
-        assertEquals(before, jobs.jobCount());
+        assertEquals(before, jobCount());
     }
 
     @Test
@@ -381,11 +381,11 @@ class McpResourceTest {
                 .statusCode(200)
                 .body("error.code", is(-32602));
 
-        int before = jobs.jobCount();
+        int before = jobCount();
         call(session, "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"shell\",\"arguments\":{\"command\":\"uname\"}}}")
                 .statusCode(200)
                 .body("error.code", is(-32602));
-        assertEquals(before, jobs.jobCount());
+        assertEquals(before, jobCount());
 
         String tooLong = "P" + "x".repeat(16000);
         String rejected = call(session, submitBody("pc-mcp-grok", tooLong))
@@ -394,7 +394,7 @@ class McpResourceTest {
                 .extract()
                 .asString();
         assertFalse(rejected.contains(tooLong));
-        assertEquals(before, jobs.jobCount());
+        assertEquals(before, jobCount());
 
         String shelled = call(session, """
                 {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"openbot_send_prompt","arguments":{"server":"grok.local","agentName":"yuni","prompt":"hi","channel":"TEXT","shell":"rm -rf /"}}}
@@ -404,7 +404,7 @@ class McpResourceTest {
                 .extract()
                 .asString();
         assertFalse(shelled.contains("rm -rf"));
-        assertEquals(before, jobs.jobCount());
+        assertEquals(before, jobCount());
 
         call(session, "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"ping\"}")
                 .statusCode(200);
@@ -418,7 +418,7 @@ class McpResourceTest {
                 .post("/mcp")
                 .then()
                 .statusCode(400);
-        assertEquals(before, jobs.jobCount());
+        assertEquals(before, jobCount());
 
         given()
                 .get("/mcp")
@@ -460,7 +460,7 @@ class McpResourceTest {
     void send_returns_an_id_without_waiting_and_await_follows_that_job() throws Exception {
         jobs.register("pc-block", "block.local", List.of("yuni"));
         String session = initialize();
-        int before = jobs.jobCount();
+        int before = jobCount();
 
         String firstText = call(session, submitBody("block.local", "one"))
                 .statusCode(200)
@@ -477,7 +477,7 @@ class McpResourceTest {
         assertEquals("QUEUED", first.path("assignments").get(0).path("state").asText());
         assertEquals("QUEUED", second.path("assignments").get(0).path("state").asText());
         assertNotEquals(first.path("jobId").asText(), second.path("jobId").asText());
-        assertEquals(before + 2, jobs.jobCount());
+        assertEquals(before + 2, jobCount());
 
         String rejected = call(session, awaitBody(first.path("jobId").asText(), 121))
                 .statusCode(200)
@@ -521,7 +521,7 @@ class McpResourceTest {
     void on_busy_defaults_to_supersede_and_rejects_anything_else() throws Exception {
         jobs.register("pc-on-busy", "on-busy.local", List.of("yuni"));
         String session = initialize();
-        int before = jobs.jobCount();
+        int before = jobCount();
 
         String omitted = call(session, submitBody("on-busy.local", "plain"))
                 .statusCode(200)
@@ -554,7 +554,7 @@ class McpResourceTest {
                 .orElseThrow()
                 .onBusy());
 
-        int written = jobs.jobCount();
+        int written = jobCount();
         assertEquals(before + 3, written);
         call(session, """
                 {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"openbot_send_prompt","arguments":{"server":"on-busy.local","agentName":"yuni","prompt":"nope","channel":"TEXT","on_busy":"interrupt"}}}
@@ -568,7 +568,7 @@ class McpResourceTest {
                 .statusCode(200)
                 .body("error.code", is(-32602))
                 .body(not(containsString("nope")));
-        assertEquals(written, jobs.jobCount());
+        assertEquals(written, jobCount());
     }
 
     @Test
@@ -685,7 +685,7 @@ class McpResourceTest {
                     new SubmitJobRequest(List.of("pc-cap-mcp"), "yuni", "background", Channel.TEXT),
                     Duration.ofSeconds(5)));
             waitForQueued("pc-cap-mcp");
-            int before = jobs.jobCount();
+            int before = jobCount();
 
             String text = call(session, submitBody("mcp-cap.local", "second"))
                     .statusCode(200)
@@ -696,7 +696,7 @@ class McpResourceTest {
             JsonNode sent = mapper.readTree(text);
             assertEquals("QUEUED", sent.path("assignments").get(0).path("state").asText());
             assertFalse(text.contains("background"));
-            assertEquals(before + 1, jobs.jobCount());
+            assertEquals(before + 1, jobCount());
             for (AssignmentView row : jobs.poll("pc-cap-mcp", Duration.ZERO)) {
                 jobs.finish("pc-cap-mcp", row.assignmentId(), true, "done");
             }
@@ -771,5 +771,13 @@ class McpResourceTest {
         Set<String> names = new HashSet<>();
         node.fieldNames().forEachRemaining(names::add);
         return names;
+    }
+
+    @Inject
+    AssignmentRepository assignments;
+
+    /** Distinct jobs stored. A rejected call writes none. */
+    private int jobCount() {
+        return assignments.mongoCollection().distinct("jobId", String.class).into(new java.util.ArrayList<>()).size();
     }
 }

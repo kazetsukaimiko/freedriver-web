@@ -23,7 +23,7 @@ class McpProtectedResourceTest {
     @Test
     void anonymous_get_is_the_metadata_document_and_nothing_else() {
         jobs.register("pc-meta", "meta-hostname-do-not-leak", List.of("yuni"));
-        int before = jobs.jobCount();
+        int before = jobCount();
 
         Map<?, ?> body = given()
                 .get(McpProtectedResource.PATH)
@@ -49,7 +49,7 @@ class McpProtectedResourceTest {
         assertFalse(raw.contains("api_key"));
         assertFalse(raw.contains("api-key"));
         assertFalse(raw.contains("device"));
-        assertEquals(before, jobs.jobCount());
+        assertEquals(before, jobCount());
     }
 
     @Test
@@ -90,5 +90,13 @@ class McpProtectedResourceTest {
                 .as(Map.class);
         assertEquals(List.of("header"), body.get("bearer_methods_supported"));
         given().post(McpProtectedResource.PATH).then().statusCode(403);
+    }
+
+    @Inject
+    AssignmentRepository assignments;
+
+    /** Distinct jobs stored. A rejected call writes none. */
+    private int jobCount() {
+        return assignments.mongoCollection().distinct("jobId", String.class).into(new java.util.ArrayList<>()).size();
     }
 }
