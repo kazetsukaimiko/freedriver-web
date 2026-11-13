@@ -14,6 +14,7 @@ import io.freedriver.sms.model.VerifyRequest;
 import io.freedriver.sms.model.WhitelistPhone;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.validation.ConstraintViolationException;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
@@ -103,13 +104,19 @@ public class HttpSmsPhoneList implements SmsPhoneList {
         return call(() -> phones.attach(new AttachUser(phone, username)).attached());
     }
 
-    /** Refuses before any connection when the secret is unset. A transport or body failure is upstream. */
+    /**
+     * Refuses before any connection when the secret is unset. An argument the client's validation
+     * refuses answers like a 400 from sms, which would refuse it the same way. A transport or body
+     * failure is upstream.
+     */
     private <T> T call(Supplier<T> request) {
         requireSecret();
         try {
             return request.get();
         } catch (InviteUpstreamException e) {
             throw e;
+        } catch (ConstraintViolationException invalid) {
+            throw new SmsRefused(400);
         } catch (RuntimeException e) {
             throw new InviteUpstreamException("sms phone list failed", e);
         }

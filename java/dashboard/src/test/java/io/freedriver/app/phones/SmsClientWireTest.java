@@ -61,6 +61,15 @@ class SmsClientWireTest {
         assertEquals(409, refused.status());
     }
 
+    @Test
+    void a_code_the_client_refuses_is_a_wrong_code_and_never_reaches_sms() {
+        HttpSmsPhoneList sms = new HttpSmsPhoneList(phones, invites, "wire-secret");
+
+        assertEquals(SmsPhoneList.InviteCheck.WRONG, sms.checkInviteCode("+15555550123", "1".repeat(17)));
+        assertEquals(SmsPhoneList.InviteCheck.WRONG, sms.checkInviteCode("+15555550123", null));
+        assertTrue(SmsStub.calls.stream().noneMatch(call -> call.contains("/sms/invite/verify")), SmsStub.calls::toString);
+    }
+
     public static final class SmsStub implements QuarkusTestResourceLifecycleManager {
 
         static final List<String> calls = new CopyOnWriteArrayList<>();
