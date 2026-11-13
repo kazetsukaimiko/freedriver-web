@@ -232,6 +232,10 @@ as_root env \
   SECRETS_ENV="$ENV_FILE" \
   bash "$ROOT/scripts/provision-keycloak-freedriver.sh"
 
+# own_secret writes root:lonewatt-techops mode 640. The runner loads those
+# throwaway files into compose, so restore world-read after provision.
+as_root chmod -R a+rX "$SECRETS"
+
 API_SECRET="$(tr -d '\n' <"$SECRETS/keycloak-freedriver-api.secret")"
 python3 - "$ENV_FILE" "$API_SECRET" <<'PY'
 from pathlib import Path
