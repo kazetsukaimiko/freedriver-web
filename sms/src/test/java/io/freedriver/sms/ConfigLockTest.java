@@ -57,4 +57,11 @@ class ConfigLockTest {
         assertEquals("twilio", p.getProperty("freedriver.sms.sender"));
         assertFalse(p.containsKey("%prod.freedriver.sms.sender"));
     }
+
+    @Test
+    void production_database_is_freedriver_sms() throws IOException {
+        Properties p = properties();
+        assertEquals("freedriver_sms", p.getProperty("quarkus.mongodb.database"));
+        assertTrue(p.getProperty("%test.quarkus.mongodb.database").startsWith("freedriver-test-"));
+    }
 }

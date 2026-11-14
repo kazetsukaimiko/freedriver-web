@@ -72,6 +72,7 @@ class BffSessionLockTest {
         String compose = Files.readString(Path.of("../../docker-compose.yml"));
         assertTrue(compose.contains("path: /opt/freedriver-secrets/keycloak-freedriver-invite.env"));
         assertTrue(compose.contains("path: /opt/freedriver-secrets/keycloak-freedriver-instances.env"));
+        assertTrue(compose.contains("path: /opt/freedriver-secrets/mongo-dashboard.env"));
         assertTrue(compose.contains("required: false"));
         assertFalse(compose.contains("${FREEDRIVER_INVITE_CLIENT_SECRET:-}"));
         assertFalse(compose.contains("FREEDRIVER_INVITE_CLIENT_SECRET: ${"));

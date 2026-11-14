@@ -76,8 +76,10 @@ class DispatcherConfigTest {
         assertTrue(compose.contains("QUARKUS_OIDC_CREDENTIALS_SECRET: ${FREEDRIVER_DISPATCHER_OIDC_SECRET:-}"));
         assertTrue(compose.contains(
                 "FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET: ${FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET:-}"));
-        assertTrue(compose.contains(
-                "QUARKUS_MONGODB_CONNECTION_STRING: ${QUARKUS_MONGODB_CONNECTION_STRING:-mongodb://mongodb:27017/freedriver}"));
+        assertTrue(compose.contains("path: /opt/freedriver-secrets/mongo-dispatcher.env"));
+        assertTrue(properties.contains("quarkus.mongodb.database=freedriver_dispatcher"));
+        assertFalse(compose.contains("QUARKUS_MONGODB_CONNECTION_STRING: ${"));
+        assertFalse(compose.contains("QUARKUS_MONGODB_DATABASE:"));
         assertFalse(compose.contains("QUARKUS_OIDC_ENABLED"));
         assertFalse(compose.contains("QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8080"));
         assertFalse(compose.contains("QUARKUS_OIDC_AUTH_SERVER_URL: http://127.0.0.1:8081"));
