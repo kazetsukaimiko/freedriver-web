@@ -1,15 +1,12 @@
 package io.freedriver.sms.twilio;
 
 import io.freedriver.sms.phones.ConsentLedger;
-import io.freedriver.sms.support.Json;
 import io.freedriver.sms.support.LogCapture;
 import io.freedriver.sms.support.TestNumbers;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -20,9 +17,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TwilioCredentialsTest {
-
-    @TempDir
-    Path dataDir;
 
     private static Map<String, String> complete() {
         Map<String, String> env = new HashMap<>();
@@ -65,7 +59,7 @@ class TwilioCredentialsTest {
     void startup_logs_that_credentials_loaded_and_no_values() {
         try (LogCapture logs = LogCapture.open()) {
             TwilioSenderProducer.create(complete()::get, "https://verify.twilio.com", Duration.ofSeconds(5), false,
-                    new ConsentLedger(dataDir, Json.mapper()));
+                    new ConsentLedger());
             String out = logs.all();
             assertTrue(out.contains("Twilio credentials loaded"), out);
             for (String value : complete().values()) {
@@ -76,7 +70,7 @@ class TwilioCredentialsTest {
 
     @Test
     void production_startup_refuses_a_non_twilio_base_url() {
-        ConsentLedger ledger = new ConsentLedger(dataDir, Json.mapper());
+        ConsentLedger ledger = new ConsentLedger();
         assertThrows(IllegalStateException.class, () -> TwilioSenderProducer.create(complete()::get,
                 "http://localhost:8089", Duration.ofSeconds(5), false, ledger));
         assertThrows(IllegalStateException.class, () -> TwilioSenderProducer.create(complete()::get,

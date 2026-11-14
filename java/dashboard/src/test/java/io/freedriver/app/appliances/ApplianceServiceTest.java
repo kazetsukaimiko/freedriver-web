@@ -24,7 +24,8 @@ class ApplianceServiceTest {
 
     @Test
     void currentMap_empty_has_no_instances() {
-        ApplianceControl control = new ApplianceControl(new MemoryApplianceRoster());
+        RecordingControl control = RecordingControl.withCabin(false);
+        control.known = false;
         ApplianceMapResponse map = service(control).currentMap();
         assertTrue(map.instances().isEmpty());
     }
@@ -138,13 +139,29 @@ class ApplianceServiceTest {
         private final java.util.List<ApplianceCommandMessage> published = new java.util.ArrayList<>();
 
         RecordingControl() {
-            super(new MemoryApplianceRoster());
+            super(null);
         }
 
         static RecordingControl withCabin(boolean on) {
             RecordingControl control = new RecordingControl();
             control.snapshot = new ApplianceSnapshot(Instant.now(), List.of(new Appliance("hallway", on)));
             return control;
+        }
+
+        @Override
+        public java.util.Optional<ApplianceRoster.Row> instance(UUID instanceId) {
+            return known ? java.util.Optional.of(new ApplianceRoster.Row("Cabin", snapshot)) : java.util.Optional.empty();
+        }
+
+        @Override
+        public java.util.Map<UUID, ApplianceRoster.Row> instances() {
+            return known ? java.util.Map.of(INSTANCE, new ApplianceRoster.Row("Cabin", snapshot)) : java.util.Map.of();
+        }
+
+        @Override
+        public java.util.Optional<ApplianceSnapshot> publishKnownAndWait(
+                UUID instanceId, ApplianceCommandMessage command, Duration timeout) {
+            return publishCommandAndWait(instanceId, command, timeout);
         }
 
         @Override

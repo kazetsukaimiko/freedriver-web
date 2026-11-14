@@ -5,6 +5,7 @@ import io.freedriver.sms.model.Added;
 import io.freedriver.sms.model.AttachUser;
 import io.freedriver.sms.model.Attached;
 import io.freedriver.sms.model.PhoneList;
+import io.freedriver.sms.model.PhoneRecords;
 import io.freedriver.sms.model.RemovePhone;
 import io.freedriver.sms.model.Removed;
 import io.freedriver.sms.model.WhitelistPhone;
@@ -24,6 +25,11 @@ public interface SmsPhonesApi {
 
     @GET
     PhoneList list();
+
+    /** Every stored {@code phones} row. sms owns that collection. */
+    @GET
+    @Path("records")
+    PhoneRecords records();
 
     @POST
     @Path("remove")

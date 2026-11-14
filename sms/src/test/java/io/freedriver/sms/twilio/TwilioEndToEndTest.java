@@ -1,5 +1,6 @@
 package io.freedriver.sms.twilio;
 
+import io.quarkus.redis.datasource.RedisDataSource;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import io.freedriver.sms.otp.ActiveSender;
@@ -9,7 +10,7 @@ import io.freedriver.sms.phones.ConsentRecord;
 import io.freedriver.sms.phones.ConsentSource;
 import io.freedriver.sms.phones.PhoneDirectory;
 import io.freedriver.sms.phones.PhoneEntry;
-import io.freedriver.sms.security.DailySendCap;
+import io.freedriver.sms.security.DailySendLedger;
 import io.freedriver.sms.security.PhoneRateLimiter;
 import io.freedriver.sms.support.SameAnswer;
 import io.freedriver.sms.support.SmsCalls;
@@ -41,6 +42,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @TestProfile(TwilioEndToEndTest.TwilioProfile.class)
 class TwilioEndToEndTest {
 
+    @Inject
+    RedisDataSource redis;
+
     private static final String VERIFICATIONS = "/v2/Services/" + TestNumbers.SID_SERVICE + "/Verifications";
     private static final String CHECK = "/v2/Services/" + TestNumbers.SID_SERVICE + "/VerificationCheck";
 
@@ -71,7 +75,7 @@ class TwilioEndToEndTest {
     @Inject
     PhoneRateLimiter limiter;
     @Inject
-    DailySendCap dailyCap;
+    DailySendLedger dailyLedger;
 
     WireMockServer twilio;
 
@@ -83,8 +87,8 @@ class TwilioEndToEndTest {
                 .withHeader("Content-Type", "application/json").withBody("{\"status\":\"pending\"}")));
         twilio.stubFor(post(urlEqualTo(CHECK)).willReturn(aResponse().withStatus(200)
                 .withHeader("Content-Type", "application/json").withBody("{\"status\":\"approved\"}")));
-        limiter.reset();
-        dailyCap.reset();
+        redis.flushall();
+        dailyLedger.deleteAll();
     }
 
     private String agreed() {

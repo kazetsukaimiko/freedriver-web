@@ -4,10 +4,14 @@ export const PHONE_RECORDS_PATH = '/phone-records'
 
 export const PHONE_RECORDS_DENIED = 'This account needs a portal-admin role.'
 
+/** One stored phone row, typed by sms. */
 export type PhoneRecord = {
   id: string
   phone: string
-  document: Record<string, unknown>
+  name: string | null
+  username: string | null
+  role: string | null
+  addedAt: string | null
 }
 
 export type PhoneRecordsPage =

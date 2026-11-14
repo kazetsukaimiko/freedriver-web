@@ -18,7 +18,7 @@ class CommandRateLimiterTest {
         // Rate-limit fields stay package-private on AppliancesConfig. This test no longer shares that package.
         set(config, "rateLimitPermits", 2);
         set(config, "rateLimitWindow", Duration.ofSeconds(60));
-        CommandRateLimiter limiter = new CommandRateLimiter(config);
+        CommandRateLimiter limiter = new CommandRateLimiter(config, new MemoryHitWindow());
 
         assertTrue(limiter.tryAcquire("ada"));
         assertTrue(limiter.tryAcquire("ada"));

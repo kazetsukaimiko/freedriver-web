@@ -8,7 +8,7 @@ import io.freedriver.dashboard.model.HomeStatusResponse;
 import io.freedriver.dashboard.model.InstanceView;
 import io.freedriver.app.schedule.ScheduledSwitch;
 import io.freedriver.app.schedule.ScheduledSwitchRules;
-import io.freedriver.app.schedule.ScheduledSwitches;
+import io.freedriver.app.schedule.ScheduledSwitchRepository;
 import io.freedriver.app.security.OidcSubjects;
 import io.freedriver.dashboard.model.McpDebugResponse;
 import io.freedriver.dashboard.model.ScheduledSwitchRequest;
@@ -36,7 +36,7 @@ public class McpOpsResource implements McpOpsApi {
     SecurityIdentity identity;
 
     @Inject
-    ScheduledSwitches switches;
+    ScheduledSwitchRepository switches;
 
     @Override
     public ApplianceMapResponse appliances() {
@@ -76,9 +76,9 @@ public class McpOpsResource implements McpOpsApi {
         Instant now = Instant.now();
         ScheduledSwitchRules.check(
                 body.getInstanceId(), body.getApplianceName(), body.getDueAt(), subject, now);
-        switches.insert(new ScheduledSwitch(
+        switches.persist(new ScheduledSwitch(
                 UUID.randomUUID().toString(),
-                body.getInstanceId(),
+                body.getInstanceId().toString(),
                 body.getApplianceName(),
                 body.getOn(),
                 body.getDueAt(),

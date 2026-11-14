@@ -1,6 +1,6 @@
 package io.freedriver.autonomymcp;
 
-import io.freedriver.autonomymcp.api.McpApi;
+import io.freedriver.mcp.McpEndpoint;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
@@ -22,15 +22,17 @@ import static org.hamcrest.Matchers.nullValue;
 @QuarkusTestResource(value = McpOidc.class, restrictToAnnotatedClass = true)
 class McpBearerTest {
 
+    static final String CLIENT_ID = "freedriver-grok-mcp";
+
     public static class OidcOn implements QuarkusTestProfile {
         @Override
         public Map<String, String> getConfigOverrides() {
             Map<String, String> conf = new HashMap<>();
             conf.put("quarkus.oidc.enabled", "true");
             conf.put("quarkus.oidc.application-type", "service");
-            conf.put("quarkus.oidc.client-id", McpProtectedResource.CLIENT_ID);
+            conf.put("quarkus.oidc.client-id", McpBearerTest.CLIENT_ID);
             conf.put("quarkus.oidc.token.issuer", "https://server.example.com");
-            conf.put("quarkus.oidc.token.audience", McpProtectedResource.RESOURCE);
+            conf.put("quarkus.oidc.token.audience", McpResourceTest.RESOURCE);
             conf.put("quarkus.http.test-port", "0");
             return conf;
         }
@@ -38,10 +40,11 @@ class McpBearerTest {
 
     @Test
     void good_token_initialize_is_200_without_set_cookie() {
-        String token = token("mcp-sub-good", Set.of("mcp-user"), McpProtectedResource.RESOURCE, McpProtectedResource.CLIENT_ID, null, null);
+        String token = token("mcp-sub-good", Set.of("mcp-user"), McpResourceTest.RESOURCE, McpBearerTest.CLIENT_ID, null, null);
         given().header("Authorization", "Bearer " + token)
+                .accept("application/json, text/event-stream")
                 .contentType("application/json")
-                .body("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}")
+                .body("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":" + McpResourceTest.INIT_PARAMS + "}")
                 .post("/autonomy/mcp")
                 .then()
                 .statusCode(200)
@@ -54,8 +57,8 @@ class McpBearerTest {
         String token = token(
                 "mcp-sub-exp",
                 Set.of("mcp-user", "dashboard", "mcp-debug"),
-                McpProtectedResource.RESOURCE,
-                McpProtectedResource.CLIENT_ID,
+                McpResourceTest.RESOURCE,
+                McpBearerTest.CLIENT_ID,
                 Instant.now().minusSeconds(60),
                 null);
         for (String body : new String[] {
@@ -65,6 +68,7 @@ class McpBearerTest {
             switchBody()
         }) {
             given().header("Authorization", "Bearer " + token)
+                .accept("application/json, text/event-stream")
                     .redirects().follow(false)
                     .contentType("application/json")
                     .body(body)
@@ -77,8 +81,9 @@ class McpBearerTest {
 
     @Test
     void wrong_audience_is_401() {
-        String token = token("mcp-sub-aud", Set.of("mcp-user"), "freedriver-api", McpProtectedResource.CLIENT_ID, null, null);
+        String token = token("mcp-sub-aud", Set.of("mcp-user"), "freedriver-api", McpBearerTest.CLIENT_ID, null, null);
         given().header("Authorization", "Bearer " + token)
+                .accept("application/json, text/event-stream")
                 .redirects().follow(false)
                 .contentType("application/json")
                 .body(call("list_appliances"))
@@ -93,20 +98,22 @@ class McpBearerTest {
         String token = token(
                 "mcp-sub-dcr",
                 Set.of("mcp-user"),
-                McpProtectedResource.RESOURCE,
+                McpResourceTest.RESOURCE,
                 "9d0238fd-47cb-4e86-bf03-ac4c16f6107c",
                 null,
                 null);
         String session = given().header("Authorization", "Bearer " + token)
+                .accept("application/json, text/event-stream")
                 .contentType("application/json")
-                .body("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}")
+                .body("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":" + McpResourceTest.INIT_PARAMS + "}")
                 .post("/autonomy/mcp")
                 .then()
                 .statusCode(200)
                 .extract()
-                .header(McpApi.SESSION_HEADER);
+                .header(McpEndpoint.SESSION_HEADER);
         given().header("Authorization", "Bearer " + token)
-                .header(McpApi.SESSION_HEADER, session)
+                .accept("application/json, text/event-stream")
+                .header(McpEndpoint.SESSION_HEADER, session)
                 .contentType("application/json")
                 .body("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}")
                 .post("/autonomy/mcp")
@@ -118,10 +125,11 @@ class McpBearerTest {
 
     @Test
     void missing_mcp_user_is_403() {
-        String token = token("mcp-sub-role", Set.of("portal-admin"), McpProtectedResource.RESOURCE, McpProtectedResource.CLIENT_ID, null, null);
+        String token = token("mcp-sub-role", Set.of("portal-admin"), McpResourceTest.RESOURCE, McpBearerTest.CLIENT_ID, null, null);
         given().header("Authorization", "Bearer " + token)
+                .accept("application/json, text/event-stream")
                 .contentType("application/json")
-                .body("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}")
+                .body("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":" + McpResourceTest.INIT_PARAMS + "}")
                 .post("/autonomy/mcp")
                 .then()
                 .statusCode(403);

@@ -9,6 +9,10 @@ import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.OnBusy;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
 import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
+import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
+import org.bson.Document;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -30,7 +34,25 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/** The production store on the Dev Services Mongo container. Each test starts from empty collections. */
+@QuarkusTest
 class JobStoreTest {
+
+    @Inject
+    AssignmentRepository assignments;
+
+    @Inject
+    DeviceRepository devices;
+
+    @Inject
+    SubmitLocks locks;
+
+    @BeforeEach
+    void empty() {
+        assignments.deleteAll();
+        devices.deleteAll();
+        locks.deleteAll();
+    }
 
     @Test
     void unknown_agent_fails_before_queueing() {
@@ -383,7 +405,7 @@ class JobStoreTest {
     @Test
     void heartbeat_advances_and_unknown_device_is_missing() {
         MutableClock clock = new MutableClock(Instant.parse("2026-10-19T12:00:00Z"));
-        JobStore store = new DocumentJobStore(new MemoryJobDocuments(), clock, null);
+        JobStore store = service(clock, null);
         store.register("pc-a", "a.local", List.of("yuni"));
         clock.now = clock.now.plusSeconds(30);
 
@@ -421,22 +443,21 @@ class JobStoreTest {
 
     @Test
     void a_restart_keeps_the_queued_job_for_a_later_claim() {
-        JobDocuments saved = new MemoryJobDocuments();
-        JobStore first = new DocumentJobStore(saved, Clock.systemUTC(), null);
+        JobStore first = store();
         first.register("pc-a", "a.local", List.of("yuni"));
         JobView submitted = first.submitNow("grok", job(List.of("pc-a"), "yuni"));
 
-        List<org.bson.Document> rows = saved.find(JobDocuments.JOBS);
+        List<Document> rows = storedJobs();
         assertEquals(1, rows.size());
         assertEquals("QUEUED", rows.get(0).getString("status"));
         assertEquals("TEXT", rows.get(0).getString("channel"));
         assertTrue(rows.get(0).getString("prompt") != null && !rows.get(0).getString("prompt").isBlank());
         assertTrue(rows.get(0).get("createdAt") != null);
 
-        JobStore restarted = new DocumentJobStore(saved, Clock.systemUTC(), null);
+        JobStore restarted = store();
         AssignmentView claimed = restarted.claim("pc-a", submitted.assignments().get(0).assignmentId());
         assertEquals(AssignmentState.CLAIMED, claimed.state());
-        assertEquals("CLAIMED", saved.find(JobDocuments.JOBS).get(0).getString("status"));
+        assertEquals("CLAIMED", storedJobs().get(0).getString("status"));
         assertEquals(submitted.jobId(), restarted.getJob("grok", submitted.jobId()).jobId());
     }
 
@@ -461,7 +482,7 @@ class JobStoreTest {
     @Test
     void queued_job_pings_each_host_and_not_the_prompt() {
         List<String> hosts = new ArrayList<>();
-        JobStore store = new DocumentJobStore(new MemoryJobDocuments(), Clock.systemUTC(), hosts::add);
+        JobStore store = service(Clock.systemUTC(), hosts::add);
         store.register("pc-a", "a.local", List.of("yuni"));
         store.register("pc-b", "b.local", List.of("yuni"));
         store.register("pc-c", "a.local", List.of("yuni"));
@@ -478,7 +499,7 @@ class JobStoreTest {
     @Test
     void rejected_submit_does_not_ping() {
         List<String> hosts = new ArrayList<>();
-        JobStore store = new DocumentJobStore(new MemoryJobDocuments(), Clock.systemUTC(), hosts::add);
+        JobStore store = service(Clock.systemUTC(), hosts::add);
         store.register("pc-a", "a.local", List.of("yuni"));
 
         assertThrows(DispatcherException.class, () -> store.submit(
@@ -493,8 +514,7 @@ class JobStoreTest {
     void send_writes_the_row_before_the_webhook_returns() throws Exception {
         CountDownLatch started = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
-        MemoryJobDocuments documents = new MemoryJobDocuments();
-        JobStore store = new DocumentJobStore(documents, Clock.systemUTC(), hostname -> {
+        JobStore store = service(Clock.systemUTC(), hostname -> {
             started.countDown();
             try {
                 if (!release.await(5, TimeUnit.SECONDS)) {
@@ -510,10 +530,10 @@ class JobStoreTest {
         JobView sent = store.submitNow(
                 "grok", new SubmitJobRequest(List.of("pc-a"), "yuni", "prompt", Channel.TEXT));
 
-        assertEquals(1, documents.find(JobDocuments.JOBS).size());
-        assertEquals(sent.jobId().toString(), documents.find(JobDocuments.JOBS).get(0).getString("jobId"));
-        assertEquals("QUEUED", documents.find(JobDocuments.JOBS).get(0).getString("status"));
-        assertEquals("supersede", documents.find(JobDocuments.JOBS).get(0).getString("on_busy"));
+        assertEquals(1, storedJobs().size());
+        assertEquals(sent.jobId().toString(), storedJobs().get(0).getString("jobId"));
+        assertEquals("QUEUED", storedJobs().get(0).getString("status"));
+        assertEquals("supersede", storedJobs().get(0).getString("on_busy"));
         assertEquals(OnBusy.supersede, store.poll("pc-a", Duration.ZERO).get(0).onBusy());
         assertTrue(started.await(2, TimeUnit.SECONDS));
         release.countDown();
@@ -523,8 +543,7 @@ class JobStoreTest {
     void queue_is_stored_before_the_webhook_returns() throws Exception {
         CountDownLatch started = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
-        MemoryJobDocuments documents = new MemoryJobDocuments();
-        JobStore store = new DocumentJobStore(documents, Clock.systemUTC(), hostname -> {
+        JobStore store = service(Clock.systemUTC(), hostname -> {
             started.countDown();
             try {
                 if (!release.await(5, TimeUnit.SECONDS)) {
@@ -540,8 +559,8 @@ class JobStoreTest {
         store.submitNow("grok", new SubmitJobRequest(
                 List.of("pc-a"), "yuni", "prompt", Channel.TEXT, OnBusy.queue));
 
-        assertEquals(1, documents.find(JobDocuments.JOBS).size());
-        assertEquals("queue", documents.find(JobDocuments.JOBS).get(0).getString("on_busy"));
+        assertEquals(1, storedJobs().size());
+        assertEquals("queue", storedJobs().get(0).getString("on_busy"));
         assertEquals(OnBusy.queue, store.poll("pc-a", Duration.ZERO).get(0).onBusy());
         assertTrue(started.await(2, TimeUnit.SECONDS));
         release.countDown();
@@ -565,14 +584,13 @@ class JobStoreTest {
         JobView second = store.submitNow("grok", job(List.of("pc-a"), "yuni"));
         JobView timedOut = store.awaitTurn("grok", second.jobId(), Duration.ofSeconds(1));
         assertEquals(AssignmentState.QUEUED, timedOut.assignments().get(0).state());
-        assertEquals(2, store.jobCount());
+        assertEquals(2, jobCount());
     }
 
     @Test
     void a_wait_or_list_written_on_one_process_is_visible_on_the_other() throws Exception {
-        JobDocuments shared = new MemoryJobDocuments();
-        JobStore first = new DocumentJobStore(shared, Clock.systemUTC(), null);
-        JobStore second = new DocumentJobStore(shared, Clock.systemUTC(), null);
+        JobStore first = store();
+        JobStore second = store();
         first.register("pc-a", "a.local", List.of("yuni"));
 
         ExecutorService pool = Executors.newSingleThreadExecutor();
@@ -611,7 +629,7 @@ class JobStoreTest {
     @Test
     void list_job_page_is_this_caller_newest_first_without_the_prompt() {
         MutableClock clock = new MutableClock(Instant.parse("2026-11-12T12:00:00Z"));
-        JobStore store = new DocumentJobStore(new MemoryJobDocuments(), clock, null);
+        JobStore store = service(clock, null);
         store.register("pc-a", "a.local", List.of("yuni", "miko"));
         JobView older = store.submitNow("grok", job(List.of("pc-a"), "yuni"));
         clock.advance(Duration.ofSeconds(1));
@@ -641,8 +659,74 @@ class JobStoreTest {
         assertThrows(DispatcherException.class, () -> store.listJobPage("grok", null, "later", 20, null));
     }
 
-    private static JobStore store() {
-        return new DocumentJobStore(new MemoryJobDocuments(), Clock.systemUTC(), null);
+    @Test
+    void rows_in_the_shape_documentjobstore_wrote_are_read_and_finished() {
+        String jobId = UUID.randomUUID().toString();
+        String assignmentId = UUID.randomUUID().toString();
+        java.util.Date created = java.util.Date.from(Instant.parse("2026-11-01T10:00:00Z"));
+        // An assignment written before this change: a duplicate assignmentId field and no on_busy.
+        assignments.mongoCollection().withDocumentClass(Document.class).insertOne(new Document("_id", assignmentId)
+                .append("assignmentId", assignmentId)
+                .append("jobId", jobId)
+                .append("deviceId", "pc-old")
+                .append("agentName", "yuni")
+                .append("dispatcherSubject", "grok")
+                .append("prompt", "old prompt")
+                .append("channel", "TEXT")
+                .append("status", "QUEUED")
+                .append("ordinal", 0)
+                .append("createdAt", created)
+                .append("updatedAt", created));
+        // A device written before this change: activity and activityText as sub-documents.
+        devices.mongoCollection().withDocumentClass(Document.class).insertOne(new Document("_id", "pc-old")
+                .append("hostname", "old.local")
+                .append("agents", List.of("yuni", "kai"))
+                .append("activity", new Document("yuni", "busy").append("kai", "idle"))
+                .append("activityText", new Document("yuni", "working").append("kai", ""))
+                .append("lastHeartbeat", created));
+        JobStore store = store();
+
+        JobView job = store.getJob("grok", UUID.fromString(jobId));
+        assertEquals("old prompt", job.prompt());
+        assertEquals(OnBusy.supersede, job.assignments().getFirst().onBusy());
+        assertEquals(UUID.fromString(assignmentId), job.assignments().getFirst().assignmentId());
+
+        JobPage page = store.listJobPage("grok", null, null, 20, null);
+        assertEquals(1, page.jobs().size());
+        assertEquals("old.local", page.jobs().getFirst().server());
+        assertEquals("queued", page.jobs().getFirst().state());
+        assertEquals(created.toInstant(), page.jobs().getFirst().submittedAt());
+
+        List<AssignmentView> queued = store.poll("pc-old", Duration.ZERO);
+        assertEquals(1, queued.size());
+        assertEquals(UUID.fromString(assignmentId), queued.getFirst().assignmentId());
+
+        var roster = store.listAgents();
+        assertTrue(roster.stream().anyMatch(row -> row.name().equals("yuni") && row.state().equals("BUSY")
+                && row.activity().equals("working") && row.server().equals("old.local")), roster::toString);
+        assertTrue(roster.stream().anyMatch(row -> row.name().equals("kai") && row.state().equals("IDLE")),
+                roster::toString);
+
+        AssignmentView finished = store.finish("pc-old", UUID.fromString(assignmentId), true, "done");
+        assertEquals(AssignmentState.SUCCEEDED, finished.state());
+        assertEquals(AssignmentState.SUCCEEDED, store.getJob("grok", UUID.fromString(jobId)).assignments().getFirst().state());
+    }
+
+    private JobStore store() {
+        return service(Clock.systemUTC(), null);
+    }
+
+    private JobStore service(Clock clock, JobPing ping) {
+        return new JobStoreService(assignments, devices, locks, clock, ping);
+    }
+
+    /** The stored {@code agent-jobs} rows as Mongo holds them. */
+    private List<Document> storedJobs() {
+        return assignments.mongoCollection().withDocumentClass(Document.class).find().into(new ArrayList<>());
+    }
+
+    private int jobCount() {
+        return assignments.mongoCollection().distinct("jobId", String.class).into(new ArrayList<>()).size();
     }
 
     private static void succeed(JobStore store, AssignmentView queued) {
