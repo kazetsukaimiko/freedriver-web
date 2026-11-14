@@ -12,7 +12,7 @@ import java.util.Set;
 
 /**
  * A dispatcher caller sees the send tools. A device caller sees the host tools.
- * A call still reaches the tool method, which answers a wrong role itself.
+ * A call is still checked by the tool's own {@code @RolesAllowed}.
  */
 @ApplicationScoped
 public class DispatcherToolRoles implements ToolFilter {

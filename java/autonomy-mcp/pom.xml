@@ -26,8 +26,18 @@
     <dependencies>
         <dependency>
             <groupId>io.freedriver</groupId>
-            <artifactId>autonomy-mcp-api</artifactId>
+            <artifactId>mcp-support</artifactId>
             <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkiverse.mcp</groupId>
+            <artifactId>quarkus-mcp-server-http</artifactId>
+            <version>2.0.4</version>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkiverse.mcp</groupId>
+            <artifactId>quarkus-mcp-server-hibernate-validator</artifactId>
+            <version>2.0.4</version>
         </dependency>
         <dependency>
             <groupId>io.freedriver</groupId>
@@ -77,11 +87,6 @@
             <artifactId>hit-window-testing</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.lettuce</groupId>
-            <artifactId>lettuce-core</artifactId>
-            <version>6.6.0.RELEASE</version>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>

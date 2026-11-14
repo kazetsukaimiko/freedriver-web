@@ -39,7 +39,7 @@ public class McpInternalAuthMechanism implements HttpAuthenticationMechanism {
         if (secret.isEmpty()) {
             return Uni.createFrom().nullItem();
         }
-        if (McpPaths.hasBearer(context.request().getHeader("Authorization"))) {
+        if (BearerHeaders.hasBearer(context.request().getHeader("Authorization"))) {
             return Uni.createFrom().nullItem();
         }
         String provided = context.request().getHeader(SECRET_HEADER);

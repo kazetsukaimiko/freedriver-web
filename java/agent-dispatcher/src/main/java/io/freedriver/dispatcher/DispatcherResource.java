@@ -38,17 +38,17 @@ public class DispatcherResource implements DispatcherApi {
 
     @Override
     public List<JobView> listJobs() {
-        return jobs.listJobs(CallerIds.subject(identity));
+        return jobs.listJobs(JobCallers.subject(identity));
     }
 
     @Override
     @Blocking
     public JobView submit(SubmitJobRequest body) {
-        return jobs.submit(CallerIds.subject(identity), body, submitTimeout);
+        return jobs.submit(JobCallers.subject(identity), body, submitTimeout);
     }
 
     @Override
     public JobView getJob(UUID jobId) {
-        return jobs.getJob(CallerIds.subject(identity), jobId);
+        return jobs.getJob(JobCallers.subject(identity), jobId);
     }
 }

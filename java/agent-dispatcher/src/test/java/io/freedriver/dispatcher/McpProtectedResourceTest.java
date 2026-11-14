@@ -17,6 +17,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 @QuarkusTest
 class McpProtectedResourceTest {
 
+    private static final String PATH = "/api/dispatcher/oauth-protected-resource";
+    private static final String RESOURCE = "https://app.freedriver.io/dispatch/mcp";
+    private static final String AUTHORIZATION_SERVER = "https://auth.freedriver.io/realms/freedriver";
+    private static final String CHALLENGE =
+            "Bearer resource_metadata=\"https://app.freedriver.io/api/dispatcher/oauth-protected-resource\"";
+
     @Inject
     JobStore jobs;
 
@@ -26,7 +32,7 @@ class McpProtectedResourceTest {
         int before = jobCount();
 
         Map<?, ?> body = given()
-                .get(McpProtectedResource.PATH)
+                .get(PATH)
                 .then()
                 .statusCode(200)
                 .contentType("application/json")
@@ -34,13 +40,13 @@ class McpProtectedResourceTest {
                 .extract()
                 .as(Map.class);
 
-        assertEquals(McpProtectedResource.RESOURCE, body.get("resource"));
-        assertEquals(List.of(McpProtectedResource.AUTHORIZATION_SERVER), body.get("authorization_servers"));
+        assertEquals(RESOURCE, body.get("resource"));
+        assertEquals(List.of(AUTHORIZATION_SERVER), body.get("authorization_servers"));
         assertEquals(List.of("header"), body.get("bearer_methods_supported"));
         assertEquals(
                 Set.of("resource", "authorization_servers", "bearer_methods_supported"),
                 body.keySet());
-        String raw = given().get(McpProtectedResource.PATH).then().statusCode(200).extract().asString();
+        String raw = given().get(PATH).then().statusCode(200).extract().asString();
         assertFalse(raw.contains("pc-meta"));
         assertFalse(raw.contains("meta-hostname"));
         assertFalse(raw.contains("prompt"));
@@ -54,23 +60,23 @@ class McpProtectedResourceTest {
 
     @Test
     void other_methods_and_paths_stay_authenticated() {
-        given().post(McpProtectedResource.PATH).then().statusCode(401);
-        given().put(McpProtectedResource.PATH).then().statusCode(401);
-        given().delete(McpProtectedResource.PATH).then().statusCode(401);
-        given().head(McpProtectedResource.PATH).then().statusCode(401);
-        given().get(McpProtectedResource.PATH + "/").then().statusCode(401);
+        given().post(PATH).then().statusCode(401);
+        given().put(PATH).then().statusCode(401);
+        given().delete(PATH).then().statusCode(401);
+        given().head(PATH).then().statusCode(401);
+        given().get(PATH + "/").then().statusCode(401);
         given().get("/api/dispatcher/jobs").then().statusCode(401).header("WWW-Authenticate", is((String) null));
         given().get("/api/dispatcher/devices").then().statusCode(401);
         given().post("/api/device/register").then().statusCode(401);
-        given().get("/mcp").then().statusCode(401).header("WWW-Authenticate", is(McpProtectedResource.CHALLENGE));
-        given().get("/dispatch/mcp").then().statusCode(401).header("WWW-Authenticate", is(McpProtectedResource.CHALLENGE));
+        given().get("/mcp").then().statusCode(401).header("WWW-Authenticate", is(CHALLENGE));
+        given().get("/dispatch/mcp").then().statusCode(401).header("WWW-Authenticate", is(CHALLENGE));
 
         String posted = given()
                 .contentType("application/json")
                 .body("""
                         {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_agents","arguments":{}}}
                         """)
-                .post(McpProtectedResource.PATH)
+                .post(PATH)
                 .then()
                 .statusCode(401)
                 .extract()
@@ -83,13 +89,13 @@ class McpProtectedResourceTest {
     @TestSecurity(user = "grok-meta", roles = "dispatcher")
     void a_dispatcher_token_still_reads_only_the_document() {
         Map<?, ?> body = given()
-                .get(McpProtectedResource.PATH)
+                .get(PATH)
                 .then()
                 .statusCode(200)
                 .extract()
                 .as(Map.class);
         assertEquals(List.of("header"), body.get("bearer_methods_supported"));
-        given().post(McpProtectedResource.PATH).then().statusCode(403);
+        given().post(PATH).then().statusCode(403);
     }
 
     @Inject
