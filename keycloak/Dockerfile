@@ -24,6 +24,7 @@ COPY mqtt-paho/pom.xml mqtt-paho/pom.xml
 COPY java/pom.xml java/pom.xml
 COPY java/bom/pom.xml java/bom/pom.xml
 COPY java/hit-window/pom.xml java/hit-window/pom.xml
+COPY java/hit-window-testing/pom.xml java/hit-window-testing/pom.xml
 COPY java/dashboard-model/pom.xml java/dashboard-model/pom.xml
 COPY java/dashboard-api/pom.xml java/dashboard-api/pom.xml
 COPY java/dashboard/pom.xml java/dashboard/pom.xml
