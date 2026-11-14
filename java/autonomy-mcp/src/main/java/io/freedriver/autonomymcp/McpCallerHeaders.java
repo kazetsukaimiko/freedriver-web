@@ -1,5 +1,6 @@
 package io.freedriver.autonomymcp;
 
+import io.freedriver.mcp.CallerIds;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;

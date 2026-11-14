@@ -1,5 +1,6 @@
 package io.freedriver.autonomymcp;
 
+import io.freedriver.mcp.McpEndpoint;
 import io.quarkus.vertx.http.runtime.filters.Filters;
 import io.vertx.ext.web.RoutingContext;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -15,10 +16,13 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 public class McpEnabledFilter {
 
     private final boolean enabled;
+    private final McpEndpoint endpoint;
 
     @Inject
-    public McpEnabledFilter(@ConfigProperty(name = "freedriver.mcp.enabled", defaultValue = "false") boolean enabled) {
+    public McpEnabledFilter(@ConfigProperty(name = "freedriver.mcp.enabled", defaultValue = "false") boolean enabled,
+                            McpEndpoint endpoint) {
         this.enabled = enabled;
+        this.endpoint = endpoint;
     }
 
     void register(@Observes Filters filters) {
@@ -30,7 +34,7 @@ public class McpEnabledFilter {
             context.next();
             return;
         }
-        if (McpProtectedResource.isMcpPath(context.request().path())) {
+        if (endpoint.isMcpPath(context.request().path())) {
             context.response().setStatusCode(404).end();
             return;
         }

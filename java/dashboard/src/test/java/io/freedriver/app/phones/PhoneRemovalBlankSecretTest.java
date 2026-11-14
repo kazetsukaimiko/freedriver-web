@@ -10,6 +10,7 @@ import io.freedriver.sms.model.AttachUser;
 import io.freedriver.sms.model.Attached;
 import io.freedriver.sms.model.InviteSend;
 import io.freedriver.sms.model.PhoneList;
+import io.freedriver.sms.model.PhoneRecords;
 import io.freedriver.sms.model.RemovePhone;
 import io.freedriver.sms.model.Removed;
 import io.freedriver.sms.model.SentResponse;
@@ -33,10 +34,10 @@ class PhoneRemovalBlankSecretTest {
             CountingSms http = new CountingSms();
             HttpSmsPhoneList sms = new HttpSmsPhoneList(http, http, secret);
             java.util.concurrent.atomic.AtomicInteger keycloak = new java.util.concurrent.atomic.AtomicInteger();
-            PhoneSignInDirectory directory = phone -> {
+            PhoneSignInDirectory directory = RemovalOnly.of(phone -> {
                 keycloak.incrementAndGet();
                 return true;
-            };
+            });
             PhoneRemovalResource resource = new PhoneRemovalResource(sms, directory, new LoginLinks("https://app.freedriver.io"));
             InviteUpstreamException error = assertThrows(InviteUpstreamException.class,
                     () -> resource.remove(new PhoneRemovalResource.RemovePhone("+15555550123")),
@@ -58,11 +59,11 @@ class PhoneRemovalBlankSecretTest {
         CountingSms http = new CountingSms();
         HttpSmsPhoneList sms = new HttpSmsPhoneList(http, http, "secret-value");
         java.util.concurrent.atomic.AtomicInteger keycloak = new java.util.concurrent.atomic.AtomicInteger();
-        PhoneSignInDirectory directory = phone -> {
+        PhoneSignInDirectory directory = RemovalOnly.of(phone -> {
             assertEquals(0, http.calls);
             keycloak.incrementAndGet();
             return true;
-        };
+        });
         PhoneRemovalResource resource = new PhoneRemovalResource(sms, directory, new LoginLinks("https://app.freedriver.io"));
         Response response = resource.remove(new PhoneRemovalResource.RemovePhone("+15555550123"));
         try {
@@ -127,6 +128,12 @@ class PhoneRemovalBlankSecretTest {
         public PhoneList list() {
             answer();
             return new PhoneList(List.of());
+        }
+
+        @Override
+        public PhoneRecords records() {
+            answer();
+            return new PhoneRecords(List.of());
         }
 
         @Override

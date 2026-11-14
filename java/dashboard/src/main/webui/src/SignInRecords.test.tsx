@@ -17,7 +17,7 @@ it('lists a sign-in document and opens the raw record', async () => {
           {
             id: '+15555550123',
             phone: '+15555550123',
-            document: { _id: '+15555550123', phone: '+15555550123', acceptedAt: '2026-11-11T16:04:00Z' },
+            acceptedAt: '2026-11-11T16:04:00Z',
           },
         ],
       }),
