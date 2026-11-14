@@ -199,11 +199,26 @@ public class InviteStore implements PanacheMongoRepositoryBase<Invite, String> {
         return "invite-redeem:" + hash(code);
     }
 
-    /** At startup, an empty collection takes the archive file when the file exists. The file stays. */
+    /**
+     * At startup, an empty collection takes the archive file when the file exists. The file stays.
+     * The log line names the file's absolute path and SHA-256.
+     */
     void importArchive(@Observes StartupEvent start) {
         Path file = Path.of(dir).resolve(FILE);
         if (count() == 0 && Files.exists(file)) {
-            LOG.infof("Imported %d invites from %s", importFile(file), FILE);
+            Path absolute = file.toAbsolutePath();
+            String sha256 = sha256(file);
+            LOG.infof("Imported %d invites from %s sha256=%s", importFile(file), absolute, sha256);
+        }
+    }
+
+    /** Hex SHA-256 of the file, logged with each import so the imported archive can be identified later. */
+    private static String sha256(Path file) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(file));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (java.io.IOException | java.security.NoSuchAlgorithmException e) {
+            return "unreadable";
         }
     }
 
