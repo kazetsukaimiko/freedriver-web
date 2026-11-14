@@ -1,5 +1,6 @@
 package io.freedriver.sms.twilio;
 
+import io.quarkus.redis.datasource.RedisDataSource;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.stubbing.ServeEvent;
 import io.freedriver.sms.otp.ActiveSender;
@@ -40,6 +41,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @QuarkusTest
 @TestProfile(TwilioEndToEndTest.TwilioProfile.class)
 class TwilioEndToEndTest {
+
+    @Inject
+    RedisDataSource redis;
 
     private static final String VERIFICATIONS = "/v2/Services/" + TestNumbers.SID_SERVICE + "/Verifications";
     private static final String CHECK = "/v2/Services/" + TestNumbers.SID_SERVICE + "/VerificationCheck";
@@ -83,7 +87,7 @@ class TwilioEndToEndTest {
                 .withHeader("Content-Type", "application/json").withBody("{\"status\":\"pending\"}")));
         twilio.stubFor(post(urlEqualTo(CHECK)).willReturn(aResponse().withStatus(200)
                 .withHeader("Content-Type", "application/json").withBody("{\"status\":\"approved\"}")));
-        limiter.reset();
+        redis.flushall();
         dailyCap.reset();
     }
 

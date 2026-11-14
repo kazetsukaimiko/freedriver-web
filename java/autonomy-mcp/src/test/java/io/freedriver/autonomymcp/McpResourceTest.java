@@ -1,5 +1,6 @@
 package io.freedriver.autonomymcp;
 
+import io.quarkus.redis.datasource.RedisDataSource;
 import io.freedriver.autonomymcp.api.McpApi;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
@@ -23,11 +24,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class McpResourceTest {
 
     @Inject
+    RedisDataSource redis;
+
+    @Inject
     ToolRateLimiter limiter;
 
     @BeforeEach
     void reset() {
-        limiter.reset();
+        redis.flushall();
         DashboardStub.recorded.clear();
         DashboardStub.down.set(false);
     }

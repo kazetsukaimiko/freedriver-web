@@ -15,6 +15,7 @@ import io.freedriver.sms.support.LogCapture;
 import io.freedriver.sms.support.SameAnswer;
 import io.freedriver.sms.support.SmsCalls;
 import io.freedriver.sms.support.TestNumbers;
+import io.quarkus.redis.datasource.RedisDataSource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
@@ -46,6 +47,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class SeedFirstSignInTest {
 
+    @Inject
+    RedisDataSource redis;
+
     static final String SEED = "+15555558168";
 
     public static class Seeded implements QuarkusTestProfile {
@@ -75,7 +79,7 @@ class SeedFirstSignInTest {
     @BeforeEach
     void reset() {
         sender.reset();
-        limiter.reset();
+        redis.flushall();
         dailyCap.reset();
     }
 

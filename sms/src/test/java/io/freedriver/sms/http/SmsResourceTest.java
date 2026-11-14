@@ -1,5 +1,6 @@
 package io.freedriver.sms.http;
 
+import io.quarkus.redis.datasource.RedisDataSource;
 import io.freedriver.sms.otp.FakeSmsSender;
 import io.freedriver.sms.phones.ConsentLedger;
 import io.freedriver.sms.phones.ConsentPurpose;
@@ -47,6 +48,9 @@ import static org.junit.jupiter.api.Assertions.fail;
 @QuarkusTest
 class SmsResourceTest {
 
+    @Inject
+    RedisDataSource redis;
+
     static final String SECRET = SmsCalls.SECRET;
 
     @Inject
@@ -63,7 +67,7 @@ class SmsResourceTest {
     @BeforeEach
     void reset() {
         sender.reset();
-        limiter.reset();
+        redis.flushall();
         dailyCap.reset();
     }
 

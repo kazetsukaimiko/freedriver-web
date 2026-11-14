@@ -1,5 +1,6 @@
 package io.freedriver.app.api;
 
+import io.quarkus.redis.datasource.RedisDataSource;
 import io.freedriver.app.appliances.ApplianceAudit;
 import io.freedriver.app.appliances.ApplianceControl;
 import io.freedriver.app.appliances.ApplianceCommandRouted;
@@ -40,6 +41,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AppliancesResourceTest {
 
     @Inject
+    RedisDataSource redis;
+
+    @Inject
     MockAutonomy mock;
 
     @Inject
@@ -54,7 +58,7 @@ class AppliancesResourceTest {
     @BeforeEach
     void reset() {
         mock.reset();
-        rateLimiter.reset();
+        redis.flushall();
     }
 
     private static String commandPath(String applianceName) {

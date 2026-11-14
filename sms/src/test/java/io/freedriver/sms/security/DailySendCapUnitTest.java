@@ -84,7 +84,7 @@ class DailySendCapUnitTest {
     @Test
     void per_number_windows_slide() {
         MutableClock clock = new MutableClock(Instant.parse("2026-09-27T12:00:00Z"));
-        PhoneRateLimiter limiter = new PhoneRateLimiter(clock, java.time.Duration.ofMinutes(15), 2, 2);
+        PhoneRateLimiter limiter = new PhoneRateLimiter(java.time.Duration.ofMinutes(15), 2, 2, new io.freedriver.ratelimit.MemoryHitWindow(clock));
         assertTrue(limiter.tryAcquireSend("+15555550100"));
         assertTrue(limiter.tryAcquireSend("+15555550100"));
         assertFalse(limiter.tryAcquireSend("+15555550100"));

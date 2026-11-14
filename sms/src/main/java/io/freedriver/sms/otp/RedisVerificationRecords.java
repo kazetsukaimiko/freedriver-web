@@ -1,76 +1,69 @@
 package io.freedriver.sms.otp;
 
-import io.lettuce.core.RedisClient;
-import io.lettuce.core.api.StatefulRedisConnection;
-import io.lettuce.core.api.sync.RedisCommands;
+import io.quarkus.redis.datasource.RedisDataSource;
+import io.quarkus.redis.datasource.hash.HashCommands;
+import io.vertx.mutiny.redis.client.Response;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Set;
 
 /**
- * Open SMS codes in Redis. The key is {@code freedriver:sms:code:} plus the
- * phone number, and it expires five minutes after the send.
+ * Open SMS codes in Redis, one hash per verification. The key is {@code freedriver:sms:code:} plus
+ * the phone number, and it expires five minutes after the send. Each change is one command or one
+ * script, so two sms replicas never overwrite each other's field.
  */
 @ApplicationScoped
 class RedisVerificationRecords implements VerificationRecords {
 
     static final String PREFIX = "freedriver:sms:code:";
-    static final String INDEX = "freedriver:sms:code-index";
 
-    interface Hashes {
-        /** Stores the hash and returns the previous sid, or null. */
-        String replace(String key, Map<String, String> fields, long ttlSeconds);
+    /** KEYS[1] the hash; ARGV startedAt, expiresAt, ttl seconds. Returns the previous sid or false. */
+    private static final String REPLACE = """
+            local previous = redis.call('HGET', KEYS[1], 'sid')
+            redis.call('DEL', KEYS[1])
+            redis.call('HSET', KEYS[1], 'startedAt', ARGV[1], 'expiresAt', ARGV[2], 'exhausted', 'false')
+            redis.call('EXPIRE', KEYS[1], ARGV[3])
+            return previous
+            """;
 
-        Map<String, String> read(String key);
+    /** KEYS[1] the hash; ARGV field, value. Sets the field only while the verification is open. */
+    private static final String SET_OPEN_FIELD = """
+            if redis.call('EXISTS', KEYS[1]) == 1 then
+              return redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+            end
+            return 0
+            """;
 
-        void write(String key, Map<String, String> fields, long ttlSeconds);
-
-        void delete(String key);
-
-        void deleteAll();
-    }
-
-    private final Hashes hashes;
-
-    /** Arc builds the client proxy with this constructor. */
-    RedisVerificationRecords() {
-        this.hashes = null;
-    }
+    private final RedisDataSource redis;
+    private final HashCommands<String, String, String> hashes;
 
     @Inject
-    RedisVerificationRecords(
-            @ConfigProperty(name = "freedriver.redis.url", defaultValue = "redis://redis:6379") String url) {
-        this(new LettuceHashes(url));
-    }
-
-    RedisVerificationRecords(Hashes hashes) {
-        this.hashes = hashes;
+    RedisVerificationRecords(RedisDataSource redis) {
+        this.redis = redis;
+        this.hashes = redis.hash(String.class);
     }
 
     @Override
     public String replace(String phone, Instant startedAt, Instant expiresAt) {
-        return hashes.replace(PREFIX + phone, fields(new Open(startedAt, expiresAt, null, false)), ttl(startedAt, expiresAt));
+        Response previous = redis.execute("EVAL", REPLACE, "1", PREFIX + phone,
+                Long.toString(startedAt.toEpochMilli()), Long.toString(expiresAt.toEpochMilli()),
+                Long.toString(Math.max(1, Duration.between(startedAt, expiresAt).getSeconds())));
+        String sid = previous == null ? null : previous.toString();
+        return sid == null || sid.isEmpty() ? null : sid;
     }
 
     @Override
     public void rememberSid(String phone, String sid) {
-        Open current = read(phone);
-        if (current == null) {
-            return;
-        }
-        hashes.write(PREFIX + phone, fields(current.withSid(sid)), ttl(current.startedAt(), current.expiresAt()));
+        setOpenField(phone, "sid", sid);
     }
 
     @Override
     public Open read(String phone) {
-        Map<String, String> stored = hashes.read(PREFIX + phone);
-        if (stored == null || stored.isEmpty() || stored.get("startedAt") == null) {
+        Map<String, String> stored = hashes.hgetall(PREFIX + phone);
+        if (stored == null || stored.get("startedAt") == null || stored.get("expiresAt") == null) {
             return null;
         }
         String sid = stored.get("sid");
@@ -83,102 +76,20 @@ class RedisVerificationRecords implements VerificationRecords {
 
     @Override
     public void dropSid(String phone) {
-        Open current = read(phone);
-        if (current == null) {
-            return;
-        }
-        hashes.write(PREFIX + phone, fields(current.withoutSid()), ttl(current.startedAt(), current.expiresAt()));
+        hashes.hdel(PREFIX + phone, "sid");
     }
 
     @Override
     public void exhaust(String phone) {
-        Open current = read(phone);
-        if (current == null) {
-            return;
-        }
-        hashes.write(PREFIX + phone, fields(current.exhaust()), ttl(current.startedAt(), current.expiresAt()));
+        setOpenField(phone, "exhausted", "true");
     }
 
     @Override
     public void clear(String phone) {
-        hashes.delete(PREFIX + phone);
+        redis.key().del(PREFIX + phone);
     }
 
-    @Override
-    public void clearAll() {
-        hashes.deleteAll();
-    }
-
-    private static long ttl(Instant startedAt, Instant expiresAt) {
-        return Math.max(1, Duration.between(startedAt, expiresAt).getSeconds());
-    }
-
-    private static Map<String, String> fields(Open open) {
-        Map<String, String> fields = new LinkedHashMap<>();
-        fields.put("startedAt", Long.toString(open.startedAt().toEpochMilli()));
-        fields.put("expiresAt", Long.toString(open.expiresAt().toEpochMilli()));
-        fields.put("exhausted", Boolean.toString(open.exhausted()));
-        if (open.sid() != null) {
-            fields.put("sid", open.sid());
-        }
-        return fields;
-    }
-
-    /** Lettuce hashes. The connection opens on the first call. */
-    static final class LettuceHashes implements Hashes {
-
-        private final String url;
-        private RedisCommands<String, String> commands;
-
-        LettuceHashes(String url) {
-            this.url = url;
-        }
-
-        @Override
-        public synchronized String replace(String key, Map<String, String> fields, long ttlSeconds) {
-            String previous = commands().hget(key, "sid");
-            write(key, fields, ttlSeconds);
-            return previous == null || previous.isEmpty() ? null : previous;
-        }
-
-        @Override
-        public synchronized Map<String, String> read(String key) {
-            return commands().hgetall(key);
-        }
-
-        @Override
-        public synchronized void write(String key, Map<String, String> fields, long ttlSeconds) {
-            RedisCommands<String, String> redis = commands();
-            redis.del(key);
-            redis.hset(key, fields);
-            redis.expire(key, ttlSeconds);
-            redis.sadd(INDEX, key);
-        }
-
-        @Override
-        public synchronized void delete(String key) {
-            RedisCommands<String, String> redis = commands();
-            redis.del(key);
-            redis.srem(INDEX, key);
-        }
-
-        @Override
-        public synchronized void deleteAll() {
-            RedisCommands<String, String> redis = commands();
-            Set<String> keys = redis.smembers(INDEX);
-            if (keys != null && !keys.isEmpty()) {
-                redis.del(keys.toArray(String[]::new));
-            }
-            redis.del(INDEX);
-        }
-
-        private RedisCommands<String, String> commands() {
-            if (commands == null) {
-                RedisClient client = RedisClient.create(url);
-                StatefulRedisConnection<String, String> connection = client.connect();
-                commands = connection.sync();
-            }
-            return commands;
-        }
+    private void setOpenField(String phone, String field, String value) {
+        redis.execute("EVAL", SET_OPEN_FIELD, "1", PREFIX + phone, field, value);
     }
 }
