@@ -1,5 +1,6 @@
 package io.freedriver.sms.http;
 
+import io.quarkus.redis.datasource.RedisDataSource;
 import io.freedriver.sms.otp.FakeSmsSender;
 import io.freedriver.sms.phones.ConsentLedger;
 import io.freedriver.sms.phones.ConsentPurpose;
@@ -7,11 +8,12 @@ import io.freedriver.sms.phones.ConsentRecord;
 import io.freedriver.sms.phones.ConsentSource;
 import io.freedriver.sms.phones.PhoneDirectory;
 import io.freedriver.sms.phones.PhoneEntry;
-import io.freedriver.sms.security.DailySendCap;
+import io.freedriver.sms.security.DailySendLedger;
 import io.freedriver.sms.security.PhoneRateLimiter;
 import io.freedriver.sms.support.LogCapture;
 import io.freedriver.sms.support.SameAnswer;
 import io.freedriver.sms.support.SmsCalls;
+import io.freedriver.sms.support.TestClock;
 import io.freedriver.sms.support.TestNumbers;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
@@ -34,6 +36,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @TestProfile(DailySendCapTest.SmallCap.class)
 class DailySendCapTest {
 
+    @Inject
+    RedisDataSource redis;
+
     static final int CAP = 3;
 
     public static class SmallCap implements QuarkusTestProfile {
@@ -52,13 +57,16 @@ class DailySendCapTest {
     @Inject
     PhoneRateLimiter limiter;
     @Inject
-    DailySendCap dailyCap;
+    DailySendLedger dailyLedger;
+    @Inject
+    TestClock clock;
 
     @BeforeEach
     void reset() {
         sender.reset();
-        limiter.reset();
-        dailyCap.reset();
+        redis.flushall();
+        dailyLedger.deleteAll();
+        clock.nextDay();
     }
 
     private String listed() {

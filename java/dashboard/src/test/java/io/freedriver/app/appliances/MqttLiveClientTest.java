@@ -22,6 +22,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -58,13 +60,15 @@ public class MqttLiveClientTest {
     @Inject
     ApplianceControl control;
 
+    @Inject
+    ApplianceRoster roster;
+
     @BeforeEach
     void reset() {
         mqtt.reset();
-        control.forget(MockAutonomy.INSTANCE_ID);
-        control.forget(SILENT);
-        control.forget(UNKNOWN);
-        client.resetTracking();
+        roster.deleteById(MockAutonomy.INSTANCE_ID.toString());
+        roster.deleteById(SILENT.toString());
+        roster.deleteById(UNKNOWN.toString());
     }
 
     @Test
@@ -162,6 +166,11 @@ public class MqttLiveClientTest {
         assertEquals("12s", MqttLiveClient.lastHeardAgo(Instant.ofEpochMilli(12_000), 0));
         assertEquals("0s", MqttLiveClient.lastHeardAgo(Instant.ofEpochMilli(500), 1_000));
 
+        long before;
+        try (MqttLogCapture logs = MqttLogCapture.open()) {
+            client.logStateSummary(Instant.now());
+            before = messages(logs.find("mqtt state summary instance=" + MockAutonomy.INSTANCE_ID));
+        }
         try (MqttLogCapture logs = MqttLogCapture.open()) {
             mqtt.publishState(
                     ApplianceSchemas.appliancesTopic(MockAutonomy.INSTANCE_ID),
@@ -178,7 +187,7 @@ public class MqttLiveClientTest {
             client.logStateSummary(Instant.now().plusSeconds(3));
             String cabin = logs.find("mqtt state summary instance=" + MockAutonomy.INSTANCE_ID);
             String silent = logs.find("mqtt state summary instance=" + SILENT);
-            assertTrue(cabin.contains("messages=1"), cabin);
+            assertEquals(before + 1, messages(cabin), cabin);
             assertTrue(cabin.contains("lastHeardAgo=3s") || cabin.contains("lastHeardAgo=4s"), cabin);
             assertTrue(silent.contains("messages=0"), silent);
             assertTrue(silent.contains("lastHeardAgo=never"), silent);
@@ -226,7 +235,7 @@ public class MqttLiveClientTest {
         try (MqttLogCapture logs = MqttLogCapture.open()) {
             ApplianceCommandMessage command = new ApplianceCommandMessage("cmd-log-timeout", "hallway", true);
             assertTrue(control.publishCommand(MockAutonomy.INSTANCE_ID, command));
-            String sent = logs.await("mqtt command sent", 1000);
+            String sent = logs.await("mqtt command sent commandId=cmd-log-timeout", 1000);
             assertTrue(sent.contains("commandId=cmd-log-timeout"), sent);
             assertTrue(sent.contains("instance=" + MockAutonomy.INSTANCE_ID), sent);
             assertTrue(sent.contains("appliance=hallway"), sent);
@@ -235,7 +244,7 @@ public class MqttLiveClientTest {
             assertFalse(sent.contains("{"), sent);
             assertEquals(800, logs.levelOf("mqtt command sent"));
 
-            String warn = logs.await("mqtt command unacknowledged", 2000);
+            String warn = logs.await("mqtt command unacknowledged commandId=cmd-log-timeout", 2000);
             assertTrue(warn.contains("commandId=cmd-log-timeout"), warn);
             assertTrue(warn.contains("instance=" + MockAutonomy.INSTANCE_ID), warn);
             assertTrue(warn.contains("appliance=hallway"), warn);
@@ -258,11 +267,18 @@ public class MqttLiveClientTest {
                     ApplianceSchemas.appliancesTopic(MockAutonomy.INSTANCE_ID),
                     ApplianceJson.writeState(new ApplianceStateMessage(
                             "Cabin", "cmd-log-ack", List.of(new Appliance("hallway", true)))));
-            logs.await("mqtt command sent", 1000);
+            logs.await("mqtt command sent commandId=cmd-log-ack", 1000);
             Thread.sleep(700);
-            assertFalse(logs.all().contains("mqtt command unacknowledged"), logs.all());
+            assertFalse(logs.all().contains("mqtt command unacknowledged commandId=cmd-log-ack"), logs.all());
             assertTrue(logs.all().contains("user=kaze"), logs.all());
         }
+    }
+
+    /** The {@code messages=} count in one state summary line. */
+    private static long messages(String summary) {
+        Matcher count = Pattern.compile("messages=(\\d+)").matcher(summary);
+        assertTrue(count.find(), summary);
+        return Long.parseLong(count.group(1));
     }
 
     private void seedCabin(boolean on) {

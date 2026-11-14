@@ -1,5 +1,6 @@
 package io.freedriver.sms.http;
 
+import io.quarkus.redis.datasource.RedisDataSource;
 import io.freedriver.sms.otp.FakeSmsSender;
 import io.freedriver.sms.otp.ProviderOutage;
 import io.freedriver.sms.phones.ConsentLedger;
@@ -34,6 +35,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @QuarkusTest
 class ProviderUnavailableCompareTest {
 
+    @Inject
+    RedisDataSource redis;
+
     private static final String CODE = "123456";
     private static final Duration ERROR_DELAY = Duration.ofMillis(350);
     private static final Duration TIMEOUT_DELAY = Duration.ofMillis(500);
@@ -53,8 +57,7 @@ class ProviderUnavailableCompareTest {
     @BeforeEach
     void reset() {
         sender.reset();
-        limiter.reset();
-        outage.reset();
+        redis.flushall();
     }
 
     @Test
@@ -96,7 +99,7 @@ class ProviderUnavailableCompareTest {
         }
         // The first unavailable response loads the failure path. Measure the pair after that.
         verify(openVerification(), CODE).statusCode(503);
-        outage.reset();
+        redis.flushall();
 
         Response[] listedResponse = new Response[1];
         long listedWait = elapsedNanos(() -> listedResponse[0] = verify(listed, CODE).extract().response());

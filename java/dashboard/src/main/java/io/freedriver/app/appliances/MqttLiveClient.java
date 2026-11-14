@@ -189,11 +189,6 @@ public class MqttLiveClient {
         return seconds + "s";
     }
 
-    void resetTracking() {
-        pending.clear();
-        traffic.clear();
-    }
-
     @PreDestroy
     void stop() {
         if (scheduler != null) {

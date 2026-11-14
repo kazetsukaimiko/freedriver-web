@@ -15,10 +15,10 @@ class PhoneRemovalOrderTest {
     @Test
     void keycloak_removal_runs_before_the_sms_row_is_deleted() {
         List<String> order = new ArrayList<>();
-        PhoneRemovalResource resource = resource(order, phone -> {
+        PhoneRemovalResource resource = resource(order, RemovalOnly.of(phone -> {
             order.add("keycloak");
             return true;
-        });
+        }));
         resource.remove(new PhoneRemovalResource.RemovePhone("+15555550123")).close();
         assertEquals(List.of("keycloak", "sms"), order);
     }
@@ -26,10 +26,10 @@ class PhoneRemovalOrderTest {
     @Test
     void keycloak_failure_leaves_the_sms_row() {
         List<String> order = new ArrayList<>();
-        PhoneRemovalResource resource = resource(order, phone -> {
+        PhoneRemovalResource resource = resource(order, RemovalOnly.of(phone -> {
             order.add("keycloak");
             throw new InviteUpstreamException("invite client secret is unset");
-        });
+        }));
         assertThrows(InviteUpstreamException.class,
                 () -> resource.remove(new PhoneRemovalResource.RemovePhone("+15555550123")));
         assertEquals(List.of("keycloak"), order);

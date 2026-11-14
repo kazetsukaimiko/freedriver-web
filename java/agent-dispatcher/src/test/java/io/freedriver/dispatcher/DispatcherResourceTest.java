@@ -23,6 +23,7 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
 class DispatcherResourceTest {
@@ -71,6 +72,47 @@ class DispatcherResourceTest {
                 .post("/api/device/register")
                 .then()
                 .statusCode(404);
+    }
+
+    /**
+     * StrictToolArguments applies to every JSON body the dispatcher reads. On main, Jackson coerced
+     * these to a string or an enum ordinal and the job went through; now each is a 400 before the store.
+     */
+    @Test
+    @TestSecurity(user = "grok-strict", roles = "dispatcher")
+    void submit_refuses_a_value_of_the_wrong_json_type() {
+        int before = jobs.listJobs("grok-strict").size();
+        for (String body : new String[] {
+                "{\"deviceIds\":[\"pc\"],\"agentName\":5,\"prompt\":\"hi\",\"channel\":\"TEXT\"}",
+                "{\"deviceIds\":[5],\"agentName\":\"yuni\",\"prompt\":\"hi\",\"channel\":\"TEXT\"}",
+                "{\"deviceIds\":[\"pc\"],\"agentName\":\"yuni\",\"prompt\":true,\"channel\":\"TEXT\"}",
+                "{\"deviceIds\":[\"pc\"],\"agentName\":\"yuni\",\"prompt\":\"hi\",\"channel\":0}"}) {
+            given()
+                    .contentType("application/json")
+                    .body(body)
+                    .post("/api/dispatcher/jobs")
+                    .then()
+                    .statusCode(400);
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(before, jobs.listJobs("grok-strict").size());
+    }
+
+    @Inject
+    com.fasterxml.jackson.databind.ObjectMapper mapper;
+
+    /** The same bodies: Jackson's defaults (main) read each one; the service's mapper refuses each one. */
+    @Test
+    void the_service_mapper_refuses_what_default_jackson_coerced() throws Exception {
+        com.fasterxml.jackson.databind.ObjectMapper defaults = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (String body : new String[] {
+                "{\"deviceIds\":[\"pc\"],\"agentName\":5,\"prompt\":\"hi\",\"channel\":\"TEXT\"}",
+                "{\"deviceIds\":[5],\"agentName\":\"yuni\",\"prompt\":\"hi\",\"channel\":\"TEXT\"}",
+                "{\"deviceIds\":[\"pc\"],\"agentName\":\"yuni\",\"prompt\":true,\"channel\":\"TEXT\"}",
+                "{\"deviceIds\":[\"pc\"],\"agentName\":\"yuni\",\"prompt\":\"hi\",\"channel\":0}"}) {
+            defaults.readValue(body, io.freedriver.dispatcher.model.SubmitJobRequest.class);
+            org.junit.jupiter.api.Assertions.assertThrows(com.fasterxml.jackson.core.JsonProcessingException.class,
+                    () -> mapper.readValue(body, io.freedriver.dispatcher.model.SubmitJobRequest.class), body);
+        }
     }
 
     @Test
@@ -165,6 +207,44 @@ class DispatcherResourceTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    @Test
+    @TestSecurity(user = "service-account-freedriver-portal-jobs", roles = "dispatcher-admin")
+    void admin_jobs_lists_every_callers_assignments_newest_first_in_pages() throws Exception {
+        jobs.register("pc-admin", "admin.local", List.of("yuni"));
+        JobView older = jobs.submitNow("grok-admin-a",
+                new SubmitJobRequest(List.of("pc-admin"), "yuni", "admin older", Channel.TEXT));
+        Thread.sleep(5);
+        JobView newer = jobs.submitNow("grok-admin-b",
+                new SubmitJobRequest(List.of("pc-admin"), "yuni", "admin newer", Channel.TEXT));
+
+        List<String> prompts = given().queryParam("limit", 200)
+                .get("/api/dispatcher/admin/jobs")
+                .then()
+                .statusCode(200)
+                .extract().jsonPath().getList("assignments.prompt", String.class);
+        assertTrue(prompts.indexOf("admin newer") >= 0 && prompts.indexOf("admin newer") < prompts.indexOf("admin older"),
+                prompts.toString());
+
+        String next = given().queryParam("limit", 1)
+                .get("/api/dispatcher/admin/jobs")
+                .then()
+                .statusCode(200)
+                .body("assignments.size()", is(1))
+                .body("assignments[0].assignmentId", is(newer.assignments().getFirst().assignmentId().toString()))
+                .extract().path("next");
+        given().queryParam("limit", 1).queryParam("cursor", next)
+                .get("/api/dispatcher/admin/jobs")
+                .then()
+                .statusCode(200)
+                .body("assignments[0].assignmentId", is(older.assignments().getFirst().assignmentId().toString()));
+    }
+
+    @Test
+    @TestSecurity(user = "grok-admin", roles = "dispatcher")
+    void the_dispatcher_role_cannot_list_every_callers_jobs() {
+        given().get("/api/dispatcher/admin/jobs").then().statusCode(403);
     }
 
     private AssignmentView waitForQueued(String deviceId) throws InterruptedException {

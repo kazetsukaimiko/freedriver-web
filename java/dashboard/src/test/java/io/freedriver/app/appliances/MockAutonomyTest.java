@@ -27,17 +27,20 @@ class MockAutonomyTest {
     ApplianceControl control;
 
     @Inject
+    ApplianceRoster roster;
+
+    @Inject
     Event<ApplianceCommandRouted> commands;
 
     @BeforeEach
     void reset() {
-        control.forget(SHOP_ID);
+        roster.deleteById(SHOP_ID.toString());
         mock.reset();
     }
 
     @AfterEach
     void dropShop() {
-        control.forget(SHOP_ID);
+        roster.deleteById(SHOP_ID.toString());
     }
 
     @Test

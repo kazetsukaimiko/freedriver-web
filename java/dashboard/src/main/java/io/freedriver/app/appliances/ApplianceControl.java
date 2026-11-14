@@ -33,14 +33,19 @@ public class ApplianceControl {
     private final ApplianceRoster roster;
     private final ConcurrentHashMap<String, CompletableFuture<ApplianceSnapshot>> waiters = new ConcurrentHashMap<>();
 
-    /** Arc builds the client proxy with this constructor. */
-    ApplianceControl() {
-        this.roster = null;
-    }
-
     @Inject
     ApplianceControl(ApplianceRoster roster) {
         this.roster = roster;
+    }
+
+    /** One read of the instance's row: its name and last snapshot. */
+    public Optional<ApplianceRoster.Row> instance(@NonNull UUID instanceId) {
+        return roster.find(instanceId);
+    }
+
+    /** One read of every row. Map key = instanceId. */
+    public Map<UUID, ApplianceRoster.Row> instances() {
+        return roster.list();
     }
 
     public Optional<String> instanceName(@NonNull UUID instanceId) {
@@ -64,12 +69,22 @@ public class ApplianceControl {
 
     public Optional<ApplianceSnapshot> publishCommandAndWait(
             @NonNull UUID instanceId, @NonNull ApplianceCommandMessage command, Duration timeout) {
+        if (roster.find(instanceId).isEmpty()) {
+            return Optional.empty();
+        }
+        return publishKnownAndWait(instanceId, command, timeout);
+    }
+
+    /**
+     * Fires the command for an instance the caller has already read, and waits for the state that
+     * applies it. Reads no row.
+     */
+    public Optional<ApplianceSnapshot> publishKnownAndWait(
+            @NonNull UUID instanceId, @NonNull ApplianceCommandMessage command, Duration timeout) {
         CompletableFuture<ApplianceSnapshot> future = new CompletableFuture<>();
         waiters.put(command.commandId(), future);
         try {
-            if (!publishCommand(instanceId, command)) {
-                return Optional.empty();
-            }
+            commands.fire(new ApplianceCommandRouted(instanceId, command));
             return Optional.of(future.get(timeout.toMillis(), TimeUnit.MILLISECONDS));
         } catch (TimeoutException e) {
             return Optional.empty();
@@ -112,23 +127,5 @@ public class ApplianceControl {
                 waiter.complete(snapshot);
             }
         }
-    }
-
-    /** Drop a known instance. Used by tests and later expiry. */
-    public void forget(@NonNull UUID instanceId) {
-        roster.remove(instanceId);
-    }
-
-    /** Pretend the last state is older than the stale window. */
-    public void markStale(@NonNull UUID instanceId, Duration window) {
-        Optional<ApplianceRoster.Row> row = roster.find(instanceId);
-        if (row.isEmpty()) {
-            return;
-        }
-        Instant when = Instant.now().minus(window).minusSeconds(1);
-        roster.save(
-                instanceId,
-                row.get().instanceName(),
-                new ApplianceSnapshot(when, row.get().snapshot().appliances()));
     }
 }

@@ -12,11 +12,6 @@ type View =
   | { kind: 'error' }
   | { kind: 'ready'; phones: PhoneRecord[] }
 
-function field(record: PhoneRecord, key: string) {
-  const value = record.document[key]
-  return value == null ? '' : String(value)
-}
-
 export function PhoneRecords() {
   const [view, setView] = useState<View>({ kind: 'loading' })
   const [open, setOpen] = useState<PhoneRecord | null>(null)
@@ -114,8 +109,8 @@ export function PhoneRecords() {
           {view.phones.map((record) => (
             <tr key={record.id || record.phone}>
               <td>{record.phone}</td>
-              <td>{field(record, 'name')}</td>
-              <td>{field(record, 'username')}</td>
+              <td>{record.name ?? ''}</td>
+              <td>{record.username ?? ''}</td>
               <td>
                 <button type="button" onClick={() => setOpen(record)}>
                   View document
@@ -133,7 +128,7 @@ export function PhoneRecords() {
       >
         <div className="agent-jobs-modal-card">
           <h2 id="phone-record-document-title">Phone document</h2>
-          <pre className="agent-jobs-document">{open ? JSON.stringify(open.document, null, 2) : ''}</pre>
+          <pre className="agent-jobs-document">{open ? JSON.stringify(open, null, 2) : ''}</pre>
           <button type="button" onClick={() => setOpen(null)}>
             Close
           </button>

@@ -1,11 +1,11 @@
 package io.freedriver.sms.phones;
 
-import io.freedriver.sms.support.Json;
+import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
 import io.freedriver.sms.support.LogCapture;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -16,19 +16,25 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Startup seeding of kaze's number from FREEDRIVER_SEED_PHONE, against a phone list on disk. */
+/** Startup seeding of kaze's number from FREEDRIVER_SEED_PHONE, against an empty {@code phones} collection. */
+@QuarkusTest
 class PhoneListSeedTest {
 
     private static final String SEED = "+15555558168";
     private static final Instant FIRST_START = Instant.parse("2026-09-28T05:00:00Z");
     private static final Instant SECOND_START = Instant.parse("2026-09-29T05:00:00Z");
 
-    @TempDir
-    Path dataDir;
+    @Inject
+    PhoneRepository phones;
 
-    /** One service start: a fresh phone list read from disk and the seed step. */
+    @BeforeEach
+    void empty() {
+        phones.deleteAll();
+    }
+
+    /** One service start: a directory on the stored phone list and the seed step. */
     private PhoneDirectory start(Optional<String> seed, Instant now) {
-        PhoneDirectory directory = new PhoneDirectory(dataDir, Json.mapper());
+        PhoneDirectory directory = new PhoneDirectory(phones);
         new PhoneListSeed(seed, directory, Clock.fixed(now, ZoneOffset.UTC)).seed();
         return directory;
     }
@@ -65,7 +71,7 @@ class PhoneListSeedTest {
     @Test
     void an_existing_row_for_the_number_is_left_unchanged() {
         PhoneEntry existing = new PhoneEntry(SEED, "Mom", "mom.user", "viewer", Instant.parse("2026-09-01T12:00:00Z"));
-        new PhoneDirectory(dataDir, Json.mapper()).add(existing);
+        new PhoneDirectory(phones).add(existing);
 
         PhoneDirectory directory = start(Optional.of(SEED), FIRST_START);
 

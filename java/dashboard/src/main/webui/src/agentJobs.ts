@@ -4,14 +4,18 @@ export const AGENT_JOBS_PATH = '/agent-jobs'
 
 export const AGENT_JOBS_DENIED = 'This account needs a portal-admin role.'
 
+/** One dispatch assignment, typed by the dispatcher (AssignmentView). */
 export type AgentJob = {
   assignmentId: string
   jobId: string
-  prompt: string
+  deviceId: string
+  agentName: string
   channel: string
-  status: string
-  note: string
-  document: Record<string, unknown>
+  prompt: string
+  state: string
+  grokSessionId: string | null
+  note: string | null
+  on_busy: string | null
 }
 
 export type JobsPage =
