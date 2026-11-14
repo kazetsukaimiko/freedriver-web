@@ -36,7 +36,7 @@ class ApplianceRosterTest {
         ApplianceRoster.Row listed = second.instances().get(id);
         assertEquals(List.of(new Appliance("hallway", true)), listed.snapshot().appliances());
         assertEquals("Cabin", listed.instanceName());
-        second.forget(id);
+        roster.deleteById(id.toString());
         assertFalse(first.instances().containsKey(id));
     }
 
@@ -52,6 +52,6 @@ class ApplianceRosterTest {
         assertEquals(Date.from(when), row.getDate("receivedAt"));
         assertEquals(List.of(new Document("applianceName", "hallway").append("state", false)),
                 row.getList("appliances", Document.class));
-        roster.remove(id);
+        roster.deleteById(id.toString());
     }
 }

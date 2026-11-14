@@ -11,6 +11,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -49,6 +50,8 @@ class InviteStoreTest {
     void two_store_instances_race_use_on_one_code_and_one_wins() throws Exception {
         InviteStore first = new InviteStore();
         InviteStore second = new InviteStore();
+        first.clock = Clock.systemUTC();
+        second.clock = Clock.systemUTC();
         for (int round = 0; round < ROUNDS; round++) {
             String code = store.create("Mom").code();
             ExecutorService pool = Executors.newFixedThreadPool(2);

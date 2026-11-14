@@ -48,8 +48,4 @@ public class DailySendLedger implements PanacheMongoRepositoryBase<SendDay, Stri
                 inc("used", 1),
                 new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER)) != null;
     }
-
-    void clear() {
-        deleteAll();
-    }
 }

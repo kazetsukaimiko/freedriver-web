@@ -26,8 +26,8 @@ public class DailySendCap {
     private boolean announced;
 
     @Inject
-    public DailySendCap(SmsConfig config, DailySendLedger ledger) {
-        this(Clock.systemUTC(), config.dailySendCap(), ledger);
+    public DailySendCap(SmsConfig config, DailySendLedger ledger, Clock clock) {
+        this(clock, config.dailySendCap(), ledger);
     }
 
     DailySendCap(Clock clock, int cap, DailySendLedger ledger) {
@@ -54,13 +54,5 @@ public class DailySendCap {
             announced = true;
             LOG.errorf("SMS daily send cap of %d reached for %s UTC. No codes will be sent until 00:00 UTC.", cap, today);
         }
-    }
-
-    public void reset() {
-        synchronized (this) {
-            announcedDay = null;
-            announced = false;
-        }
-        ledger.clear();
     }
 }

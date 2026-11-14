@@ -10,7 +10,7 @@ import io.freedriver.sms.phones.ConsentRecord;
 import io.freedriver.sms.phones.ConsentSource;
 import io.freedriver.sms.phones.PhoneDirectory;
 import io.freedriver.sms.phones.PhoneEntry;
-import io.freedriver.sms.security.DailySendCap;
+import io.freedriver.sms.security.DailySendLedger;
 import io.freedriver.sms.security.PhoneRateLimiter;
 import io.freedriver.sms.support.SameAnswer;
 import io.freedriver.sms.support.SmsCalls;
@@ -75,7 +75,7 @@ class TwilioEndToEndTest {
     @Inject
     PhoneRateLimiter limiter;
     @Inject
-    DailySendCap dailyCap;
+    DailySendLedger dailyLedger;
 
     WireMockServer twilio;
 
@@ -88,7 +88,7 @@ class TwilioEndToEndTest {
         twilio.stubFor(post(urlEqualTo(CHECK)).willReturn(aResponse().withStatus(200)
                 .withHeader("Content-Type", "application/json").withBody("{\"status\":\"approved\"}")));
         redis.flushall();
-        dailyCap.reset();
+        dailyLedger.deleteAll();
     }
 
     private String agreed() {
