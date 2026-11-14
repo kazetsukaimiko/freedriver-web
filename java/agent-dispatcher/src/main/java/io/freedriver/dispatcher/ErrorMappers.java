@@ -1,16 +1,17 @@
 package io.freedriver.dispatcher;
 
 import io.freedriver.dispatcher.model.ErrorResponse;
+import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.ext.ExceptionMapper;
-import jakarta.ws.rs.ext.Provider;
+import org.jboss.resteasy.reactive.server.ServerExceptionMapper;
 
-@Provider
-public class DispatcherExceptionMapper implements ExceptionMapper<DispatcherException> {
+/** Every dispatcher exception the REST layer turns into a status, in one place. */
+@ApplicationScoped
+public class ErrorMappers {
 
-    @Override
-    public Response toResponse(DispatcherException exception) {
+    @ServerExceptionMapper
+    public Response dispatcher(DispatcherException exception) {
         return Response.status(status(exception.kind()))
                 .type(MediaType.APPLICATION_JSON)
                 .entity(new ErrorResponse(exception.getMessage()))
