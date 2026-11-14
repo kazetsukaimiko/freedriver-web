@@ -35,12 +35,12 @@ One broker can carry more than one autonomy instance. Each topic carries `instan
 
 Long-term, **freedriver-web owns minting `instanceId`**. The first-house instanceId is locked. This doc writes it as `__INSTANCE_ID__`.
 
-Use these topics. Appliances and commands are exact instance topics. Metrics is the per-instance write filter; house users receive those exact instance topics; `api` receives the `+/metrics/#` filter.
+Use these topics. The live grants are in `mosquitto/acl.template`.
 
 | | Topic | Publisher | Subscriber | QoS | Retain |
 | --- | --- | --- | --- | --- | --- |
-| A (state) | `freedriver/v1/__INSTANCE_ID__/appliances` | that instance's `autonomy` | `api` | 1 | **false** |
-| B (commands) | `freedriver/v1/__INSTANCE_ID__/commands` | `api` | that instance's `autonomy` | 1 | **false** |
+| A (state) | `freedriver/v1/__INSTANCE_ID__/appliances` | that instance's `autonomy` | `api` via `freedriver/v1/+/appliances` | 1 | **false** |
+| B (commands) | `freedriver/v1/__INSTANCE_ID__/commands` | `api` via `freedriver/v1/+/commands` | that instance's `autonomy` | 1 | **false** |
 | Metrics | `freedriver/v1/__INSTANCE_ID__/metrics/#` | that instance's `autonomy` | `api` via `freedriver/v1/+/metrics/#` | 1 | **false** |
 
 QoS 1 is a client convention, and retain is a publisher setting. retain=false keeps every map Quarkus sees live, because Quarkus liveness is receive-time.

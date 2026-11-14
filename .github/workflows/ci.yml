@@ -95,6 +95,8 @@ jobs:
           allowed = (
               re.compile(rf"^topic (?:read|write) freedriver/v1/{id_re}/(?:appliances|commands)$"),
               re.compile(rf"^topic write freedriver/v1/{id_re}/metrics/#$"),
+              re.compile(r"^topic read freedriver/v1/\+/appliances$"),
+              re.compile(r"^topic write freedriver/v1/\+/commands$"),
               re.compile(r"^topic read freedriver/v1/\+/metrics/#$"),
           )
           bad = []
@@ -114,7 +116,7 @@ jobs:
                           continue
                       bad.append(f"{path}:{i}:{line}")
           if bad:
-              print("topic lines must be exact appliances/commands or the metrics ACL filters")
+              print("topic lines must be exact instance filters or api + grants")
               print("\n".join(bad))
               raise SystemExit(1)
           PY
@@ -124,6 +126,14 @@ jobs:
           fi
           if ! grep -Fxq 'topic write freedriver/v1/__INSTANCE_ID__/metrics/#' mosquitto/acl.template; then
             echo "template must grant autonomy write freedriver/v1/__INSTANCE_ID__/metrics/#"
+            exit 1
+          fi
+          if ! grep -Fxq 'topic read freedriver/v1/+/appliances' mosquitto/acl.template; then
+            echo "template must grant api read freedriver/v1/+/appliances"
+            exit 1
+          fi
+          if ! grep -Fxq 'topic write freedriver/v1/+/commands' mosquitto/acl.template; then
+            echo "template must grant api write freedriver/v1/+/commands"
             exit 1
           fi
           if ! grep -Fxq 'topic read freedriver/v1/+/metrics/#' mosquitto/acl.template; then
@@ -143,6 +153,8 @@ jobs:
           grep -Fq 'freedriver/v1/123e4567-e89b-12d3-a456-426614174000/appliances' "$leftover"
           grep -Fq 'freedriver/v1/123e4567-e89b-12d3-a456-426614174000/commands' "$leftover"
           grep -Fxq 'topic write freedriver/v1/123e4567-e89b-12d3-a456-426614174000/metrics/#' "$leftover"
+          grep -Fxq 'topic read freedriver/v1/+/appliances' "$leftover"
+          grep -Fxq 'topic write freedriver/v1/+/commands' "$leftover"
           grep -Fxq 'topic read freedriver/v1/+/metrics/#' "$leftover"
           if grep -E '^topic ' "$leftover" | grep -E 'home/|__INSTANCE_ID__'; then
             echo "apply must write instance topics and drop leftover home/ in the same step"
@@ -152,12 +164,19 @@ jobs:
             echo "autonomy topic lines are the exact instance filters"
             exit 1
           fi
-          if grep -E '^topic ' "$leftover" | grep -E '[+#]' \
-            | grep -vFx 'topic write freedriver/v1/123e4567-e89b-12d3-a456-426614174000/metrics/#' \
-            | grep -vFx 'topic read freedriver/v1/+/metrics/#'; then
-            echo "only the metrics ACL filters may use + or #"
+          if awk '/^user api$/{p=1; next} /^user /{p=0} p' "$leftover" | grep -E '__INSTANCE_ID__'; then
+            echo "api topic lines stay pattern grants"
             exit 1
           fi
+          if grep -E '^topic ' "$leftover" | grep -E '[+#]' \
+            | grep -vFx 'topic write freedriver/v1/123e4567-e89b-12d3-a456-426614174000/metrics/#' \
+            | grep -vFx 'topic read freedriver/v1/+/appliances' \
+            | grep -vFx 'topic write freedriver/v1/+/commands' \
+            | grep -vFx 'topic read freedriver/v1/+/metrics/#'; then
+            echo "only api + grants and autonomy metrics/# may use + or #"
+            exit 1
+          fi
+          ./scripts/test-api-acl-patterns.sh
           if ./scripts/provision-mosquitto.sh --acl-only \
             --instance-id 123e4567-e89b-12d3-a456-426614174000 \
             --acl-out mosquitto/acl.template; then
