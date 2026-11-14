@@ -45,7 +45,7 @@ public class DispatcherJobs {
 
     private AssignmentPage fetch(String cursor) {
         try {
-            return dispatcher.adminJobs(PAGE, cursor);
+            return dispatcher.jobs(PAGE, cursor);
         } catch (DispatcherUnavailable e) {
             LOG.warnf("Dispatcher admin jobs refused: %s", e.getMessage());
             throw e;

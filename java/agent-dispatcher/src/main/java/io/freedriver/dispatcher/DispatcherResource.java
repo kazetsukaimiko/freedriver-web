@@ -1,14 +1,11 @@
 package io.freedriver.dispatcher;
 
-import io.freedriver.dispatcher.api.Actors;
 import io.freedriver.dispatcher.api.DispatcherApi;
-import io.freedriver.dispatcher.model.AssignmentPage;
 import io.freedriver.dispatcher.model.DeviceView;
 import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.common.annotation.Blocking;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -53,12 +50,5 @@ public class DispatcherResource implements DispatcherApi {
     @Override
     public JobView getJob(UUID jobId) {
         return jobs.getJob(CallerIds.subject(identity), jobId);
-    }
-
-    /** Every caller's assignments, for the portal's service account only. */
-    @Override
-    @RolesAllowed(Actors.DISPATCHER_ADMIN)
-    public AssignmentPage adminJobs(int limit, String cursor) {
-        return jobs.allAssignments(limit, cursor);
     }
 }
