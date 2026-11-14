@@ -79,7 +79,7 @@ class TwilioCredentialsTest {
 
     @Test
     void stub_flag_lets_the_production_sender_use_a_stub_origin() {
-        ConsentLedger ledger = new ConsentLedger(dataDir, Json.mapper());
+        ConsentLedger ledger = new ConsentLedger();
         TwilioVerifySender sender = TwilioSenderProducer.create(
                 complete()::get,
                 "http://twilio-stub:8080",
