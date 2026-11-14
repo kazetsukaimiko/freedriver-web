@@ -1,22 +1,23 @@
 package io.freedriver.app.instances;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.freedriver.app.metrics.BlockingIo;
 import io.freedriver.mqtt.MqttBrokers;
 import io.freedriver.mqtt.MqttLog;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
-import io.freedriver.app.metrics.BlockingIo;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.ProcessingException;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.keycloak.admin.client.Keycloak;
+import org.keycloak.admin.client.resource.RealmResource;
+import org.keycloak.representations.idm.CredentialRepresentation;
+import org.keycloak.representations.idm.GroupRepresentation;
+import org.keycloak.representations.idm.UserRepresentation;
 
 import java.net.URI;
-import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -25,9 +26,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 /**
- * House users on the Keycloak Admin API, as the instances admin client.
+ * House users through the {@code freedriver-instances} Keycloak admin client.
  * The create {@code Location} id joins {@code mqtt-instance} and deletes a user that stops short.
  * That id is not stored. Reset replaces the credential and does not read the previous password.
  */
@@ -41,91 +43,57 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
 
     private static final int PAGE = 100;
 
-    private final HttpClient http;
-    private final ObjectMapper json;
-    private final URI tokenEndpoint;
-    private final URI admin;
-    private final String clientId;
-    private final String clientSecret;
+    private final Supplier<Keycloak> admin;
+    private final String realm;
+    private final boolean configured;
 
     @Inject
-    public KeycloakInstanceIdentity(
-            ObjectMapper json,
-            @ConfigProperty(name = "quarkus.oidc.auth-server-url",
-                    defaultValue = "https://auth.freedriver.io/realms/freedriver") String authServer,
-            @ConfigProperty(name = "freedriver.instances.client-id", defaultValue = "freedriver-instances")
-            String clientId,
-            @ConfigProperty(name = "freedriver.instances.client-secret") Optional<String> clientSecret) {
-        this(json, authServer, clientId, clientSecret.orElse(""));
+    KeycloakInstanceIdentity(Instance<Keycloak> admin,
+                             @ConfigProperty(name = "quarkus.keycloak.admin-client.realm") String realm,
+                             @ConfigProperty(name = "freedriver.instances.client-secret") Optional<String> clientSecret) {
+        this(admin::get, realm, clientSecret.filter(secret -> !secret.isBlank()).isPresent());
     }
 
-    KeycloakInstanceIdentity(ObjectMapper json, String authServer, String clientId, String clientSecret) {
-        this(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(), json, authServer, clientId,
-                clientSecret);
-    }
-
-    KeycloakInstanceIdentity(HttpClient http, ObjectMapper json, String authServer, String clientId,
-                              String clientSecret) {
-        this.http = http;
-        this.json = json;
-        this.clientId = clientId;
-        this.clientSecret = clientSecret == null ? "" : clientSecret;
-        String realmBase = authServer.endsWith("/") ? authServer.substring(0, authServer.length() - 1) : authServer;
-        this.tokenEndpoint = URI.create(realmBase + "/protocol/openid-connect/token");
-        int realms = realmBase.indexOf("/realms/");
-        if (realms < 0) {
-            throw new IllegalArgumentException("auth server url has no /realms/ segment");
-        }
-        this.admin = URI.create(realmBase.substring(0, realms) + "/admin" + realmBase.substring(realms) + "/");
+    KeycloakInstanceIdentity(Supplier<Keycloak> admin, String realm, boolean configured) {
+        this.admin = admin;
+        this.realm = realm;
+        this.configured = configured;
     }
 
     @Override
     public KeycloakUserResult create(KeycloakUser user) {
         UUID id = requireHouse(user);
-        if (clientSecret.isBlank()) {
+        if (!configured) {
             MqttLog.house(id, "refused");
             throw new BrokerRefusedException();
         }
-        String token = tokenOrRefuse(id);
-        String payload = createBody(user);
-        HttpResponse<String> created;
-        try {
-            created = send(authed(admin("users"), token)
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(payload))
-                    .build());
-        } catch (BrokerRefusedException ex) {
-            MqttLog.house(id, "refused");
-            throw ex;
+        RealmResource keycloak = keycloak();
+        String locationId;
+        try (Response created = keycloak.users().create(representation(user))) {
+            if (created.getStatus() == 409) {
+                throw new UsernameTakenException();
+            }
+            locationId = created.getStatus() == 201 ? locationId(created.getLocation()) : null;
+        } catch (UsernameTakenException taken) {
+            throw taken;
+        } catch (RuntimeException failure) {
+            locationId = null;
         }
-        if (created.statusCode() == 409) {
-            throw new UsernameTakenException();
-        }
-        if (created.statusCode() != 201) {
-            MqttLog.house(id, "refused");
-            throw new BrokerRefusedException();
-        }
-        String locationId = locationId(created);
         if (locationId == null) {
             MqttLog.house(id, "refused");
             throw new BrokerRefusedException();
         }
         try {
-            if (!attributesPresent(user, readUser(token, locationId))) {
+            if (!attributesPresent(user, keycloak.users().get(locationId).toRepresentation())) {
                 throw new BrokerRefusedException();
             }
-            String groupId = groupId(token);
+            String groupId = groupId(keycloak);
             if (groupId == null) {
                 throw new BrokerRefusedException();
             }
-            int joined = send(authed(admin("users/" + locationId + "/groups/" + groupId), token)
-                    .PUT(HttpRequest.BodyPublishers.noBody())
-                    .build()).statusCode();
-            if (joined != 204 && joined != 200) {
-                throw new BrokerRefusedException();
-            }
+            keycloak.users().get(locationId).joinGroup(groupId);
         } catch (RuntimeException ex) {
-            delete(token, locationId);
+            delete(keycloak, locationId);
             MqttLog.house(id, "refused");
             throw ex instanceof BrokerRefusedException refused ? refused : new BrokerRefusedException();
         }
@@ -139,14 +107,14 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
         if (id == null || reset.password() == null || reset.password().isBlank()) {
             throw new InstanceNotFoundException(reset == null ? null : reset.instanceId());
         }
-        if (clientSecret.isBlank()) {
+        if (!configured) {
             MqttLog.house(id, "refused");
             throw new BrokerRefusedException();
         }
-        String token = tokenOrRefuse(id);
-        final String locationId;
+        RealmResource keycloak = keycloak();
+        String locationId;
         try {
-            locationId = memberId(token, id.toString());
+            locationId = refusing(() -> memberId(keycloak, id.toString()));
         } catch (BrokerRefusedException ex) {
             MqttLog.house(id, "refused");
             throw ex;
@@ -154,21 +122,13 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
         if (locationId == null) {
             throw new InstanceNotFoundException(id.toString());
         }
-        String body;
+        CredentialRepresentation password = new CredentialRepresentation();
+        password.setType(CredentialRepresentation.PASSWORD);
+        password.setValue(reset.password());
+        password.setTemporary(false);
         try {
-            body = json.writeValueAsString(Map.of(
-                    "type", "password",
-                    "value", reset.password(),
-                    "temporary", false));
-        } catch (Exception e) {
-            MqttLog.house(id, "refused");
-            throw new BrokerRefusedException();
-        }
-        int status = send(authed(admin("users/" + locationId + "/reset-password"), token)
-                .header("Content-Type", "application/json")
-                .PUT(HttpRequest.BodyPublishers.ofString(body))
-                .build()).statusCode();
-        if (status != 204 && status != 200) {
+            keycloak.users().get(locationId).resetPassword(password);
+        } catch (RuntimeException ex) {
             MqttLog.house(id, "refused");
             throw new BrokerRefusedException();
         }
@@ -177,162 +137,127 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
 
     @Override
     public List<InstanceSummary> list() {
-        if (clientSecret.isBlank()) {
+        if (!configured) {
             throw new BrokerRefusedException();
         }
-        String token = token();
-        String groupId = groupId(token);
-        if (groupId == null) {
-            throw new BrokerRefusedException();
-        }
-        List<InstanceSummary> summaries = new ArrayList<>();
-        Set<String> scanned = new HashSet<>();
-        int first = 0;
-        while (true) {
-            JsonNode page = read(send(authed(admin("groups/" + groupId + "/members?briefRepresentation=false&first="
-                    + first + "&max=" + PAGE), token).GET().build()));
-            if (!page.isArray() || page.isEmpty()) {
-                break;
+        RealmResource keycloak = keycloak();
+        return refusing(() -> {
+            String groupId = groupId(keycloak);
+            if (groupId == null) {
+                throw new BrokerRefusedException();
             }
-            boolean progressed = false;
-            for (JsonNode user : page) {
-                String username = user.path("username").asText("");
-                if (!scanned.add(username)) {
-                    continue;
+            List<InstanceSummary> summaries = new ArrayList<>();
+            Set<String> scanned = new HashSet<>();
+            int first = 0;
+            while (true) {
+                List<UserRepresentation> page = keycloak.groups().group(groupId).members(first, PAGE, false);
+                if (page == null || page.isEmpty()) {
+                    break;
                 }
-                progressed = true;
-                if (canonical(username) == null) {
-                    continue;
+                boolean progressed = false;
+                for (UserRepresentation member : page) {
+                    String username = member.getUsername() == null ? "" : member.getUsername();
+                    if (!scanned.add(username)) {
+                        continue;
+                    }
+                    progressed = true;
+                    if (canonical(username) != null) {
+                        summaries.add(new InstanceSummary(username, labelOf(member)));
+                    }
                 }
-                summaries.add(new InstanceSummary(username, labelOf(user)));
+                if (!progressed || page.size() < PAGE) {
+                    break;
+                }
+                first += page.size();
             }
-            if (!progressed || page.size() < PAGE) {
-                break;
-            }
-            first += page.size();
-        }
-        return List.copyOf(summaries);
+            return List.copyOf(summaries);
+        });
     }
 
-    private JsonNode readUser(String token, String locationId) {
-        return read(send(authed(admin("users/" + locationId), token).GET().build()));
-    }
-
-    private boolean attributesPresent(KeycloakUser user, JsonNode body) {
-        if (!user.username().equals(body.path("username").asText())) {
-            return false;
-        }
-        if (!one(body, PUBLISH_ATTRIBUTE, user.publishTopic()) || !one(body, SUBSCRIBE_ATTRIBUTE, user.subscribeTopic())) {
-            return false;
-        }
-        if (user.label() == null) {
-            return !hasValue(body, LABEL_ATTRIBUTE);
-        }
-        return one(body, LABEL_ATTRIBUTE, user.label());
-    }
-
-    private String memberId(String token, String username) {
-        JsonNode users = read(send(authed(
-                admin("users?username=" + url(username) + "&exact=true"), token).GET().build()));
-        if (!users.isArray()) {
-            return null;
-        }
-        String locationId = null;
-        for (JsonNode user : users) {
-            if (!username.equals(user.path("username").asText())) {
-                continue;
-            }
-            if (locationId != null) {
-                return null;
-            }
-            locationId = user.path("id").asText("");
-        }
-        if (locationId == null || locationId.isBlank() || !inGroup(token, locationId)) {
-            return null;
-        }
-        return locationId;
-    }
-
-    private boolean inGroup(String token, String locationId) {
-        JsonNode groups = read(send(authed(admin("users/" + locationId + "/groups"), token).GET().build()));
-        if (!groups.isArray()) {
-            return false;
-        }
-        for (JsonNode group : groups) {
-            if (GROUP.equals(group.path("name").asText()) && !hasParent(group)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private String groupId(String token) {
-        JsonNode groups = read(send(authed(admin("groups?search=" + url(GROUP)), token).GET().build()));
-        if (!groups.isArray()) {
-            return null;
-        }
-        String found = null;
-        for (JsonNode group : groups) {
-            if (!GROUP.equals(group.path("name").asText()) || hasParent(group)) {
-                continue;
-            }
-            if (found != null) {
-                return null;
-            }
-            found = group.path("id").asText("");
-        }
-        return found == null || found.isBlank() ? null : found;
-    }
-
-    private void delete(String token, String locationId) {
-        try {
-            send(authed(admin("users/" + locationId), token).DELETE().build());
-        } catch (RuntimeException ignored) {
-            // The house is still refused. A failed delete must not hide that.
-        }
-    }
-
-    private String tokenOrRefuse(UUID id) {
-        try {
-            return token();
-        } catch (BrokerRefusedException ex) {
-            MqttLog.house(id, "refused");
-            throw ex;
-        }
-    }
-
-    private String token() {
-        String body = "grant_type=client_credentials&client_id=" + url(clientId) + "&client_secret=" + url(clientSecret);
-        JsonNode jsonBody = read(send(HttpRequest.newBuilder(tokenEndpoint)
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .timeout(Duration.ofSeconds(5))
-                .POST(HttpRequest.BodyPublishers.ofString(body))
-                .build()));
-        String access = jsonBody.path("access_token").asText("");
-        if (access.isBlank()) {
-            throw new BrokerRefusedException();
-        }
-        return access;
-    }
-
-    private String createBody(KeycloakUser user) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("username", user.username());
-        body.put("enabled", true);
-        body.put("credentials", List.of(Map.of(
-                "type", "password",
-                "value", user.password(),
-                "temporary", false)));
+    private static UserRepresentation representation(KeycloakUser user) {
+        CredentialRepresentation password = new CredentialRepresentation();
+        password.setType(CredentialRepresentation.PASSWORD);
+        password.setValue(user.password());
+        password.setTemporary(false);
         Map<String, List<String>> attributes = new LinkedHashMap<>();
         if (user.label() != null) {
             attributes.put(LABEL_ATTRIBUTE, List.of(user.label()));
         }
         attributes.put(PUBLISH_ATTRIBUTE, List.of(user.publishTopic()));
         attributes.put(SUBSCRIBE_ATTRIBUTE, List.of(user.subscribeTopic()));
-        body.put("attributes", attributes);
+        UserRepresentation representation = new UserRepresentation();
+        representation.setUsername(user.username());
+        representation.setEnabled(true);
+        representation.setCredentials(List.of(password));
+        representation.setAttributes(attributes);
+        return representation;
+    }
+
+    private static boolean attributesPresent(KeycloakUser user, UserRepresentation stored) {
+        if (!user.username().equals(stored.getUsername())) {
+            return false;
+        }
+        if (!one(stored, PUBLISH_ATTRIBUTE, user.publishTopic()) || !one(stored, SUBSCRIBE_ATTRIBUTE, user.subscribeTopic())) {
+            return false;
+        }
+        if (user.label() == null) {
+            return labelOf(stored) == null;
+        }
+        return one(stored, LABEL_ATTRIBUTE, user.label());
+    }
+
+    /** The one exact username match that is also in the top-level {@code mqtt-instance}, or null. */
+    private static String memberId(RealmResource keycloak, String username) {
+        String locationId = null;
+        for (UserRepresentation found : keycloak.users().search(username, true)) {
+            if (!username.equals(found.getUsername())) {
+                continue;
+            }
+            if (locationId != null) {
+                return null;
+            }
+            locationId = found.getId() == null ? "" : found.getId();
+        }
+        if (locationId == null || locationId.isBlank()) {
+            return null;
+        }
+        boolean member = keycloak.users().get(locationId).groups().stream()
+                .anyMatch(group -> GROUP.equals(group.getName()) && !hasParent(group));
+        return member ? locationId : null;
+    }
+
+    /** The one top-level {@code mqtt-instance} group, or null. */
+    private static String groupId(RealmResource keycloak) {
+        String found = null;
+        for (GroupRepresentation group : keycloak.groups().groups(GROUP, null, null)) {
+            if (!GROUP.equals(group.getName()) || hasParent(group)) {
+                continue;
+            }
+            if (found != null) {
+                return null;
+            }
+            found = group.getId() == null ? "" : group.getId();
+        }
+        return found == null || found.isBlank() ? null : found;
+    }
+
+    private static void delete(RealmResource keycloak, String locationId) {
+        try (Response ignored = keycloak.users().delete(locationId)) {
+            // The house is still refused. A failed delete must not hide that.
+        } catch (RuntimeException ignored) {
+            // The house is still refused. A failed delete must not hide that.
+        }
+    }
+
+    private RealmResource keycloak() {
+        return admin.get().realm(realm);
+    }
+
+    /** A Keycloak error status or transport failure is a refusal. */
+    private static <T> T refusing(Supplier<T> call) {
         try {
-            return json.writeValueAsString(body);
-        } catch (Exception e) {
+            return call.get();
+        } catch (WebApplicationException | ProcessingException failure) {
             throw new BrokerRefusedException();
         }
     }
@@ -366,91 +291,29 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
         }
     }
 
-    private static String locationId(HttpResponse<String> response) {
-        String location = response.headers().firstValue("Location").orElse("");
-        int slash = location.lastIndexOf('/');
-        if (slash < 0 || slash == location.length() - 1) {
+    private static String locationId(URI location) {
+        String path = location == null || location.getRawPath() == null ? "" : location.getRawPath();
+        int slash = path.lastIndexOf('/');
+        if (slash < 0 || slash == path.length() - 1 || location.getRawQuery() != null) {
             return null;
         }
-        String id = location.substring(slash + 1);
-        if (id.isBlank() || id.indexOf('?') >= 0) {
-            return null;
-        }
-        return id;
+        String id = path.substring(slash + 1);
+        return id.isBlank() ? null : id;
     }
 
-    private static boolean one(JsonNode user, String name, String expected) {
-        JsonNode values = user.path("attributes").path(name);
-        if (values.isArray()) {
-            return values.size() == 1 && expected.equals(values.get(0).asText());
-        }
-        return expected.equals(values.asText());
+    private static boolean one(UserRepresentation user, String name, String expected) {
+        List<String> values = user.getAttributes() == null ? null : user.getAttributes().get(name);
+        return values != null && values.size() == 1 && expected.equals(values.getFirst());
     }
 
-    private static boolean hasValue(JsonNode user, String name) {
-        JsonNode values = user.path("attributes").path(name);
-        if (values.isMissingNode() || values.isNull()) {
-            return false;
-        }
-        if (values.isArray()) {
-            return !values.isEmpty() && !values.get(0).asText("").isBlank();
-        }
-        return !values.asText("").isBlank();
-    }
-
-    private static String labelOf(JsonNode user) {
-        JsonNode values = user.path("attributes").path(LABEL_ATTRIBUTE);
-        String label;
-        if (values.isArray()) {
-            label = values.isEmpty() ? "" : values.get(0).asText("");
-        } else {
-            label = values.asText("");
-        }
+    private static String labelOf(UserRepresentation user) {
+        List<String> values = user.getAttributes() == null ? null : user.getAttributes().get(LABEL_ATTRIBUTE);
+        String label = values == null || values.isEmpty() || values.getFirst() == null ? "" : values.getFirst();
         String trimmed = label.strip();
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private static boolean hasParent(JsonNode group) {
-        JsonNode parentId = group.get("parentId");
-        if (parentId != null && !parentId.isNull() && !parentId.asText().isBlank()) {
-            return true;
-        }
-        JsonNode parent = group.get("parent");
-        return parent != null && !parent.isNull() && !(parent.isTextual() && parent.asText().isBlank());
-    }
-
-    private URI admin(String pathAndQuery) {
-        return URI.create(admin.toString() + pathAndQuery);
-    }
-
-    private HttpRequest.Builder authed(URI uri, String token) {
-        return HttpRequest.newBuilder(uri)
-                .header("Authorization", "Bearer " + token)
-                .timeout(Duration.ofSeconds(5));
-    }
-
-    private HttpResponse<String> send(HttpRequest request) {
-        try {
-            return http.send(request, HttpResponse.BodyHandlers.ofString());
-        } catch (Exception e) {
-            throw new BrokerRefusedException();
-        }
-    }
-
-    private JsonNode read(HttpResponse<String> response) {
-        if (response.statusCode() / 100 != 2) {
-            throw new BrokerRefusedException();
-        }
-        try {
-            return json.readTree(response.body() == null || response.body().isBlank() ? "null" : response.body());
-        } catch (BrokerRefusedException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new BrokerRefusedException();
-        }
-    }
-
-    private static String url(String value) {
-        return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    private static boolean hasParent(GroupRepresentation group) {
+        return group.getParentId() != null && !group.getParentId().isBlank();
     }
 }

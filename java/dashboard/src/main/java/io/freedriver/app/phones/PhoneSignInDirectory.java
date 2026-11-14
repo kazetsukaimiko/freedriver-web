@@ -14,9 +14,7 @@ public interface PhoneSignInDirectory {
      * does not grant a role. {@code adminRoles} is empty when the user holds neither
      * {@code portal-admin} nor a realm-management role.
      */
-    default Created createPhoneSignInUser(String phone) {
-        throw new UnsupportedOperationException();
-    }
+    Created createPhoneSignInUser(String phone);
 
     record Created(String username, List<String> groups, List<String> adminRoles) {
     }

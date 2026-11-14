@@ -1,27 +1,26 @@
 package io.freedriver.app.phones;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.freedriver.app.invites.InviteUpstreamException;
 import io.freedriver.app.metrics.BlockingIo;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.ProcessingException;
+import jakarta.ws.rs.WebApplicationException;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.eclipse.microprofile.rest.client.inject.RestClient;
+import org.keycloak.admin.client.Keycloak;
+import org.keycloak.admin.client.resource.RealmResource;
+import org.keycloak.representations.idm.GroupRepresentation;
+import org.keycloak.representations.idm.UserRepresentation;
 
-import java.net.URI;
-import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 /**
- * Phone-sign-in membership through the invite service account.
+ * Phone-sign-in membership through the {@code freedriver-invite} service account.
  * That account cannot grant {@code portal-admin}. This class sends only the phone.
  * The invite-account resource grants {@code dashboard} itself.
  */
@@ -29,229 +28,126 @@ import java.util.regex.Pattern;
 @ApplicationScoped
 public class KeycloakPhoneSignIn implements PhoneSignInDirectory {
 
+    static final String GROUP = "phone-sign-in";
     private static final Pattern USERNAME = Pattern.compile("inv[0-9a-f]{32}");
 
-    private final HttpClient http;
-    private final ObjectMapper json;
-    private final URI tokenEndpoint;
-    private final URI admin;
-    private final String realmBase;
-    private final String clientId;
-    private final String clientSecret;
+    private final Supplier<Keycloak> admin;
+    private final Supplier<InviteAccountsApi> accounts;
+    private final String realm;
+    private final boolean configured;
 
     @Inject
-    public KeycloakPhoneSignIn(ObjectMapper json,
-                               @ConfigProperty(name = "quarkus.oidc.auth-server-url",
-                                       defaultValue = "https://auth.freedriver.io/realms/freedriver") String authServer,
-                               @ConfigProperty(name = "freedriver.invite.client-id", defaultValue = "freedriver-invite")
-                               String clientId,
-                               @ConfigProperty(name = "freedriver.invite.client-secret")
-                               Optional<String> clientSecret) {
-        this(json, authServer, clientId, clientSecret.orElse(""));
+    KeycloakPhoneSignIn(@InviteAdmin Instance<Keycloak> admin,
+                        @RestClient Instance<InviteAccountsApi> accounts,
+                        @ConfigProperty(name = "quarkus.keycloak.admin-client.realm") String realm,
+                        @ConfigProperty(name = "freedriver.invite.client-secret") Optional<String> clientSecret) {
+        this(admin::get, accounts::get, realm, clientSecret.filter(secret -> !secret.isBlank()).isPresent());
     }
 
-    KeycloakPhoneSignIn(ObjectMapper json, String authServer, String clientId, String clientSecret) {
-        this(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build(), json, authServer, clientId,
-                clientSecret);
-    }
-
-    KeycloakPhoneSignIn(HttpClient http, ObjectMapper json, String authServer, String clientId, String clientSecret) {
-        this.http = http;
-        this.json = json;
-        this.clientId = clientId;
-        this.clientSecret = clientSecret == null ? "" : clientSecret;
-        this.realmBase = authServer.endsWith("/") ? authServer.substring(0, authServer.length() - 1) : authServer;
-        this.tokenEndpoint = URI.create(realmBase + "/protocol/openid-connect/token");
-        int realms = realmBase.indexOf("/realms/");
-        if (realms < 0) {
-            throw new IllegalArgumentException("auth server url has no /realms/ segment");
-        }
-        this.admin = URI.create(realmBase.substring(0, realms) + "/admin" + realmBase.substring(realms) + "/");
-    }
-
-    private URI admin(String pathAndQuery) {
-        return URI.create(admin.toString() + pathAndQuery);
+    KeycloakPhoneSignIn(Supplier<Keycloak> admin, Supplier<InviteAccountsApi> accounts, String realm,
+                        boolean configured) {
+        this.admin = admin;
+        this.accounts = accounts;
+        this.realm = realm;
+        this.configured = configured;
     }
 
     @Override
     public boolean removeFromPhoneSignIn(String phone) {
-        if (clientSecret.isBlank()) {
-            throw new InviteUpstreamException("invite client secret is unset");
-        }
-        String token = token();
-        String groupId = groupId(token);
-        String userId = userId(token, phone);
+        requireConfigured();
+        RealmResource keycloak = keycloak();
+        String groupId = call(() -> groupId(keycloak));
+        String userId = call(() -> userId(keycloak, phone));
         if (userId == null) {
             return false;
         }
-        int status = delete(admin("users/" + userId + "/groups/" + groupId), token);
-        if (status != 204 && status != 200) {
-            throw new InviteUpstreamException("Keycloak left the user in phone-sign-in (" + status + ")");
+        try {
+            keycloak.users().get(userId).leaveGroup(groupId);
+        } catch (WebApplicationException e) {
+            throw new InviteUpstreamException(
+                    "Keycloak left the user in phone-sign-in (" + e.getResponse().getStatus() + ")");
+        } catch (ProcessingException e) {
+            throw new InviteUpstreamException("Keycloak call failed", e);
         }
         return true;
     }
 
     @Override
     public Created createPhoneSignInUser(String phone) {
-        if (clientSecret.isBlank()) {
-            throw new InviteUpstreamException("invite client secret is unset");
-        }
-        String token = token();
-        String body;
+        requireConfigured();
+        InviteAccountsApi.InviteAccount account;
         try {
-            body = json.writeValueAsString(java.util.Map.of("phone", phone));
-        } catch (Exception e) {
-            throw new InviteUpstreamException("invite account body was not writable", e);
-        }
-        HttpRequest request = HttpRequest.newBuilder(URI.create(realmBase + "/freedriver-invite/users"))
-                .header("Authorization", "Bearer " + token)
-                .header("Content-Type", "application/json")
-                .timeout(Duration.ofSeconds(5))
-                .POST(HttpRequest.BodyPublishers.ofString(body))
-                .build();
-        HttpResponse<String> response = send(request);
-        if (response.statusCode() == 409) {
-            throw new PhoneAlreadyExists();
-        }
-        if (response.statusCode() / 100 != 2) {
-            throw new InviteUpstreamException("invite account create answered " + response.statusCode());
-        }
-        Created created = created(response.body());
-        if (created.adminRoles() == null || !created.adminRoles().isEmpty()
-                || created.groups() == null || !created.groups().equals(List.of("phone-sign-in"))
-                || created.username() == null || !USERNAME.matcher(created.username()).matches()) {
-            throw new InviteUpstreamException("invite account was not a plain phone-sign-in user");
-        }
-        return created;
-    }
-
-    private Created created(String body) {
-        try {
-            JsonNode node = json.readTree(body);
-            List<String> groups = new ArrayList<>();
-            for (JsonNode group : node.path("groups")) {
-                groups.add(group.asText());
-            }
-            List<String> adminRoles = new ArrayList<>();
-            for (JsonNode role : node.path("adminRoles")) {
-                adminRoles.add(role.asText());
-            }
-            return new Created(node.path("username").asText(""), groups, adminRoles);
+            account = accounts.get().create(realm, new InviteAccountsApi.InviteAccountRequest(phone));
         } catch (InviteUpstreamException e) {
             throw e;
-        } catch (Exception e) {
-            throw new InviteUpstreamException("invite account body was not json", e);
+        } catch (RuntimeException e) {
+            throw new InviteUpstreamException("invite account create failed", e);
         }
+        if (account == null || account.adminRoles() == null || !account.adminRoles().isEmpty()
+                || account.groups() == null || !account.groups().equals(List.of(GROUP))
+                || account.username() == null || !USERNAME.matcher(account.username()).matches()) {
+            throw new InviteUpstreamException("invite account was not a plain phone-sign-in user");
+        }
+        return new Created(account.username(), account.groups(), account.adminRoles());
     }
 
-    private String token() {
-        String body = "grant_type=client_credentials&client_id=" + url(clientId) + "&client_secret=" + url(clientSecret);
-        HttpRequest request = HttpRequest.newBuilder(tokenEndpoint)
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .timeout(Duration.ofSeconds(5))
-                .POST(HttpRequest.BodyPublishers.ofString(body))
-                .build();
-        JsonNode jsonBody = read(send(request));
-        String access = jsonBody.path("access_token").asText("");
-        if (access.isBlank()) {
-            throw new InviteUpstreamException("invite service account returned no token");
-        }
-        return access;
-    }
-
-    private String groupId(String token) {
-        JsonNode groups = read(send(authed(admin("groups?search=phone-sign-in"), token).GET().build()));
-        List<String> ids = new ArrayList<>();
-        if (groups.isArray()) {
-            for (JsonNode group : groups) {
-                if (!"phone-sign-in".equals(group.path("name").asText()) || hasParent(group)) {
-                    continue;
-                }
-                ids.add(group.path("id").asText());
-            }
-        }
-        if (ids.size() != 1 || ids.get(0).isBlank()) {
+    /** The one top-level {@code phone-sign-in} group. A group with a parent is not the policy group. */
+    private static String groupId(RealmResource keycloak) {
+        List<String> ids = keycloak.groups().groups(GROUP, null, null).stream()
+                .filter(group -> GROUP.equals(group.getName()) && !hasParent(group))
+                .map(GroupRepresentation::getId)
+                .toList();
+        if (ids.size() != 1 || ids.getFirst() == null || ids.getFirst().isBlank()) {
             throw new InviteUpstreamException("phone-sign-in group was not found");
         }
-        return ids.get(0);
+        return ids.getFirst();
     }
 
-    private String userId(String token, String phone) {
-        String query = "users?q=" + url("phone:" + phone) + "&exact=true&briefRepresentation=false";
-        JsonNode users = read(send(authed(admin(query), token).GET().build()));
-        if (!users.isArray() || users.isEmpty()) {
+    /** The one user whose {@code phone} attribute is this number, or null. Arguments: first, max, enabled, exact, brief, q. */
+    private static String userId(RealmResource keycloak, String phone) {
+        List<UserRepresentation> users =
+                keycloak.users().searchByAttributes(null, null, null, true, false, "phone:" + phone);
+        if (users == null || users.isEmpty()) {
             return null;
         }
         if (users.size() != 1) {
             throw new InviteUpstreamException("more than one user has this phone attribute");
         }
-        JsonNode user = users.get(0);
-        if (!phoneEquals(user, phone)) {
+        UserRepresentation user = users.getFirst();
+        List<String> phones = user.getAttributes() == null ? null : user.getAttributes().get("phone");
+        if (phones == null || !phones.contains(phone)) {
             throw new InviteUpstreamException("phone attribute does not match");
         }
-        String id = user.path("id").asText("");
-        if (id.isBlank()) {
+        if (user.getId() == null || user.getId().isBlank()) {
             throw new InviteUpstreamException("phone user has no id");
         }
-        return id;
+        return user.getId();
     }
 
-    /** Top-level phone-sign-in only. A group with a parent is not the policy group. */
-    private static boolean hasParent(JsonNode group) {
-        JsonNode parentId = group.get("parentId");
-        if (parentId != null && !parentId.isNull() && !parentId.asText().isBlank()) {
-            return true;
+    private static boolean hasParent(GroupRepresentation group) {
+        return group.getParentId() != null && !group.getParentId().isBlank();
+    }
+
+    private RealmResource keycloak() {
+        return admin.get().realm(realm);
+    }
+
+    private void requireConfigured() {
+        if (!configured) {
+            throw new InviteUpstreamException("invite client secret is unset");
         }
-        JsonNode parent = group.get("parent");
-        return parent != null && !parent.isNull() && !(parent.isTextual() && parent.asText().isBlank());
     }
 
-    private static boolean phoneEquals(JsonNode user, String phone) {
-        JsonNode values = user.path("attributes").path("phone");
-        if (values.isArray()) {
-            for (JsonNode value : values) {
-                if (phone.equals(value.asText())) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        if (values.isMissingNode() || values.isNull()) {
-            return false;
-        }
-        return phone.equals(values.asText());
-    }
-
-    private int delete(URI uri, String token) {
-        return send(authed(uri, token).DELETE().build()).statusCode();
-    }
-
-    private HttpRequest.Builder authed(URI uri, String token) {
-        return HttpRequest.newBuilder(uri)
-                .header("Authorization", "Bearer " + token)
-                .timeout(Duration.ofSeconds(5));
-    }
-
-    private HttpResponse<String> send(HttpRequest request) {
+    /** A Keycloak refusal or transport failure is upstream. */
+    private static <T> T call(Supplier<T> request) {
         try {
-            return http.send(request, HttpResponse.BodyHandlers.ofString());
-        } catch (Exception e) {
+            return request.get();
+        } catch (InviteUpstreamException e) {
+            throw e;
+        } catch (WebApplicationException e) {
+            throw new InviteUpstreamException("Keycloak answered " + e.getResponse().getStatus());
+        } catch (ProcessingException e) {
             throw new InviteUpstreamException("Keycloak call failed", e);
         }
-    }
-
-    private JsonNode read(HttpResponse<String> response) {
-        if (response.statusCode() / 100 != 2) {
-            throw new InviteUpstreamException("Keycloak answered " + response.statusCode());
-        }
-        try {
-            return json.readTree(response.body());
-        } catch (Exception e) {
-            throw new InviteUpstreamException("Keycloak body was not json", e);
-        }
-    }
-
-    private static String url(String value) {
-        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 }

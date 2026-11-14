@@ -33,10 +33,10 @@ class PhoneRemovalBlankSecretTest {
             CountingSms http = new CountingSms();
             HttpSmsPhoneList sms = new HttpSmsPhoneList(http, http, secret);
             java.util.concurrent.atomic.AtomicInteger keycloak = new java.util.concurrent.atomic.AtomicInteger();
-            PhoneSignInDirectory directory = phone -> {
+            PhoneSignInDirectory directory = RemovalOnly.of(phone -> {
                 keycloak.incrementAndGet();
                 return true;
-            };
+            });
             PhoneRemovalResource resource = new PhoneRemovalResource(sms, directory, new LoginLinks("https://app.freedriver.io"));
             InviteUpstreamException error = assertThrows(InviteUpstreamException.class,
                     () -> resource.remove(new PhoneRemovalResource.RemovePhone("+15555550123")),
@@ -58,11 +58,11 @@ class PhoneRemovalBlankSecretTest {
         CountingSms http = new CountingSms();
         HttpSmsPhoneList sms = new HttpSmsPhoneList(http, http, "secret-value");
         java.util.concurrent.atomic.AtomicInteger keycloak = new java.util.concurrent.atomic.AtomicInteger();
-        PhoneSignInDirectory directory = phone -> {
+        PhoneSignInDirectory directory = RemovalOnly.of(phone -> {
             assertEquals(0, http.calls);
             keycloak.incrementAndGet();
             return true;
-        };
+        });
         PhoneRemovalResource resource = new PhoneRemovalResource(sms, directory, new LoginLinks("https://app.freedriver.io"));
         Response response = resource.remove(new PhoneRemovalResource.RemovePhone("+15555550123"));
         try {
