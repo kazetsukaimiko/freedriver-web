@@ -9,7 +9,7 @@
     </parent>
     <artifactId>hit-window</artifactId>
     <name>freedriver-web-hit-window</name>
-    <description>Sliding rate-limit windows on the service's managed Redis client. The test jar holds a memory window.</description>
+    <description>Sliding rate-limit windows on the service's managed Redis client. The memory window for tests is hit-window-testing.</description>
 
     <dependencyManagement>
         <dependencies>
@@ -35,17 +35,6 @@
             <plugin>
                 <groupId>io.smallrye</groupId>
                 <artifactId>jandex-maven-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <artifactId>maven-jar-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>memory-window</id>
-                        <goals>
-                            <goal>test-jar</goal>
-                        </goals>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>
