@@ -30,6 +30,13 @@ class McpConfigTest {
         assertTrue(properties.contains("freedriver.mcp.roles=mcp-user"));
         assertTrue(properties.contains("freedriver.mcp.session-prefix=freedriver:mcp:autonomy:"));
         assertFalse(properties.contains("quarkus.mongodb"));
+        assertFalse(properties.contains("internal-secret"));
+        assertTrue(properties.contains("quarkus.rest-client-oidc-token-propagation.exchange-token=true"));
+        assertTrue(properties.contains("quarkus.oidc-client.dashboard-exchange.client-id=freedriver-autonomy-mcp"));
+        assertTrue(properties.contains("quarkus.oidc-client.dashboard-exchange.grant.type=exchange"));
+        assertTrue(properties.contains("quarkus.oidc-client.dashboard-exchange.grant-options.exchange.audience=freedriver-api"));
+        assertTrue(properties.contains(
+                "quarkus.oidc-client.dashboard-exchange.credentials.client-secret.value=${FREEDRIVER_AUTONOMY_MCP_CLIENT_SECRET:}"));
         assertTrue(properties.contains("freedriver.mcp.enabled=false"));
         assertTrue(properties.contains("freedriver.mcp.dashboard-url=http://dashboard:8080"));
         assertFalse(properties.contains("freedriver.appliances.live-commands=true"));
@@ -40,9 +47,9 @@ class McpConfigTest {
         String caddy = Files.readString(Path.of("../../Caddyfile"));
         assertTrue(caddy.contains("@autonomy path /autonomy/mcp /autonomy/mcp/* /api/autonomy /api/autonomy/*"));
         assertTrue(caddy.contains("reverse_proxy autonomy-mcp:8080"));
-        assertTrue(caddy.contains("header_up -X-Freedriver-Internal"));
-        assertTrue(caddy.contains("header_up -X-Freedriver-Subject"));
-        assertTrue(caddy.contains("header_up -X-Freedriver-Roles"));
+        assertFalse(caddy.contains("X-Freedriver-Internal"));
+        assertFalse(caddy.contains("X-Freedriver-Subject"));
+        assertFalse(caddy.contains("X-Freedriver-Roles"));
         assertFalse(caddy.contains("/appliances/mcp"));
         assertFalse(caddy.contains("@dispatcher path /autonomy/mcp"));
 
@@ -51,5 +58,7 @@ class McpConfigTest {
         assertTrue(compose.contains("FREEDRIVER_MCP_DASHBOARD_URL: http://dashboard:8080"));
         assertTrue(compose.contains("FREEDRIVER_MCP_ENABLED: ${FREEDRIVER_AUTONOMY_MCP_ENABLED:-false}"));
         assertFalse(compose.contains("FREEDRIVER_APPLIANCES_LIVE_COMMANDS: \"true\"\n    # autonomy"));
+        assertFalse(compose.contains("FREEDRIVER_MCP_INTERNAL_SECRET"));
+        assertTrue(compose.contains("/opt/freedriver-secrets/keycloak-freedriver-autonomy-mcp.env"));
     }
 }
