@@ -6,7 +6,6 @@ import io.vertx.ext.web.RoutingContext;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
  * Off answers 404 on {@code /autonomy/mcp} before HTTP auth, so anonymous
@@ -19,9 +18,8 @@ public class McpEnabledFilter {
     private final McpEndpoint endpoint;
 
     @Inject
-    public McpEnabledFilter(@ConfigProperty(name = "freedriver.mcp.enabled", defaultValue = "false") boolean enabled,
-                            McpEndpoint endpoint) {
-        this.enabled = enabled;
+    public McpEnabledFilter(AutonomyMcpConfig config, McpEndpoint endpoint) {
+        this.enabled = config.enabled();
         this.endpoint = endpoint;
     }
 

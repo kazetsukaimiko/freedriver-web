@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -114,10 +115,10 @@ class ApplianceServiceTest {
     }
 
     private static ApplianceService service(ApplianceControl control, ApplianceAudit audit) {
-        AppliancesConfig config = new AppliancesConfig();
-        config.staleAfter = Duration.ofSeconds(20);
-        config.commandTimeout = Duration.ofMillis(50);
-        config.commandTimeoutMax = Duration.ofSeconds(30);
+        AppliancesConfig config = TestAppliancesConfig.of(Map.of(
+                "stale-after", "20s",
+                "command-timeout", "50ms",
+                "command-timeout-max", "30s"));
         return new ApplianceService(config, control, audit);
     }
 
