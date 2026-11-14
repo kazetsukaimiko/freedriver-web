@@ -48,9 +48,11 @@
 # gets that audience at registration.
 #
 # Token exchange (#491) is confidential client freedriver-autonomy-mcp.
-# Standard token exchange is on. DCR and grok-mcp access tokens list that
-# client in aud. An exchange with audience freedriver-api returns a token
-# whose sub and realm roles are the same user. The secret is written once.
+# Standard token exchange is on. Full Scope is off; realm scope mappings are
+# mcp-user and dashboard, the same roles a DCR autonomy token can carry.
+# DCR and grok-mcp access tokens list that client in aud. An exchange with
+# audience freedriver-api returns a token whose sub matches and whose realm
+# roles stay inside that mapping. The secret is written once.
 #
 # MQTT broker client (#317) is confidential client freedriver-mqtt. Direct access
 # grants. Client scope mqtt-acl fills mqtt_acl.publish and mqtt_acl.subscribe from
@@ -935,10 +937,12 @@ ensure_autonomy_mcp_audience
 # Confidential requester for RFC 8693 standard token exchange (#491).
 # Subject tokens must list this client in aud. The exchanged token carries
 # audience freedriver-api from this client's mapper, filtered by the
-# audience parameter on the token request.
+# audience parameter on the token request. Full Scope is off, so the token
+# only carries mcp-user and dashboard through this client's realm scope
+# mappings (the same pair anonymous DCR maps onto the roles client scope).
 ensure_autonomy_mcp_token_exchange() {
   local client_id='freedriver-autonomy-mcp'
-  local client_uuid mapper_id scope_id secret tmp
+  local client_uuid mapper_id scope_id secret tmp has_scope
   client_uuid="$(kcadm get clients -r "$REALM" -q "clientId=${client_id}" --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
   if [[ -z "$client_uuid" ]]; then
     kcadm create clients -r "$REALM" \
@@ -968,11 +972,41 @@ ensure_autonomy_mcp_token_exchange() {
     -s implicitFlowEnabled=false \
     -s directAccessGrantsEnabled=false \
     -s serviceAccountsEnabled=false \
-    -s fullScopeAllowed=true \
+    -s fullScopeAllowed=false \
     -s 'redirectUris=[]' \
     -s 'webOrigins=[]' \
     -s 'attributes."standard.token.exchange.enabled"=true' \
     -s 'description=Confidential token-exchange client for /autonomy/mcp. Secret stays on the autonomy-mcp container.' >/dev/null
+  # fullScopeAllowed is off, so the realm roles reach the exchanged token only
+  # through this scope mapping. mcp-user and dashboard are the DCR autonomy pair.
+  ensure_role mcp-user
+  kcadm get roles/mcp-user -r "$REALM" --fields id,name > "$work/autonomy-mcp-role-mcp-user.json"
+  kcadm get roles/dashboard -r "$REALM" --fields id,name > "$work/autonomy-mcp-role-dashboard.json"
+  kcadm get "clients/${client_uuid}/scope-mappings/realm" -r "$REALM" --fields id,name \
+    > "$work/autonomy-mcp-scope.json"
+  has_scope="$(python3 - "$work/autonomy-mcp-role-mcp-user.json" \
+    "$work/autonomy-mcp-role-dashboard.json" "$work/autonomy-mcp-scope.json" \
+    "$work/autonomy-mcp-scope-add.json" <<'PY'
+import json, sys
+mcp = json.load(open(sys.argv[1], encoding="utf-8"))
+dash = json.load(open(sys.argv[2], encoding="utf-8"))
+have = {item.get("name") for item in json.load(open(sys.argv[3], encoding="utf-8"))}
+wanted = [mcp, dash]
+for role in wanted:
+    if not role.get("id") or not role.get("name"):
+        raise SystemExit("autonomy MCP role id is missing")
+add = [role for role in wanted if role.get("name") not in have]
+json.dump(add, open(sys.argv[4], "w", encoding="utf-8"))
+print("add" if add else "ok")
+PY
+)"
+  if [[ "$has_scope" == add ]]; then
+    kcadm_stdin create "clients/${client_uuid}/scope-mappings/realm" -r "$REALM" -f - \
+      < "$work/autonomy-mcp-scope-add.json" >/dev/null
+    echo "Mapped mcp-user and dashboard into the autonomy MCP token."
+  else
+    echo "Client ${client_id} already maps mcp-user and dashboard."
+  fi
 
   python3 - "$work/audience-api-mapper.json" <<'PY'
 import json, sys

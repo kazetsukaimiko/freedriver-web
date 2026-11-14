@@ -146,6 +146,16 @@ if "standardFlowEnabled=true" in fn:
     raise SystemExit("token exchange client keeps the authorization code flow off")
 if "directAccessGrantsEnabled=true" in fn:
     raise SystemExit("token exchange client keeps direct access grants off")
+if "fullScopeAllowed=true" in fn:
+    raise SystemExit("token exchange client must leave Full Scope Disabled")
+if "fullScopeAllowed=false" not in fn:
+    raise SystemExit("token exchange client must set fullScopeAllowed=false")
+if "scope-mappings/realm" not in fn:
+    raise SystemExit("token exchange client must map realm roles onto the client")
+if "mcp-user" not in fn or "dashboard" not in fn:
+    raise SystemExit("token exchange client must map mcp-user and dashboard")
+if "grafana-admin" in fn:
+    raise SystemExit("token exchange client must not map grafana-admin")
 if "ensure_autonomy_mcp_token_exchange\n" not in parts[1]:
     raise SystemExit("ensure_autonomy_mcp_token_exchange must run")
 print("autonomy MCP token exchange client is confidential with standard token exchange")

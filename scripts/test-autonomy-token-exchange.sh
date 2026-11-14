@@ -164,6 +164,7 @@ provision_env=(
   MQTT_ENV_FILE="$work/secrets/mqtt.env"
   MQTT_OAUTH_DIR="$work/secrets/mqtt-oauth.d"
   AUTONOMY_MCP_ENV_FILE="$work/secrets/autonomy-mcp.env"
+  PORTAL_JOBS_ENV_FILE="$work/secrets/portal-jobs.env"
   SECRETS_ENV="$work/secrets.env"
 )
 if [[ "$USE_DOCKER" -eq 0 ]]; then
@@ -233,7 +234,7 @@ admin create users -r freedriver \
   -s email=exchange-proof@freedriver.invalid \
   -s 'requiredActions=[]' >/dev/null
 admin set-password -r freedriver --username exchange-proof --new-password "$PROOF_PASS" >/dev/null
-admin add-roles -r freedriver --uusername exchange-proof --rolename dashboard --rolename mcp-user >/dev/null
+admin add-roles -r freedriver --uusername exchange-proof --rolename dashboard --rolename mcp-user --rolename portal-admin >/dev/null
 
 python3 - "$DCR_CLIENT_ID" "$PROOF_PASS" "$work/ropc-form" <<'PY'
 from pathlib import Path
@@ -292,6 +293,8 @@ if claims.get("azp") != sys.argv[2]:
 roles = set(claims.get("roles") or [])
 if "dashboard" not in roles or "mcp-user" not in roles:
     raise SystemExit("DCR token roles are " + ",".join(sorted(roles)))
+if "portal-admin" in roles:
+    raise SystemExit("DCR token must not carry portal-admin: " + ",".join(sorted(roles)))
 print("DCR subject token aud", ",".join(aud))
 print("DCR subject token roles", ",".join(sorted(roles)))
 PY
@@ -349,6 +352,11 @@ if claims.get("sub") != subject.get("sub"):
 missing = sorted(want_roles - roles)
 if missing:
     raise SystemExit("exchanged token missing roles " + ",".join(missing))
+extra = sorted(roles - want_roles)
+if extra:
+    raise SystemExit("exchanged token has roles the subject token lacks " + ",".join(extra))
+if "portal-admin" in roles:
+    raise SystemExit("exchanged token carries portal-admin")
 if "freedriver-api" not in aud:
     raise SystemExit("exchanged token aud is missing freedriver-api: " + ",".join(aud))
 print("exchange ok")
