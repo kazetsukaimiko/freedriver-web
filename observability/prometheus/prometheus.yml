@@ -14,11 +14,22 @@ scrape_configs:
   # Quarkus Micrometer path. Target stays down until the app exports metrics.
   - job_name: dashboard
     metrics_path: /q/metrics
-    static_configs:
-      - targets: ["dashboard:8080"]
+    dns_sd_configs:
+      - names: [dashboard]
+        type: A
+        port: 8080
 
   # Down until the dispatcher exports Micrometer.
   - job_name: agent-dispatcher
     metrics_path: /q/metrics
-    static_configs:
-      - targets: ["agent-dispatcher:8080"]
+    dns_sd_configs:
+      - names: [agent-dispatcher]
+        type: A
+        port: 8080
+
+  - job_name: autonomy-mcp
+    metrics_path: /q/metrics
+    dns_sd_configs:
+      - names: [autonomy-mcp]
+        type: A
+        port: 8080

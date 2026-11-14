@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 
 @QuarkusTest
@@ -22,6 +24,12 @@ class McpDisabledTest {
                     "%test.freedriver.mcp.enabled", "false",
                     "quarkus.http.test-port", "0");
         }
+    }
+
+    @Test
+    void anonymous_ready_is_open() {
+        given().get("/q/health/live").then().statusCode(200);
+        given().get("/q/health/ready").then().statusCode(anyOf(is(200), is(503)));
     }
 
     @Test

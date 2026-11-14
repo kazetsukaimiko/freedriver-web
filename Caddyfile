@@ -22,23 +22,51 @@ app.freedriver.io {
 	}
 	@dispatcher path /mcp /mcp/* /dispatch/mcp /dispatch/mcp/* /api/dispatcher /api/dispatcher/*
 	handle @dispatcher {
-		reverse_proxy agent-dispatcher:8080
+		reverse_proxy {
+			dynamic a agent-dispatcher 8080 {
+				refresh 5s
+			}
+			fail_duration 10s
+			lb_try_duration 5s
+			lb_policy header Mcp-Session-Id {
+				fallback round_robin
+			}
+		}
 	}
 	@autonomy path /autonomy/mcp /autonomy/mcp/* /api/autonomy /api/autonomy/*
 	handle @autonomy {
-		reverse_proxy autonomy-mcp:8080
+		reverse_proxy {
+			dynamic a autonomy-mcp 8080 {
+				refresh 5s
+			}
+			fail_duration 10s
+			lb_try_duration 5s
+			lb_policy header Mcp-Session-Id {
+				fallback round_robin
+			}
+		}
 	}
 	@invite path /invite /invite/*
 	handle @invite {
 		header Referrer-Policy "no-referrer"
-		reverse_proxy dashboard:8080 {
+		reverse_proxy {
+			dynamic a dashboard 8080 {
+				refresh 5s
+			}
+			fail_duration 10s
+			lb_try_duration 5s
 			header_up -X-Freedriver-Internal
 			header_up -X-Freedriver-Subject
 			header_up -X-Freedriver-Roles
 		}
 	}
 	handle {
-		reverse_proxy dashboard:8080 {
+		reverse_proxy {
+			dynamic a dashboard 8080 {
+				refresh 5s
+			}
+			fail_duration 10s
+			lb_try_duration 5s
 			header_up -X-Freedriver-Internal
 			header_up -X-Freedriver-Subject
 			header_up -X-Freedriver-Roles

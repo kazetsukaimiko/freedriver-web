@@ -65,9 +65,11 @@ class DispatcherConfigTest {
                 "@autonomy path /autonomy/mcp /autonomy/mcp/* /api/autonomy /api/autonomy/*"));
         int autonomy = caddy.indexOf(
                 "@autonomy path /autonomy/mcp /autonomy/mcp/* /api/autonomy /api/autonomy/*");
-        int catchAll = caddy.indexOf("handle {\n\t\treverse_proxy dashboard:8080");
+        int catchAll = caddy.indexOf("handle {\n\t\treverse_proxy {\n\t\t\tdynamic a dashboard 8080");
         assertTrue(autonomy >= 0 && catchAll > autonomy);
-        assertTrue(caddy.substring(autonomy, catchAll).contains("reverse_proxy autonomy-mcp:8080"));
+        assertTrue(caddy.substring(autonomy, catchAll).contains("dynamic a autonomy-mcp 8080"));
+        assertTrue(caddy.contains("dynamic a agent-dispatcher 8080"));
+        assertTrue(caddy.contains("lb_policy header Mcp-Session-Id"));
         assertFalse(caddy.contains("oauth-protected-resource"));
         assertFalse(caddy.contains(".well-known"));
         assertFalse(caddy.contains("@dispatcher path /autonomy/mcp"));
@@ -82,9 +84,27 @@ class DispatcherConfigTest {
                 "FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET: ${FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET:-}"));
         assertTrue(compose.contains(
                 "QUARKUS_MONGODB_CONNECTION_STRING: ${QUARKUS_MONGODB_CONNECTION_STRING:-mongodb://mongodb:27017/freedriver}"));
+        assertTrue(compose.contains("replicas: ${DASHBOARD_REPLICAS:-1}"));
+        assertTrue(compose.contains("replicas: ${DISPATCHER_REPLICAS:-1}"));
+        assertTrue(compose.contains("replicas: ${AUTONOMY_MCP_REPLICAS:-1}"));
+        assertTrue(compose.contains("/usr/local/bin/health-ready.sh"));
         assertFalse(compose.contains("QUARKUS_OIDC_ENABLED"));
         assertFalse(compose.contains("QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8080"));
         assertFalse(compose.contains("QUARKUS_OIDC_AUTH_SERVER_URL: http://127.0.0.1:8081"));
+
+        String prometheus = Files.readString(Path.of("../../observability/prometheus/prometheus.yml"));
+        assertTrue(prometheus.contains("names: [dashboard]"));
+        assertTrue(prometheus.contains("names: [agent-dispatcher]"));
+        assertTrue(prometheus.contains("names: [autonomy-mcp]"));
+        assertTrue(prometheus.contains("dns_sd_configs:"));
+
+        Path root = Path.of("../..");
+        assertTrue(Files.readString(root.resolve("java/dashboard/src/main/docker/Dockerfile.compose"))
+                .contains("health-ready.sh"));
+        assertTrue(Files.readString(root.resolve("java/agent-dispatcher/src/main/docker/Dockerfile.compose"))
+                .contains("health-ready.sh"));
+        assertTrue(Files.readString(root.resolve("java/autonomy-mcp/src/main/docker/Dockerfile.compose"))
+                .contains("health-ready.sh"));
     }
 
     @Test

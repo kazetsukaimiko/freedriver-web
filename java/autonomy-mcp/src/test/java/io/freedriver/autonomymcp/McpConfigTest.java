@@ -39,17 +39,22 @@ class McpConfigTest {
 
         String caddy = Files.readString(Path.of("../../Caddyfile"));
         assertTrue(caddy.contains("@autonomy path /autonomy/mcp /autonomy/mcp/* /api/autonomy /api/autonomy/*"));
-        assertTrue(caddy.contains("reverse_proxy autonomy-mcp:8080"));
+        assertTrue(caddy.contains("dynamic a autonomy-mcp 8080"));
+        assertTrue(caddy.contains("lb_policy header Mcp-Session-Id"));
         assertTrue(caddy.contains("header_up -X-Freedriver-Internal"));
         assertTrue(caddy.contains("header_up -X-Freedriver-Subject"));
         assertTrue(caddy.contains("header_up -X-Freedriver-Roles"));
         assertFalse(caddy.contains("/appliances/mcp"));
         assertFalse(caddy.contains("@dispatcher path /autonomy/mcp"));
 
+        String pom = Files.readString(Path.of("pom.xml"));
+        assertTrue(pom.contains("quarkus-smallrye-health"));
+
         String compose = Files.readString(Path.of("../../docker-compose.yml"));
         assertTrue(compose.contains("autonomy-mcp:"));
         assertTrue(compose.contains("FREEDRIVER_MCP_DASHBOARD_URL: http://dashboard:8080"));
         assertTrue(compose.contains("FREEDRIVER_MCP_ENABLED: ${FREEDRIVER_AUTONOMY_MCP_ENABLED:-false}"));
+        assertTrue(compose.contains("replicas: ${AUTONOMY_MCP_REPLICAS:-1}"));
         assertFalse(compose.contains("FREEDRIVER_APPLIANCES_LIVE_COMMANDS: \"true\"\n    # autonomy"));
     }
 }
