@@ -10,9 +10,7 @@
 # __INSTANCE_ID__ in the template's topic lines:
 #   INSTANCE_ID=<uuid> ./scripts/provision-mosquitto.sh
 #   ./scripts/provision-mosquitto.sh --instance-id <uuid>
-# Instance users keep exact appliances, commands, and metrics topics.
-# api reads freedriver/v1/+/appliances, writes freedriver/v1/+/commands,
-# and reads freedriver/v1/+/metrics/#. Long-term, freedriver-web owns
+# Topic grants live in mosquitto/acl.template. Long-term, freedriver-web owns
 # minting instanceId. Techops runs the first-house apply with the locked
 # first-house instanceId. Techops restarts Mosquitto afterwards to load the ACL.
 # TLS: self-signed and Let's Encrypt share server.crt/server.key.
@@ -105,8 +103,6 @@ same_path() {
 }
 
 # Checks topic lines only; comment lines carry free text.
-# Instance users keep exact appliances, commands, and metrics topics.
-# api uses + for appliances, commands, and metrics.
 assert_acl_topics() {
   local file="$1"
   local instance_token="$2"

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# user api uses + for appliances and commands. A house id that is not in the
-# file is still covered. Instance users keep exact topics.
+# Asserts the three user api topic lines in mosquitto/acl.template.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMPLATE="${ROOT}/mosquitto/acl.template"
@@ -21,7 +20,7 @@ for block in blocks[1:]:
 if api is None:
     raise SystemExit("template missing user api")
 if "__INSTANCE_ID__" in api:
-    raise SystemExit("user api topic lines stay pattern grants")
+    raise SystemExit("user api grants are + filters")
 topics = [line.strip() for line in api.splitlines() if line.startswith("topic ")]
 need = {
     "topic read freedriver/v1/+/appliances",
@@ -32,7 +31,6 @@ if not need.issubset(set(topics)):
     raise SystemExit(f"user api grants missing {need - set(topics)}")
 unlisted = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 if unlisted in template:
-    raise SystemExit("pick an id that is absent from the template")
-# Mosquitto + matches one topic level, so this id is heard with no ACL edit.
+    raise SystemExit("fixture house id aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa is reserved for this check")
 print(f"api covers unlisted house {unlisted} via + grants")
 PY

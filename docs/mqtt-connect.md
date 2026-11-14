@@ -80,7 +80,7 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
 
 ## Topics and ACL
 
-Instance users keep exact appliances, commands, and metrics topics. `api` uses `+` so a newly provisioned house is heard without an ACL edit. Instance id is the same source as appliances and commands (host broker ACL).
+The live grants are in `mosquitto/acl.template`. Instance id is the same source as appliances and commands (host broker ACL).
 
 | Topic | Writer | Reader |
 | --- | --- | --- |

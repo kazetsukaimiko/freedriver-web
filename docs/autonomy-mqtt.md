@@ -35,7 +35,7 @@ One broker can carry more than one autonomy instance. Each topic carries `instan
 
 Long-term, **freedriver-web owns minting `instanceId`**. The first-house instanceId is locked. This doc writes it as `__INSTANCE_ID__`.
 
-Use these topics. Instance users keep exact appliances, commands, and metrics topics. `api` reads `freedriver/v1/+/appliances`, writes `freedriver/v1/+/commands`, and reads `freedriver/v1/+/metrics/#`.
+Use these topics. The live grants are in `mosquitto/acl.template`.
 
 | | Topic | Publisher | Subscriber | QoS | Retain |
 | --- | --- | --- | --- | --- | --- |
