@@ -20,6 +20,9 @@ import java.util.Set;
 import static com.mongodb.client.model.Filters.and;
 import static com.mongodb.client.model.Filters.eq;
 import static com.mongodb.client.model.Filters.in;
+import static com.mongodb.client.model.Filters.lt;
+import static com.mongodb.client.model.Filters.ne;
+import static com.mongodb.client.model.Filters.or;
 
 /**
  * {@code agent-jobs}. A state change is one {@code findOneAndUpdate} filtered on the id, the device,
@@ -59,6 +62,22 @@ public class AssignmentRepository implements PanacheMongoRepositoryBase<Assignme
         return mongoCollection()
                 .find(and(eq("deviceId", deviceId), eq("status", AssignmentState.QUEUED.name())))
                 .sort(Sorts.ascending("ordinal"))
+                .into(new ArrayList<>());
+    }
+
+    /**
+     * Every caller's assignments, newest first, after the cursor row when one is given.
+     * Index {@code {createdAt, _id}}, both descending.
+     */
+    List<Assignment> newest(int limit, Instant afterCreatedAt, String afterId) {
+        Bson filter = ne("jobId", null);
+        if (afterCreatedAt != null) {
+            Date at = Date.from(afterCreatedAt);
+            filter = and(filter, or(lt("createdAt", at), and(eq("createdAt", at), lt("_id", afterId))));
+        }
+        return mongoCollection().find(filter)
+                .sort(Sorts.descending("createdAt", "_id"))
+                .limit(limit)
                 .into(new ArrayList<>());
     }
 

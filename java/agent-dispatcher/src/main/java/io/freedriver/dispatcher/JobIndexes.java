@@ -18,6 +18,7 @@ class JobIndexes {
         jobs.createIndex(Indexes.compoundIndex(Indexes.ascending("dispatcherSubject"), Indexes.descending("createdAt")));
         jobs.createIndex(Indexes.ascending("deviceId", "status", "ordinal"));
         jobs.createIndex(Indexes.ascending("jobId"));
+        jobs.createIndex(Indexes.descending("createdAt", "_id"));
         devices.mongoCollection().createIndex(Indexes.ascending("hostname"));
         locks.mongoCollection().createIndex(Indexes.ascending("expiresAt"),
                 new IndexOptions().expireAfter(0L, TimeUnit.SECONDS));

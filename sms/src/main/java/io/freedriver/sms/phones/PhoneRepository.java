@@ -4,6 +4,7 @@ import com.mongodb.ErrorCategory;
 import com.mongodb.MongoWriteException;
 import com.mongodb.client.model.Sorts;
 import com.mongodb.client.model.Updates;
+import io.freedriver.sms.model.PhoneRecord;
 import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
 
@@ -26,6 +27,13 @@ public class PhoneRepository implements PanacheMongoRepositoryBase<Phone, String
     List<PhoneEntry> list() {
         return mongoCollection().find().sort(Sorts.ascending("addedAt")).into(new ArrayList<>())
                 .stream().map(Phone::entry).toList();
+    }
+
+    /** Every stored row, oldest first, for the portal's records page. */
+    public List<PhoneRecord> records() {
+        return mongoCollection().find().sort(Sorts.ascending("addedAt")).into(new ArrayList<>()).stream()
+                .map(row -> new PhoneRecord(row.id, row.phone, row.name, row.username, row.role, row.addedAt))
+                .toList();
     }
 
     /** False when the number is already stored. */

@@ -34,6 +34,8 @@ COPY java/dashboard-api/src java/dashboard-api/src
 COPY java/dashboard/src java/dashboard/src
 COPY sms-model/src sms-model/src
 COPY sms-api/src sms-api/src
+COPY java/agent-dispatcher-model/src java/agent-dispatcher-model/src
+COPY java/agent-dispatcher-api/src java/agent-dispatcher-api/src
 
 ARG BUILD_NUMBER=1.0.0-SNAPSHOT
 RUN set -eu; \
