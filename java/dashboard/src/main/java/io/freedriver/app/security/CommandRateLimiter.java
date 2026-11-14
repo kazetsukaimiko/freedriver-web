@@ -19,8 +19,8 @@ public class CommandRateLimiter {
     }
 
     public boolean tryAcquire(@NonNull String user) {
-        int max = Math.max(1, config.rateLimit().permits());
-        long windowMs = Math.max(1, config.rateLimit().window().toMillis());
+        int max = config.rateLimit().permits();
+        long windowMs = config.rateLimit().window().toMillis();
         return hits.tryAdd("command:" + user, windowMs, max) != null;
     }
 }

@@ -7,7 +7,6 @@ import io.quarkus.runtime.LaunchMode;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Singleton;
-import org.eclipse.microprofile.config.Config;
 import org.jboss.logging.Logger;
 
 import java.time.Duration;
@@ -22,8 +21,8 @@ public class TwilioSenderProducer {
     @Produces
     @Singleton
     @LookupIfProperty(name = "freedriver.sms.sender", stringValue = "twilio", lookupIfMissing = true)
-    TwilioVerifySender twilioSender(SmsConfig config, Config raw, ConsentLedger consents) {
-        return create(name -> raw.getOptionalValue(name, String.class).orElse(null),
+    TwilioVerifySender twilioSender(SmsConfig config, ConsentLedger consents) {
+        return create(TwilioCredentials.lookup(config.twilio()),
                 config.twilio().baseUrl(), config.twilio().timeout(),
                 LaunchMode.current() == LaunchMode.TEST, consents);
     }

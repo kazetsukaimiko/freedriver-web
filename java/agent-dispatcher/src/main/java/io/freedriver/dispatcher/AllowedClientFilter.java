@@ -36,14 +36,12 @@ public class AllowedClientFilter implements ContainerRequestFilter {
     public AllowedClientFilter(
             SecurityIdentity identity,
             @ConfigProperty(name = "quarkus.oidc.enabled") boolean oidcEnabled,
-            @ConfigProperty(name = "freedriver.dispatcher.client.dispatcher") String dispatcherClient,
-            @ConfigProperty(name = "freedriver.dispatcher.client.device") String deviceClient,
-            @ConfigProperty(name = "freedriver.dispatcher.client.portal") String portalClient) {
+            DispatcherConfig config) {
         this.identity = identity;
         this.oidcEnabled = oidcEnabled;
-        this.dispatcherClient = dispatcherClient;
-        this.deviceClient = deviceClient;
-        this.portalClient = portalClient;
+        this.dispatcherClient = config.client().dispatcher();
+        this.deviceClient = config.client().device();
+        this.portalClient = config.client().portal();
     }
 
     @Override

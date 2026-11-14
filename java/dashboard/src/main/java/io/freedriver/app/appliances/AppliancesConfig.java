@@ -1,69 +1,49 @@
 package io.freedriver.app.appliances;
 
-import jakarta.enterprise.context.ApplicationScoped;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
+import io.smallrye.config.ConfigMapping;
+import io.smallrye.config.WithDefault;
+import jakarta.validation.constraints.Min;
+import org.hibernate.validator.constraints.time.DurationMin;
+
 import java.time.Duration;
 
-@ApplicationScoped
-public class AppliancesConfig {
+/** Settings of the appliances feature under {@code freedriver.appliances}. */
+@ConfigMapping(prefix = "freedriver.appliances")
+public interface AppliancesConfig {
 
-    @ConfigProperty(name = "freedriver.appliances.enabled", defaultValue = "false")
-    boolean enabled;
+    @WithDefault("false")
+    boolean enabled();
 
-    @ConfigProperty(name = "freedriver.appliances.live-commands", defaultValue = "false")
-    boolean liveCommands;
-
-    @ConfigProperty(name = "freedriver.appliances.mock", defaultValue = "false")
-    boolean mock;
-
-    @ConfigProperty(name = "freedriver.appliances.stale-after", defaultValue = "20s")
-    Duration staleAfter;
-
-    @ConfigProperty(name = "freedriver.appliances.command-timeout", defaultValue = "5s")
-    Duration commandTimeout;
-
-    @ConfigProperty(name = "freedriver.appliances.command-timeout-max", defaultValue = "30s")
-    Duration commandTimeoutMax;
-
-    @ConfigProperty(name = "freedriver.appliances.mock-refresh", defaultValue = "false")
-    boolean mockRefresh;
-
-    @ConfigProperty(name = "freedriver.appliances.rate-limit.permits", defaultValue = "30")
-    int rateLimitPermits;
-
-    @ConfigProperty(name = "freedriver.appliances.rate-limit.window", defaultValue = "60s")
-    Duration rateLimitWindow;
-
-    public boolean enabled() {
-        return enabled;
-    }
-
-    public boolean liveCommands() {
-        return liveCommands;
-    }
+    @WithDefault("false")
+    boolean liveCommands();
 
     /** Turns on the {@link MockAutonomy} event source on the shared CDI bus. */
-    public boolean mock() {
-        return mock;
-    }
+    @WithDefault("false")
+    boolean mock();
 
-    public Duration staleAfter() {
-        return staleAfter;
-    }
+    @WithDefault("20s")
+    Duration staleAfter();
 
-    public Duration commandTimeout() {
-        return commandTimeout;
-    }
+    /** Not validated: {@link #boundedCommandTimeout()} turns zero or negative into 5 s. */
+    @WithDefault("5s")
+    Duration commandTimeout();
 
-    public Duration commandTimeoutMax() {
-        return commandTimeoutMax;
-    }
+    /** Not validated: {@link #boundedCommandCeiling()} turns zero or negative into 30 s. */
+    @WithDefault("30s")
+    Duration commandTimeoutMax();
+
+    @WithDefault("false")
+    boolean mockRefresh();
+
+    /** The per-user appliance command limit. auth-policy.properties sets and locks both values. */
+    RateLimit rateLimit();
 
     /** REST-side confirm wait for one command, clamped between a 50 ms floor and {@code command-timeout-max}. */
-    public Duration boundedCommandTimeout() {
-        Duration use = commandTimeout.isZero() || commandTimeout.isNegative()
+    default Duration boundedCommandTimeout() {
+        Duration timeout = commandTimeout();
+        Duration use = timeout.isZero() || timeout.isNegative()
                 ? Duration.ofSeconds(5)
-                : commandTimeout;
+                : timeout;
         Duration ceiling = boundedCommandCeiling();
         Duration floor = boundedCommandFloor();
         if (use.compareTo(ceiling) > 0) {
@@ -75,24 +55,25 @@ public class AppliancesConfig {
         return use;
     }
 
-    Duration boundedCommandCeiling() {
-        return commandTimeoutMax.isZero() || commandTimeoutMax.isNegative()
+    default Duration boundedCommandCeiling() {
+        Duration max = commandTimeoutMax();
+        return max.isZero() || max.isNegative()
                 ? Duration.ofSeconds(30)
-                : commandTimeoutMax;
+                : max;
     }
 
-    Duration boundedCommandFloor() {
+    default Duration boundedCommandFloor() {
         return Duration.ofMillis(50);
     }
 
-    public boolean mockRefresh() {
-        return mockRefresh;
-    }
+    interface RateLimit {
 
-    public RateLimit rateLimit() {
-        return new RateLimit(rateLimitPermits, rateLimitWindow);
-    }
+        @Min(1)
+        @WithDefault("30")
+        int permits();
 
-    public record RateLimit(int permits, Duration window) {
+        @DurationMin(millis = 1)
+        @WithDefault("60s")
+        Duration window();
     }
 }

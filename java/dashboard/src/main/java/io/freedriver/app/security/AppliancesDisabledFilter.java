@@ -2,6 +2,7 @@ package io.freedriver.app.security;
 
 import io.freedriver.app.appliances.AppliancesConfig;
 import jakarta.annotation.Priority;
+import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.container.ContainerRequestContext;
@@ -13,8 +14,11 @@ import jakarta.ws.rs.ext.Provider;
  * While {@code freedriver.appliances.enabled} is false, every {@code /api/appliances}
  * path returns 404. The default profile leaves it false. The prod profile turns it
  * on, with {@code live-commands} on. The practice list stays off.
+ * Application scoped, so it is built on the first request and reads the runtime configuration;
+ * a {@code @ConfigMapping} is not available while REST providers are set up at static init.
  */
 @Provider
+@ApplicationScoped
 @Priority(Priorities.AUTHENTICATION - 100)
 public class AppliancesDisabledFilter implements ContainerRequestFilter {
 
