@@ -18,12 +18,6 @@ public interface DispatcherConfig {
     @WithDefault("75s")
     Duration submitTimeout();
 
-    /**
-     * Set in application.properties (25s, 300ms in test) but read by no code today. Mapped so the
-     * prefix has no unknown key, which would stop startup.
-     */
-    Optional<Duration> pollTimeout();
-
     /** {@code FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET}. Unset or blank skips the OpenBot ping. */
     Optional<String> openbotWebhookSecret();
 

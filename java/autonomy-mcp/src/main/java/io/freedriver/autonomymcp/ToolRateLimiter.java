@@ -14,8 +14,8 @@ public class ToolRateLimiter {
 
     @Inject
     public ToolRateLimiter(AutonomyMcpConfig config, HitWindow hits) {
-        this.permits = Math.max(1, config.toolRateLimit().permits());
-        this.windowMs = Math.max(1, config.toolRateLimit().window().toMillis());
+        this.permits = config.toolRateLimit().permits();
+        this.windowMs = config.toolRateLimit().window().toMillis();
         this.hits = hits;
     }
 
