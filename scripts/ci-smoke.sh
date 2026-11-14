@@ -291,5 +291,5 @@ if [[ "$stamp_ok" != 1 ]]; then
   exit 1
 fi
 
-python3 "$ROOT/scripts/ci-smoke-assert.py"
+PYTHONUNBUFFERED=1 python3 "$ROOT/scripts/ci-smoke-assert.py"
 echo "compose smoke ok"

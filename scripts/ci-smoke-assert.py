@@ -210,19 +210,25 @@ def assert_mcp_challenges(client: Client) -> None:
 
 def assert_subject_stripped(client: Client) -> None:
     secret = env_value("FREEDRIVER_MCP_INTERNAL_SECRET")
-    status, _, body, _ = client.request(
+    status, _, body, url = client.request(
         f"{APP}/api/mcp/appliances",
         headers={
             "X-Freedriver-Subject": "attacker",
             "X-Freedriver-Roles": "portal-admin,mcp-user,dashboard",
             "X-Freedriver-Internal": secret,
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "application/json",
         },
+        follow=False,
     )
+    snippet = body[:200]
     if status in {200, 204}:
-        raise SystemExit(f"outside X-Freedriver-Subject reached the dashboard ({status})")
-    if status not in {401, 302}:
-        raise SystemExit(f"outside subject HTTP {status} body={body[:200]!r}")
-    print("subject stripped", status)
+        raise SystemExit(
+            f"outside X-Freedriver-Subject reached the dashboard ({status}) url={url} body={snippet!r}"
+        )
+    if status not in {401, 302, 303}:
+        raise SystemExit(f"outside subject HTTP {status} url={url} body={snippet!r}")
+    print("subject stripped", status, flush=True)
 
 
 def assert_phone_sign_in(client: Client) -> None:

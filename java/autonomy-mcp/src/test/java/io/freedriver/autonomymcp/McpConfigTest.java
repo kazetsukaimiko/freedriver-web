@@ -40,6 +40,9 @@ class McpConfigTest {
         String caddy = Files.readString(Path.of("../../Caddyfile"));
         assertTrue(caddy.contains("@autonomy path /autonomy/mcp /autonomy/mcp/* /api/autonomy /api/autonomy/*"));
         assertTrue(caddy.contains("reverse_proxy autonomy-mcp:8080"));
+        assertTrue(caddy.contains("request_header -X-Freedriver-Internal"));
+        assertTrue(caddy.contains("request_header -X-Freedriver-Subject"));
+        assertTrue(caddy.contains("request_header -X-Freedriver-Roles"));
         assertTrue(caddy.contains("header_up -X-Freedriver-Internal"));
         assertTrue(caddy.contains("header_up -X-Freedriver-Subject"));
         assertTrue(caddy.contains("header_up -X-Freedriver-Roles"));

@@ -23,6 +23,9 @@ auth.freedriver.io {
 app.freedriver.io {
 	tls internal
 	encode gzip
+	request_header -X-Freedriver-Internal
+	request_header -X-Freedriver-Subject
+	request_header -X-Freedriver-Roles
 	@dispatcher path /mcp /mcp/* /dispatch/mcp /dispatch/mcp/* /api/dispatcher /api/dispatcher/*
 	handle @dispatcher {
 		reverse_proxy agent-dispatcher:8080
