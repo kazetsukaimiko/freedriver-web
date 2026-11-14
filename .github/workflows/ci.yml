@@ -536,5 +536,11 @@ jobs:
           for name in ("keycloak", "sms"):
               if base["services"][name].get("pull_policy") != "build":
                   raise SystemExit(f"local {name} pull_policy must stay build")
+          for name in ("dashboard", "agent-dispatcher", "autonomy-mcp"):
+              svc = base["services"][name]
+              if svc.get("container_name"):
+                  raise SystemExit(f"{name} has container_name")
+              if svc.get("ports"):
+                  raise SystemExit(f"{name} publishes ports")
           print("compose config ok")
           PY
