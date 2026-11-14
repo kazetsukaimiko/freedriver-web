@@ -659,6 +659,59 @@ class JobStoreTest {
         assertThrows(DispatcherException.class, () -> store.listJobPage("grok", null, "later", 20, null));
     }
 
+    @Test
+    void rows_in_the_shape_documentjobstore_wrote_are_read_and_finished() {
+        String jobId = UUID.randomUUID().toString();
+        String assignmentId = UUID.randomUUID().toString();
+        java.util.Date created = java.util.Date.from(Instant.parse("2026-11-01T10:00:00Z"));
+        // An assignment written before this change: a duplicate assignmentId field and no on_busy.
+        assignments.mongoCollection().withDocumentClass(Document.class).insertOne(new Document("_id", assignmentId)
+                .append("assignmentId", assignmentId)
+                .append("jobId", jobId)
+                .append("deviceId", "pc-old")
+                .append("agentName", "yuni")
+                .append("dispatcherSubject", "grok")
+                .append("prompt", "old prompt")
+                .append("channel", "TEXT")
+                .append("status", "QUEUED")
+                .append("ordinal", 0)
+                .append("createdAt", created)
+                .append("updatedAt", created));
+        // A device written before this change: activity and activityText as sub-documents.
+        devices.mongoCollection().withDocumentClass(Document.class).insertOne(new Document("_id", "pc-old")
+                .append("hostname", "old.local")
+                .append("agents", List.of("yuni", "kai"))
+                .append("activity", new Document("yuni", "busy").append("kai", "idle"))
+                .append("activityText", new Document("yuni", "working").append("kai", ""))
+                .append("lastHeartbeat", created));
+        JobStore store = store();
+
+        JobView job = store.getJob("grok", UUID.fromString(jobId));
+        assertEquals("old prompt", job.prompt());
+        assertEquals(OnBusy.supersede, job.assignments().getFirst().onBusy());
+        assertEquals(UUID.fromString(assignmentId), job.assignments().getFirst().assignmentId());
+
+        JobPage page = store.listJobPage("grok", null, null, 20, null);
+        assertEquals(1, page.jobs().size());
+        assertEquals("old.local", page.jobs().getFirst().server());
+        assertEquals("queued", page.jobs().getFirst().state());
+        assertEquals(created.toInstant(), page.jobs().getFirst().submittedAt());
+
+        List<AssignmentView> queued = store.poll("pc-old", Duration.ZERO);
+        assertEquals(1, queued.size());
+        assertEquals(UUID.fromString(assignmentId), queued.getFirst().assignmentId());
+
+        var roster = store.listAgents();
+        assertTrue(roster.stream().anyMatch(row -> row.name().equals("yuni") && row.state().equals("BUSY")
+                && row.activity().equals("working") && row.server().equals("old.local")), roster::toString);
+        assertTrue(roster.stream().anyMatch(row -> row.name().equals("kai") && row.state().equals("IDLE")),
+                roster::toString);
+
+        AssignmentView finished = store.finish("pc-old", UUID.fromString(assignmentId), true, "done");
+        assertEquals(AssignmentState.SUCCEEDED, finished.state());
+        assertEquals(AssignmentState.SUCCEEDED, store.getJob("grok", UUID.fromString(jobId)).assignments().getFirst().state());
+    }
+
     private JobStore store() {
         return service(Clock.systemUTC(), null);
     }
