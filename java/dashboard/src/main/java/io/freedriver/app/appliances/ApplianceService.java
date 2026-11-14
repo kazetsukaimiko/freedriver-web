@@ -33,14 +33,13 @@ public class ApplianceService {
     public ApplianceMapResponse currentMap() {
         Instant now = Instant.now();
         List<InstanceView> instances = new ArrayList<>();
-        Map<UUID, ApplianceSnapshot> snapshots = control.allKnownInstances();
-        Map<UUID, String> names = control.instanceNames();
-        for (Map.Entry<UUID, ApplianceSnapshot> entry : snapshots.entrySet()) {
+        for (Map.Entry<UUID, ApplianceRoster.Row> entry : control.instances().entrySet()) {
+            ApplianceSnapshot snapshot = entry.getValue().snapshot();
             instances.add(toView(
                     entry.getKey(),
-                    names.get(entry.getKey()),
-                    entry.getValue(),
-                    entry.getValue().stale(config.staleAfter(), now),
+                    entry.getValue().instanceName(),
+                    snapshot,
+                    snapshot.stale(config.staleAfter(), now),
                     false));
         }
         return new ApplianceMapResponse(instances);
@@ -49,11 +48,12 @@ public class ApplianceService {
     public InstanceView issueCommand(
             @NonNull UUID instanceId, @NonNull String applianceName, boolean on, String subject) {
         Instant now = Instant.now();
-        Optional<ApplianceSnapshot> maybe = control.instanceSnapshot(instanceId);
-        if (maybe.isEmpty()) {
+        Optional<ApplianceRoster.Row> row = control.instance(instanceId);
+        if (row.isEmpty()) {
             throw new ApplianceInstanceNotFoundException(instanceId);
         }
-        ApplianceSnapshot snapshot = maybe.get();
+        ApplianceSnapshot snapshot = row.get().snapshot();
+        String name = row.get().instanceName();
         if (snapshot.stale(config.staleAfter(), now)) {
             throw new ApplianceStaleException(instanceId, snapshot);
         }
@@ -64,9 +64,8 @@ public class ApplianceService {
         String commandId = UUID.randomUUID().toString();
         ApplianceCommandMessage command = new ApplianceCommandMessage(commandId, applianceName, on);
         Duration wait = config.boundedCommandTimeout();
-        Optional<ApplianceSnapshot> confirmed = control.publishCommandAndWait(instanceId, command, wait);
+        Optional<ApplianceSnapshot> confirmed = control.publishKnownAndWait(instanceId, command, wait);
         Instant auditedAt = Instant.now();
-        String name = control.instanceName(instanceId).orElse(null);
         if (confirmed.isPresent()) {
             audit.record(new ApplianceAudit.Event(
                     auditedAt, instanceId, applianceName, on, commandId, "confirmed", subject));
@@ -75,8 +74,7 @@ public class ApplianceService {
         }
         audit.record(new ApplianceAudit.Event(
                 auditedAt, instanceId, applianceName, on, commandId, "timeout", subject));
-        ApplianceSnapshot last = control.instanceSnapshot(instanceId).orElse(snapshot);
-        return toView(instanceId, name, last, last.stale(config.staleAfter(), Instant.now()), true);
+        return toView(instanceId, name, snapshot, snapshot.stale(config.staleAfter(), Instant.now()), true);
     }
 
     public InstanceView toView(

@@ -51,7 +51,7 @@ class InviteResourceTest {
 
     @BeforeEach
     void reset() {
-        store.clear();
+        store.deleteAll();
         store.clock(Clock.systemUTC());
         sms.clear();
         keycloak.clear();

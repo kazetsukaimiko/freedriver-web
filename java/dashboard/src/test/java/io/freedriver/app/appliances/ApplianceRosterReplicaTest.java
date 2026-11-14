@@ -1,10 +1,8 @@
 package io.freedriver.app.appliances;
 
-import com.mongodb.client.MongoClient;
 import io.freedriver.mqtt.contract.Appliance;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -16,18 +14,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** The production roster on the Dev Services Mongo container. */
+/** The roster repository on the Dev Services Mongo container, also from a second instance. */
 @QuarkusTest
-class MongoApplianceRosterTest {
+class ApplianceRosterReplicaTest {
 
     @Inject
-    MongoApplianceRoster roster;
-
-    @Inject
-    MongoClient mongo;
-
-    @ConfigProperty(name = "quarkus.mongodb.database")
-    String database;
+    ApplianceRoster roster;
 
     @Test
     void a_house_row_is_written_read_replaced_and_removed() {
@@ -49,7 +41,7 @@ class MongoApplianceRosterTest {
 
     @Test
     void a_second_replica_reads_the_first_replicas_row() {
-        MongoApplianceRoster other = new MongoApplianceRoster(mongo, database);
+        ApplianceRoster other = new ApplianceRoster();
         UUID id = UUID.randomUUID();
         ApplianceSnapshot snapshot = snapshot(new Appliance("porch", true));
 

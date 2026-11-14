@@ -1,5 +1,7 @@
 package io.freedriver.app.security;
 
+import io.freedriver.app.ProdProfileMongo;
+
 import io.quarkus.test.common.http.TestHTTPResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
@@ -62,7 +64,7 @@ class CsrfCookieProdTest {
 
         @Override
         public Map<String, String> getConfigOverrides() {
-            return Map.of(
+            return ProdProfileMongo.with(Map.of(
                     "quarkus.oidc.enabled", "false",
                     "quarkus.oidc.credentials.secret", "unused-by-this-test",
                     "freedriver.invite.client-secret", "unused-by-this-test",
@@ -70,7 +72,7 @@ class CsrfCookieProdTest {
                     "freedriver.appliances.live-commands", "false",
                     "freedriver.appliances.mock", "true",
                     "freedriver.appliances.mock-refresh", "false",
-                    "quarkus.http.test-port", "0");
+                    "quarkus.http.test-port", "0"));
         }
     }
 }

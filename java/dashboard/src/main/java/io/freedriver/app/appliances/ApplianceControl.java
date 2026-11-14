@@ -43,6 +43,16 @@ public class ApplianceControl {
         this.roster = roster;
     }
 
+    /** One read of the instance's row: its name and last snapshot. */
+    public Optional<ApplianceRoster.Row> instance(@NonNull UUID instanceId) {
+        return roster.find(instanceId);
+    }
+
+    /** One read of every row. Map key = instanceId. */
+    public Map<UUID, ApplianceRoster.Row> instances() {
+        return roster.list();
+    }
+
     public Optional<String> instanceName(@NonNull UUID instanceId) {
         return roster.find(instanceId).map(ApplianceRoster.Row::instanceName);
     }
@@ -64,12 +74,22 @@ public class ApplianceControl {
 
     public Optional<ApplianceSnapshot> publishCommandAndWait(
             @NonNull UUID instanceId, @NonNull ApplianceCommandMessage command, Duration timeout) {
+        if (roster.find(instanceId).isEmpty()) {
+            return Optional.empty();
+        }
+        return publishKnownAndWait(instanceId, command, timeout);
+    }
+
+    /**
+     * Fires the command for an instance the caller has already read, and waits for the state that
+     * applies it. Reads no row.
+     */
+    public Optional<ApplianceSnapshot> publishKnownAndWait(
+            @NonNull UUID instanceId, @NonNull ApplianceCommandMessage command, Duration timeout) {
         CompletableFuture<ApplianceSnapshot> future = new CompletableFuture<>();
         waiters.put(command.commandId(), future);
         try {
-            if (!publishCommand(instanceId, command)) {
-                return Optional.empty();
-            }
+            commands.fire(new ApplianceCommandRouted(instanceId, command));
             return Optional.of(future.get(timeout.toMillis(), TimeUnit.MILLISECONDS));
         } catch (TimeoutException e) {
             return Optional.empty();
