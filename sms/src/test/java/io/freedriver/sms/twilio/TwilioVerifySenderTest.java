@@ -9,18 +9,16 @@ import io.freedriver.sms.phones.ConsentLedger;
 import io.freedriver.sms.phones.ConsentPurpose;
 import io.freedriver.sms.phones.ConsentRecord;
 import io.freedriver.sms.phones.ConsentSource;
-import io.freedriver.sms.support.Json;
 import io.freedriver.sms.support.LogCapture;
 import io.freedriver.sms.support.TestNumbers;
 import org.jboss.logging.MDC;
 import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
@@ -42,18 +40,15 @@ class TwilioVerifySenderTest {
     private static final String VERIFICATIONS = "/v2/Services/" + TestNumbers.SID_SERVICE + "/Verifications";
     private static final String CHECK = "/v2/Services/" + TestNumbers.SID_SERVICE + "/VerificationCheck";
 
-    @TempDir
-    Path dataDir;
-
     private WireMockServer twilio;
-    private ConsentLedger consents;
+    @Inject
+    ConsentLedger consents;
     private TwilioVerifySender sender;
 
     @BeforeEach
     void start() {
         twilio = new WireMockServer(WireMockConfiguration.options().dynamicPort());
         twilio.start();
-        consents = new ConsentLedger(dataDir, Json.mapper());
         sender = sender(Duration.ofSeconds(2));
     }
 

@@ -48,11 +48,14 @@ class DispatcherConfigTest {
                 "quarkus.http.auth.permission.metadata.paths=/api/dispatcher/oauth-protected-resource"));
         assertTrue(properties.contains("quarkus.http.auth.permission.metadata.policy=mcp-metadata"));
         assertTrue(properties.contains("quarkus.http.auth.permission.metadata.methods=GET"));
-        assertFalse(properties.contains("paths=/mcp"));
-        assertFalse(properties.contains("paths=/mcp/*"));
-        assertFalse(properties.contains("paths=/dispatch/mcp"));
-        assertFalse(properties.contains("paths=/api/dispatcher/*"));
-        assertFalse(properties.contains("paths=/api/device"));
+        String permissions = properties.lines()
+                .filter(line -> line.startsWith("quarkus.http.auth.permission."))
+                .collect(java.util.stream.Collectors.joining("\n"));
+        assertFalse(permissions.contains("paths=/mcp"));
+        assertFalse(permissions.contains("paths=/mcp/*"));
+        assertFalse(permissions.contains("paths=/dispatch/mcp"));
+        assertFalse(permissions.contains("paths=/api/dispatcher/*"));
+        assertFalse(permissions.contains("paths=/api/device"));
 
         String caddy = Files.readString(Path.of("../../Caddyfile"));
         assertTrue(caddy.contains(
@@ -82,13 +85,16 @@ class DispatcherConfigTest {
 
     @Test
     void client_filter_pairs_each_client_with_its_role() {
-        assertTrue(AllowedClientFilter.allowed(false, false, "other", false, false, "freedriver-dispatcher", "freedriver-openbot"));
-        assertTrue(AllowedClientFilter.allowed(true, true, null, false, false, "freedriver-dispatcher", "freedriver-openbot"));
-        assertTrue(AllowedClientFilter.allowed(true, false, "freedriver-dispatcher", true, false, "freedriver-dispatcher", "freedriver-openbot"));
-        assertTrue(AllowedClientFilter.allowed(true, false, "freedriver-openbot", false, true, "freedriver-dispatcher", "freedriver-openbot"));
-        assertFalse(AllowedClientFilter.allowed(true, false, "freedriver-openbot", true, false, "freedriver-dispatcher", "freedriver-openbot"));
-        assertFalse(AllowedClientFilter.allowed(true, false, "freedriver-dispatcher", false, true, "freedriver-dispatcher", "freedriver-openbot"));
-        assertFalse(AllowedClientFilter.allowed(true, false, "shizuku", false, true, "freedriver-dispatcher", "freedriver-openbot"));
+        assertTrue(AllowedClientFilter.allowed(false, false, "other", false, false, false, "freedriver-dispatcher", "freedriver-openbot", "freedriver-portal-jobs"));
+        assertTrue(AllowedClientFilter.allowed(true, true, null, false, false, false, "freedriver-dispatcher", "freedriver-openbot", "freedriver-portal-jobs"));
+        assertTrue(AllowedClientFilter.allowed(true, false, "freedriver-dispatcher", true, false, false, "freedriver-dispatcher", "freedriver-openbot", "freedriver-portal-jobs"));
+        assertTrue(AllowedClientFilter.allowed(true, false, "freedriver-openbot", false, true, false, "freedriver-dispatcher", "freedriver-openbot", "freedriver-portal-jobs"));
+        assertFalse(AllowedClientFilter.allowed(true, false, "freedriver-openbot", true, false, false, "freedriver-dispatcher", "freedriver-openbot", "freedriver-portal-jobs"));
+        assertFalse(AllowedClientFilter.allowed(true, false, "freedriver-dispatcher", false, true, false, "freedriver-dispatcher", "freedriver-openbot", "freedriver-portal-jobs"));
+        assertFalse(AllowedClientFilter.allowed(true, false, "shizuku", false, true, false, "freedriver-dispatcher", "freedriver-openbot", "freedriver-portal-jobs"));
+        assertTrue(AllowedClientFilter.allowed(true, false, "freedriver-portal-jobs", false, false, true, "freedriver-dispatcher", "freedriver-openbot", "freedriver-portal-jobs"));
+        assertFalse(AllowedClientFilter.allowed(true, false, "freedriver-portal-jobs", true, false, false, "freedriver-dispatcher", "freedriver-openbot", "freedriver-portal-jobs"));
+        assertFalse(AllowedClientFilter.allowed(true, false, "freedriver-dispatcher", false, false, true, "freedriver-dispatcher", "freedriver-openbot", "freedriver-portal-jobs"));
     }
 
     private static boolean unprofiledEquals(String properties, String key, String value) {

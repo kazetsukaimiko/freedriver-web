@@ -1,12 +1,12 @@
 package io.freedriver.sms.phones;
 
+import com.mongodb.MongoException;
 import io.freedriver.sms.PhoneMask;
 import io.freedriver.sms.SmsConfig;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
-import java.io.UncheckedIOException;
 import java.time.Clock;
 import java.util.Optional;
 
@@ -51,7 +51,7 @@ public class SeedAgreement {
             consents.record(new ConsentRecord(phone, ConsentPurpose.SIGN_IN_CODES, wording,
                     source, clock.instant()));
             return true;
-        } catch (UncheckedIOException e) {
+        } catch (MongoException e) {
             LOG.errorf("Sign-in agreement for %s not stored, so no code was sent: %s", PhoneMask.mask(phone),
                     e.getClass().getSimpleName());
             return false;

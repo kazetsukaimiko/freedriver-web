@@ -1,10 +1,8 @@
 package io.freedriver.sms.phones;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
-import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 
@@ -15,43 +13,37 @@ import java.time.Instant;
 @ApplicationScoped
 public class SignInTimes {
 
-    static final String FILE = "sign-ins.json";
-
-    private final SignInRecords records;
+    private final SignInRepository signIns;
     private final Clock clock;
 
     @Inject
-    public SignInTimes(SignInRecords records) {
-        this(records, Clock.systemUTC());
+    public SignInTimes(SignInRepository signIns) {
+        this(signIns, Clock.systemUTC());
     }
 
-    SignInTimes(Path dataDir, ObjectMapper json, Clock clock) {
-        this(new FileSignInRecords(dataDir, json), clock);
-    }
-
-    SignInTimes(SignInRecords records, Clock clock) {
-        this.records = records;
+    SignInTimes(SignInRepository signIns, Clock clock) {
+        this.signIns = signIns;
         this.clock = clock;
     }
 
-    public synchronized Instant last(String phone) {
-        return records.get(phone);
+    public Instant last(String phone) {
+        return signIns.get(phone);
     }
 
     /** Records this sign-in. A later sign-in replaces the time. */
-    public synchronized Instant record(String phone) {
+    public Instant record(String phone) {
         if (phone == null || !phone.matches("\\+1[0-9]{10}")) {
             throw new IllegalArgumentException("phone");
         }
         Instant when = clock.instant();
-        records.put(phone, when);
+        signIns.put(phone, when);
         return when;
     }
 
-    public synchronized void forget(String phone) {
+    public void forget(String phone) {
         if (phone == null) {
             return;
         }
-        records.delete(phone);
+        signIns.delete(phone);
     }
 }

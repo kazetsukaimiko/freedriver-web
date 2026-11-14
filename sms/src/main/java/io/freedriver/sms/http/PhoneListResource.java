@@ -7,6 +7,7 @@ import io.freedriver.sms.model.AttachUser;
 import io.freedriver.sms.model.Attached;
 import io.freedriver.sms.model.ListedPhone;
 import io.freedriver.sms.model.PhoneList;
+import io.freedriver.sms.model.PhoneRecords;
 import io.freedriver.sms.model.RemovePhone;
 import io.freedriver.sms.model.Removed;
 import io.freedriver.sms.model.WhitelistPhone;
@@ -15,6 +16,7 @@ import io.freedriver.sms.phones.ConsentPurpose;
 import io.freedriver.sms.phones.ConsentRecord;
 import io.freedriver.sms.phones.PhoneDirectory;
 import io.freedriver.sms.phones.PhoneEntry;
+import io.freedriver.sms.phones.PhoneRepository;
 import io.freedriver.sms.phones.SignInTimes;
 import jakarta.inject.Inject;
 
@@ -33,6 +35,8 @@ public class PhoneListResource implements SmsPhonesApi {
     ConsentLedger consents;
     @Inject
     SignInTimes signIns;
+    @Inject
+    PhoneRepository phones;
 
     @Override
     public PhoneList list() {
@@ -47,6 +51,11 @@ public class PhoneListResource implements SmsPhonesApi {
                         signIns.last(entry.phone())))
                 .toList();
         return new PhoneList(phones);
+    }
+
+    @Override
+    public PhoneRecords records() {
+        return new PhoneRecords(phones.records());
     }
 
     @Override

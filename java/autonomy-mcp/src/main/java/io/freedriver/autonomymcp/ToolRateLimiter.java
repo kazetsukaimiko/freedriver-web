@@ -1,7 +1,6 @@
 package io.freedriver.autonomymcp;
 
 import io.freedriver.ratelimit.HitWindow;
-import io.freedriver.ratelimit.MemoryHitWindow;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -25,16 +24,7 @@ public class ToolRateLimiter {
         this.hits = hits;
     }
 
-    ToolRateLimiter(int permits, Duration window) {
-        this(permits, window, new MemoryHitWindow());
-    }
-
     public boolean tryAcquire(String subject, String tool) {
-        long now = System.currentTimeMillis();
-        return hits.tryAdd("tool:" + subject + ":" + tool, now, windowMs, permits) != null;
-    }
-
-    public void reset() {
-        hits.clear();
+        return hits.tryAdd("tool:" + subject + ":" + tool, windowMs, permits) != null;
     }
 }

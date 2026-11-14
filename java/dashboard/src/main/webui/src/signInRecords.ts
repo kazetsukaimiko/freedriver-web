@@ -4,10 +4,11 @@ export const SIGN_IN_RECORDS_PATH = '/sign-ins'
 
 export const SIGN_IN_RECORDS_DENIED = 'This account needs a portal-admin role.'
 
+/** One stored sign-in row, typed by sms. */
 export type SignInRecord = {
   id: string
   phone: string
-  document: Record<string, unknown>
+  acceptedAt: string | null
 }
 
 export type SignInRecordsPage =
