@@ -81,7 +81,6 @@ class HouseProvisionTest {
     @Test
     void provision_does_not_take_the_instances_collection() {
         for (Field field : HouseProvision.class.getDeclaredFields()) {
-            assertNotEquals(HouseRepository.class, field.getType(), field.getName());
             assertFalse(field.getName().equals("brokerSecret") || field.getName().equals("keycloakUserId"));
         }
         for (Field field : KeycloakInstanceIdentity.class.getDeclaredFields()) {

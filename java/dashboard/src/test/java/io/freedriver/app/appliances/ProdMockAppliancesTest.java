@@ -1,5 +1,7 @@
 package io.freedriver.app.appliances;
 
+import io.freedriver.app.ProdProfileMongo;
+
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
@@ -31,10 +33,10 @@ class ProdMockAppliancesTest {
 
         @Override
         public Map<String, String> getConfigOverrides() {
-            return Map.of(
+            return ProdProfileMongo.with(Map.of(
                     "quarkus.oidc.enabled", "false",
                     "freedriver.invite.client-secret", "unused-by-this-test",
-                    "quarkus.http.test-port", "0");
+                    "quarkus.http.test-port", "0"));
         }
     }
 

@@ -39,6 +39,10 @@
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-client-jackson</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
             <artifactId>quarkus-oidc</artifactId>
         </dependency>
         <dependency>
@@ -55,12 +59,12 @@
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-mongodb-client</artifactId>
+            <artifactId>quarkus-mongodb-panache</artifactId>
         </dependency>
         <dependency>
-            <groupId>io.lettuce</groupId>
-            <artifactId>lettuce-core</artifactId>
-            <version>6.6.0.RELEASE</version>
+            <groupId>io.freedriver</groupId>
+            <artifactId>mcp-support</artifactId>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
@@ -69,6 +73,11 @@
         <dependency>
             <groupId>io.quarkiverse.mcp</groupId>
             <artifactId>quarkus-mcp-server-http</artifactId>
+            <version>2.0.4</version>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkiverse.mcp</groupId>
+            <artifactId>quarkus-mcp-server-hibernate-validator</artifactId>
             <version>2.0.4</version>
         </dependency>
         <dependency>

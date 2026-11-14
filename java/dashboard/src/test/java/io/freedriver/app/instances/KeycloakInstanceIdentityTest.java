@@ -6,12 +6,16 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.freedriver.mqtt.MqttLog;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
+import io.quarkus.test.junit.QuarkusTest;
 import org.junit.jupiter.api.Test;
+import org.keycloak.OAuth2Constants;
+import org.keycloak.admin.client.KeycloakBuilder;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +31,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/** The instances admin client against a stub realm. The client fetches and reuses its own token. */
+@QuarkusTest
 class KeycloakInstanceIdentityTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -52,8 +58,7 @@ class KeycloakInstanceIdentityTest {
             assertTrue(realm.calls.stream().anyMatch(call -> call.startsWith(
                     "PUT /admin/realms/freedriver/users/kc-" + first + "/groups/group-1")));
             assertFalse(realm.calls.stream().anyMatch(call -> call.startsWith("PUT /admin/realms/freedriver/groups")));
-            assertTrue(realm.calls.stream().anyMatch(call -> call.contains("client_id=freedriver-instances")));
-            assertTrue(realm.calls.stream().anyMatch(call -> call.contains("client_secret=secret-value")));
+            assertTrue(realm.calls.stream().anyMatch(call -> call.contains("basic=freedriver-instances:secret-value")));
             assertTrue(logs.all().contains("mqtt house instance=" + first + " outcome=created"));
             assertTrue(logs.all().contains("mqtt house instance=" + second + " outcome=created"));
             assertFalse(logs.all().contains(realm.passwordOf(first)));
@@ -112,7 +117,9 @@ class KeycloakInstanceIdentityTest {
                 ApplianceSchemas.commandsTopic(second),
                 InstanceIdentity.GROUP);
         assertThrows(IllegalArgumentException.class, () -> new KeycloakInstanceIdentity(
-                JSON, "http://127.0.0.1:9/realms/freedriver", "freedriver-instances", "secret-value").create(crossed));
+                () -> {
+                    throw new AssertionError("admin client was built");
+                }, "freedriver", true).create(crossed));
         assertTrue(realm.calls.isEmpty());
     }
 
@@ -167,7 +174,9 @@ class KeycloakInstanceIdentityTest {
     @Test
     void a_blank_secret_does_not_call_keycloak() {
         KeycloakInstanceIdentity client = new KeycloakInstanceIdentity(
-                JSON, "http://127.0.0.1:9/realms/freedriver", "freedriver-instances", " ");
+                () -> {
+                    throw new AssertionError("admin client was built");
+                }, "freedriver", false);
         UUID id = UUID.randomUUID();
         try (LogLines logs = LogLines.open()) {
             assertThrows(BrokerRefusedException.class, () -> client.create(user(id, null)));
@@ -208,8 +217,14 @@ class KeycloakInstanceIdentityTest {
         }
 
         KeycloakInstanceIdentity client() {
-            String auth = "http://127.0.0.1:" + server.getAddress().getPort() + "/realms/freedriver";
-            return new KeycloakInstanceIdentity(JSON, auth, "freedriver-instances", "secret-value");
+            var keycloak = KeycloakBuilder.builder()
+                    .serverUrl("http://127.0.0.1:" + server.getAddress().getPort())
+                    .realm("freedriver")
+                    .clientId("freedriver-instances")
+                    .clientSecret("secret-value")
+                    .grantType(OAuth2Constants.CLIENT_CREDENTIALS)
+                    .build();
+            return new KeycloakInstanceIdentity(() -> keycloak, "freedriver", true);
         }
 
         void seed(UUID id, String password) {
@@ -243,7 +258,7 @@ class KeycloakInstanceIdentityTest {
             String path = exchange.getRequestURI().getPath();
             String query = exchange.getRequestURI().getRawQuery() == null ? "" : exchange.getRequestURI().getRawQuery();
             String text = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            calls.add(method + " " + path + (query.isEmpty() ? "" : "?" + query) + " " + text);
+            calls.add(method + " " + path + (query.isEmpty() ? "" : "?" + query) + " " + text + basic(exchange));
             if (path.endsWith("/protocol/openid-connect/token")) {
                 send(exchange, 200, "{\"access_token\":\"tok\"}", null);
                 return;
@@ -353,6 +368,16 @@ class KeycloakInstanceIdentityTest {
             return users.values().stream().filter(user -> user.id.equals(id)).findFirst().orElseThrow();
         }
 
+        /** The client credentials a request presented as HTTP Basic, as {@code " basic=id:secret"}. */
+        private static String basic(HttpExchange exchange) {
+            String header = exchange.getRequestHeaders().getFirst("Authorization");
+            if (header == null || !header.startsWith("Basic ")) {
+                return "";
+            }
+            return " basic=" + new String(Base64.getDecoder().decode(header.substring("Basic ".length())),
+                    StandardCharsets.UTF_8);
+        }
+
         private static void send(HttpExchange exchange, int status, String body, String location) throws IOException {
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             if (location != null) {
@@ -363,6 +388,7 @@ class KeycloakInstanceIdentityTest {
                 exchange.close();
                 return;
             }
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.sendResponseHeaders(status, bytes.length);
             exchange.getResponseBody().write(bytes);
             exchange.close();

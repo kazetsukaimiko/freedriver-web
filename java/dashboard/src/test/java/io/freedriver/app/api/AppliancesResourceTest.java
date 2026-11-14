@@ -1,7 +1,10 @@
 package io.freedriver.app.api;
 
+import io.quarkus.redis.datasource.RedisDataSource;
 import io.freedriver.app.appliances.ApplianceAudit;
 import io.freedriver.app.appliances.ApplianceControl;
+import io.freedriver.app.appliances.ApplianceRoster;
+import io.freedriver.app.appliances.RosterRow;
 import io.freedriver.app.appliances.ApplianceCommandRouted;
 import io.freedriver.app.security.CommandRateLimiter;
 import io.freedriver.app.appliances.MockAutonomy;
@@ -18,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -40,10 +44,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AppliancesResourceTest {
 
     @Inject
+    RedisDataSource redis;
+
+    @Inject
     MockAutonomy mock;
 
     @Inject
     ApplianceControl control;
+
+    @Inject
+    ApplianceRoster roster;
 
     @Inject
     CommandRateLimiter rateLimiter;
@@ -54,7 +64,7 @@ class AppliancesResourceTest {
     @BeforeEach
     void reset() {
         mock.reset();
-        rateLimiter.reset();
+        redis.flushall();
     }
 
     private static String commandPath(String applianceName) {
@@ -129,7 +139,7 @@ class AppliancesResourceTest {
     @Test
     @TestSecurity(user = "ada", roles = {"dashboard"})
     void get_unknown_instances_is_empty_not_409() {
-        control.forget(MockAutonomy.INSTANCE_ID);
+        roster.deleteById(MockAutonomy.INSTANCE_ID.toString());
         given().when().get("/api/appliances")
                 .then()
                 .statusCode(200)
@@ -218,7 +228,9 @@ class AppliancesResourceTest {
     @Test
     @TestSecurity(user = "ada", roles = {"dashboard"})
     void stale_instance_post_409_get_still_200() {
-        control.markStale(MockAutonomy.INSTANCE_ID, Duration.ofSeconds(20));
+        RosterRow row = roster.findById(MockAutonomy.INSTANCE_ID.toString());
+        row.receivedAt = Instant.now().minus(Duration.ofSeconds(20)).minusSeconds(1);
+        roster.update(row);
 
         given().when().get("/api/appliances")
                 .then()

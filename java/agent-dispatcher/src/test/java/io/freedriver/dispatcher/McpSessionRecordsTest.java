@@ -1,73 +1,48 @@
 package io.freedriver.dispatcher;
 
+import io.freedriver.mcp.McpSessions;
+import io.freedriver.mcp.RedisSessionRecords;
+import io.quarkus.redis.datasource.ReactiveRedisDataSource;
+import io.quarkus.redis.datasource.RedisDataSource;
+import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/** Two dispatcher processes, as two record beans on the one Redis, share every session binding. */
+@QuarkusTest
 class McpSessionRecordsTest {
 
-    @Test
-    void a_session_stored_on_one_dispatcher_is_accepted_on_another() {
-        MapKeys keys = new MapKeys();
-        McpSessionRecords records = new RedisSessionRecords(keys);
-        McpSessions first = new McpSessions(records);
-        McpSessions second = new McpSessions(records);
+    private static final String PREFIX = "freedriver:mcp:dispatcher:";
 
-        String id = first.open("alice");
+    @Inject
+    RedisDataSource redis;
 
-        assertEquals(McpSessions.Status.MATCH, second.check(id, "alice"));
-        assertEquals(Duration.ofHours(24).toSeconds(), keys.ttl(RedisSessionRecords.PREFIX + id));
-        assertEquals(McpSessions.Status.OTHER_SUBJECT, second.check(id, "bob"));
-        first.close(id, "bob");
-        assertEquals(McpSessions.Status.MATCH, second.check(id, "alice"));
-        second.close(id, "alice");
-        assertEquals(McpSessions.Status.UNKNOWN, first.check(id, "alice"));
-    }
+    @Inject
+    ReactiveRedisDataSource reactive;
 
     @Test
-    void remember_binds_a_server_issued_id_for_both_processes() {
-        MapKeys keys = new MapKeys();
-        McpSessions first = new McpSessions(new RedisSessionRecords(keys));
-        McpSessions second = new McpSessions(new RedisSessionRecords(keys));
+    void a_session_bound_on_one_dispatcher_is_checked_on_another() {
+        McpSessions first = new McpSessions(new RedisSessionRecords(reactive, PREFIX));
+        McpSessions second = new McpSessions(new RedisSessionRecords(reactive, PREFIX));
+        String id = UUID.randomUUID().toString();
 
-        first.remember("issued-1", "alice");
+        first.remember(id, "alice").await().indefinitely();
 
-        assertEquals(McpSessions.Status.MATCH, second.check("issued-1", "alice"));
-        assertEquals("alice", keys.get(RedisSessionRecords.PREFIX + "issued-1"));
-    }
-
-    /** In-memory stand-in for one Redis. Two records share it. */
-    private static final class MapKeys implements RedisSessionRecords.Keys {
-
-        private final ConcurrentHashMap<String, String> values = new ConcurrentHashMap<>();
-        private final ConcurrentHashMap<String, Long> ttls = new ConcurrentHashMap<>();
-
-        @Override
-        public void set(String key, String value, long ttlSeconds) {
-            values.put(key, value);
-            ttls.put(key, ttlSeconds);
-        }
-
-        @Override
-        public String get(String key) {
-            return values.get(key);
-        }
-
-        @Override
-        public boolean deleteIfValue(String key, String expected) {
-            boolean removed = values.remove(key, expected);
-            if (removed) {
-                ttls.remove(key);
-            }
-            return removed;
-        }
-
-        long ttl(String key) {
-            Long ttl = ttls.get(key);
-            return ttl == null ? -1 : ttl;
-        }
+        assertEquals(McpSessions.Status.MATCH, second.check(id, "alice").await().indefinitely());
+        long ttl = redis.key().ttl(PREFIX + id);
+        assertTrue(ttl > Duration.ofHours(23).toSeconds() && ttl <= Duration.ofHours(24).toSeconds(), "ttl " + ttl);
+        assertEquals("alice", redis.value(String.class).get(PREFIX + id));
+        assertEquals(McpSessions.Status.OTHER_SUBJECT, second.check(id, "bob").await().indefinitely());
+        first.close(id, "bob").await().indefinitely();
+        assertEquals(McpSessions.Status.MATCH, second.check(id, "alice").await().indefinitely());
+        second.close(id, "alice").await().indefinitely();
+        assertEquals(McpSessions.Status.UNKNOWN, first.check(id, "alice").await().indefinitely());
+        assertEquals(McpSessions.Status.ABSENT, first.check(null, "alice").await().indefinitely());
     }
 }

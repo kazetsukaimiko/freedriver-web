@@ -11,7 +11,7 @@ import java.time.ZoneOffset;
 
 /**
  * Service-wide cap per UTC day on sends that reach the provider, on top of the per-number limits.
- * The count lives in {@link DailySendLedger}. When it is reached, no more codes are sent until the
+ * The count lives in {@link DailySendLedger}, shared by every replica. When it is reached, no more codes are sent until the
  * next UTC day and the service logs an error.
  */
 @ApplicationScoped
@@ -26,12 +26,8 @@ public class DailySendCap {
     private boolean announced;
 
     @Inject
-    public DailySendCap(SmsConfig config, DailySendLedger ledger) {
-        this(Clock.systemUTC(), config.dailySendCap(), ledger);
-    }
-
-    DailySendCap(Clock clock, int cap) {
-        this(clock, cap, new MemoryDailySendLedger());
+    public DailySendCap(SmsConfig config, DailySendLedger ledger, Clock clock) {
+        this(clock, config.dailySendCap(), ledger);
     }
 
     DailySendCap(Clock clock, int cap, DailySendLedger ledger) {
@@ -58,13 +54,5 @@ public class DailySendCap {
             announced = true;
             LOG.errorf("SMS daily send cap of %d reached for %s UTC. No codes will be sent until 00:00 UTC.", cap, today);
         }
-    }
-
-    public void reset() {
-        synchronized (this) {
-            announcedDay = null;
-            announced = false;
-        }
-        ledger.clear();
     }
 }

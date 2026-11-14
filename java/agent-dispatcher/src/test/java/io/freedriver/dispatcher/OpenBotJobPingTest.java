@@ -1,6 +1,7 @@
 package io.freedriver.dispatcher;
 
 import com.sun.net.httpserver.HttpServer;
+import io.quarkus.test.junit.QuarkusTest;
 import org.junit.jupiter.api.Test;
 
 import javax.crypto.Mac;
@@ -19,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@QuarkusTest
 class OpenBotJobPingTest {
 
     private static final String SECRET = "test-secret";

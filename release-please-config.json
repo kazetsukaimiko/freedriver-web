@@ -8,7 +8,12 @@
       "changelog-path": "java/dashboard/src/main/resources/changelog/CHANGELOG.md",
       "version-file": "version.txt",
       "include-v-in-tag": true,
-      "pull-request-title-pattern": "chore(release): release ${version}"
+      "pull-request-title-pattern": "chore(release): release ${version}",
+      "changelog-sections": [
+        { "type": "feat", "section": "Features" },
+        { "type": "fix", "section": "Bug Fixes" },
+        { "type": "refactor", "section": "Refactors" }
+      ]
     }
   }
 }

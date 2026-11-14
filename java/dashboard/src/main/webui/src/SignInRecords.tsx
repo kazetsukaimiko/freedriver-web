@@ -12,11 +12,6 @@ type View =
   | { kind: 'error' }
   | { kind: 'ready'; signIns: SignInRecord[] }
 
-function field(record: SignInRecord, key: string) {
-  const value = record.document[key]
-  return value == null ? '' : String(value)
-}
-
 export function SignInRecords() {
   const [view, setView] = useState<View>({ kind: 'loading' })
   const [open, setOpen] = useState<SignInRecord | null>(null)
@@ -113,7 +108,7 @@ export function SignInRecords() {
           {view.signIns.map((record) => (
             <tr key={record.id || record.phone}>
               <td>{record.phone}</td>
-              <td>{field(record, 'acceptedAt')}</td>
+              <td>{record.acceptedAt ?? ''}</td>
               <td>
                 <button type="button" onClick={() => setOpen(record)}>
                   View document
@@ -131,7 +126,7 @@ export function SignInRecords() {
       >
         <div className="agent-jobs-modal-card">
           <h2 id="sign-in-document-title">Sign-in document</h2>
-          <pre className="agent-jobs-document">{open ? JSON.stringify(open.document, null, 2) : ''}</pre>
+          <pre className="agent-jobs-document">{open ? JSON.stringify(open, null, 2) : ''}</pre>
           <button type="button" onClick={() => setOpen(null)}>
             Close
           </button>

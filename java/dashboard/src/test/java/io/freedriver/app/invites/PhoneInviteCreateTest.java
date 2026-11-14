@@ -4,6 +4,7 @@ import io.freedriver.app.phones.PhoneAlreadyExists;
 import io.freedriver.app.phones.PhoneRow;
 import io.freedriver.app.phones.PhoneSignInDirectory;
 import io.freedriver.app.phones.SmsPhoneList;
+import io.freedriver.app.phones.SmsPhoneListStub;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -88,7 +89,7 @@ class PhoneInviteCreateTest {
     }
 
     private PhoneInviteCreate creator() {
-        SmsPhoneList sms = new SmsPhoneList() {
+        SmsPhoneList sms = new SmsPhoneListStub() {
             @Override
             public List<PhoneRow> list() {
                 return List.copyOf(rows);

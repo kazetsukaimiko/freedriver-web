@@ -111,8 +111,8 @@ export function AgentJobs() {
             <tr key={job.assignmentId || job.jobId}>
               <td>{job.prompt}</td>
               <td>{job.channel}</td>
-              <td>{job.status}</td>
-              <td>{job.note}</td>
+              <td>{job.state}</td>
+              <td>{job.note ?? ''}</td>
               <td>
                 <button type="button" onClick={() => setOpen(job)}>
                   View document
@@ -130,7 +130,7 @@ export function AgentJobs() {
       >
         <div className="agent-jobs-modal-card">
           <h2 id="agent-job-document-title">Job document</h2>
-          <pre className="agent-jobs-document">{open ? JSON.stringify(open.document, null, 2) : ''}</pre>
+          <pre className="agent-jobs-document">{open ? JSON.stringify(open, null, 2) : ''}</pre>
           <button type="button" onClick={() => setOpen(null)}>
             Close
           </button>

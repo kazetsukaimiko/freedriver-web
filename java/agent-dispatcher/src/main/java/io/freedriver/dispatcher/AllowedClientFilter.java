@@ -16,8 +16,10 @@ import org.eclipse.microprofile.jwt.JsonWebToken;
 import java.security.Principal;
 
 /**
- * grok.com and the host are different clients of this same service.
- * When OIDC is on, each client id is accepted only with its own role.
+ * grok.com, the host, and the portal's service account are different clients of this same service.
+ * When OIDC is on, each client id is accepted only with its own role: the dispatcher client with
+ * {@code dispatcher}, the device client with {@code device}, and the portal client with
+ * {@code dispatcher-admin}. Anything else is 403.
  */
 @Provider
 @ApplicationScoped
@@ -28,17 +30,20 @@ public class AllowedClientFilter implements ContainerRequestFilter {
     private final boolean oidcEnabled;
     private final String dispatcherClient;
     private final String deviceClient;
+    private final String portalClient;
 
     @Inject
     public AllowedClientFilter(
             SecurityIdentity identity,
             @ConfigProperty(name = "quarkus.oidc.enabled") boolean oidcEnabled,
             @ConfigProperty(name = "freedriver.dispatcher.client.dispatcher") String dispatcherClient,
-            @ConfigProperty(name = "freedriver.dispatcher.client.device") String deviceClient) {
+            @ConfigProperty(name = "freedriver.dispatcher.client.device") String deviceClient,
+            @ConfigProperty(name = "freedriver.dispatcher.client.portal") String portalClient) {
         this.identity = identity;
         this.oidcEnabled = oidcEnabled;
         this.dispatcherClient = dispatcherClient;
         this.deviceClient = deviceClient;
+        this.portalClient = portalClient;
     }
 
     @Override
@@ -49,8 +54,10 @@ public class AllowedClientFilter implements ContainerRequestFilter {
                 azp(identity),
                 identity != null && identity.hasRole(Actors.DISPATCHER),
                 identity != null && identity.hasRole(Actors.DEVICE),
+                identity != null && identity.hasRole(Actors.DISPATCHER_ADMIN),
                 dispatcherClient,
-                deviceClient)) {
+                deviceClient,
+                portalClient)) {
             return;
         }
         request.abortWith(Response.status(Response.Status.FORBIDDEN).build());
@@ -62,15 +69,20 @@ public class AllowedClientFilter implements ContainerRequestFilter {
             String azp,
             boolean dispatcherRole,
             boolean deviceRole,
+            boolean adminRole,
             String dispatcherClient,
-            String deviceClient) {
+            String deviceClient,
+            String portalClient) {
         if (!oidcEnabled || anonymous) {
             return true;
         }
         if (dispatcherRole && dispatcherClient != null && dispatcherClient.equals(azp)) {
             return true;
         }
-        return deviceRole && deviceClient != null && deviceClient.equals(azp);
+        if (deviceRole && deviceClient != null && deviceClient.equals(azp)) {
+            return true;
+        }
+        return adminRole && portalClient != null && portalClient.equals(azp);
     }
 
     private static String azp(SecurityIdentity identity) {

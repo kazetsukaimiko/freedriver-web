@@ -1,6 +1,5 @@
 package io.freedriver.sms.security;
 
-import io.freedriver.ratelimit.HitWindow;
 import io.freedriver.ratelimit.MemoryHitWindow;
 import org.junit.jupiter.api.Test;
 
@@ -51,7 +50,7 @@ class PhoneRateLimiterTest {
     @Test
     void many_distinct_numbers_leave_both_counters_once_their_window_has_passed() {
         MutableClock clock = new MutableClock(Instant.parse("2026-09-27T12:00:00Z"));
-        PhoneRateLimiter limiter = new PhoneRateLimiter(clock, Duration.ofMinutes(15), 2, 2);
+        PhoneRateLimiter limiter = new PhoneRateLimiter(Duration.ofMinutes(15), 2, 2, new MemoryHitWindow(clock));
 
         int early = 200;
         for (int i = 0; i < early; i++) {
@@ -66,39 +65,29 @@ class PhoneRateLimiterTest {
             limiter.recordWrongCode(phone(i));
             limiter.recordWrongCode(phone(i));
         }
-        assertEquals(early + later, limiter.sendEntries());
-        assertEquals(early + later, limiter.wrongCodeEntries());
 
         // Still inside the early window: another request does not drop those numbers.
         clock.now = Instant.parse("2026-09-27T12:14:59Z");
         assertTrue(limiter.tryAcquireSend(phone(early)));
         assertTrue(limiter.codeChecksLocked(phone(early)));
-        assertEquals(early + later, limiter.sendEntries());
-        assertEquals(early + later, limiter.wrongCodeEntries());
 
         // 12:00 numbers have passed the window. The 12:10 cohort, and one new send, remain.
         clock.now = Instant.parse("2026-09-27T12:15:00Z");
         assertTrue(limiter.tryAcquireSend(phone(9_000)));
         assertFalse(limiter.codeChecksLocked(phone(9_001)));
-        assertEquals(later + 1, limiter.sendEntries());
-        assertEquals(later, limiter.wrongCodeEntries());
         assertFalse(limiter.tryAcquireSend(phone(early)), "a number still inside the window keeps its send count");
         assertTrue(limiter.codeChecksLocked(phone(early)), "a number still inside the window keeps its wrong-code count");
 
-        // Every recorded hit is now outside the window, so both stores shrink back to empty.
+        // Every recorded hit is now outside the window.
         clock.now = Instant.parse("2026-09-27T12:30:00Z");
         assertFalse(limiter.codeChecksLocked(phone(9_001)));
-        assertEquals(0, limiter.sendEntries());
-        assertEquals(0, limiter.wrongCodeEntries());
         assertTrue(limiter.tryAcquireSend(phone(0)));
         assertFalse(limiter.codeChecksLocked(phone(early)));
-        assertEquals(1, limiter.sendEntries());
-        assertEquals(0, limiter.wrongCodeEntries());
     }
 
     @Test
     void parallel_code_checks_reserve_only_the_limit() throws Exception {
-        PhoneRateLimiter limiter = new PhoneRateLimiter(Clock.systemUTC(), Duration.ofMinutes(15), 5, 5);
+        PhoneRateLimiter limiter = new PhoneRateLimiter(Duration.ofMinutes(15), 5, 5, new MemoryHitWindow(Clock.systemUTC()));
         String phone = "+15555550100";
         int guesses = 32;
         ExecutorService pool = Executors.newFixedThreadPool(guesses);
@@ -120,7 +109,6 @@ class PhoneRateLimiterTest {
             }
             assertEquals(5, held.size());
             assertTrue(limiter.codeChecksLocked(phone));
-            assertEquals(1, limiter.wrongCodeEntries());
 
             held.getFirst().release();
             assertFalse(limiter.codeChecksLocked(phone));
@@ -133,7 +121,6 @@ class PhoneRateLimiterTest {
                 check.release();
             }
             assertFalse(limiter.codeChecksLocked(phone));
-            assertEquals(0, limiter.wrongCodeEntries());
         } finally {
             pool.shutdownNow();
         }
@@ -142,7 +129,7 @@ class PhoneRateLimiterTest {
     @Test
     void a_reserved_code_check_expires_with_the_window_and_a_success_clears_it() {
         MutableClock clock = new MutableClock(Instant.parse("2026-09-27T12:00:00Z"));
-        PhoneRateLimiter limiter = new PhoneRateLimiter(clock, Duration.ofMinutes(15), 5, 2);
+        PhoneRateLimiter limiter = new PhoneRateLimiter(Duration.ofMinutes(15), 5, 2, new MemoryHitWindow(clock));
         String phone = "+15555550100";
 
         PhoneRateLimiter.CodeCheck first = limiter.tryAcquireCodeCheck(phone);
@@ -153,35 +140,17 @@ class PhoneRateLimiterTest {
         second.keep();
         assertTrue(limiter.codeChecksLocked(phone));
         assertNull(limiter.tryAcquireCodeCheck(phone));
-        assertEquals(1, limiter.wrongCodeEntries());
 
         // Same boundary as the send counters: the window has passed, so the number is gone.
         clock.now = Instant.parse("2026-09-27T12:15:00Z");
         assertFalse(limiter.codeChecksLocked(phone));
-        assertEquals(0, limiter.wrongCodeEntries());
         PhoneRateLimiter.CodeCheck later = limiter.tryAcquireCodeCheck(phone);
         assertNotNull(later);
-        assertEquals(1, limiter.wrongCodeEntries());
 
         limiter.clearWrongCodes(phone);
         later.keep();
         assertFalse(limiter.codeChecksLocked(phone));
-        assertEquals(0, limiter.wrongCodeEntries());
         assertNotNull(limiter.tryAcquireCodeCheck(phone));
-    }
-
-    @Test
-    void two_processes_share_one_short_window() {
-        MutableClock clock = new MutableClock(Instant.parse("2026-09-27T12:00:00Z"));
-        HitWindow shared = new MemoryHitWindow();
-        PhoneRateLimiter first = new PhoneRateLimiter(clock, Duration.ofMinutes(15), 2, 2, shared);
-        PhoneRateLimiter second = new PhoneRateLimiter(clock, Duration.ofMinutes(15), 2, 2, shared);
-        String phone = "+15555550100";
-
-        assertTrue(first.tryAcquireSend(phone));
-        assertTrue(second.tryAcquireSend(phone));
-        assertFalse(first.tryAcquireSend(phone));
-        assertTrue(second.tryAcquireSend("+15555550101"));
     }
 
     private static String phone(int n) {

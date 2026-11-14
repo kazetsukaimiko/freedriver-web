@@ -7,25 +7,18 @@ import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
-import java.time.Instant;
-
 /**
- * App-wide MCP path rules: bearer only on {@code /autonomy/mcp}, that path
- * never takes a portal session cookie, other portal routes refuse a bearer
- * while OIDC is on, and a bearer response never sets a cookie.
+ * The portal takes a session cookie, not a bearer: while OIDC is on, a request with a Bearer
+ * token is 401 on every dashboard route. The MCP bearer endpoint is the autonomy-mcp process.
  */
 @ApplicationScoped
 public class McpBearerFilter {
 
     private final boolean oidcEnabled;
-    private final McpAudit audit;
 
     @Inject
-    public McpBearerFilter(
-            @ConfigProperty(name = "quarkus.oidc.enabled", defaultValue = "false") boolean oidcEnabled,
-            McpAudit audit) {
+    public McpBearerFilter(@ConfigProperty(name = "quarkus.oidc.enabled", defaultValue = "false") boolean oidcEnabled) {
         this.oidcEnabled = oidcEnabled;
-        this.audit = audit;
     }
 
     void register(@Observes Filters filters) {
@@ -33,32 +26,13 @@ public class McpBearerFilter {
     }
 
     void filter(RoutingContext rc) {
-        String path = rc.request().path();
-        if (McpPaths.matches(path)) {
-            if (McpPaths.hasSessionCookie(rc.request().getHeader("Cookie"))) {
-                deny(rc);
-                return;
-            }
-            if (oidcEnabled && !McpPaths.hasBearer(rc.request().getHeader("Authorization"))) {
-                deny(rc);
-                return;
-            }
-            rc.addHeadersEndHandler(ignored -> rc.response().headers().remove("Set-Cookie"));
-            rc.next();
-            return;
-        }
-        if (oidcEnabled && McpPaths.hasBearer(rc.request().getHeader("Authorization"))) {
-            deny(rc);
+        if (oidcEnabled && BearerHeaders.hasBearer(rc.request().getHeader("Authorization"))) {
+            rc.response()
+                    .setStatusCode(401)
+                    .putHeader("Content-Type", "application/json")
+                    .end("{}");
             return;
         }
         rc.next();
-    }
-
-    private void deny(RoutingContext rc) {
-        audit.record(new McpAudit.Event(Instant.now(), null, null, null, null, null, "denied"));
-        rc.response()
-                .setStatusCode(401)
-                .putHeader("Content-Type", "application/json")
-                .end("{}");
     }
 }
