@@ -1,5 +1,6 @@
 package io.freedriver.app.phones;
 
+import io.freedriver.app.invites.InviteUpstreamException;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Disposes;
 import jakarta.enterprise.inject.Produces;
@@ -14,6 +15,7 @@ import java.util.Optional;
 /**
  * The second Keycloak admin client, for {@code freedriver-invite}. The injected default
  * {@code Keycloak} is {@code freedriver-instances}. The client fetches and reuses its own token.
+ * A blank secret is refused here, so no blank secret reaches the token endpoint.
  */
 @ApplicationScoped
 public class InviteAdminProducer {
@@ -26,11 +28,13 @@ public class InviteAdminProducer {
             @ConfigProperty(name = "quarkus.keycloak.admin-client.realm") String realm,
             @ConfigProperty(name = "freedriver.invite.client-id") String clientId,
             @ConfigProperty(name = "freedriver.invite.client-secret") Optional<String> clientSecret) {
+        String secret = clientSecret.map(String::strip).filter(value -> !value.isEmpty())
+                .orElseThrow(() -> new InviteUpstreamException("invite client secret is unset"));
         return KeycloakBuilder.builder()
                 .serverUrl(serverUrl)
                 .realm(realm)
                 .clientId(clientId)
-                .clientSecret(clientSecret.orElse(""))
+                .clientSecret(secret)
                 .grantType(OAuth2Constants.CLIENT_CREDENTIALS)
                 .build();
     }

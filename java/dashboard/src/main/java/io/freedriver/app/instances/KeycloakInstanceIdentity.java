@@ -7,17 +7,12 @@ import io.freedriver.mqtt.contract.ApplianceSchemas;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.ProcessingException;
-import jakarta.ws.rs.WebApplicationException;
-import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.keycloak.admin.client.Keycloak;
-import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.representations.idm.CredentialRepresentation;
 import org.keycloak.representations.idm.GroupRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -29,7 +24,8 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 /**
- * House users through the {@code freedriver-instances} Keycloak admin client.
+ * House users through the {@code freedriver-instances} Keycloak admin client, called through
+ * {@link InstanceUsers}.
  * The create {@code Location} id joins {@code mqtt-instance} and deletes a user that stops short.
  * That id is not stored. Reset replaces the credential and does not read the previous password.
  */
@@ -67,33 +63,25 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
             MqttLog.house(id, "refused");
             throw new BrokerRefusedException();
         }
-        RealmResource keycloak = keycloak();
+        InstanceUsers users = users();
         String locationId;
-        try (Response created = keycloak.users().create(representation(user))) {
-            if (created.getStatus() == 409) {
-                throw new UsernameTakenException();
-            }
-            locationId = created.getStatus() == 201 ? locationId(created.getLocation()) : null;
-        } catch (UsernameTakenException taken) {
-            throw taken;
-        } catch (RuntimeException failure) {
-            locationId = null;
-        }
-        if (locationId == null) {
+        try {
+            locationId = users.create(representation(user));
+        } catch (BrokerRefusedException refused) {
             MqttLog.house(id, "refused");
-            throw new BrokerRefusedException();
+            throw refused;
         }
         try {
-            if (!attributesPresent(user, keycloak.users().get(locationId).toRepresentation())) {
+            if (!attributesPresent(user, users.read(locationId))) {
                 throw new BrokerRefusedException();
             }
-            String groupId = groupId(keycloak);
+            String groupId = groupId(users);
             if (groupId == null) {
                 throw new BrokerRefusedException();
             }
-            keycloak.users().get(locationId).joinGroup(groupId);
+            users.join(locationId, groupId);
         } catch (RuntimeException ex) {
-            delete(keycloak, locationId);
+            users.deleteQuietly(locationId);
             MqttLog.house(id, "refused");
             throw ex instanceof BrokerRefusedException refused ? refused : new BrokerRefusedException();
         }
@@ -111,10 +99,10 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
             MqttLog.house(id, "refused");
             throw new BrokerRefusedException();
         }
-        RealmResource keycloak = keycloak();
+        InstanceUsers users = users();
         String locationId;
         try {
-            locationId = refusing(() -> memberId(keycloak, id.toString()));
+            locationId = memberId(users, id.toString());
         } catch (BrokerRefusedException ex) {
             MqttLog.house(id, "refused");
             throw ex;
@@ -127,10 +115,10 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
         password.setValue(reset.password());
         password.setTemporary(false);
         try {
-            keycloak.users().get(locationId).resetPassword(password);
-        } catch (RuntimeException ex) {
+            users.resetPassword(locationId, password);
+        } catch (BrokerRefusedException ex) {
             MqttLog.house(id, "refused");
-            throw new BrokerRefusedException();
+            throw ex;
         }
         MqttLog.house(id, "reset");
     }
@@ -140,38 +128,36 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
         if (!configured) {
             throw new BrokerRefusedException();
         }
-        RealmResource keycloak = keycloak();
-        return refusing(() -> {
-            String groupId = groupId(keycloak);
-            if (groupId == null) {
-                throw new BrokerRefusedException();
+        InstanceUsers users = users();
+        String groupId = groupId(users);
+        if (groupId == null) {
+            throw new BrokerRefusedException();
+        }
+        List<InstanceSummary> summaries = new ArrayList<>();
+        Set<String> scanned = new HashSet<>();
+        int first = 0;
+        while (true) {
+            List<UserRepresentation> page = users.members(groupId, first, PAGE);
+            if (page == null || page.isEmpty()) {
+                break;
             }
-            List<InstanceSummary> summaries = new ArrayList<>();
-            Set<String> scanned = new HashSet<>();
-            int first = 0;
-            while (true) {
-                List<UserRepresentation> page = keycloak.groups().group(groupId).members(first, PAGE, false);
-                if (page == null || page.isEmpty()) {
-                    break;
+            boolean progressed = false;
+            for (UserRepresentation member : page) {
+                String username = member.getUsername() == null ? "" : member.getUsername();
+                if (!scanned.add(username)) {
+                    continue;
                 }
-                boolean progressed = false;
-                for (UserRepresentation member : page) {
-                    String username = member.getUsername() == null ? "" : member.getUsername();
-                    if (!scanned.add(username)) {
-                        continue;
-                    }
-                    progressed = true;
-                    if (canonical(username) != null) {
-                        summaries.add(new InstanceSummary(username, labelOf(member)));
-                    }
+                progressed = true;
+                if (canonical(username) != null) {
+                    summaries.add(new InstanceSummary(username, labelOf(member)));
                 }
-                if (!progressed || page.size() < PAGE) {
-                    break;
-                }
-                first += page.size();
             }
-            return List.copyOf(summaries);
-        });
+            if (!progressed || page.size() < PAGE) {
+                break;
+            }
+            first += page.size();
+        }
+        return List.copyOf(summaries);
     }
 
     private static UserRepresentation representation(KeycloakUser user) {
@@ -207,9 +193,9 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
     }
 
     /** The one exact username match that is also in the top-level {@code mqtt-instance}, or null. */
-    private static String memberId(RealmResource keycloak, String username) {
+    private static String memberId(InstanceUsers users, String username) {
         String locationId = null;
-        for (UserRepresentation found : keycloak.users().search(username, true)) {
+        for (UserRepresentation found : users.exactUsername(username)) {
             if (!username.equals(found.getUsername())) {
                 continue;
             }
@@ -221,15 +207,15 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
         if (locationId == null || locationId.isBlank()) {
             return null;
         }
-        boolean member = keycloak.users().get(locationId).groups().stream()
+        boolean member = users.groupsOf(locationId).stream()
                 .anyMatch(group -> GROUP.equals(group.getName()) && !hasParent(group));
         return member ? locationId : null;
     }
 
     /** The one top-level {@code mqtt-instance} group, or null. */
-    private static String groupId(RealmResource keycloak) {
+    private static String groupId(InstanceUsers users) {
         String found = null;
-        for (GroupRepresentation group : keycloak.groups().groups(GROUP, null, null)) {
+        for (GroupRepresentation group : users.groupsNamed(GROUP)) {
             if (!GROUP.equals(group.getName()) || hasParent(group)) {
                 continue;
             }
@@ -241,26 +227,11 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
         return found == null || found.isBlank() ? null : found;
     }
 
-    private static void delete(RealmResource keycloak, String locationId) {
-        try (Response ignored = keycloak.users().delete(locationId)) {
-            // The house is still refused. A failed delete must not hide that.
-        } catch (RuntimeException ignored) {
-            // The house is still refused. A failed delete must not hide that.
-        }
+
+    private InstanceUsers users() {
+        return new InstanceUsers(admin, realm);
     }
 
-    private RealmResource keycloak() {
-        return admin.get().realm(realm);
-    }
-
-    /** A Keycloak error status or transport failure is a refusal. */
-    private static <T> T refusing(Supplier<T> call) {
-        try {
-            return call.get();
-        } catch (WebApplicationException | ProcessingException failure) {
-            throw new BrokerRefusedException();
-        }
-    }
 
     private static UUID requireHouse(KeycloakUser user) {
         if (user == null || user.password() == null || user.password().isBlank()) {
@@ -291,15 +262,6 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
         }
     }
 
-    private static String locationId(URI location) {
-        String path = location == null || location.getRawPath() == null ? "" : location.getRawPath();
-        int slash = path.lastIndexOf('/');
-        if (slash < 0 || slash == path.length() - 1 || location.getRawQuery() != null) {
-            return null;
-        }
-        String id = path.substring(slash + 1);
-        return id.isBlank() ? null : id;
-    }
 
     private static boolean one(UserRepresentation user, String name, String expected) {
         List<String> values = user.getAttributes() == null ? null : user.getAttributes().get(name);
