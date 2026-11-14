@@ -17,21 +17,12 @@ public class VerificationLedger {
     static final Duration TTL = Duration.ofMinutes(5);
 
     private final VerificationRecords records;
-    private volatile Clock clock = Clock.systemUTC();
-
-    /** Arc builds the client proxy with this constructor. */
-    VerificationLedger() {
-        this.records = null;
-    }
+    private final Clock clock;
 
     @Inject
-    VerificationLedger(VerificationRecords records) {
+    VerificationLedger(VerificationRecords records, Clock clock) {
         this.records = records;
-    }
-
-    /** Tests move the clock that the 5-minute expiry reads. */
-    public void setClock(Clock clock) {
-        this.clock = clock == null ? Clock.systemUTC() : clock;
+        this.clock = clock;
     }
 
     /**

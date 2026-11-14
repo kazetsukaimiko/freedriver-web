@@ -33,11 +33,6 @@ public class ApplianceControl {
     private final ApplianceRoster roster;
     private final ConcurrentHashMap<String, CompletableFuture<ApplianceSnapshot>> waiters = new ConcurrentHashMap<>();
 
-    /** Arc builds the client proxy with this constructor. */
-    ApplianceControl() {
-        this.roster = null;
-    }
-
     @Inject
     ApplianceControl(ApplianceRoster roster) {
         this.roster = roster;
@@ -132,23 +127,5 @@ public class ApplianceControl {
                 waiter.complete(snapshot);
             }
         }
-    }
-
-    /** Drop a known instance. Used by tests and later expiry. */
-    public void forget(@NonNull UUID instanceId) {
-        roster.remove(instanceId);
-    }
-
-    /** Pretend the last state is older than the stale window. */
-    public void markStale(@NonNull UUID instanceId, Duration window) {
-        Optional<ApplianceRoster.Row> row = roster.find(instanceId);
-        if (row.isEmpty()) {
-            return;
-        }
-        Instant when = Instant.now().minus(window).minusSeconds(1);
-        roster.save(
-                instanceId,
-                row.get().instanceName(),
-                new ApplianceSnapshot(when, row.get().snapshot().appliances()));
     }
 }

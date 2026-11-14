@@ -38,11 +38,9 @@ class VerificationRecordsTest {
 
     @Test
     void a_code_issued_on_one_sms_process_is_valid_on_another_until_it_expires() {
-        VerificationLedger first = new VerificationLedger(new RedisVerificationRecords(redis));
-        VerificationLedger second = new VerificationLedger(new RedisVerificationRecords(redis));
         MutableClock clock = new MutableClock(START);
-        first.setClock(clock);
-        second.setClock(clock);
+        VerificationLedger first = new VerificationLedger(new RedisVerificationRecords(redis), clock);
+        VerificationLedger second = new VerificationLedger(new RedisVerificationRecords(redis), clock);
 
         assertNull(first.replace(PHONE));
         first.rememberSid(PHONE, SID);

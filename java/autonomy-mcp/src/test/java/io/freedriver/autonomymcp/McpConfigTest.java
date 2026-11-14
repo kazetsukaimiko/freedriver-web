@@ -25,7 +25,10 @@ class McpConfigTest {
         assertTrue(properties.contains("quarkus.tls.trust-all=false"));
         assertFalse(properties.contains("quarkus.tls.trust-all=true"));
         assertTrue(properties.contains("%prod.quarkus.redis.hosts=${FREEDRIVER_REDIS_URL:redis://redis:6379}"));
-        assertTrue(properties.contains("freedriver.redis.url=${quarkus.redis.hosts:redis://redis:6379}"));
+        assertFalse(properties.contains("freedriver.redis.url"));
+        assertTrue(properties.contains("quarkus.mcp.server.http.root-path=/autonomy/mcp"));
+        assertTrue(properties.contains("freedriver.mcp.roles=mcp-user"));
+        assertTrue(properties.contains("freedriver.mcp.session-prefix=freedriver:mcp:autonomy:"));
         assertFalse(properties.contains("quarkus.mongodb"));
         assertTrue(properties.contains("freedriver.mcp.enabled=false"));
         assertTrue(properties.contains("freedriver.mcp.dashboard-url=http://dashboard:8080"));

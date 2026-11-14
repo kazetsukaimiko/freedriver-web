@@ -6,6 +6,7 @@ import io.freedriver.mqtt.contract.ApplianceStateMessage;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.annotation.PreDestroy;
+import io.quarkus.arc.profile.IfBuildProfile;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.enterprise.event.Observes;
@@ -31,6 +32,7 @@ import java.util.concurrent.TimeUnit;
  * Each fixture name ends with {@code (test)}, for example {@code Hallway (test)}.
  */
 @ApplicationScoped
+@IfBuildProfile(anyOf = {"dev", "test"})
 public class MockAutonomy {
 
     public static final UUID INSTANCE_ID = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");

@@ -69,12 +69,8 @@ public class InviteStore implements PanacheMongoRepositoryBase<Invite, String> {
     String dir;
 
     private final SecureRandom random = new SecureRandom();
-    private Clock clock = Clock.systemUTC();
-
-    /** Tests move expiry without waiting. */
-    void clock(Clock clock) {
-        this.clock = clock;
-    }
+    @Inject
+    Clock clock;
 
     public Created create(String name) {
         String label = label(name);

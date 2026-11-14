@@ -10,6 +10,7 @@ import io.freedriver.sms.phones.ConsentSource;
 import io.freedriver.sms.phones.PhoneDirectory;
 import io.freedriver.sms.phones.PhoneEntry;
 import io.freedriver.sms.security.DailySendCap;
+import io.freedriver.sms.security.DailySendLedger;
 import io.freedriver.sms.security.PhoneRateLimiter;
 import io.freedriver.sms.support.LogCapture;
 import io.freedriver.sms.support.SameAnswer;
@@ -75,12 +76,14 @@ class SeedFirstSignInTest {
     PhoneRateLimiter limiter;
     @Inject
     DailySendCap dailyCap;
+    @Inject
+    DailySendLedger dailyLedger;
 
     @BeforeEach
     void reset() {
         sender.reset();
         redis.flushall();
-        dailyCap.reset();
+        dailyLedger.deleteAll();
     }
 
     @Test

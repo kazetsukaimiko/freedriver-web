@@ -74,6 +74,47 @@ class DispatcherResourceTest {
                 .statusCode(404);
     }
 
+    /**
+     * StrictToolArguments applies to every JSON body the dispatcher reads. On main, Jackson coerced
+     * these to a string or an enum ordinal and the job went through; now each is a 400 before the store.
+     */
+    @Test
+    @TestSecurity(user = "grok-strict", roles = "dispatcher")
+    void submit_refuses_a_value_of_the_wrong_json_type() {
+        int before = jobs.listJobs("grok-strict").size();
+        for (String body : new String[] {
+                "{\"deviceIds\":[\"pc\"],\"agentName\":5,\"prompt\":\"hi\",\"channel\":\"TEXT\"}",
+                "{\"deviceIds\":[5],\"agentName\":\"yuni\",\"prompt\":\"hi\",\"channel\":\"TEXT\"}",
+                "{\"deviceIds\":[\"pc\"],\"agentName\":\"yuni\",\"prompt\":true,\"channel\":\"TEXT\"}",
+                "{\"deviceIds\":[\"pc\"],\"agentName\":\"yuni\",\"prompt\":\"hi\",\"channel\":0}"}) {
+            given()
+                    .contentType("application/json")
+                    .body(body)
+                    .post("/api/dispatcher/jobs")
+                    .then()
+                    .statusCode(400);
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(before, jobs.listJobs("grok-strict").size());
+    }
+
+    @Inject
+    com.fasterxml.jackson.databind.ObjectMapper mapper;
+
+    /** The same bodies: Jackson's defaults (main) read each one; the service's mapper refuses each one. */
+    @Test
+    void the_service_mapper_refuses_what_default_jackson_coerced() throws Exception {
+        com.fasterxml.jackson.databind.ObjectMapper defaults = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (String body : new String[] {
+                "{\"deviceIds\":[\"pc\"],\"agentName\":5,\"prompt\":\"hi\",\"channel\":\"TEXT\"}",
+                "{\"deviceIds\":[5],\"agentName\":\"yuni\",\"prompt\":\"hi\",\"channel\":\"TEXT\"}",
+                "{\"deviceIds\":[\"pc\"],\"agentName\":\"yuni\",\"prompt\":true,\"channel\":\"TEXT\"}",
+                "{\"deviceIds\":[\"pc\"],\"agentName\":\"yuni\",\"prompt\":\"hi\",\"channel\":0}"}) {
+            defaults.readValue(body, io.freedriver.dispatcher.model.SubmitJobRequest.class);
+            org.junit.jupiter.api.Assertions.assertThrows(com.fasterxml.jackson.core.JsonProcessingException.class,
+                    () -> mapper.readValue(body, io.freedriver.dispatcher.model.SubmitJobRequest.class), body);
+        }
+    }
+
     @Test
     @TestSecurity(user = "grok", roles = "dispatcher")
     void unknown_device_fails_immediately() {

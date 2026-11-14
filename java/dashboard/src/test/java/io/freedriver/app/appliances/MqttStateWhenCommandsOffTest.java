@@ -55,11 +55,13 @@ class MqttStateWhenCommandsOffTest {
     @Inject
     AppliancesConfig appliances;
 
+    @Inject
+    ApplianceRoster roster;
+
     @BeforeEach
     void reset() {
         mqtt.reset();
-        control.forget(MockAutonomy.INSTANCE_ID);
-        client.resetTracking();
+        roster.deleteById(MockAutonomy.INSTANCE_ID.toString());
     }
 
     @Test
