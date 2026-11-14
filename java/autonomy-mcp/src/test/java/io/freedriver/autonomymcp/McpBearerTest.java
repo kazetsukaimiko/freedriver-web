@@ -147,7 +147,7 @@ class McpBearerTest {
                 + "\"applianceName\":\"fridge\",\"on\":false}}}";
     }
 
-    private static String token(
+    static String token(
             String sub, Set<String> groups, String aud, String azp, Instant expires, String issuer) {
         var builder = Jwt.preferredUserName("ada")
                 .groups(groups)

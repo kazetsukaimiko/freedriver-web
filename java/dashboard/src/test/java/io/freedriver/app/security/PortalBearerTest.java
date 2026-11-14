@@ -16,6 +16,7 @@ import static io.restassured.RestAssured.given;
 /**
  * The portal takes the cookie session, not a bearer. {@code /autonomy/mcp} is the autonomy-mcp
  * process: the dashboard has no MCP tenant, and a Grok bearer is refused on every dashboard route.
+ * The {@code internal} tenant takes only autonomy-mcp's exchanged token ({@link InternalTenantTest}).
  */
 @QuarkusTest
 @TestProfile(PortalBearerTest.OidcOn.class)

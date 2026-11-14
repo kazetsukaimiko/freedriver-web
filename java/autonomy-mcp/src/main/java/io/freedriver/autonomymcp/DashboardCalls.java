@@ -11,6 +11,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.ws.rs.ProcessingException;
+import jakarta.ws.rs.WebApplicationException;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 import java.time.Instant;
@@ -20,7 +21,8 @@ import java.util.function.Supplier;
 /**
  * The dashboard calls the MCP tools make. Each answer is a status and, on 2xx, the typed body:
  * the refused status from {@link DashboardResponses}, 400 when the client refuses an invalid
- * argument, or 503 when the dashboard is unreachable. No JAX-RS type leaves this class.
+ * argument, 503 when the dashboard is unreachable, or the status the token-exchange filter aborted
+ * with when the caller's token could not be exchanged. No JAX-RS type leaves this class.
  */
 @ApplicationScoped
 public class DashboardCalls {
@@ -76,6 +78,10 @@ public class DashboardCalls {
             return new Answer<>(400, null);
         } catch (ProcessingException unreachable) {
             return new Answer<>(503, null);
+        } catch (WebApplicationException aborted) {
+            // The token-exchange filter aborts before the dashboard is called: 401 when Keycloak
+            // refuses the exchange or there is no caller token, 500 when the exchange client is off.
+            return new Answer<>(aborted.getResponse().getStatus(), null);
         }
     }
 

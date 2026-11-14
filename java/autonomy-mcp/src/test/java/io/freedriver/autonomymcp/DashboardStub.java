@@ -6,7 +6,10 @@ import io.quarkus.test.common.QuarkusTestResourceLifecycleManager;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -18,7 +21,12 @@ public final class DashboardStub implements QuarkusTestResourceLifecycleManager 
     }
 
     static final List<Recorded> recorded = new CopyOnWriteArrayList<>();
+    /** Each token-exchange form Keycloak would receive, field to values. */
+    static final List<Map<String, List<String>>> exchanges = new CopyOnWriteArrayList<>();
+    static final String TOKEN_PATH = "/realms/test/protocol/openid-connect/token";
     static final AtomicBoolean down = new AtomicBoolean(false);
+    /** Keycloak refuses the exchange with 400 invalid_request. */
+    static final AtomicBoolean refuseExchange = new AtomicBoolean(false);
 
     private HttpServer server;
 
@@ -29,6 +37,30 @@ public final class DashboardStub implements QuarkusTestResourceLifecycleManager 
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
+        server.createContext(TOKEN_PATH, exchange -> {
+            Map<String, List<String>> form = form(new String(exchange.getRequestBody().readAllBytes(),
+                    StandardCharsets.UTF_8));
+            exchanges.add(form);
+            if (refuseExchange.get()) {
+                byte[] refused = "{\"error\":\"invalid_request\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().add("Content-Type", "application/json");
+                exchange.sendResponseHeaders(400, refused.length);
+                try (OutputStream out = exchange.getResponseBody()) {
+                    out.write(refused);
+                }
+                return;
+            }
+            List<String> subject = form.getOrDefault("subject_token", List.of());
+            String token = subject.size() == 1 ? exchanged(subject.getFirst()) : "none";
+            byte[] bytes = ("{\"access_token\":\"" + token + "\",\"token_type\":\"Bearer\","
+                    + "\"expires_in\":300,\"issued_token_type\":\"urn:ietf:params:oauth:token-type:access_token\"}")
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(bytes);
+            }
+        });
         server.createContext("/", exchange -> {
             if (down.get()) {
                 exchange.close();
@@ -39,7 +71,6 @@ public final class DashboardStub implements QuarkusTestResourceLifecycleManager 
                     exchange.getRequestMethod(),
                     exchange.getRequestURI().getPath(),
                     exchange.getRequestHeaders().getFirst("Authorization"),
-                    exchange.getRequestHeaders().getFirst(McpCallerHeaders.SUBJECT_HEADER),
                     requestBody));
             String path = exchange.getRequestURI().getPath();
             String body;
@@ -71,9 +102,10 @@ public final class DashboardStub implements QuarkusTestResourceLifecycleManager 
             }
         });
         server.start();
+        String base = "http://127.0.0.1:" + server.getAddress().getPort();
         return Map.of(
-                "freedriver.mcp.dashboard-url",
-                "http://127.0.0.1:" + server.getAddress().getPort());
+                "freedriver.mcp.dashboard-url", base,
+                "quarkus.oidc-client.dashboard-exchange.auth-server-url", base + "/realms/test");
     }
 
     @Override
@@ -83,6 +115,25 @@ public final class DashboardStub implements QuarkusTestResourceLifecycleManager 
         }
     }
 
-    record Recorded(String method, String path, String authorization, String subject, String body) {
+    /** The token the stub Keycloak returns for this subject token. */
+    static String exchanged(String subjectToken) {
+        return "exchanged-" + subjectToken;
+    }
+
+    private static Map<String, List<String>> form(String body) {
+        Map<String, List<String>> fields = new LinkedHashMap<>();
+        for (String pair : body.split("&")) {
+            if (pair.isEmpty()) {
+                continue;
+            }
+            int eq = pair.indexOf('=');
+            String name = URLDecoder.decode(eq < 0 ? pair : pair.substring(0, eq), StandardCharsets.UTF_8);
+            String value = eq < 0 ? "" : URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8);
+            fields.computeIfAbsent(name, key -> new ArrayList<>()).add(value);
+        }
+        return fields;
+    }
+
+    record Recorded(String method, String path, String authorization, String body) {
     }
 }
