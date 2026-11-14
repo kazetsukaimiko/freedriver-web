@@ -1,5 +1,6 @@
 package io.freedriver.sms.http;
 
+import io.quarkus.redis.datasource.RedisDataSource;
 import io.freedriver.sms.client.SmsClient;
 import io.freedriver.sms.model.OtpSendRequest;
 import io.freedriver.sms.model.SendType;
@@ -39,6 +40,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SmsClientResourceTest {
 
     @Inject
+    RedisDataSource redis;
+
+    @Inject
     PhoneDirectory directory;
     @Inject
     ConsentLedger consents;
@@ -52,7 +56,7 @@ class SmsClientResourceTest {
     @BeforeEach
     void reset() {
         sender.reset();
-        limiter.reset();
+        redis.flushall();
         dailyCap.reset();
     }
 

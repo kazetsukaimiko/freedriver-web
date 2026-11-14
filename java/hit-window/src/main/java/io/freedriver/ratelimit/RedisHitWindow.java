@@ -1,159 +1,92 @@
 package io.freedriver.ratelimit;
 
-import io.lettuce.core.RedisClient;
-import io.lettuce.core.ScriptOutputType;
-import io.lettuce.core.api.StatefulRedisConnection;
-import io.lettuce.core.api.sync.RedisCommands;
+import io.quarkus.redis.datasource.RedisDataSource;
+import io.vertx.mutiny.redis.client.Response;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.UUID;
 
 /**
- * Sliding window in Redis. Each key expires with the window, so a Redis restart may reset it.
- * This is the production bean. It does not open a public port.
+ * Sliding windows as Redis sorted sets on the service's managed client. Each key is
+ * {@code freedriver:rate:<namespace>:<key>}, scored by the Redis {@code TIME} of each hit, with
+ * a random UUID member. A key expires with its window, so a Redis restart may reset it.
  */
-public final class RedisHitWindow implements HitWindow {
+@ApplicationScoped
+public class RedisHitWindow implements HitWindow {
 
-    private static final String TRY_OR_ADD = """
+    private static final String NOW = """
+            local t = redis.call('TIME')
+            local now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
+            """;
+
+    /** ARGV: window, max, member, mode (try or add). Returns 1 when the hit was added. */
+    private static final String TRY_OR_ADD = NOW + """
             local key = KEYS[1]
-            local index = KEYS[2]
-            local now = tonumber(ARGV[1])
-            local window = tonumber(ARGV[2])
-            local max = tonumber(ARGV[3])
-            local token = ARGV[4]
-            local mode = ARGV[5]
+            local window = tonumber(ARGV[1])
             redis.call('ZREMRANGEBYSCORE', key, '-inf', now - window)
-            local n = redis.call('ZCARD', key)
-            if n == 0 then
-              redis.call('DEL', key)
-              redis.call('SREM', index, key)
-            end
-            if mode == 'try' and n >= max then
-              if n > 0 then
-                redis.call('PEXPIRE', key, window)
-              end
+            if ARGV[4] == 'try' and redis.call('ZCARD', key) >= tonumber(ARGV[2]) then
               return 0
             end
-            redis.call('ZADD', key, now, token)
+            redis.call('ZADD', key, now, ARGV[3])
             redis.call('PEXPIRE', key, window)
-            redis.call('SADD', index, key)
             return 1
             """;
 
-    private static final String COUNT = """
+    /** ARGV: window. Returns the hits inside the window. */
+    private static final String COUNT = NOW + """
             local key = KEYS[1]
-            local index = KEYS[2]
-            local now = tonumber(ARGV[1])
-            local window = tonumber(ARGV[2])
-            redis.call('ZREMRANGEBYSCORE', key, '-inf', now - window)
-            local n = redis.call('ZCARD', key)
-            if n == 0 then
-              redis.call('DEL', key)
-              redis.call('SREM', index, key)
-            else
-              redis.call('PEXPIRE', key, window)
-            end
-            return n
+            redis.call('ZREMRANGEBYSCORE', key, '-inf', now - tonumber(ARGV[1]))
+            return redis.call('ZCARD', key)
             """;
 
-    private final String url;
-    private final String index;
-    private final AtomicLong sequence = new AtomicLong();
-    private RedisClient client;
-    private StatefulRedisConnection<String, String> connection;
-    private RedisCommands<String, String> commands;
+    private final RedisDataSource redis;
+    private final String prefix;
 
-    public RedisHitWindow(String url, String index) {
-        this.url = url;
-        this.index = index;
+    @Inject
+    public RedisHitWindow(RedisDataSource redis,
+                          @ConfigProperty(name = "freedriver.rate-limit.namespace") String namespace) {
+        this.redis = redis;
+        this.prefix = "freedriver:rate:" + namespace + ":";
     }
 
     @Override
-    public String tryAdd(String key, long nowMs, long windowMs, int max) {
-        String token = token(nowMs);
-        long added = eval(TRY_OR_ADD, key, nowMs, windowMs, max, token, "try");
-        return added == 1 ? token : null;
+    public String tryAdd(String key, long windowMs, int max) {
+        String token = UUID.randomUUID().toString();
+        return eval(TRY_OR_ADD, key, Long.toString(windowMs), Integer.toString(max), token, "try") == 1 ? token : null;
     }
 
     @Override
-    public String add(String key, long nowMs, long windowMs) {
-        String token = token(nowMs);
-        eval(TRY_OR_ADD, key, nowMs, windowMs, Integer.MAX_VALUE, token, "add");
+    public String add(String key, long windowMs) {
+        String token = UUID.randomUUID().toString();
+        eval(TRY_OR_ADD, key, Long.toString(windowMs), "0", token, "add");
         return token;
     }
 
     @Override
-    public int count(String key, long nowMs, long windowMs) {
-        Long n = commands().eval(COUNT, ScriptOutputType.INTEGER, new String[] {key, index},
-                Long.toString(nowMs), Long.toString(windowMs));
-        return n == null ? 0 : n.intValue();
+    public int count(String key, long windowMs) {
+        return (int) eval(COUNT, key, Long.toString(windowMs));
     }
 
+    /** Redis drops a sorted set once its last member is removed. */
     @Override
     public void remove(String key, String token) {
-        RedisCommands<String, String> redis = commands();
-        redis.zrem(key, token);
-        Long n = redis.zcard(key);
-        if (n == null || n == 0) {
-            redis.del(key);
-            redis.srem(index, key);
-        }
+        redis.sortedSet(String.class).zrem(prefix + key, token);
     }
 
     @Override
     public void delete(String key) {
-        RedisCommands<String, String> redis = commands();
-        redis.del(key);
-        redis.srem(index, key);
+        redis.key().del(prefix + key);
     }
 
-    @Override
-    public void clear() {
-        RedisCommands<String, String> redis = commands();
-        Set<String> keys = redis.smembers(index);
-        if (keys != null && !keys.isEmpty()) {
-            redis.del(keys.toArray(String[]::new));
-        }
-        redis.del(index);
-    }
-
-    @Override
-    public int size(String prefix, long nowMs, long windowMs) {
-        Set<String> keys = commands().smembers(index);
-        if (keys == null) {
-            return 0;
-        }
-        int live = 0;
-        for (String key : keys) {
-            if (key.startsWith(prefix) && count(key, nowMs, windowMs) > 0) {
-                live++;
-            }
-        }
-        return live;
-    }
-
-    private long eval(String script, String key, long nowMs, long windowMs, int max, String token, String mode) {
-        Long result = commands().eval(script, ScriptOutputType.INTEGER, new String[] {key, index},
-                Long.toString(nowMs), Long.toString(windowMs), Integer.toString(max), token, mode);
-        return result == null ? 0 : result;
-    }
-
-    private String token(long nowMs) {
-        return nowMs + ":" + sequence.incrementAndGet();
-    }
-
-    private RedisCommands<String, String> commands() {
-        RedisCommands<String, String> current = commands;
-        if (current != null) {
-            return current;
-        }
-        synchronized (this) {
-            if (commands == null) {
-                client = RedisClient.create(url);
-                connection = client.connect();
-                commands = connection.sync();
-            }
-            return commands;
-        }
+    private long eval(String script, String key, String... args) {
+        String[] command = new String[3 + args.length];
+        command[0] = script;
+        command[1] = "1";
+        command[2] = prefix + key;
+        System.arraycopy(args, 0, command, 3, args.length);
+        Response result = redis.execute("EVAL", command);
+        return result == null ? 0 : result.toLong();
     }
 }

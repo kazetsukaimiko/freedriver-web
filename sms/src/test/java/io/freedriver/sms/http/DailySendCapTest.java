@@ -1,5 +1,6 @@
 package io.freedriver.sms.http;
 
+import io.quarkus.redis.datasource.RedisDataSource;
 import io.freedriver.sms.otp.FakeSmsSender;
 import io.freedriver.sms.phones.ConsentLedger;
 import io.freedriver.sms.phones.ConsentPurpose;
@@ -34,6 +35,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @TestProfile(DailySendCapTest.SmallCap.class)
 class DailySendCapTest {
 
+    @Inject
+    RedisDataSource redis;
+
     static final int CAP = 3;
 
     public static class SmallCap implements QuarkusTestProfile {
@@ -57,7 +61,7 @@ class DailySendCapTest {
     @BeforeEach
     void reset() {
         sender.reset();
-        limiter.reset();
+        redis.flushall();
         dailyCap.reset();
     }
 

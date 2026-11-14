@@ -1,5 +1,6 @@
 package io.freedriver.app.security;
 
+import io.quarkus.redis.datasource.RedisDataSource;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
@@ -31,6 +32,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @QuarkusTestResource(value = McpOidc.class, restrictToAnnotatedClass = true)
 class McpBearerTest {
 
+    @Inject
+    RedisDataSource redis;
+
     public static class OidcOn implements QuarkusTestProfile {
         @Override
         public Map<String, String> getConfigOverrides() {
@@ -55,7 +59,7 @@ class McpBearerTest {
 
     @BeforeEach
     void resetLimiter() {
-        limiter.reset();
+        redis.flushall();
     }
 
     @Test

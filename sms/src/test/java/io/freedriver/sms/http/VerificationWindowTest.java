@@ -1,5 +1,6 @@
 package io.freedriver.sms.http;
 
+import io.quarkus.redis.datasource.RedisDataSource;
 import io.freedriver.sms.otp.CheckOutcome;
 import io.freedriver.sms.otp.FakeSmsSender;
 import io.freedriver.sms.otp.VerificationLedger;
@@ -39,6 +40,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 @QuarkusTest
 class VerificationWindowTest {
 
+    @Inject
+    RedisDataSource redis;
+
     private static final Instant START = Instant.parse("2026-06-01T00:00:00Z");
     private static final Duration FOUR_FIFTY_NINE = Duration.ofMinutes(4).plusSeconds(59);
     private static final Duration FIVE_OH_ONE = Duration.ofMinutes(5).plusSeconds(1);
@@ -61,16 +65,16 @@ class VerificationWindowTest {
     @BeforeEach
     void reset() {
         sender.reset();
-        limiter.reset();
+        redis.flushall();
         dailyCap.reset();
-        ledger.reset();
+        ledger.setClock(null);
         clockAt(START);
         ledger.setClock(clock);
     }
 
     @AfterEach
     void restoreClock() {
-        ledger.reset();
+        ledger.setClock(null);
     }
 
     @Test
