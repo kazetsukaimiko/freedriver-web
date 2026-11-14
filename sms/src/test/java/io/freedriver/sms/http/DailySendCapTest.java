@@ -8,11 +8,12 @@ import io.freedriver.sms.phones.ConsentRecord;
 import io.freedriver.sms.phones.ConsentSource;
 import io.freedriver.sms.phones.PhoneDirectory;
 import io.freedriver.sms.phones.PhoneEntry;
-import io.freedriver.sms.security.DailySendCap;
+import io.freedriver.sms.security.DailySendLedger;
 import io.freedriver.sms.security.PhoneRateLimiter;
 import io.freedriver.sms.support.LogCapture;
 import io.freedriver.sms.support.SameAnswer;
 import io.freedriver.sms.support.SmsCalls;
+import io.freedriver.sms.support.TestClock;
 import io.freedriver.sms.support.TestNumbers;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
@@ -56,13 +57,16 @@ class DailySendCapTest {
     @Inject
     PhoneRateLimiter limiter;
     @Inject
-    DailySendCap dailyCap;
+    DailySendLedger dailyLedger;
+    @Inject
+    TestClock clock;
 
     @BeforeEach
     void reset() {
         sender.reset();
         redis.flushall();
-        dailyCap.reset();
+        dailyLedger.deleteAll();
+        clock.nextDay();
     }
 
     private String listed() {

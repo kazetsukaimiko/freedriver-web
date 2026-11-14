@@ -34,7 +34,7 @@ class ApplianceRosterReplicaTest {
         roster.save(id, "Cabin", second);
         assertEquals(new ApplianceRoster.Row("Cabin", second), roster.find(id).orElseThrow());
 
-        roster.remove(id);
+        roster.deleteById(id.toString());
         assertTrue(roster.find(id).isEmpty());
         assertFalse(roster.list().containsKey(id));
     }
@@ -47,7 +47,7 @@ class ApplianceRosterReplicaTest {
 
         roster.save(id, "Van", snapshot);
         assertEquals(new ApplianceRoster.Row("Van", snapshot), other.find(id).orElseThrow());
-        other.remove(id);
+        other.deleteById(id.toString());
         assertTrue(roster.find(id).isEmpty());
     }
 

@@ -1,5 +1,6 @@
 package io.freedriver.app.invites;
 
+import io.freedriver.app.TestClock;
 import io.freedriver.app.api.SignInLink;
 import io.freedriver.app.phones.PhoneRow;
 import io.freedriver.app.phones.RecordingPhoneSignIn;
@@ -16,10 +17,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -42,6 +41,8 @@ class InviteResourceTest {
     @Inject
     InviteStore store;
     @Inject
+    TestClock clock;
+    @Inject
     RecordingSmsPhoneList sms;
     @Inject
     RecordingPhoneSignIn keycloak;
@@ -52,7 +53,7 @@ class InviteResourceTest {
     @BeforeEach
     void reset() {
         store.deleteAll();
-        store.clock(Clock.systemUTC());
+        clock.useSystemTime();
         sms.clear();
         keycloak.clear();
     }
@@ -195,11 +196,11 @@ class InviteResourceTest {
     @TestSecurity(user = "yuni", roles = {"portal-admin"})
     void expired_and_cancelled_invites_fail_the_same_update() {
         String expired = store.create("Mom").code();
-        store.clock(Clock.fixed(Instant.now().plus(Duration.ofHours(72)), ZoneOffset.UTC));
+        clock.fix(Instant.now().plus(Duration.ofHours(72)));
         given().contentType(ContentType.JSON).body("{\"code\":\"" + expired + "\"}")
                 .post("/api/invites/use").then().statusCode(409);
 
-        store.clock(Clock.systemUTC());
+        clock.useSystemTime();
         InviteStore.Created created = store.create("Dad");
         csrf().post("/api/invites/" + created.invite().id() + "/cancel").then().statusCode(204);
         String code = created.code();

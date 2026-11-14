@@ -1,6 +1,7 @@
 package io.freedriver.app.invites;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.freedriver.app.TestClock;
 import io.freedriver.app.phones.PhoneRow;
 import io.freedriver.app.phones.RecordingPhoneSignIn;
 import io.freedriver.app.phones.RecordingSmsPhoneList;
@@ -13,10 +14,8 @@ import jakarta.inject.Inject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.Map;
 
 import static io.restassured.RestAssured.given;
@@ -34,6 +33,8 @@ class InviteRedeemTest {
     @Inject
     InviteStore store;
     @Inject
+    TestClock clock;
+    @Inject
     RecordingSmsPhoneList sms;
     @Inject
     RecordingPhoneSignIn keycloak;
@@ -43,7 +44,7 @@ class InviteRedeemTest {
     @BeforeEach
     void reset() {
         store.deleteAll();
-        store.clock(Clock.systemUTC());
+        clock.useSystemTime();
         sms.clear();
         keycloak.clear();
     }
@@ -97,10 +98,10 @@ class InviteRedeemTest {
     @TestSecurity(user = "redeem", roles = {"portal-admin"})
     void expired_used_and_listed_numbers_do_not_sign_in() throws Exception {
         String expired = invite("Mom");
-        store.clock(Clock.fixed(Instant.now().plus(Duration.ofHours(72)), ZoneOffset.UTC));
+        clock.fix(Instant.now().plus(Duration.ofHours(72)));
         start(expired, "+15555550123").then().statusCode(409).body("error", is("dead"));
 
-        store.clock(Clock.systemUTC());
+        clock.useSystemTime();
         String used = invite("Dad");
         assertEquals(InviteStore.UseResult.USED, store.use(used));
         start(used, "+15555550123").then().statusCode(409).body("error", is("dead"));

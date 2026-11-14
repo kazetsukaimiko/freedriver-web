@@ -8,7 +8,7 @@ import io.freedriver.sms.phones.ConsentRecord;
 import io.freedriver.sms.phones.ConsentSource;
 import io.freedriver.sms.phones.PhoneDirectory;
 import io.freedriver.sms.phones.SignInTimes;
-import io.freedriver.sms.security.DailySendCap;
+import io.freedriver.sms.security.DailySendLedger;
 import io.freedriver.sms.security.PhoneRateLimiter;
 import io.freedriver.sms.security.SharedSecretFilter;
 import io.freedriver.sms.support.SmsCalls;
@@ -50,13 +50,13 @@ class SignInTimeTest {
     @Inject
     PhoneRateLimiter limiter;
     @Inject
-    DailySendCap dailyCap;
+    DailySendLedger dailyLedger;
 
     @BeforeEach
     void reset() {
         sender.reset();
         redis.flushall();
-        dailyCap.reset();
+        dailyLedger.deleteAll();
     }
 
     @Test

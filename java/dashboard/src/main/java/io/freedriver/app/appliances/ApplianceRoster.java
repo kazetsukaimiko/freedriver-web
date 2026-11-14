@@ -38,10 +38,6 @@ public class ApplianceRoster implements PanacheMongoRepositoryBase<RosterRow, St
         return Map.copyOf(out);
     }
 
-    void remove(UUID instanceId) {
-        deleteById(instanceId.toString());
-    }
-
     public record Row(String instanceName, ApplianceSnapshot snapshot) {
     }
 }
