@@ -9,6 +9,7 @@ import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Dispatcher MCP sessions in Redis. The key is {@code freedriver:mcp:dispatcher:}
@@ -60,7 +61,10 @@ class RedisSessionRecords implements McpSessionRecords {
         keys.deleteIfValue(PREFIX + sessionId, subject);
     }
 
-    /** Lettuce commands. The connection opens on the first call. */
+    /**
+     * Lettuce commands. The connection opens on the first call. Lettuce's sync commands are
+     * thread-safe, so only the first open is coordinated, and a racing second open is closed.
+     */
     static final class LettuceKeys implements Keys {
 
         private static final String DELETE_IF_VALUE = """
@@ -72,36 +76,42 @@ class RedisSessionRecords implements McpSessionRecords {
                 """;
 
         private final String url;
-        private RedisCommands<String, String> commands;
+        private final AtomicReference<RedisCommands<String, String>> commands = new AtomicReference<>();
 
         LettuceKeys(String url) {
             this.url = url;
         }
 
         @Override
-        public synchronized void set(String key, String value, long ttlSeconds) {
+        public void set(String key, String value, long ttlSeconds) {
             commands().setex(key, ttlSeconds, value);
         }
 
         @Override
-        public synchronized String get(String key) {
+        public String get(String key) {
             return commands().get(key);
         }
 
         @Override
-        public synchronized boolean deleteIfValue(String key, String expected) {
+        public boolean deleteIfValue(String key, String expected) {
             Long removed = commands().eval(
                     DELETE_IF_VALUE, ScriptOutputType.INTEGER, new String[] {key}, expected);
             return removed != null && removed == 1L;
         }
 
         private RedisCommands<String, String> commands() {
-            if (commands == null) {
-                RedisClient client = RedisClient.create(url);
-                StatefulRedisConnection<String, String> connection = client.connect();
-                commands = connection.sync();
+            RedisCommands<String, String> open = commands.get();
+            if (open != null) {
+                return open;
             }
-            return commands;
+            RedisClient client = RedisClient.create(url);
+            StatefulRedisConnection<String, String> connection = client.connect();
+            if (commands.compareAndSet(null, connection.sync())) {
+                return commands.get();
+            }
+            connection.close();
+            client.shutdown();
+            return commands.get();
         }
     }
 }

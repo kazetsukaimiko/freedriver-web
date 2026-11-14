@@ -16,6 +16,7 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Signed POST to the OpenBot dispatch-jobs routine. The body is the event type,
@@ -36,7 +37,7 @@ class OpenBotJobPing implements JobPing {
     private final String secret;
     private final URI url;
     private final Clock clock;
-    private OpenBotWebhook webhook;
+    private final AtomicReference<OpenBotWebhook> webhook = new AtomicReference<>();
 
     @Inject
     OpenBotJobPing(
@@ -78,19 +79,31 @@ class OpenBotJobPing implements JobPing {
         }
     }
 
-    /** Built on first use so a skipped ping never opens a client. Redirects are not followed. */
-    private synchronized OpenBotWebhook webhook() {
-        if (webhook == null) {
-            webhook = QuarkusRestClientBuilder.newBuilder()
-                    .baseUri(url)
-                    .connectTimeout(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
-                    .readTimeout(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
-                    .followRedirects(false)
-                    .register(new OpenBotSignature(secret))
-                    .register(new WebhookRefused.Mapper())
-                    .build(OpenBotWebhook.class);
+    /**
+     * Built on first use so a skipped ping never opens a client. Redirects are not followed.
+     * A second client built by a racing first call is closed.
+     */
+    private OpenBotWebhook webhook() {
+        OpenBotWebhook built = webhook.get();
+        if (built != null) {
+            return built;
         }
-        return webhook;
+        OpenBotWebhook fresh = QuarkusRestClientBuilder.newBuilder()
+                .baseUri(url)
+                .connectTimeout(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+                .readTimeout(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+                .followRedirects(false)
+                .register(new OpenBotSignature(secret))
+                .register(new WebhookRefused.Mapper())
+                .build(OpenBotWebhook.class);
+        if (!webhook.compareAndSet(null, fresh) && fresh instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception ignored) {
+                // The losing client never sent a request.
+            }
+        }
+        return webhook.get();
     }
 
     static byte[] bodyBytes(String hostname, Instant occurredAt) {
