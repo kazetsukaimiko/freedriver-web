@@ -74,9 +74,8 @@
         </dependency>
         <dependency>
             <groupId>io.freedriver</groupId>
-            <artifactId>hit-window</artifactId>
+            <artifactId>hit-window-testing</artifactId>
             <version>${project.version}</version>
-            <type>test-jar</type>
             <scope>test</scope>
         </dependency>
         <dependency>
