@@ -1,12 +1,10 @@
 package io.freedriver.sms.security;
 
 import io.freedriver.ratelimit.HitWindow;
-import io.freedriver.ratelimit.MemoryHitWindow;
 import io.freedriver.sms.SmsConfig;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
-import java.time.Clock;
 import java.time.Duration;
 
 /**
@@ -17,7 +15,6 @@ import java.time.Duration;
 @ApplicationScoped
 public class PhoneRateLimiter {
 
-    private final Clock clock;
     private final Duration window;
     private final int sendsPerNumber;
     private final int wrongCodesPerNumber;
@@ -25,16 +22,11 @@ public class PhoneRateLimiter {
 
     @Inject
     public PhoneRateLimiter(SmsConfig config, HitWindow hits) {
-        this(Clock.systemUTC(), config.rateLimit().window(),
+        this(config.rateLimit().window(),
                 config.rateLimit().sendsPerNumber(), config.rateLimit().wrongCodesPerNumber(), hits);
     }
 
-    PhoneRateLimiter(Clock clock, Duration window, int sendsPerNumber, int wrongCodesPerNumber) {
-        this(clock, window, sendsPerNumber, wrongCodesPerNumber, new MemoryHitWindow());
-    }
-
-    PhoneRateLimiter(Clock clock, Duration window, int sendsPerNumber, int wrongCodesPerNumber, HitWindow hits) {
-        this.clock = clock;
+    PhoneRateLimiter(Duration window, int sendsPerNumber, int wrongCodesPerNumber, HitWindow hits) {
         this.window = window;
         this.sendsPerNumber = sendsPerNumber;
         this.wrongCodesPerNumber = wrongCodesPerNumber;
@@ -43,14 +35,12 @@ public class PhoneRateLimiter {
 
     /** Counts a send for the number; false once the number has used its sends for the window. */
     public boolean tryAcquireSend(String phone) {
-        long now = clock.millis();
-        return hits.tryAdd(sendKey(phone), now, window.toMillis(), sendsPerNumber) != null;
+        return hits.tryAdd(sendKey(phone), window.toMillis(), sendsPerNumber) != null;
     }
 
     /** True while the number has used its wrong codes for the window. */
     public boolean codeChecksLocked(String phone) {
-        long now = clock.millis();
-        return hits.count(wrongKey(phone), now, window.toMillis()) >= wrongCodesPerNumber;
+        return hits.count(wrongKey(phone), window.toMillis()) >= wrongCodesPerNumber;
     }
 
     /**
@@ -58,8 +48,7 @@ public class PhoneRateLimiter {
      * The slot counts immediately, so parallel checks stop at the limit.
      */
     public CodeCheck tryAcquireCodeCheck(String phone) {
-        long now = clock.millis();
-        String token = hits.tryAdd(wrongKey(phone), now, window.toMillis(), wrongCodesPerNumber);
+        String token = hits.tryAdd(wrongKey(phone), window.toMillis(), wrongCodesPerNumber);
         if (token == null) {
             return null;
         }
@@ -67,7 +56,7 @@ public class PhoneRateLimiter {
     }
 
     public void recordWrongCode(String phone) {
-        hits.add(wrongKey(phone), clock.millis(), window.toMillis());
+        hits.add(wrongKey(phone), window.toMillis());
     }
 
     public void clearWrongCodes(String phone) {
@@ -77,18 +66,6 @@ public class PhoneRateLimiter {
     /** Length of the per-number window; a limited number is clear once it has passed. */
     public Duration window() {
         return window;
-    }
-
-    public void reset() {
-        hits.clear();
-    }
-
-    int sendEntries() {
-        return hits.size("send:", clock.millis(), window.toMillis());
-    }
-
-    int wrongCodeEntries() {
-        return hits.size("wrong:", clock.millis(), window.toMillis());
     }
 
     private void releaseCodeCheck(String phone, String token) {

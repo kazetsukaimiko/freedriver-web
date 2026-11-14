@@ -17,7 +17,10 @@ it('lists a phone document and opens the raw record', async () => {
           {
             id: '+15555550123',
             phone: '+15555550123',
-            document: { _id: '+15555550123', phone: '+15555550123', name: 'ada', username: 'pending' },
+            name: 'ada',
+            username: 'pending',
+            role: 'dashboard',
+            addedAt: '2026-11-01T10:00:00Z',
           },
         ],
       }),

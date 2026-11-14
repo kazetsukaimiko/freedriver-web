@@ -44,12 +44,15 @@ services:
       FREEDRIVER_MCP_INTERNAL_SECRET: ${FREEDRIVER_MCP_INTERNAL_SECRET:-}
     # Invite service account (#172) and instances admin client (#319).
     # The provision script writes these files. Do not also interpolate
-    # FREEDRIVER_INVITE_CLIENT_SECRET or FREEDRIVER_INSTANCES_CLIENT_SECRET here:
+    # FREEDRIVER_INVITE_CLIENT_SECRET, FREEDRIVER_INSTANCES_CLIENT_SECRET, or
+    # FREEDRIVER_PORTAL_JOBS_CLIENT_SECRET here:
     # that would override the file.
     env_file:
       - path: /opt/freedriver-secrets/keycloak-freedriver-invite.env
         required: false
       - path: /opt/freedriver-secrets/keycloak-freedriver-instances.env
+        required: false
+      - path: /opt/freedriver-secrets/keycloak-freedriver-portal-jobs.env
         required: false
     depends_on:
       mosquitto:

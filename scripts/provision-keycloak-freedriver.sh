@@ -65,6 +65,7 @@ TECHOPS_PASS_FILE="${TECHOPS_PASS_FILE:-/opt/freedriver-secrets/keycloak-techops
 SECRET_FILE="${SECRET_FILE:-/opt/freedriver-secrets/keycloak-freedriver-api.secret}"
 INVITE_ENV_FILE="${INVITE_ENV_FILE:-/opt/freedriver-secrets/keycloak-freedriver-invite.env}"
 INSTANCES_ENV_FILE="${INSTANCES_ENV_FILE:-/opt/freedriver-secrets/keycloak-freedriver-instances.env}"
+PORTAL_JOBS_ENV_FILE="${PORTAL_JOBS_ENV_FILE:-/opt/freedriver-secrets/keycloak-freedriver-portal-jobs.env}"
 GRAFANA_ENV_FILE="${GRAFANA_ENV_FILE:-/opt/freedriver-secrets/keycloak-freedriver-grafana.env}"
 MQTT_ENV_FILE="${MQTT_ENV_FILE:-/opt/freedriver-secrets/keycloak-freedriver-mqtt.env}"
 MQTT_OAUTH_DIR="${MQTT_OAUTH_DIR:-/opt/freedriver-secrets/mosquitto/oauth.d}"
@@ -308,6 +309,7 @@ echo "Assigned kazetsukai → dashboard + portal-admin; second → dashboard."
 # client is provisioned on its own.
 ensure_role dispatcher
 ensure_role device
+ensure_role dispatcher-admin
 
 # role-dispatcher puts realm role dispatcher on tokens from this client only.
 # MCP @RolesAllowed(dispatcher) needs it. User kaze is not given that realm role.
@@ -1202,6 +1204,89 @@ PY
   fi
 }
 
+# Portal jobs service account (#481). The dashboard reads the dispatcher's admin job list as
+# freedriver-portal-jobs with realm role dispatcher-admin and nothing else. The secret file is for
+# the dashboard container and is written once.
+ensure_portal_jobs_client() {
+  local client_uuid sa_user secret tmp has_role has_scope
+  client_uuid="$(kcadm get clients -r "$REALM" -q clientId=freedriver-portal-jobs --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
+  if [[ -z "$client_uuid" ]]; then
+    kcadm create clients -r "$REALM" \
+      -s clientId=freedriver-portal-jobs \
+      -s name='Freedriver portal jobs' \
+      -s enabled=true \
+      -s publicClient=false \
+      -s clientAuthenticatorType=client-secret \
+      -s standardFlowEnabled=false \
+      -s implicitFlowEnabled=false \
+      -s directAccessGrantsEnabled=false \
+      -s serviceAccountsEnabled=true \
+      -s protocol=openid-connect \
+      -s 'description=Service account the dashboard uses to read the dispatcher admin job list. Secret stays on the dashboard container.' >/dev/null
+    client_uuid="$(kcadm get clients -r "$REALM" -q clientId=freedriver-portal-jobs --fields id --format csv --noquotes | csv_id)"
+    echo "Created confidential client freedriver-portal-jobs."
+  else
+    echo "Client freedriver-portal-jobs already exists."
+  fi
+  kcadm update "clients/${client_uuid}" -r "$REALM" \
+    -s publicClient=false \
+    -s standardFlowEnabled=false \
+    -s implicitFlowEnabled=false \
+    -s directAccessGrantsEnabled=false \
+    -s serviceAccountsEnabled=true \
+    -s fullScopeAllowed=false \
+    -s 'description=Service account the dashboard uses to read the dispatcher admin job list. Secret stays on the dashboard container.' >/dev/null
+  sa_user="$(kcadm get "clients/${client_uuid}/service-account-user" -r "$REALM" --fields id --format csv --noquotes | csv_id)"
+  kcadm get "users/${sa_user}/role-mappings/realm" -r "$REALM" > "$work/portal-jobs-roles.json"
+  has_role="$(python3 - "$work/portal-jobs-roles.json" <<'PY'
+import json, sys
+roles = json.load(open(sys.argv[1], encoding="utf-8"))
+print("yes" if any(role.get("name") == "dispatcher-admin" for role in roles) else "no")
+PY
+)"
+  if [[ "$has_role" != "yes" ]]; then
+    kcadm add-roles -r "$REALM" --uid "$sa_user" --rolename dispatcher-admin >/dev/null
+    echo "Granted dispatcher-admin to the portal jobs service account."
+  fi
+  # fullScopeAllowed is off, so the realm role reaches the token only through this scope mapping.
+  kcadm get "clients/${client_uuid}/scope-mappings/realm" -r "$REALM" > "$work/portal-jobs-scope.json"
+  has_scope="$(python3 - "$work/portal-jobs-scope.json" <<'PY'
+import json, sys
+roles = json.load(open(sys.argv[1], encoding="utf-8"))
+print("yes" if any(role.get("name") == "dispatcher-admin" for role in roles) else "no")
+PY
+)"
+  if [[ "$has_scope" != "yes" ]]; then
+    kcadm get roles/dispatcher-admin -r "$REALM" > "$work/dispatcher-admin-role.json"
+    python3 - "$work/dispatcher-admin-role.json" > "$work/dispatcher-admin-scope.json" <<'PY'
+import json, sys
+role = json.load(open(sys.argv[1], encoding="utf-8"))
+json.dump([{"id": role["id"], "name": role["name"]}], sys.stdout)
+PY
+    kcadm create "clients/${client_uuid}/scope-mappings/realm" -r "$REALM" -f "$work/dispatcher-admin-scope.json" >/dev/null
+    echo "Mapped dispatcher-admin into the portal jobs token."
+  fi
+  if [[ -e "$PORTAL_JOBS_ENV_FILE" ]]; then
+    echo "Portal jobs client env file already exists; not rotating or rewriting it."
+  else
+    tmp="$(mktemp)"
+    chmod 600 "$tmp"
+    secret="$(kcadm get "clients/${client_uuid}/client-secret" -r "$REALM" --fields value --format csv --noquotes \
+      | sed '/^value$/d' | tr -d '\r' | awk 'NF { print; exit }')"
+    if [[ -z "$secret" || "$secret" == *" "* || "$secret" == *$'\n'* ]]; then
+      rm -f "$tmp"
+      unset secret
+      echo "Failed to read freedriver-portal-jobs client secret." >&2
+      exit 1
+    fi
+    printf 'FREEDRIVER_PORTAL_JOBS_CLIENT_SECRET=%s\n' "$secret" > "$tmp"
+    unset secret
+    own_secret "$tmp"
+    mv "$tmp" "$PORTAL_JOBS_ENV_FILE"
+    echo "Wrote portal jobs client secret for the dashboard container (not printed)."
+  fi
+}
+
 # Grafana OAuth client (#349). Secret file is for the Grafana container.
 GRAFANA_CLIENT=freedriver-grafana
 GRAFANA_REDIRECT_URI='https://grafana.freedriver.io/login/generic_oauth'
@@ -1641,6 +1726,7 @@ PY
 
 ensure_invite_service_account
 ensure_instances_admin
+ensure_portal_jobs_client
 ensure_grafana_client
 ensure_mqtt_broker
 

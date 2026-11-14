@@ -5,7 +5,7 @@ import java.time.Instant;
 /**
  * The open verification for a phone number.
  * The number names the row. {@code expiresAt} is the end of the five-minute window.
- * Callers read the row again after each write.
+ * Callers read the row again after each write. Each write changes one field or replaces the row.
  */
 interface VerificationRecords {
 
@@ -26,8 +26,6 @@ interface VerificationRecords {
     void exhaust(String phone);
 
     void clear(String phone);
-
-    void clearAll();
 
     record Open(Instant startedAt, Instant expiresAt, String sid, boolean exhausted) {
 

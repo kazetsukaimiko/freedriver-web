@@ -45,9 +45,4 @@ public class MemoryVerificationRecords implements VerificationRecords {
     public void clear(String phone) {
         rows.remove(phone);
     }
-
-    @Override
-    public void clearAll() {
-        rows.clear();
-    }
 }

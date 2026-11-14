@@ -257,6 +257,7 @@ PROVISION_ALLOW_NON_ROOT=1 \
   SECRET_FILE="$work/secrets/api.secret" \
   INVITE_ENV_FILE="$work/secrets/invite.env" \
   INSTANCES_ENV_FILE="$work/secrets/instances.env" \
+  PORTAL_JOBS_ENV_FILE="$work/secrets/portal-jobs.env" \
   GRAFANA_ENV_FILE="$work/secrets/grafana.env" \
   MQTT_ENV_FILE="$work/secrets/mqtt.env" \
   MQTT_OAUTH_DIR="$work/secrets/mqtt-oauth.d" \
@@ -273,6 +274,10 @@ if grep -q 'FREEDRIVER_INVITE_CLIENT_SECRET' "$work/secrets/api.secret" "$work/s
 fi
 if ! grep -q '^FREEDRIVER_INSTANCES_CLIENT_SECRET=.\+' "$work/secrets/instances.env"; then
   echo "instances env file is missing a secret value" >&2
+  exit 1
+fi
+if ! grep -q '^FREEDRIVER_PORTAL_JOBS_CLIENT_SECRET=.\+' "$work/secrets/portal-jobs.env"; then
+  echo "portal jobs env file is missing a secret value" >&2
   exit 1
 fi
 if grep -q 'FREEDRIVER_INSTANCES_CLIENT_SECRET' "$work/secrets/api.secret" "$work/secrets.env" "$work/secrets/invite.env"; then
@@ -363,6 +368,7 @@ PROVISION_ALLOW_NON_ROOT=1 \
   SECRET_FILE="$work/secrets/api.secret" \
   INVITE_ENV_FILE="$work/secrets/invite.env" \
   INSTANCES_ENV_FILE="$work/secrets/instances.env" \
+  PORTAL_JOBS_ENV_FILE="$work/secrets/portal-jobs.env" \
   GRAFANA_ENV_FILE="$work/secrets/grafana.env" \
   MQTT_ENV_FILE="$work/secrets/mqtt.env" \
   MQTT_OAUTH_DIR="$work/secrets/mqtt-oauth.d" \
@@ -650,6 +656,7 @@ PROVISION_ALLOW_NON_ROOT=1 \
   SECRET_FILE="$work/secrets/api.secret" \
   INVITE_ENV_FILE="$work/secrets/invite.env" \
   INSTANCES_ENV_FILE="$work/secrets/instances.env" \
+  PORTAL_JOBS_ENV_FILE="$work/secrets/portal-jobs.env" \
   GRAFANA_ENV_FILE="$work/secrets/grafana.env" \
   MQTT_ENV_FILE="$work/secrets/mqtt.env" \
   MQTT_OAUTH_DIR="$work/secrets/mqtt-oauth.d" \

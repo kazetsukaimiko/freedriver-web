@@ -1,5 +1,6 @@
 package io.freedriver.sms.http;
 
+import io.quarkus.redis.datasource.RedisDataSource;
 import io.freedriver.sms.client.SmsClient;
 import io.freedriver.sms.model.OtpSendRequest;
 import io.freedriver.sms.model.SendType;
@@ -15,7 +16,7 @@ import io.freedriver.sms.phones.ConsentRecord;
 import io.freedriver.sms.phones.ConsentSource;
 import io.freedriver.sms.phones.PhoneDirectory;
 import io.freedriver.sms.phones.PhoneEntry;
-import io.freedriver.sms.security.DailySendCap;
+import io.freedriver.sms.security.DailySendLedger;
 import io.freedriver.sms.security.PhoneRateLimiter;
 import io.freedriver.sms.support.SmsCalls;
 import io.freedriver.sms.support.TestNumbers;
@@ -39,6 +40,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SmsClientResourceTest {
 
     @Inject
+    RedisDataSource redis;
+
+    @Inject
     PhoneDirectory directory;
     @Inject
     ConsentLedger consents;
@@ -47,13 +51,13 @@ class SmsClientResourceTest {
     @Inject
     PhoneRateLimiter limiter;
     @Inject
-    DailySendCap dailyCap;
+    DailySendLedger dailyLedger;
 
     @BeforeEach
     void reset() {
         sender.reset();
-        limiter.reset();
-        dailyCap.reset();
+        redis.flushall();
+        dailyLedger.deleteAll();
     }
 
     @Test

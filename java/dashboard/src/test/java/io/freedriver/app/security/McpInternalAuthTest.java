@@ -1,5 +1,6 @@
 package io.freedriver.app.security;
 
+import io.quarkus.redis.datasource.RedisDataSource;
 import io.freedriver.app.appliances.ApplianceAudit;
 import io.freedriver.app.appliances.MockAutonomy;
 import io.quarkus.test.junit.QuarkusTest;
@@ -24,6 +25,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @QuarkusTest
 class McpInternalAuthTest {
 
+    @Inject
+    RedisDataSource redis;
+
     private static final String SECRET = "test-internal-secret";
 
     @Inject
@@ -35,7 +39,7 @@ class McpInternalAuthTest {
     @BeforeEach
     void reset() {
         mock.reset();
-        rateLimiter.reset();
+        redis.flushall();
         mock.setConfirmCommands(true);
     }
 

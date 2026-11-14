@@ -15,6 +15,11 @@ auth.freedriver.io {
 
 app.freedriver.io {
 	encode gzip
+	# The dispatcher's admin list is service to service: the dashboard reaches it on the compose network.
+	@dispatcherAdmin path /api/dispatcher/admin /api/dispatcher/admin/*
+	handle @dispatcherAdmin {
+		respond 404
+	}
 	@dispatcher path /mcp /mcp/* /dispatch/mcp /dispatch/mcp/* /api/dispatcher /api/dispatcher/*
 	handle @dispatcher {
 		reverse_proxy agent-dispatcher:8080

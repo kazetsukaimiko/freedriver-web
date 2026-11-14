@@ -1,17 +1,17 @@
 package io.freedriver.sms.http;
 
+import io.quarkus.redis.datasource.RedisDataSource;
 import io.freedriver.sms.otp.CheckOutcome;
 import io.freedriver.sms.otp.FakeSmsSender;
-import io.freedriver.sms.otp.VerificationLedger;
 import io.freedriver.sms.phones.ConsentLedger;
 import io.freedriver.sms.phones.ConsentPurpose;
 import io.freedriver.sms.phones.ConsentRecord;
 import io.freedriver.sms.phones.ConsentSource;
 import io.freedriver.sms.phones.PhoneDirectory;
 import io.freedriver.sms.phones.PhoneEntry;
-import io.freedriver.sms.security.DailySendCap;
+import io.freedriver.sms.security.DailySendLedger;
 import io.freedriver.sms.security.PhoneRateLimiter;
-import io.freedriver.sms.support.MutableClock;
+import io.freedriver.sms.support.TestClock;
 import io.freedriver.sms.support.SameAnswer;
 import io.freedriver.sms.support.TestNumbers;
 import io.quarkus.test.junit.QuarkusTest;
@@ -39,6 +39,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 @QuarkusTest
 class VerificationWindowTest {
 
+    @Inject
+    RedisDataSource redis;
+
     private static final Instant START = Instant.parse("2026-06-01T00:00:00Z");
     private static final Duration FOUR_FIFTY_NINE = Duration.ofMinutes(4).plusSeconds(59);
     private static final Duration FIVE_OH_ONE = Duration.ofMinutes(5).plusSeconds(1);
@@ -52,25 +55,21 @@ class VerificationWindowTest {
     @Inject
     PhoneRateLimiter limiter;
     @Inject
-    DailySendCap dailyCap;
+    DailySendLedger dailyLedger;
     @Inject
-    VerificationLedger ledger;
-
-    private final MutableClock clock = new MutableClock(START);
+    TestClock clock;
 
     @BeforeEach
     void reset() {
         sender.reset();
-        limiter.reset();
-        dailyCap.reset();
-        ledger.reset();
-        clockAt(START);
-        ledger.setClock(clock);
+        redis.flushall();
+        dailyLedger.deleteAll();
+        clock.fix(START);
     }
 
     @AfterEach
     void restoreClock() {
-        ledger.reset();
+        clock.useSystemTime();
     }
 
     @Test
@@ -201,7 +200,7 @@ class VerificationWindowTest {
     }
 
     private void clockAt(Instant instant) {
-        clock.advance(Duration.between(clock.instant(), instant));
+        clock.fix(instant);
     }
 
     private String listedAndAgreed() {

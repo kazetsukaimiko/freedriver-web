@@ -39,7 +39,7 @@ public final class DashboardStub implements QuarkusTestResourceLifecycleManager 
                     exchange.getRequestMethod(),
                     exchange.getRequestURI().getPath(),
                     exchange.getRequestHeaders().getFirst("Authorization"),
-                    exchange.getRequestHeaders().getFirst(DashboardClient.SUBJECT_HEADER),
+                    exchange.getRequestHeaders().getFirst(McpCallerHeaders.SUBJECT_HEADER),
                     requestBody));
             String path = exchange.getRequestURI().getPath();
             String body;
