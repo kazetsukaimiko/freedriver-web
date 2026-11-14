@@ -58,17 +58,76 @@ public class ConsentLedger implements PanacheMongoRepositoryBase<Consent, String
                 .stream().map(Consent::record).toList();
     }
 
-    /**
-     * At startup, an empty collection takes the archive file when the file exists. The file stays.
-     * The log line names the file's absolute path and SHA-256.
-     */
+    /** At startup, takes the archive file when it exists and is not fully imported yet. The file stays. */
     void importArchive(@Observes StartupEvent start) {
-        Path file = config.dataDir().resolve(FILE);
-        if (count() == 0 && Files.exists(file)) {
-            Path absolute = file.toAbsolutePath();
-            String sha256 = sha256(file);
-            LOG.infof("Imported %d agreements from %s sha256=%s", importFile(file), absolute, sha256);
+        importArchive(config.dataDir().resolve(FILE));
+    }
+
+    /**
+     * Imports the archive when it exists and its last line is not stored. Lines go in file order,
+     * so a stored last line means an earlier start finished; a start that stopped part way resumes.
+     * The log line names the file's absolute path and SHA-256.
+     *
+     * @return the rows inserted
+     */
+    int importArchive(Path file) {
+        if (!Files.exists(file)) {
+            return 0;
         }
+        List<Consent> rows = parse(file);
+        if (rows.isEmpty() || findById(rows.getLast().id) != null) {
+            return 0;
+        }
+        int inserted = insert(rows);
+        LOG.infof("Imported %d agreements from %s sha256=%s", inserted, file.toAbsolutePath(), sha256(file));
+        return inserted;
+    }
+
+    /**
+     * Inserts each line under its line number as {@code _id}, so a second import of the same file
+     * inserts nothing. Blank lines are skipped and keep their number. The whole file is parsed before
+     * the first insert.
+     *
+     * @return the rows inserted
+     */
+    int importFile(Path file) {
+        return insert(parse(file));
+    }
+
+    private List<Consent> parse(Path file) {
+        List<String> lines;
+        try {
+            lines = Files.readAllLines(file, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read " + FILE, e);
+        }
+        List<Consent> rows = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            if (lines.get(i).isBlank()) {
+                continue;
+            }
+            try {
+                rows.add(Consent.of(Integer.toString(i + 1), json.readValue(lines.get(i), ConsentRecord.class)));
+            } catch (IOException e) {
+                throw new UncheckedIOException("Could not read line " + (i + 1) + " of " + FILE, e);
+            }
+        }
+        return rows;
+    }
+
+    private int insert(List<Consent> rows) {
+        int inserted = 0;
+        for (Consent row : rows) {
+            try {
+                persist(row);
+                inserted++;
+            } catch (MongoWriteException ex) {
+                if (ex.getError().getCategory() != ErrorCategory.DUPLICATE_KEY) {
+                    throw ex;
+                }
+            }
+        }
+        return inserted;
     }
 
     /** Hex SHA-256 of the file, logged with each import so the imported archive can be identified later. */
@@ -79,41 +138,5 @@ public class ConsentLedger implements PanacheMongoRepositoryBase<Consent, String
         } catch (java.io.IOException | java.security.NoSuchAlgorithmException e) {
             return "unreadable";
         }
-    }
-
-    /**
-     * Inserts each line under its line number as {@code _id}, so a second import of the same file
-     * inserts nothing. Blank lines are skipped and keep their number.
-     *
-     * @return the rows inserted
-     */
-    int importFile(Path file) {
-        List<String> lines;
-        try {
-            lines = Files.readAllLines(file, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read " + FILE, e);
-        }
-        int inserted = 0;
-        for (int i = 0; i < lines.size(); i++) {
-            if (lines.get(i).isBlank()) {
-                continue;
-            }
-            ConsentRecord record;
-            try {
-                record = json.readValue(lines.get(i), ConsentRecord.class);
-            } catch (IOException e) {
-                throw new UncheckedIOException("Could not read line " + (i + 1) + " of " + FILE, e);
-            }
-            try {
-                persist(Consent.of(Integer.toString(i + 1), record));
-                inserted++;
-            } catch (MongoWriteException ex) {
-                if (ex.getError().getCategory() != ErrorCategory.DUPLICATE_KEY) {
-                    throw ex;
-                }
-            }
-        }
-        return inserted;
     }
 }

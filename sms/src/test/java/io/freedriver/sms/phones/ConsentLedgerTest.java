@@ -92,4 +92,31 @@ class ConsentLedgerTest {
         assertTrue(ledger.hasAgreed(first, ConsentPurpose.SIGN_IN_CODES));
         assertTrue(Files.exists(file), "the archive file stays in place");
     }
+
+    @Test
+    void an_import_that_stopped_after_the_first_line_resumes_on_the_next_start() throws Exception {
+        String first = TestNumbers.fresh();
+        String second = TestNumbers.fresh();
+        String third = TestNumbers.fresh();
+        ledger.deleteById("1");
+        ledger.deleteById("2");
+        ledger.deleteById("3");
+        Path partial = archive.resolve("partial.jsonl");
+        Files.writeString(partial, line(first) + "\n", StandardCharsets.UTF_8);
+        assertEquals(1, ledger.importFile(partial));
+        Path file = archive.resolve(ConsentLedger.FILE);
+        Files.writeString(file, line(first) + "\n" + line(second) + "\n" + line(third) + "\n", StandardCharsets.UTF_8);
+
+        assertEquals(2, ledger.importArchive(file));
+        assertEquals(0, ledger.importArchive(file), "a finished import is not run again");
+
+        assertEquals(first, ledger.findById("1").phone);
+        assertEquals(second, ledger.findById("2").phone);
+        assertEquals(third, ledger.findById("3").phone);
+    }
+
+    private static String line(String phone) {
+        return "{\"phone\":\"" + phone + "\",\"purpose\":\"SIGN_IN_CODES\",\"wording\":\"kept\","
+                + "\"source\":\"INVITE_PAGE\",\"givenAt\":\"2026-09-27T16:00:00Z\"}";
+    }
 }

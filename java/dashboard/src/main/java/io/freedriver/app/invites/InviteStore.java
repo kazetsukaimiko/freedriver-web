@@ -199,17 +199,63 @@ public class InviteStore implements PanacheMongoRepositoryBase<Invite, String> {
         return "invite-redeem:" + hash(code);
     }
 
-    /**
-     * At startup, an empty collection takes the archive file when the file exists. The file stays.
-     * The log line names the file's absolute path and SHA-256.
-     */
+    /** At startup, takes the archive file when it exists and is not fully imported yet. The file stays. */
     void importArchive(@Observes StartupEvent start) {
-        Path file = Path.of(dir).resolve(FILE);
-        if (count() == 0 && Files.exists(file)) {
-            Path absolute = file.toAbsolutePath();
-            String sha256 = sha256(file);
-            LOG.infof("Imported %d invites from %s sha256=%s", importFile(file), absolute, sha256);
+        importArchive(Path.of(dir).resolve(FILE));
+    }
+
+    /**
+     * Imports the archive when it exists and its last invite is not stored. Rows go in file order,
+     * so a stored last row means an earlier start finished; a start that stopped part way resumes.
+     * The log line names the file's absolute path and SHA-256.
+     *
+     * @return the rows inserted
+     */
+    int importArchive(Path file) {
+        if (!Files.exists(file)) {
+            return 0;
         }
+        List<Invite> rows = parse(file);
+        if (rows.isEmpty() || findById(rows.getLast().id) != null) {
+            return 0;
+        }
+        int inserted = insert(rows);
+        LOG.infof("Imported %d invites from %s sha256=%s", inserted, file.toAbsolutePath(), sha256(file));
+        return inserted;
+    }
+
+    /**
+     * Inserts each archived invite under its own id, so a second import of the same file inserts
+     * nothing. The whole file is parsed before the first insert.
+     *
+     * @return the rows inserted
+     */
+    int importFile(Path file) {
+        return insert(parse(file));
+    }
+
+    private List<Invite> parse(Path file) {
+        try {
+            List<ArchivedInvite> rows = json.readValue(Files.readString(file, StandardCharsets.UTF_8), ARCHIVE);
+            return rows.stream().map(ArchivedInvite::invite).toList();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not read " + FILE, e);
+        }
+    }
+
+    private int insert(List<Invite> rows) {
+        int inserted = 0;
+        for (Invite row : rows) {
+            try {
+                persist(row);
+                inserted++;
+            } catch (MongoWriteException ex) {
+                if (ex.getError().getCategory() != ErrorCategory.DUPLICATE_KEY) {
+                    throw ex;
+                }
+            }
+        }
+        return inserted;
     }
 
     /** Hex SHA-256 of the file, logged with each import so the imported archive can be identified later. */
@@ -220,33 +266,6 @@ public class InviteStore implements PanacheMongoRepositoryBase<Invite, String> {
         } catch (java.io.IOException | java.security.NoSuchAlgorithmException e) {
             return "unreadable";
         }
-    }
-
-    /**
-     * Inserts each archived invite under its own id, so a second import of the same file inserts
-     * nothing.
-     *
-     * @return the rows inserted
-     */
-    int importFile(Path file) {
-        List<ArchivedInvite> rows;
-        try {
-            rows = json.readValue(Files.readString(file, StandardCharsets.UTF_8), ARCHIVE);
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not read " + FILE, e);
-        }
-        int inserted = 0;
-        for (ArchivedInvite archived : rows) {
-            try {
-                persist(archived.invite());
-                inserted++;
-            } catch (MongoWriteException ex) {
-                if (ex.getError().getCategory() != ErrorCategory.DUPLICATE_KEY) {
-                    throw ex;
-                }
-            }
-        }
-        return inserted;
     }
 
     private Optional<Invite> find(String code) {

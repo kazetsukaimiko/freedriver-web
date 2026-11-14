@@ -111,6 +111,32 @@ class InviteStoreTest {
     }
 
     @Test
+    void an_import_that_stopped_after_the_first_row_resumes_on_the_next_start() throws Exception {
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        UUID last = UUID.randomUUID();
+        Path partial = archive.resolve("partial.json");
+        Files.writeString(partial, "[" + archived(first, "Mom") + "]", StandardCharsets.UTF_8);
+        assertEquals(1, store.importFile(partial));
+        Path file = archive.resolve(InviteStore.FILE);
+        Files.writeString(file, "[" + archived(first, "Mom") + "," + archived(second, "Dad") + ","
+                + archived(last, "Gran") + "]", StandardCharsets.UTF_8);
+
+        assertEquals(2, store.importArchive(file));
+        assertEquals(0, store.importArchive(file), "a finished import is not run again");
+
+        assertEquals("Mom", store.findById(first.toString()).name);
+        assertEquals("Dad", store.findById(second.toString()).name);
+        assertEquals("Gran", store.findById(last.toString()).name);
+        assertEquals(3, store.count());
+    }
+
+    private static String archived(UUID id, String name) {
+        return "{\"id\":\"" + id + "\",\"name\":\"" + name + "\",\"codeHash\":\"" + (id.toString().replace("-", "") + "0".repeat(32)) + "\","
+                + "\"createdAt\":\"2026-10-01T10:00:00Z\",\"expiresAt\":\"2026-10-04T10:00:00Z\"}";
+    }
+
+    @Test
     void cancel_and_the_attempt_caps_are_filtered_updates() {
         InviteStore.Created created = store.create("Sis");
         String code = created.code();
