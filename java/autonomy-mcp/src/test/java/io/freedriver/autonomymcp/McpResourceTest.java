@@ -9,6 +9,9 @@ import jakarta.inject.Inject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+import java.util.Map;
+
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.is;
@@ -16,7 +19,6 @@ import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
@@ -40,6 +42,7 @@ class McpResourceTest {
     void reset() {
         redis.flushall();
         DashboardStub.recorded.clear();
+        DashboardStub.exchanges.clear();
         DashboardStub.down.set(false);
     }
 
@@ -106,7 +109,7 @@ class McpResourceTest {
 
     @Test
     @TestSecurity(user = "mcp-reader", roles = "mcp-user")
-    void list_appliances_does_not_copy_authorization() {
+    void list_appliances_sends_the_callers_exchanged_token() {
         String session = initialize();
         given().contentType("application/json")
                 .accept("application/json, text/event-stream")
@@ -122,12 +125,36 @@ class McpResourceTest {
                 .body("result.content[0].text", not(containsString("Fridge is on.")))
                 .body("result.isError", is(false))
                 .header("Set-Cookie", nullValue());
-        assertFalse(sentAuthorization());
+        assertTrue(onlyAsCaller("mcp-reader"));
         assertTrue(DashboardStub.recorded.stream().anyMatch(r ->
                 "GET".equals(r.method())
                         && "/api/mcp/appliances".equals(r.path())
-                        && r.authorization() == null
-                        && "mcp-reader".equals(r.subject())));
+                        && asCaller(r, "mcp-reader")));
+    }
+
+    @Test
+    @TestSecurity(user = "mcp-reader", roles = "mcp-user")
+    void the_exchange_asks_keycloak_for_a_dashboard_token_as_freedriver_autonomy_mcp() {
+        String session = initialize();
+        given().contentType("application/json")
+                .accept("application/json, text/event-stream")
+                .header(McpEndpoint.SESSION_HEADER, session)
+                .body(call("home_status"))
+                .post("/autonomy/mcp")
+                .then()
+                .statusCode(200)
+                .body("result.isError", is(false));
+        assertEquals(1, DashboardStub.exchanges.size(), DashboardStub.exchanges::toString);
+        Map<String, List<String>> form = DashboardStub.exchanges.getFirst();
+        assertEquals(Map.of(
+                "grant_type", List.of("urn:ietf:params:oauth:grant-type:token-exchange"),
+                "client_id", List.of("freedriver-autonomy-mcp"),
+                "client_secret", List.of("test-exchange-secret"),
+                "subject_token", List.of(TestCallerToken.of("mcp-reader")),
+                "subject_token_type", List.of("urn:ietf:params:oauth:token-type:access_token"),
+                "requested_token_type", List.of("urn:ietf:params:oauth:token-type:access_token"),
+                "audience", List.of("freedriver-api")), form);
+        assertTrue(onlyAsCaller("mcp-reader"));
     }
 
     /** Pinned: before the MCP library this was a tool error "That was refused."; now it is JSON-RPC -32005. */
@@ -149,7 +176,7 @@ class McpResourceTest {
 
     @Test
     @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
-    void switch_calls_dashboard_without_authorization() {
+    void switch_calls_dashboard_as_the_exchanged_caller() {
         String session = initialize();
         given().contentType("application/json")
                 .accept("application/json, text/event-stream")
@@ -160,12 +187,11 @@ class McpResourceTest {
                 .statusCode(200)
                 .body("result.isError", is(false))
                 .body("result.content[0].text", is("Fridge turned off."));
-        assertFalse(sentAuthorization());
+        assertTrue(onlyAsCaller("mcp-switch"));
         assertTrue(DashboardStub.recorded.stream().anyMatch(r ->
                 "POST".equals(r.method())
                         && r.path().contains("/api/appliances/")
-                        && r.authorization() == null
-                        && "mcp-switch".equals(r.subject())));
+                        && asCaller(r, "mcp-switch")));
     }
 
     @Test
@@ -221,8 +247,7 @@ class McpResourceTest {
         assertTrue(DashboardStub.recorded.stream().anyMatch(r ->
                 "POST".equals(r.method())
                         && "/api/mcp/scheduled-switches".equals(r.path())
-                        && r.authorization() == null
-                        && "mcp-switch".equals(r.subject())
+                        && asCaller(r, "mcp-switch")
                         && r.body().contains("\"on\":false")
                         && r.body().contains("fridge")
                         && r.body().contains("11111111-1111-1111-1111-111111111111")));
@@ -343,9 +368,9 @@ class McpResourceTest {
                 .body("result.isError", is(false))
                 .body("result.content[0].text", containsString("The broker is connected."))
                 .body("result.content[0].text", containsString("Last state update"));
-        assertFalse(sentAuthorization());
+        assertTrue(onlyAsCaller("mcp-reader"));
         assertTrue(DashboardStub.recorded.stream().anyMatch(r ->
-                "GET".equals(r.method()) && "/api/mcp/home-status".equals(r.path()) && r.authorization() == null));
+                "GET".equals(r.method()) && "/api/mcp/home-status".equals(r.path()) && asCaller(r, "mcp-reader")));
     }
 
     /** Pinned: before the MCP library this was a tool error "That was refused."; now it is JSON-RPC -32005. */
@@ -401,7 +426,7 @@ class McpResourceTest {
                 .body("result.isError", is(false))
                 .body("result.content[0].text", containsString("Health UP"))
                 .body("result.content[0].text", containsString("none"));
-        assertFalse(sentAuthorization());
+        assertTrue(onlyAsCaller("mcp-debug-user"));
     }
 
     private static String initialize() {
@@ -447,8 +472,14 @@ class McpResourceTest {
         return DashboardStub.recorded.stream().filter(r -> "POST".equals(r.method())).count();
     }
 
-    /** True when any call that reached the stub dashboard carried an Authorization header. */
-    private static boolean sentAuthorization() {
-        return DashboardStub.recorded.stream().anyMatch(call -> call.authorization() != null);
+    /** The call carried this caller's token as the stub Keycloak exchanged it, and nothing else. */
+    private static boolean asCaller(DashboardStub.Recorded call, String user) {
+        return ("Bearer " + DashboardStub.exchanged(TestCallerToken.of(user))).equals(call.authorization());
+    }
+
+    /** At least one call reached the stub dashboard, and every one carried this caller's exchanged token. */
+    private static boolean onlyAsCaller(String user) {
+        return !DashboardStub.recorded.isEmpty()
+                && DashboardStub.recorded.stream().allMatch(call -> asCaller(call, user));
     }
 }
