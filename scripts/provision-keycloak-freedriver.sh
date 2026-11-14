@@ -1430,7 +1430,7 @@ import json, sys
 role = json.load(open(sys.argv[1], encoding="utf-8"))
 json.dump([{"id": role["id"], "name": role["name"]}], sys.stdout)
 PY
-    kcadm create "clients/${client_uuid}/scope-mappings/realm" -r "$REALM" -f "$work/dispatcher-admin-scope.json" >/dev/null
+    kcadm_stdin create "clients/${client_uuid}/scope-mappings/realm" -r "$REALM" -f - < "$work/dispatcher-admin-scope.json" >/dev/null
     echo "Mapped dispatcher-admin into the portal jobs token."
   fi
   if [[ -e "$PORTAL_JOBS_ENV_FILE" ]]; then
