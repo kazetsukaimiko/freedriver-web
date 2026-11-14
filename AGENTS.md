@@ -47,6 +47,7 @@ When GitHub Actions fails, debug and open the fix as a pull request under [Pull 
 Each line names the mechanism this repo uses for that job.
 
 - **HTTP between services.** The JAX-RS interface in a `-api` module is the contract. The server implements it. A caller injects a REST client built from that interface with `quarkus-rest-client-jackson`.
+- **Roles on a contract.** An interface whose callers are signed-in users carries `@RolesAllowed`, and a REST client built from it checks that same user before the request leaves. An interface whose callers are services with their own credentials carries no role annotation. Its resource class carries `@RolesAllowed`, and Caddy answers 404 on its path.
 - **Keycloak administration.** `quarkus-keycloak-admin-rest-client` makes Admin API calls. `quarkus-oidc-client` obtains service-account tokens.
 - **Mongo.** Panache entities and repositories hold persistence. Filters, sorts, limits, and atomic updates run in Mongo. The repository's module creates its indexes at startup.
 - **Redis.** Each service reaches Redis through `quarkus-redis-client` and its injected `RedisDataSource`.

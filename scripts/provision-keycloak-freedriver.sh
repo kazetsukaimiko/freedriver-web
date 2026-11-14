@@ -47,6 +47,13 @@
 # lives on client scope autonomy-mcp, a realm default so a later DCR client
 # gets that audience at registration.
 #
+# Token exchange (#491) is confidential client freedriver-autonomy-mcp.
+# Standard token exchange is on. Full Scope is off; realm scope mappings are
+# mcp-user and dashboard, the same roles a DCR autonomy token can carry.
+# DCR and grok-mcp access tokens list that client in aud. An exchange with
+# audience freedriver-api returns a token whose sub matches and whose realm
+# roles stay inside that mapping. The secret is written once.
+#
 # MQTT broker client (#317) is confidential client freedriver-mqtt. Direct access
 # grants. Client scope mqtt-acl fills mqtt_acl.publish and mqtt_acl.subscribe from
 # user attributes. Group mqtt-instance is the house gate; group portal-broker
@@ -69,6 +76,7 @@ PORTAL_JOBS_ENV_FILE="${PORTAL_JOBS_ENV_FILE:-/opt/freedriver-secrets/keycloak-f
 GRAFANA_ENV_FILE="${GRAFANA_ENV_FILE:-/opt/freedriver-secrets/keycloak-freedriver-grafana.env}"
 MQTT_ENV_FILE="${MQTT_ENV_FILE:-/opt/freedriver-secrets/keycloak-freedriver-mqtt.env}"
 MQTT_OAUTH_DIR="${MQTT_OAUTH_DIR:-/opt/freedriver-secrets/mosquitto/oauth.d}"
+AUTONOMY_MCP_ENV_FILE="${AUTONOMY_MCP_ENV_FILE:-/opt/freedriver-secrets/keycloak-freedriver-autonomy-mcp.env}"
 SECRETS_ENV="${SECRETS_ENV:-/opt/freedriver-secrets/.env}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KCADM=/opt/keycloak/bin/kcadm.sh
@@ -120,8 +128,14 @@ if [[ ! -f "$TECHOPS_PASS_FILE" ]]; then
   exit 1
 fi
 
-if ! docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null | grep -qx true; then
-  echo "Container ${CONTAINER} is not running." >&2
+KEYCLOAK_SERVER="${KEYCLOAK_SERVER:-http://127.0.0.1:8080}"
+if [[ -z "${KCADM_BIN:-}" ]]; then
+  if ! docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null | grep -qx true; then
+    echo "Container ${CONTAINER} is not running." >&2
+    exit 1
+  fi
+elif [[ ! -x "$KCADM_BIN" ]]; then
+  echo "KCADM_BIN is not executable." >&2
   exit 1
 fi
 
@@ -129,7 +143,11 @@ work="$(mktemp -d)"
 chmod 700 "$work"
 cleanup() {
   rm -rf "$work"
-  docker exec "$CONTAINER" rm -f "$KCADM_CONFIG" >/dev/null 2>&1 || true
+  if [[ -n "${KCADM_BIN:-}" ]]; then
+    rm -f "$KCADM_CONFIG"
+  else
+    docker exec "$CONTAINER" rm -f "$KCADM_CONFIG" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT
 
@@ -137,14 +155,22 @@ trap cleanup EXIT
 kcadm() {
   local verb="$1"
   shift
-  docker exec "$CONTAINER" "$KCADM" "$verb" --config "$KCADM_CONFIG" "$@"
+  if [[ -n "${KCADM_BIN:-}" ]]; then
+    "$KCADM_BIN" "$verb" --config "$KCADM_CONFIG" "$@"
+  else
+    docker exec "$CONTAINER" "$KCADM" "$verb" --config "$KCADM_CONFIG" "$@"
+  fi
 }
 
 # The same, with the request body on stdin.
 kcadm_stdin() {
   local verb="$1"
   shift
-  docker exec -i "$CONTAINER" "$KCADM" "$verb" --config "$KCADM_CONFIG" "$@"
+  if [[ -n "${KCADM_BIN:-}" ]]; then
+    "$KCADM_BIN" "$verb" --config "$KCADM_CONFIG" "$@"
+  else
+    docker exec -i "$CONTAINER" "$KCADM" "$verb" --config "$KCADM_CONFIG" "$@"
+  fi
 }
 
 # root:lonewatt-techops mode 640 on the server. The throwaway test is not root.
@@ -159,11 +185,16 @@ own_secret() {
 }
 
 # Log in as master-realm techops. docker exec copies TECHOPS_PASS from this
-# environment by name.
+# environment by name. KCADM_BIN talks to KEYCLOAK_SERVER on the host.
 TECHOPS_PASS="$(tr -d '\n' < "$TECHOPS_PASS_FILE")"
 export TECHOPS_PASS
-docker exec -e TECHOPS_PASS "$CONTAINER" \
-  sh -c "$KCADM config credentials --config $KCADM_CONFIG --server http://127.0.0.1:8080 --realm master --user techops --password \"\$TECHOPS_PASS\"" >/dev/null
+if [[ -n "${KCADM_BIN:-}" ]]; then
+  "$KCADM_BIN" config credentials --config "$KCADM_CONFIG" \
+    --server "$KEYCLOAK_SERVER" --realm master --user techops --password "$TECHOPS_PASS" >/dev/null
+else
+  docker exec -e TECHOPS_PASS "$CONTAINER" \
+    sh -c "$KCADM config credentials --config $KCADM_CONFIG --server http://127.0.0.1:8080 --realm master --user techops --password \"\$TECHOPS_PASS\"" >/dev/null
+fi
 unset TECHOPS_PASS
 
 csv_id() {
@@ -903,6 +934,176 @@ PY
 }
 ensure_autonomy_mcp_audience
 
+# Confidential requester for RFC 8693 standard token exchange (#491).
+# Subject tokens must list this client in aud. The exchanged token carries
+# audience freedriver-api from this client's mapper, filtered by the
+# audience parameter on the token request. Full Scope is off, so the token
+# only carries mcp-user and dashboard through this client's realm scope
+# mappings (the same pair anonymous DCR maps onto the roles client scope).
+ensure_autonomy_mcp_token_exchange() {
+  local client_id='freedriver-autonomy-mcp'
+  local client_uuid mapper_id scope_id secret tmp has_scope
+  client_uuid="$(kcadm get clients -r "$REALM" -q "clientId=${client_id}" --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
+  if [[ -z "$client_uuid" ]]; then
+    kcadm create clients -r "$REALM" \
+      -s "clientId=${client_id}" \
+      -s name='Freedriver autonomy MCP' \
+      -s enabled=true \
+      -s publicClient=false \
+      -s clientAuthenticatorType=client-secret \
+      -s standardFlowEnabled=false \
+      -s implicitFlowEnabled=false \
+      -s directAccessGrantsEnabled=false \
+      -s serviceAccountsEnabled=false \
+      -s protocol=openid-connect \
+      -s 'description=Confidential token-exchange client for /autonomy/mcp. Secret stays on the autonomy-mcp container.' \
+      -s 'redirectUris=[]' \
+      -s 'webOrigins=[]' \
+      -s 'attributes."standard.token.exchange.enabled"=true' >/dev/null
+    client_uuid="$(kcadm get clients -r "$REALM" -q "clientId=${client_id}" --fields id --format csv --noquotes | csv_id)"
+    echo "Created confidential client ${client_id}."
+  else
+    echo "Client ${client_id} already exists."
+  fi
+  kcadm update "clients/${client_uuid}" -r "$REALM" \
+    -s publicClient=false \
+    -s clientAuthenticatorType=client-secret \
+    -s standardFlowEnabled=false \
+    -s implicitFlowEnabled=false \
+    -s directAccessGrantsEnabled=false \
+    -s serviceAccountsEnabled=false \
+    -s fullScopeAllowed=false \
+    -s 'redirectUris=[]' \
+    -s 'webOrigins=[]' \
+    -s 'attributes."standard.token.exchange.enabled"=true' \
+    -s 'description=Confidential token-exchange client for /autonomy/mcp. Secret stays on the autonomy-mcp container.' >/dev/null
+  # fullScopeAllowed is off, so the realm roles reach the exchanged token only
+  # through this scope mapping. mcp-user and dashboard are the DCR autonomy pair.
+  ensure_role mcp-user
+  kcadm get roles/mcp-user -r "$REALM" --fields id,name > "$work/autonomy-mcp-role-mcp-user.json"
+  kcadm get roles/dashboard -r "$REALM" --fields id,name > "$work/autonomy-mcp-role-dashboard.json"
+  kcadm get "clients/${client_uuid}/scope-mappings/realm" -r "$REALM" --fields id,name \
+    > "$work/autonomy-mcp-scope.json"
+  has_scope="$(python3 - "$work/autonomy-mcp-role-mcp-user.json" \
+    "$work/autonomy-mcp-role-dashboard.json" "$work/autonomy-mcp-scope.json" \
+    "$work/autonomy-mcp-scope-add.json" <<'PY'
+import json, sys
+mcp = json.load(open(sys.argv[1], encoding="utf-8"))
+dash = json.load(open(sys.argv[2], encoding="utf-8"))
+have = {item.get("name") for item in json.load(open(sys.argv[3], encoding="utf-8"))}
+wanted = [mcp, dash]
+for role in wanted:
+    if not role.get("id") or not role.get("name"):
+        raise SystemExit("autonomy MCP role id is missing")
+add = [role for role in wanted if role.get("name") not in have]
+json.dump(add, open(sys.argv[4], "w", encoding="utf-8"))
+print("add" if add else "ok")
+PY
+)"
+  if [[ "$has_scope" == add ]]; then
+    kcadm_stdin create "clients/${client_uuid}/scope-mappings/realm" -r "$REALM" -f - \
+      < "$work/autonomy-mcp-scope-add.json" >/dev/null
+    echo "Mapped mcp-user and dashboard into the autonomy MCP token."
+  else
+    echo "Client ${client_id} already maps mcp-user and dashboard."
+  fi
+
+  python3 - "$work/audience-api-mapper.json" <<'PY'
+import json, sys
+json.dump({
+    "name": "audience-freedriver-api",
+    "protocol": "openid-connect",
+    "protocolMapper": "oidc-audience-mapper",
+    "config": {
+        "included.client.audience": "freedriver-api",
+        "access.token.claim": "true",
+        "id.token.claim": "false",
+    },
+}, open(sys.argv[1], "w", encoding="utf-8"))
+PY
+  kcadm get "clients/${client_uuid}/protocol-mappers/models" -r "$REALM" > "$work/autonomy-mcp-client-mappers.json"
+  mapper_id="$(python3 - "$work/autonomy-mcp-client-mappers.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+ids = [item["id"] for item in data if isinstance(item, dict) and item.get("name") == "audience-freedriver-api" and item.get("id")]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+  if [[ -z "$mapper_id" ]]; then
+    kcadm_stdin create "clients/${client_uuid}/protocol-mappers/models" -r "$REALM" -f - \
+      < "$work/audience-api-mapper.json" >/dev/null
+    echo "Client ${client_id} includes audience-freedriver-api."
+  else
+    echo "Client ${client_id} already includes audience-freedriver-api."
+  fi
+
+  python3 - "$work/audience-exchange-mapper.json" <<'PY'
+import json, sys
+json.dump({
+    "name": "audience-autonomy-mcp-client",
+    "protocol": "openid-connect",
+    "protocolMapper": "oidc-audience-mapper",
+    "config": {
+        "included.client.audience": "freedriver-autonomy-mcp",
+        "access.token.claim": "true",
+        "id.token.claim": "false",
+    },
+}, open(sys.argv[1], "w", encoding="utf-8"))
+PY
+  kcadm get client-scopes -r "$REALM" --fields id,name,protocol > "$work/client-scopes.json"
+  scope_id="$(python3 - "$work/client-scopes.json" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+ids = [
+    s["id"]
+    for s in scopes
+    if s.get("name") == "autonomy-mcp" and s.get("protocol") == "openid-connect" and s.get("id")
+]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+  if [[ -z "$scope_id" ]]; then
+    echo "Client scope autonomy-mcp is missing; run audience mapping first." >&2
+    exit 1
+  fi
+  kcadm get "client-scopes/${scope_id}/protocol-mappers/models" -r "$REALM" > "$work/autonomy-mcp-scope-mappers.json"
+  mapper_id="$(python3 - "$work/autonomy-mcp-scope-mappers.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+ids = [item["id"] for item in data if isinstance(item, dict) and item.get("name") == "audience-autonomy-mcp-client" and item.get("id")]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+  if [[ -z "$mapper_id" ]]; then
+    kcadm_stdin create "client-scopes/${scope_id}/protocol-mappers/models" -r "$REALM" -f - \
+      < "$work/audience-exchange-mapper.json" >/dev/null
+    echo "Client scope autonomy-mcp includes audience-autonomy-mcp-client."
+  else
+    echo "Client scope autonomy-mcp already includes audience-autonomy-mcp-client."
+  fi
+
+  if [[ -e "$AUTONOMY_MCP_ENV_FILE" ]]; then
+    echo "Autonomy MCP client env file already exists; not rotating or rewriting it."
+  else
+    tmp="$(mktemp)"
+    chmod 600 "$tmp"
+    secret="$(kcadm get "clients/${client_uuid}/client-secret" -r "$REALM" --fields value --format csv --noquotes \
+      | sed '/^value$/d' | tr -d '\r' | awk 'NF { print; exit }')"
+    if [[ -z "$secret" || "$secret" == *" "* || "$secret" == *$'\n'* ]]; then
+      rm -f "$tmp"
+      unset secret
+      echo "Failed to read freedriver-autonomy-mcp client secret." >&2
+      exit 1
+    fi
+    printf 'FREEDRIVER_AUTONOMY_MCP_CLIENT_SECRET=%s\n' "$secret" > "$tmp"
+    unset secret
+    own_secret "$tmp"
+    mv "$tmp" "$AUTONOMY_MCP_ENV_FILE"
+    echo "Wrote autonomy MCP client secret (not printed)."
+  fi
+}
+ensure_autonomy_mcp_token_exchange
+
 lookup_phone_group() {
   kcadm get groups -r "$REALM" -q "search=${PHONE_GROUP}" -q exact=true > "$work/groups.json"
   python3 - "$work/groups.json" "$PHONE_GROUP" <<'PY'
@@ -1263,7 +1464,7 @@ import json, sys
 role = json.load(open(sys.argv[1], encoding="utf-8"))
 json.dump([{"id": role["id"], "name": role["name"]}], sys.stdout)
 PY
-    kcadm create "clients/${client_uuid}/scope-mappings/realm" -r "$REALM" -f "$work/dispatcher-admin-scope.json" >/dev/null
+    kcadm_stdin create "clients/${client_uuid}/scope-mappings/realm" -r "$REALM" -f - < "$work/dispatcher-admin-scope.json" >/dev/null
     echo "Mapped dispatcher-admin into the portal jobs token."
   fi
   if [[ -e "$PORTAL_JOBS_ENV_FILE" ]]; then
@@ -1698,8 +1899,13 @@ PY
     own_secret "$tmp"
     mkdir -p "$(dirname "$MQTT_ENV_FILE")"
     mv "$tmp" "$MQTT_ENV_FILE"
-    docker exec -e SA_PASS="$sa_pass" "$CONTAINER" \
-      sh -c "$KCADM set-password --config $KCADM_CONFIG -r $REALM --username service-account-freedriver-mqtt --new-password \"\$SA_PASS\"" >/dev/null
+    if [[ -n "${KCADM_BIN:-}" ]]; then
+      "$KCADM_BIN" set-password --config "$KCADM_CONFIG" -r "$REALM" \
+        --username service-account-freedriver-mqtt --new-password "$sa_pass" >/dev/null
+    else
+      docker exec -e SA_PASS="$sa_pass" "$CONTAINER" \
+        sh -c "$KCADM set-password --config $KCADM_CONFIG -r $REALM --username service-account-freedriver-mqtt --new-password \"\$SA_PASS\"" >/dev/null
+    fi
     echo "Wrote MQTT broker client secret and service-account password (not printed)."
   fi
 
