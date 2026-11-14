@@ -35,22 +35,22 @@ services:
       SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
       FREEDRIVER_SMS_BASE_URL: http://sms:8080
       FREEDRIVER_INVITES_DIR: /deployments/data/invites
-      # No credential in the default. A password, if one is set later, comes from the env file.
-      QUARKUS_MONGODB_CONNECTION_STRING: ${QUARKUS_MONGODB_CONNECTION_STRING:-mongodb://mongodb:27017/freedriver}
       FREEDRIVER_REDIS_URL: ${FREEDRIVER_REDIS_URL:-redis://redis:6379}
       FREEDRIVER_APPLIANCES_LIVE_COMMANDS: "true"
       FREEDRIVER_MCP_INTERNAL_SECRET: ${FREEDRIVER_MCP_INTERNAL_SECRET:-}
     # Invite service account (#172) and instances admin client (#319).
-    # The provision script writes these files. Do not also interpolate
-    # FREEDRIVER_INVITE_CLIENT_SECRET, FREEDRIVER_INSTANCES_CLIENT_SECRET, or
-    # FREEDRIVER_PORTAL_JOBS_CLIENT_SECRET here:
-    # that would override the file.
+    # Mongo connection (#505) is mongo-dashboard.env. Interpolating
+    # FREEDRIVER_INVITE_CLIENT_SECRET, FREEDRIVER_INSTANCES_CLIENT_SECRET,
+    # FREEDRIVER_PORTAL_JOBS_CLIENT_SECRET, or QUARKUS_MONGODB_CONNECTION_STRING
+    # here would override the file.
     env_file:
       - path: /opt/freedriver-secrets/keycloak-freedriver-invite.env
         required: false
       - path: /opt/freedriver-secrets/keycloak-freedriver-instances.env
         required: false
       - path: /opt/freedriver-secrets/keycloak-freedriver-portal-jobs.env
+        required: false
+      - path: /opt/freedriver-secrets/mongo-dashboard.env
         required: false
     depends_on:
       mosquitto:
@@ -85,8 +85,11 @@ services:
       QUARKUS_OIDC_CLIENT_ID: freedriver-dispatcher
       QUARKUS_OIDC_CREDENTIALS_SECRET: ${FREEDRIVER_DISPATCHER_OIDC_SECRET:-}
       FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET: ${FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET:-}
-      QUARKUS_MONGODB_CONNECTION_STRING: ${QUARKUS_MONGODB_CONNECTION_STRING:-mongodb://mongodb:27017/freedriver}
-      QUARKUS_MONGODB_DATABASE: freedriver
+    # Mongo connection (#505). Interpolating QUARKUS_MONGODB_CONNECTION_STRING
+    # here would override the file.
+    env_file:
+      - path: /opt/freedriver-secrets/mongo-dispatcher.env
+        required: false
     depends_on:
       mongodb:
         condition: service_healthy
@@ -164,12 +167,15 @@ services:
       timeout: 5s
       retries: 10
 
-  # Instances collection. No host port. The image entrypoint starts as root
-  # only to chown the bind mount, then drops to the mongodb user.
+  # Per-service databases (#505). No host port. The image entrypoint starts as
+  # root only to chown the bind mount, then drops to the mongodb user. --auth
+  # so each service user cannot read another database. The first user is
+  # created over the localhost exception by scripts/provision-mongo-users.sh.
   mongodb:
     image: mongo:8.0
     restart: unless-stopped
     user: "0"
+    command: ["mongod", "--bind_ip_all", "--auth"]
     # The image ships rseq=0 and then exits on kernels 6.19 through 7.0.13
     # (SERVER-121912). rseq=1 is the startup workaround and replaces that default.
     environment:
@@ -219,14 +225,14 @@ services:
     env_file:
       - path: /opt/freedriver-secrets/twilio-verify.env
         required: true
+      - path: /opt/freedriver-secrets/mongo-sms.env
+        required: false
     environment:
       SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
       # Number seeded into the sms phone list (#168, #169).
       FREEDRIVER_SEED_PHONE: ${FREEDRIVER_SEED_PHONE:-}
       # Daily cap on texts that reach Twilio. Required. sms only (#175).
       FREEDRIVER_SMS_DAILY_SEND_CAP: ${FREEDRIVER_SMS_DAILY_SEND_CAP:?FREEDRIVER_SMS_DAILY_SEND_CAP is required}
-      QUARKUS_MONGODB_CONNECTION_STRING: ${QUARKUS_MONGODB_CONNECTION_STRING:-mongodb://mongodb:27017/freedriver}
-      QUARKUS_MONGODB_DATABASE: freedriver
     depends_on:
       mongodb:
         condition: service_healthy

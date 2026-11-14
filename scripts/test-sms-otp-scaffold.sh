@@ -153,9 +153,11 @@ TWILIO_ENV = (
     "    env_file:\n"
     "      - path: /opt/freedriver-secrets/twilio-verify.env\n"
     "        required: true\n"
+    "      - path: /opt/freedriver-secrets/mongo-sms.env\n"
+    "        required: false\n"
 )
 if TWILIO_ENV not in block:
-    raise SystemExit("sms loads /opt/freedriver-secrets/twilio-verify.env as a required env_file")
+    raise SystemExit("sms loads twilio-verify.env required and mongo-sms.env")
 if compose.count("twilio-verify.env") != 1:
     raise SystemExit("twilio-verify.env is loaded once, by sms")
 dash = compose.split("\n  dashboard:\n", 1)[1].split("\n  agent-dispatcher:\n", 1)[0]
@@ -176,8 +178,14 @@ if instances_env not in dash:
     raise SystemExit("dashboard loads the instances admin secret env file, and it is not required before provision")
 if "keycloak-freedriver-instances.env" in compose.replace(dash, ""):
     raise SystemExit("only dashboard loads the instances admin secret env file")
-if compose.count("\n    env_file:\n") != 3:
-    raise SystemExit("env_file is the sms twilio file, the dashboard secret files, and the grafana secret file")
+if "path: /opt/freedriver-secrets/mongo-dashboard.env" not in dash:
+    raise SystemExit("dashboard loads mongo-dashboard.env")
+if "mongo-dashboard.env" in compose.replace(dash, ""):
+    raise SystemExit("only dashboard loads mongo-dashboard.env")
+if compose.count("\n    env_file:\n") != 4:
+    raise SystemExit(
+        "env_file is the sms files, the dashboard secret files, the dispatcher mongo file, and the grafana secret file"
+    )
 if "TWILIO_" in compose.replace(block, ""):
     raise SystemExit("only sms receives TWILIO_ variables")
 if "sms-otp.env.example" in block or "sms-otp.env.example" in compose:
