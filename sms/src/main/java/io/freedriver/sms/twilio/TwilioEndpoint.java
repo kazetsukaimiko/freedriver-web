@@ -5,7 +5,8 @@ import java.net.URISyntaxException;
 
 /**
  * The Verify API base URL. Outside the test profile it is always https://verify.twilio.com, and
- * any other configured value stops startup. The test profile may point it at a fake endpoint.
+ * any other configured value stops startup. The test profile, and the compose smoke stub flag,
+ * may point it at a fake endpoint.
  */
 public record TwilioEndpoint(URI base) {
 

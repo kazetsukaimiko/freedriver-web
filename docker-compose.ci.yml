@@ -1,0 +1,112 @@
+# CI overlay for the compose smoke job (#484). Throwaway secrets, tls internal,
+# mock appliances, live-commands off. Caddy is the only published port.
+services:
+  caddy:
+    ports: !override
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes: !override
+      - ./Caddyfile.ci:/etc/caddy/Caddyfile:ro
+      - ./site:/srv:ro
+      - /opt/freedriver-storage/caddy/data:/data
+      - /opt/freedriver-storage/caddy/config:/config
+    depends_on: !override
+      - keycloak
+    networks:
+      default:
+        aliases:
+          - app.freedriver.io
+          - auth.freedriver.io
+          - grafana.freedriver.io
+          - mqtt.freedriver.io
+          - www.freedriver.io
+          - freedriver.io
+
+  dashboard:
+    pull_policy: missing
+    group_add: !reset []
+    environment:
+      FREEDRIVER_APPLIANCES_LIVE_COMMANDS: "false"
+      FREEDRIVER_APPLIANCES_MOCK: "true"
+      FREEDRIVER_APPLIANCES_ENABLED: "true"
+      QUARKUS_TLS_TRUST_ALL: "true"
+      FREEDRIVER_MCP_INTERNAL_SECRET: ${FREEDRIVER_MCP_INTERNAL_SECRET:?FREEDRIVER_MCP_INTERNAL_SECRET is required}
+      JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Xmx512m"
+
+  agent-dispatcher:
+    pull_policy: missing
+    environment:
+      QUARKUS_TLS_TRUST_ALL: "true"
+      JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Xmx384m"
+
+  autonomy-mcp:
+    pull_policy: missing
+    environment:
+      FREEDRIVER_MCP_ENABLED: "true"
+      FREEDRIVER_MCP_INTERNAL_SECRET: ${FREEDRIVER_MCP_INTERNAL_SECRET:?FREEDRIVER_MCP_INTERNAL_SECRET is required}
+      QUARKUS_TLS_TRUST_ALL: "true"
+      JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Xmx384m"
+
+  keycloak:
+    pull_policy: missing
+    ports: !reset []
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?KC_BOOTSTRAP_ADMIN_PASSWORD is required}
+      KC_HOSTNAME: https://auth.freedriver.io
+      KC_HOSTNAME_ADMIN: http://127.0.0.1:8080
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      JAVA_OPTS_APPEND: "-Xms256m -Xmx768m"
+
+  grafana:
+    profiles: ["observability"]
+    ports: !reset []
+
+  loki:
+    profiles: ["observability"]
+
+  prometheus:
+    profiles: ["observability"]
+
+  alloy:
+    profiles: ["observability"]
+
+  docker-logs-proxy:
+    profiles: ["observability"]
+
+  mosquitto-cert-sync:
+    profiles: ["observability"]
+
+  mosquitto:
+    image: eclipse-mosquitto:2.0.22
+    build: !reset
+    pull_policy: always
+    ports: !reset []
+    volumes: !override
+      - ./ci/mosquitto-smoke.conf:/mosquitto/config/mosquitto.conf:ro
+
+  sms:
+    pull_policy: missing
+    environment:
+      FREEDRIVER_SMS_TWILIO_BASE_URL: http://twilio-stub:8080
+      FREEDRIVER_SMS_TWILIO_ALLOW_STUB: "true"
+      FREEDRIVER_SEED_PHONE: ${FREEDRIVER_SEED_PHONE:?FREEDRIVER_SEED_PHONE is required}
+      JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Xmx384m"
+    depends_on:
+      twilio-stub:
+        condition: service_started
+      mongodb:
+        condition: service_healthy
+
+  twilio-stub:
+    build:
+      context: ./ci/twilio-verify-stub
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

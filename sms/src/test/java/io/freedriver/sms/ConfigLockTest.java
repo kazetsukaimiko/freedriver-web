@@ -42,9 +42,13 @@ class ConfigLockTest {
     void base_url_is_pinned_outside_the_test_profile() throws IOException {
         Properties p = properties();
         assertEquals("https://verify.twilio.com", p.getProperty("freedriver.sms.twilio.base-url"));
+        assertEquals("false", p.getProperty("freedriver.sms.twilio.allow-stub"));
         for (String key : p.stringPropertyNames()) {
             if (key.endsWith("freedriver.sms.twilio.base-url")) {
                 assertTrue(key.equals("freedriver.sms.twilio.base-url") || key.startsWith("%test."), key);
+            }
+            if (key.endsWith("freedriver.sms.twilio.allow-stub")) {
+                assertTrue(key.equals("freedriver.sms.twilio.allow-stub") || key.startsWith("%test."), key);
             }
         }
     }

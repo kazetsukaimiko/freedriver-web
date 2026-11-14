@@ -59,6 +59,13 @@ public interface SmsConfig {
         @WithDefault(TwilioDefaults.BASE_URL)
         String baseUrl();
 
+        /**
+         * When true, the production Twilio sender may use a stub origin for
+         * {@link #baseUrl()}. The compose smoke job sets this.
+         */
+        @WithDefault("false")
+        boolean allowStub();
+
         /** Connect and request timeout for each Verify call. */
         @WithDefault("5s")
         Duration timeout();

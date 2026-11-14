@@ -15,6 +15,9 @@ auth.freedriver.io {
 
 app.freedriver.io {
 	encode gzip
+	request_header -X-Freedriver-Internal
+	request_header -X-Freedriver-Subject
+	request_header -X-Freedriver-Roles
 	# The dispatcher's admin list is service to service: the dashboard reaches it on the compose network.
 	@dispatcherAdmin path /api/dispatcher/admin /api/dispatcher/admin/*
 	handle @dispatcherAdmin {

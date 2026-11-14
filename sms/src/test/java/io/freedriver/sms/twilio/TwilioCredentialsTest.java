@@ -76,4 +76,17 @@ class TwilioCredentialsTest {
         assertThrows(IllegalStateException.class, () -> TwilioSenderProducer.create(complete()::get,
                 "http://verify.twilio.com", Duration.ofSeconds(5), false, ledger));
     }
+
+    @Test
+    void stub_flag_lets_the_production_sender_use_a_stub_origin() {
+        ConsentLedger ledger = new ConsentLedger();
+        TwilioVerifySender sender = TwilioSenderProducer.create(
+                complete()::get,
+                "http://twilio-stub:8080",
+                Duration.ofSeconds(5),
+                false,
+                true,
+                ledger);
+        assertTrue(sender instanceof TwilioVerifySender);
+    }
 }

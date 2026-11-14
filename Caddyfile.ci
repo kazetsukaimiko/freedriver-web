@@ -1,0 +1,64 @@
+{
+	skip_install_trust
+	local_certs
+}
+
+freedriver.io, www.freedriver.io {
+	tls internal
+	redir https://app.freedriver.io{uri} 308
+}
+
+auth.freedriver.io {
+	tls internal
+	encode gzip
+	@admin path /admin /admin/*
+	handle @admin {
+		respond 404
+	}
+	handle {
+		reverse_proxy keycloak:8080
+	}
+}
+
+app.freedriver.io {
+	tls internal
+	encode gzip
+	request_header -X-Freedriver-Internal
+	request_header -X-Freedriver-Subject
+	request_header -X-Freedriver-Roles
+	@dispatcher path /mcp /mcp/* /dispatch/mcp /dispatch/mcp/* /api/dispatcher /api/dispatcher/*
+	handle @dispatcher {
+		reverse_proxy agent-dispatcher:8080
+	}
+	@autonomy path /autonomy/mcp /autonomy/mcp/* /api/autonomy /api/autonomy/*
+	handle @autonomy {
+		reverse_proxy autonomy-mcp:8080
+	}
+	@invite path /invite /invite/*
+	handle @invite {
+		header Referrer-Policy "no-referrer"
+		reverse_proxy dashboard:8080 {
+			header_up -X-Freedriver-Internal
+			header_up -X-Freedriver-Subject
+			header_up -X-Freedriver-Roles
+		}
+	}
+	handle {
+		reverse_proxy dashboard:8080 {
+			header_up -X-Freedriver-Internal
+			header_up -X-Freedriver-Subject
+			header_up -X-Freedriver-Roles
+		}
+	}
+}
+
+grafana.freedriver.io {
+	tls internal
+	encode gzip
+	reverse_proxy grafana:3000
+}
+
+mqtt.freedriver.io {
+	tls internal
+	respond 404
+}
