@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.6.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.5.2...v1.6.0) (2026-11-14)
+
+
+### Features
+
+* **dispatcher:** add quarkus-smallrye-health for in-network probes ([#489](https://github.com/kazetsukaimiko/freedriver-web/issues/489)) ([226c383](https://github.com/kazetsukaimiko/freedriver-web/commit/226c3838f3ed63887482a7ebee6eb7ec9e7921a2)), closes [#488](https://github.com/kazetsukaimiko/freedriver-web/issues/488)
+* **keycloak:** enable token exchange for autonomy MCP ([#495](https://github.com/kazetsukaimiko/freedriver-web/issues/495)) ([4d37447](https://github.com/kazetsukaimiko/freedriver-web/commit/4d3744734b2b5415da3a6834da5687bdb3de599d)), closes [#491](https://github.com/kazetsukaimiko/freedriver-web/issues/491)
+
+
+### Bug Fixes
+
+* **keycloak:** pass portal-jobs scope mapping on stdin ([#507](https://github.com/kazetsukaimiko/freedriver-web/issues/507)) ([19dac05](https://github.com/kazetsukaimiko/freedriver-web/commit/19dac051d054fde1056a408677895a6beeb6d551)), closes [#481](https://github.com/kazetsukaimiko/freedriver-web/issues/481)
+* **keycloak:** put dispatcher-admin on the portal-jobs access token ([#516](https://github.com/kazetsukaimiko/freedriver-web/issues/516)) ([d9d0f9b](https://github.com/kazetsukaimiko/freedriver-web/commit/d9d0f9b09c2342451572f39207f91815ac776466)), closes [#481](https://github.com/kazetsukaimiko/freedriver-web/issues/481)
+
+
+### Refactors
+
+* **dashboard:** one ServerExceptionMapper class per service ([#514](https://github.com/kazetsukaimiko/freedriver-web/issues/514)) ([5979d1f](https://github.com/kazetsukaimiko/freedriver-web/commit/5979d1f7a0338c10358b4bd467d30e4b5ba5d720)), closes [#482](https://github.com/kazetsukaimiko/freedriver-web/issues/482)
+* **dashboard:** put CDI on Quarkus mechanisms ([#482](https://github.com/kazetsukaimiko/freedriver-web/issues/482) CDI group) ([#512](https://github.com/kazetsukaimiko/freedriver-web/issues/512)) ([2edcb59](https://github.com/kazetsukaimiko/freedriver-web/commit/2edcb59d5e9b22b15fe8f1d8146e8ab42192539f))
+
 ## [1.5.2](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.5.1...v1.5.2) (2026-11-14)
 
 
