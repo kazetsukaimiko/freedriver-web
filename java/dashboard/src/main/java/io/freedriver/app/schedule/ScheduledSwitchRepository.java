@@ -6,13 +6,12 @@ import com.mongodb.client.model.ReturnDocument;
 import com.mongodb.client.model.Sorts;
 import com.mongodb.client.model.Updates;
 import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
-import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Observes;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.mongodb.client.model.Filters.and;
 import static com.mongodb.client.model.Filters.eq;
@@ -23,8 +22,17 @@ import static com.mongodb.client.model.Filters.or;
 @ApplicationScoped
 public class ScheduledSwitchRepository implements PanacheMongoRepositoryBase<ScheduledSwitch, String> {
 
-    void index(@Observes StartupEvent start) {
-        mongoCollection().createIndex(Indexes.ascending("dueAt"));
+    private final AtomicBoolean indexed = new AtomicBoolean();
+
+    /**
+     * The {@code dueAt} index, created by the first claim rather than at startup, so the dashboard
+     * starts while Mongo is unreachable. Creating an index that exists is a no-op.
+     */
+    private void ensureIndex() {
+        if (!indexed.get()) {
+            mongoCollection().createIndex(Indexes.ascending("dueAt"));
+            indexed.set(true);
+        }
     }
 
     /**
@@ -32,6 +40,7 @@ public class ScheduledSwitchRepository implements PanacheMongoRepositoryBase<Sch
      * {@code now + lease} and adds one to {@code attempts}. Null when no row is free.
      */
     ScheduledSwitch claim(Instant now, Duration lease) {
+        ensureIndex();
         Date at = Date.from(now);
         return mongoCollection().findOneAndUpdate(
                 and(lte("dueAt", at), or(eq("claimedUntil", null), lte("claimedUntil", at))),
