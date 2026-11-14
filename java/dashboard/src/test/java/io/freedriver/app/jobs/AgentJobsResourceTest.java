@@ -33,11 +33,14 @@ class AgentJobsResourceTest {
     @Inject
     MongoClient mongo;
 
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "quarkus.mongodb.database")
+    String database;
+
     @Test
     @TestSecurity(user = "jobs-admin", roles = "portal-admin")
     void a_saved_job_is_listed_with_its_document() {
         Date created = new Date(1_700_000_000_000L);
-        mongo.getDatabase("freedriver").getCollection("agent-jobs").insertOne(new Document("_id", "assignment-1")
+        mongo.getDatabase(database).getCollection("agent-jobs").insertOne(new Document("_id", "assignment-1")
                 .append("assignmentId", "assignment-1")
                 .append("jobId", "job-1")
                 .append("prompt", "say hello")

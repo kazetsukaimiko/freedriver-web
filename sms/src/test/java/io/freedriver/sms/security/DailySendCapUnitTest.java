@@ -1,5 +1,8 @@
 package io.freedriver.sms.security;
 
+import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -12,7 +15,17 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/** The daily cap on the {@code daily-send-cap} collection of the Dev Services Mongo container. */
+@QuarkusTest
 class DailySendCapUnitTest {
+
+    @Inject
+    DailySendLedger ledger;
+
+    @BeforeEach
+    void empty() {
+        ledger.deleteAll();
+    }
 
     static final class MutableClock extends Clock {
         Instant now;
@@ -40,7 +53,7 @@ class DailySendCapUnitTest {
     @Test
     void cap_holds_for_the_utc_day_and_resets_at_midnight() {
         MutableClock clock = new MutableClock(Instant.parse("2026-09-27T23:58:00Z"));
-        DailySendCap cap = new DailySendCap(clock, 2);
+        DailySendCap cap = new DailySendCap(clock, 2, ledger);
         assertTrue(cap.tryAcquire());
         assertTrue(cap.tryAcquire());
         assertFalse(cap.tryAcquire());
@@ -53,9 +66,8 @@ class DailySendCapUnitTest {
     @Test
     void a_send_on_one_process_counts_on_another_after_a_redis_flush() {
         MutableClock clock = new MutableClock(Instant.parse("2026-09-27T12:00:00Z"));
-        DailySendLedger shared = new MemoryDailySendLedger();
-        DailySendCap first = new DailySendCap(clock, 2, shared);
-        DailySendCap second = new DailySendCap(clock, 2, shared);
+        DailySendCap first = new DailySendCap(clock, 2, ledger);
+        DailySendCap second = new DailySendCap(clock, 2, ledger);
         Map<String, Integer> redisWindows = new HashMap<>();
 
         assertTrue(first.tryAcquire());

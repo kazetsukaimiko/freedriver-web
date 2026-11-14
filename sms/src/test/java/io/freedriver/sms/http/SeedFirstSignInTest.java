@@ -1,5 +1,6 @@
 package io.freedriver.sms.http;
 
+import com.mongodb.client.MongoClient;
 import io.freedriver.sms.SmsConfig;
 import io.freedriver.sms.otp.FakeSmsSender;
 import io.freedriver.sms.phones.ConsentLedger;
@@ -18,20 +19,18 @@ import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
 import jakarta.inject.Inject;
+import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
+import static com.mongodb.client.model.Filters.eq;
 import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -62,6 +61,10 @@ class SeedFirstSignInTest {
     ConsentLedger consents;
     @Inject
     SmsConfig config;
+    @Inject
+    MongoClient mongo;
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "quarkus.mongodb.database")
+    String database;
     @Inject
     FakeSmsSender sender;
     @Inject
@@ -105,17 +108,12 @@ class SeedFirstSignInTest {
 
     @Test
     @Order(4)
-    void no_code_is_sent_when_storing_the_agreement_fails() throws IOException {
+    void no_code_is_sent_when_storing_the_agreement_fails() {
         var withoutAgreement = SmsCalls.send(SEED).extract();
-        // A directory where the agreement log should be makes the append fail.
-        Path log = config.dataDir().resolve("consents.jsonl");
-        Path aside = config.dataDir().resolve("consents.jsonl.aside");
-        boolean existed = Files.exists(log);
-        if (existed) {
-            Files.move(log, aside, StandardCopyOption.REPLACE_EXISTING);
-        }
-        Files.createDirectories(log);
-
+        // A validator on the collection makes the agreement insert fail for this number.
+        var db = mongo.getDatabase(database);
+        db.runCommand(new Document("collMod", "consents")
+                .append("validator", new Document("phone", new Document("$ne", SEED))));
         try (LogCapture logs = LogCapture.open()) {
             var failed = SmsCalls.sendAgreeing(SEED, TestNumbers.WORDING).extract();
 
@@ -124,13 +122,10 @@ class SeedFirstSignInTest {
             assertTrue(logs.all().contains("Sign-in agreement for ***68 not stored, so no code was sent"), logs.all());
             assertFalse(logs.all().contains("168"), logs.all());
         } finally {
-            Files.delete(log);
-            if (existed) {
-                Files.move(aside, log);
-            }
+            db.runCommand(new Document("collMod", "consents").append("validator", new Document()));
         }
         assertEquals(0, sender.deliveries());
-        assertEquals(List.of(), consents.history(SEED));
+        assertEquals(0, db.getCollection("consents").countDocuments(eq("phone", SEED)));
     }
 
     @Test
