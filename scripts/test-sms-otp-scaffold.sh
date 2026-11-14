@@ -745,6 +745,15 @@ fi
 if [[ "$(grep -c 'AUTONOMY_MCP_ENV_FILE=' scripts/test-invite-service-account.sh)" -lt 3 ]]; then
   fail "invite throwaway provision must set AUTONOMY_MCP_ENV_FILE on each run"
 fi
+if ! grep -q 'ensure_mapper "$client_uuid" "realm roles"' scripts/provision-keycloak-freedriver.sh; then
+  fail "portal jobs client must have a realm roles mapper"
+fi
+if ! grep -q 'assert_portal_jobs_token' scripts/test-invite-service-account.sh; then
+  fail "invite throwaway must assert the portal-jobs access token roles"
+fi
+if ! grep -q 'portal-admin-only DCR token roles (none)' scripts/test-autonomy-token-exchange.sh; then
+  fail "token-exchange proof must cover a user who holds neither mcp-user nor dashboard"
+fi
 if ! grep -q 'consentRequired=false' scripts/test-autonomy-token-exchange.sh; then
   fail "scratch DCR ROPC must skip client consent"
 fi

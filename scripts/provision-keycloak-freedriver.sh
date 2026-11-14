@@ -1467,6 +1467,18 @@ PY
     kcadm_stdin create "clients/${client_uuid}/scope-mappings/realm" -r "$REALM" -f - < "$work/dispatcher-admin-scope.json" >/dev/null
     echo "Mapped dispatcher-admin into the portal jobs token."
   fi
+  # The built-in roles client scope carries mcp-user and dashboard mappings, so
+  # Keycloak drops that whole scope for this service account. A client mapper
+  # puts realm_access.roles on the access token; fullScopeAllowed=false plus the
+  # scope mapping keep the claim to dispatcher-admin.
+  ensure_mapper "$client_uuid" "realm roles" \
+    -s protocolMapper=oidc-usermodel-realm-role-mapper \
+    -s 'config."claim.name"=realm_access.roles' \
+    -s 'config."jsonType.label"=String' \
+    -s 'config.multivalued=true' \
+    -s 'config."access.token.claim"=true' \
+    -s 'config."id.token.claim"=false' \
+    -s 'config."userinfo.token.claim"=false'
   if [[ -e "$PORTAL_JOBS_ENV_FILE" ]]; then
     echo "Portal jobs client env file already exists; not rotating or rewriting it."
   else

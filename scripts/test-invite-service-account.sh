@@ -313,6 +313,56 @@ if ! grep -q '^FREEDRIVER_AUTONOMY_MCP_CLIENT_SECRET=.\+' "$work/secrets/autonom
   echo "autonomy MCP env file is missing a secret value" >&2
   exit 1
 fi
+
+assert_portal_jobs_token() {
+  local jobs_uuid mapper_count
+  jobs_uuid="$(admin get clients -r freedriver -q clientId=freedriver-portal-jobs --fields id --format csv --noquotes | csv_id)"
+  admin get "clients/${jobs_uuid}/protocol-mappers/models" -r freedriver --fields name \
+    > "$work/portal-jobs-mappers.json"
+  mapper_count="$(python3 - "$work/portal-jobs-mappers.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+print(sum(1 for item in data if item.get("name") == "realm roles"))
+PY
+)"
+  python3 - "$work/secrets/portal-jobs.env" "$work/portal-jobs-token-form" <<'PY'
+import sys
+from pathlib import Path
+from urllib.parse import urlencode
+secret = Path(sys.argv[1]).read_text(encoding="utf-8").split("=", 1)[1].strip()
+Path(sys.argv[2]).write_text(urlencode({
+    "grant_type": "client_credentials",
+    "client_id": "freedriver-portal-jobs",
+    "client_secret": secret,
+}), encoding="utf-8")
+PY
+  chmod 600 "$work/portal-jobs-token-form"
+  curl -sS -o "$work/portal-jobs-token.json" --data-binary @"$work/portal-jobs-token-form" \
+    "${BASE}/realms/freedriver/protocol/openid-connect/token"
+  rm -f "$work/portal-jobs-token-form"
+  python3 - "$work/portal-jobs-token.json" "$mapper_count" <<'PY'
+import base64, json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+token = data.get("access_token")
+if not token:
+    print(data.get("error") or "no portal-jobs token", file=sys.stderr)
+    sys.exit(1)
+payload = token.split(".")[1]
+payload += "=" * (-len(payload) % 4)
+claims = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
+roles = list((claims.get("realm_access") or {}).get("roles") or [])
+if roles != ["dispatcher-admin"]:
+    sys.exit("portal jobs token roles are %s, want [dispatcher-admin]" % roles)
+count = int(sys.argv[2])
+if count != 1:
+    sys.exit("portal jobs realm roles mapper count is %s, want 1" % count)
+print("portal jobs mapper count:", count)
+print("portal jobs token roles:", ",".join(roles))
+PY
+  rm -f "$work/portal-jobs-token.json"
+}
+
+assert_portal_jobs_token
 if grep -q 'FREEDRIVER_AUTONOMY_MCP_CLIENT_SECRET' "$work/secrets/api.secret" "$work/secrets.env" "$work/secrets/invite.env" "$work/secrets/instances.env" "$work/secrets/grafana.env" "$work/secrets/mqtt.env"; then
   echo "autonomy MCP secret leaked into another file" >&2
   exit 1
@@ -385,6 +435,7 @@ PROVISION_ALLOW_NON_ROOT=1 \
   SECRETS_ENV="$work/secrets.env" \
   bash scripts/provision-keycloak-freedriver.sh
 assert_invite_scopes
+assert_portal_jobs_token
 
 admin create users -r freedriver -s username=outside-invite -s enabled=true >/dev/null
 outside_id="$(admin get users -r freedriver -q username=outside-invite -q exact=true --fields id --format csv --noquotes | csv_id)"
