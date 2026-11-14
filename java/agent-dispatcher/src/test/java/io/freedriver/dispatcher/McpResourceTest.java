@@ -307,7 +307,8 @@ class McpResourceTest {
                 .body("result.tools.find { it.name == 'list_jobs' }.inputSchema.properties.limit.maximum", is(50))
                 .body("result.tools.find { it.name == 'list_jobs' }.inputSchema.properties.state.pattern",
                         is("queued|in-progress|done"))
-                .body("result.tools.find { it.name == 'list_jobs' }.inputSchema.required", empty());
+                .body("result.tools.find { it.name == 'list_jobs' }.inputSchema.required", empty())
+                .body("result.tools.every { it.inputSchema.additionalProperties == false }", is(true));
         String toolsJson = listed.extract().asString();
         assertFalse(toolsJson.contains("allowlist"));
         assertFalse(toolsJson.contains("\"shell\""));
@@ -401,17 +402,22 @@ class McpResourceTest {
         assertFalse(rejected.contains(tooLong));
         assertEquals(before, jobCount());
 
-        String shelled = call(session, """
-                {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"openbot_send_prompt","arguments":{"server":"grok.local","agentName":"yuni","prompt":"hi","channel":"TEXT","shell":"rm -rf /"}}}
-                """)
-                .statusCode(200)
-                .body("result.isError", is(false))
-                .extract()
-                .asString();
-        // The library ignores an argument the tool does not declare: the job is stored without it.
-        assertFalse(shelled.contains("rm -rf"));
-        assertEquals(before + 1, jobCount());
-        before = jobCount();
+        // An argument the tool does not declare is refused before the tool runs: no job, one denied audit line.
+        try (AuditLines audit = AuditLines.open()) {
+            String shelled = call(session, """
+                    {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"openbot_send_prompt","arguments":{"server":"grok.local","agentName":"yuni","prompt":"hi","channel":"TEXT","shell":"rm -rf /"}}}
+                    """)
+                    .statusCode(200)
+                    .body("error.code", is(-32602))
+                    .body("error.message", is("invalid params"))
+                    .extract()
+                    .asString();
+            assertFalse(shelled.contains("rm -rf"));
+            assertEquals(before, jobCount());
+            assertTrue(audit.lines().stream().anyMatch(line -> line.contains("tool=openbot_send_prompt")
+                    && line.endsWith("result=denied")), audit.lines()::toString);
+            assertFalse(String.join("\n", audit.lines()).contains("rm -rf"));
+        }
 
         call(session, "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"ping\"}")
                 .statusCode(200);

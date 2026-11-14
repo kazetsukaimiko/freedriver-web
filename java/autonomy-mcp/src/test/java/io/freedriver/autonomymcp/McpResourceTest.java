@@ -200,7 +200,8 @@ class McpResourceTest {
                 .body("result.tools.find { it.name == 'switch_appliance' }.inputSchema.properties.delaySeconds.maximum", is(86400))
                 .body("result.tools.find { it.name == 'switch_appliance' }.inputSchema.properties.delaySeconds.description", containsString("300"))
                 .body("result.tools.find { it.name == 'switch_appliance' }.inputSchema.required", hasItem("on"))
-                .body("result.tools.find { it.name == 'switch_appliance' }.inputSchema.required", not(hasItem("delaySeconds")));
+                .body("result.tools.find { it.name == 'switch_appliance' }.inputSchema.required", not(hasItem("delaySeconds")))
+                .body("result.tools.every { it.inputSchema.additionalProperties == false }", is(true));
     }
 
     @Test
@@ -246,8 +247,9 @@ class McpResourceTest {
 
     /**
      * Pinned answers. Before the MCP library every case here was -32602 "invalid params". The library
-     * keeps -32602 and names the argument or the constraint; an argument the tool does not declare
-     * is ignored, not refused.
+     * keeps -32602 and names the argument or the constraint. A Bean Validation refusal (the
+     * {@code switchAppliance.} messages) also writes a {@code denied} audit line; a value the library
+     * cannot convert, or a missing argument, is refused by the library before the tool bean and is not audited.
      */
     @Test
     @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
@@ -267,6 +269,7 @@ class McpResourceTest {
             {"\"instanceId\":\"abc\",\"applianceName\":\"fridge\",\"on\":false", "Invalid argument [instanceId] - unable to convert value"},
             {SWITCH_TARGET + ",\"applianceName\":\"fridge\"", "Missing required argument: on"}
         };
+        AuditLines audit = AuditLines.open();
         for (String[] pin : cases) {
             given().contentType("application/json")
                     .accept("application/json, text/event-stream")
@@ -279,9 +282,37 @@ class McpResourceTest {
                     .body("error.message", is(pin[1]));
         }
         assertEquals(0, posts());
+        audit.close();
+        long constraintRefusals = java.util.Arrays.stream(cases).filter(pin -> pin[1].startsWith("switchAppliance.")).count();
+        assertEquals(constraintRefusals, audit.lines().stream()
+                .filter(line -> line.contains("tool=switch_appliance") && line.endsWith("result=denied")).count(),
+                audit.lines()::toString);
     }
 
+    /** Pinned: an argument the tool does not declare is refused before the tool runs, as before the MCP library. */
     @Test
+    @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
+    void an_unknown_argument_is_refused_and_nothing_switches() {
+        String session = initialize();
+        try (AuditLines audit = AuditLines.open()) {
+            given().contentType("application/json")
+                    .accept("application/json, text/event-stream")
+                    .header(McpEndpoint.SESSION_HEADER, session)
+                    .body(switchArguments(baseSwitch() + ",\"duration\":300"))
+                    .post("/autonomy/mcp")
+                    .then()
+                    .statusCode(200)
+                    .body("error.code", is(-32602))
+                    .body("error.message", is("invalid params"));
+            assertEquals(0, posts());
+            assertTrue(audit.lines().stream().anyMatch(line -> line.contains("sub=mcp-switch")
+                    && line.contains("tool=switch_appliance")
+                    && line.contains("instance=11111111-1111-1111-1111-111111111111")
+                    && line.contains("appliance=fridge")
+                    && line.endsWith("result=denied")), audit.lines()::toString);
+        }
+    }
+
     @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
     void an_unknown_argument_is_ignored_and_the_switch_runs_now() {
         String session = initialize();
@@ -322,6 +353,7 @@ class McpResourceTest {
     @TestSecurity(user = "mcp-reader", roles = "mcp-user")
     void debug_without_mcp_debug_is_refused() {
         String session = initialize();
+        AuditLines audit = AuditLines.open();
         given().contentType("application/json")
                 .accept("application/json, text/event-stream")
                 .header(McpEndpoint.SESSION_HEADER, session)
@@ -332,6 +364,9 @@ class McpResourceTest {
                 .body("error.code", is(-32005))
                 .body("error.message", is("io.quarkus.security.ForbiddenException"));
         assertTrue(DashboardStub.recorded.isEmpty());
+        audit.close();
+        assertTrue(audit.lines().stream().anyMatch(line -> line.contains("sub=mcp-reader")
+                && line.contains("tool=debug") && line.endsWith("result=denied")), audit.lines()::toString);
     }
 
     @Test

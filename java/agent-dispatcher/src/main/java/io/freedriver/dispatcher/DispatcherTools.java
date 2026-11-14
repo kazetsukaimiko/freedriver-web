@@ -1,5 +1,8 @@
 package io.freedriver.dispatcher;
 
+import io.freedriver.mcp.AuditedRefusals;
+import io.freedriver.mcp.DeclaredToolArguments;
+import io.quarkiverse.mcp.server.ToolGuardrails;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.freedriver.dispatcher.api.Actors;
@@ -38,6 +41,7 @@ import java.util.function.Supplier;
 @ApplicationScoped
 @McpServer(McpServer.DEFAULT)
 @McpServer("dispatch")
+@AuditedRefusals
 public class DispatcherTools {
 
     private static final int PAGE_DEFAULT = 20;
@@ -53,6 +57,7 @@ public class DispatcherTools {
         this.mapper = mapper;
     }
 
+    @ToolGuardrails(input = DeclaredToolArguments.class)
     @Tool(
             name = "list_agents",
             description = "Freedriver dispatch: list agents that can take a job, with name, server, idle or busy state, and activity.")
@@ -61,6 +66,7 @@ public class DispatcherTools {
         return guard(jobs::listAgents);
     }
 
+    @ToolGuardrails(input = DeclaredToolArguments.class)
     @Tool(
             name = "openbot_send_prompt",
             description = "Freedriver dispatch: queue a prompt for a named agent on one server from list_agents, such as Project Manager. "
@@ -80,6 +86,7 @@ public class DispatcherTools {
                 List.of(jobs.deviceIdFor(server, agentName)), agentName, prompt, channel, stored)));
     }
 
+    @ToolGuardrails(input = DeclaredToolArguments.class)
     @Tool(
             name = "openbot_await_turn",
             description = "Freedriver dispatch: wait until the job is done, or until delaySeconds elapses. "
@@ -92,6 +99,7 @@ public class DispatcherTools {
         return guard(() -> jobs.awaitTurn(JobCallers.subject(identity), jobId, Duration.ofSeconds(delaySeconds)));
     }
 
+    @ToolGuardrails(input = DeclaredToolArguments.class)
     @Tool(
             name = "list_jobs",
             description = "Freedriver dispatch: list jobs this caller submitted, newest first. "
@@ -109,6 +117,7 @@ public class DispatcherTools {
         return guard(() -> jobs.listJobPage(JobCallers.subject(identity), agentName, state, size, cursor));
     }
 
+    @ToolGuardrails(input = DeclaredToolArguments.class)
     @Tool(
             name = "get_job",
             description = "Freedriver dispatch: read one job this caller submitted, including its id and result.")
@@ -117,6 +126,7 @@ public class DispatcherTools {
         return guard(() -> jobs.getJob(JobCallers.subject(identity), jobId));
     }
 
+    @ToolGuardrails(input = DeclaredToolArguments.class)
     @Tool(
             name = "report_host",
             description = "Freedriver dispatch: publish this host's bots, each idle or busy, with a short activity note. "
@@ -134,6 +144,7 @@ public class DispatcherTools {
         });
     }
 
+    @ToolGuardrails(input = DeclaredToolArguments.class)
     @Tool(
             name = "finish_job",
             description = "Freedriver dispatch: post the result of one queued job so the caller can read it.")

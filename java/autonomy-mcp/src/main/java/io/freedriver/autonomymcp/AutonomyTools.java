@@ -1,5 +1,8 @@
 package io.freedriver.autonomymcp;
 
+import io.freedriver.mcp.AuditedRefusals;
+import io.freedriver.mcp.DeclaredToolArguments;
+import io.quarkiverse.mcp.server.ToolGuardrails;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.freedriver.dashboard.model.ApplianceMapResponse;
 import io.freedriver.dashboard.model.HomeStatusResponse;
@@ -31,6 +34,7 @@ import java.util.function.Supplier;
  * one audit line.
  */
 @ApplicationScoped
+@AuditedRefusals
 public class AutonomyTools {
 
     private final SecurityIdentity identity;
@@ -53,6 +57,7 @@ public class AutonomyTools {
         this.audit = audit;
     }
 
+    @ToolGuardrails(input = DeclaredToolArguments.class)
     @Tool(
             name = "list_appliances",
             description = "Return a JSON array. Each object has houseName, instanceId, and appliances. "
@@ -64,6 +69,7 @@ public class AutonomyTools {
                 (ApplianceMapResponse map) -> ApplianceList.json(mapper, map));
     }
 
+    @ToolGuardrails(input = DeclaredToolArguments.class)
     @Tool(
             name = "switch_appliance",
             description = "Switch one named appliance on or off. Same command path as the dashboard. "
@@ -101,12 +107,14 @@ public class AutonomyTools {
                 : ToolResponse.error(Spoken.refusal(status));
     }
 
+    @ToolGuardrails(input = DeclaredToolArguments.class)
     @Tool(name = "home_status", description = "Broker connection and last state update.")
     @RolesAllowed(Actors.MCP_USER)
     ToolResponse homeStatus() {
         return read("home_status", dashboard::homeStatus, (HomeStatusResponse status) -> Spoken.home(status));
     }
 
+    @ToolGuardrails(input = DeclaredToolArguments.class)
     @Tool(name = "debug", description = "Read-only health and recent error category.")
     @RolesAllowed(Actors.MCP_DEBUG)
     ToolResponse debug() {

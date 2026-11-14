@@ -15,7 +15,7 @@ import static org.hamcrest.Matchers.is;
  * The answers the MCP library gives where the hand checks answered before. Each case names the
  * old answer:
  * <ul>
- *     <li>an unknown argument: before, JSON-RPC -32602 "invalid params"; now ignored, the tool runs;</li>
+ *     <li>an unknown argument: before and now JSON-RPC -32602 "invalid params", refused before the tool runs;</li>
  *     <li>a fraction for an integer: before and now -32602; the message now names the argument;</li>
  *     <li>a number for an enum: before and now -32602;</li>
  *     <li>an unknown enum value: before, a tool error result; now -32602;</li>
@@ -27,10 +27,11 @@ class McpPinnedAnswersTest {
 
     @Test
     @TestSecurity(user = "pin-unknown-argument", roles = "dispatcher")
-    void an_unknown_argument_is_ignored() {
+    void an_unknown_argument_is_invalid_params() {
         call(initialize(), tool("list_agents", "{\"extra\":1}"))
                 .statusCode(200)
-                .body("result.isError", is(false));
+                .body("error.code", is(-32602))
+                .body("error.message", is("invalid params"));
     }
 
     @Test
