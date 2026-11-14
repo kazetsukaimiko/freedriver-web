@@ -1,6 +1,7 @@
 package io.freedriver.dispatcher;
 
 import io.freedriver.dispatcher.model.AgentRosterEntry;
+import io.freedriver.dispatcher.model.AssignmentPage;
 import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.DeviceView;
@@ -335,6 +336,23 @@ public class JobStoreService implements JobStore {
     }
 
     private record PageCursor(long millis, String jobId) {
+    }
+
+    @Override
+    public AssignmentPage allAssignments(int limit, String cursor) {
+        if (limit < 1 || limit > 200) {
+            throw badRequest("limit");
+        }
+        PageCursor after = cursor == null || cursor.isBlank() ? null : pageCursor(cursor);
+        List<Assignment> rows = assignments.newest(limit + 1,
+                after == null ? null : Instant.ofEpochMilli(after.millis()), after == null ? null : after.jobId());
+        List<Assignment> page = rows.subList(0, Math.min(limit, rows.size()));
+        String next = null;
+        if (rows.size() > limit) {
+            Assignment last = page.getLast();
+            next = last.createdAt.toEpochMilli() + "/" + last.id;
+        }
+        return new AssignmentPage(page.stream().map(JobStoreService::viewAssignment).toList(), next);
     }
 
     @Override

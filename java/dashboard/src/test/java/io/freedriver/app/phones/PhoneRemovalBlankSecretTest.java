@@ -10,6 +10,7 @@ import io.freedriver.sms.model.AttachUser;
 import io.freedriver.sms.model.Attached;
 import io.freedriver.sms.model.InviteSend;
 import io.freedriver.sms.model.PhoneList;
+import io.freedriver.sms.model.PhoneRecords;
 import io.freedriver.sms.model.RemovePhone;
 import io.freedriver.sms.model.Removed;
 import io.freedriver.sms.model.SentResponse;
@@ -127,6 +128,12 @@ class PhoneRemovalBlankSecretTest {
         public PhoneList list() {
             answer();
             return new PhoneList(List.of());
+        }
+
+        @Override
+        public PhoneRecords records() {
+            answer();
+            return new PhoneRecords(List.of());
         }
 
         @Override

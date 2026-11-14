@@ -17,6 +17,7 @@ import java.util.List;
 
 import static com.mongodb.client.model.Filters.and;
 import static com.mongodb.client.model.Filters.eq;
+import static com.mongodb.client.model.Filters.ne;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -42,6 +43,8 @@ class JobIndexesTest {
         assertIndexed(jobs.find(and(eq("deviceId", "pc-a"), eq("status", AssignmentState.QUEUED.name())))
                 .sort(Sorts.ascending("ordinal")).explain(), "deviceId_1_status_1_ordinal_1");
         assertIndexed(jobs.find(eq("jobId", "j")).sort(Sorts.ascending("ordinal")).explain(), "jobId_1");
+        assertIndexed(jobs.find(ne("jobId", null)).sort(Sorts.descending("createdAt", "_id")).explain(),
+                "createdAt_-1__id_-1");
         assertIndexed(jobs.find(eq("dispatcherSubject", "grok")).sort(Sorts.ascending("createdAt")).explain(),
                 "dispatcherSubject_1_createdAt_-1");
         assertIndexed(jobs.aggregate(List.of(new Document("$match", new Document("dispatcherSubject", "grok")

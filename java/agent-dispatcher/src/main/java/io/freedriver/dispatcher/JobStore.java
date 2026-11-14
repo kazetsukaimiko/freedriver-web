@@ -1,6 +1,7 @@
 package io.freedriver.dispatcher;
 
 import io.freedriver.dispatcher.model.AgentRosterEntry;
+import io.freedriver.dispatcher.model.AssignmentPage;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.DeviceView;
 import io.freedriver.dispatcher.model.JobPage;
@@ -64,6 +65,12 @@ public interface JobStore {
      */
     JobPage listJobPage(@NotBlank String dispatcherSubject, @Size(min = 1, max = 64) String agentName, String state,
                         @Min(1) @Max(50) int limit, String cursor);
+
+    /**
+     * One page of assignments across all callers, newest first by creation time. The rows carry
+     * the prompt. {@code limit} is 1 through 200; {@code cursor} is the previous page's {@code next}.
+     */
+    AssignmentPage allAssignments(int limit, String cursor);
 
     List<AssignmentView> poll(String deviceId, Duration wait);
 

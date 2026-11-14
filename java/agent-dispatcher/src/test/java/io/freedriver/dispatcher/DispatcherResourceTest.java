@@ -23,6 +23,7 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
 class DispatcherResourceTest {
@@ -165,6 +166,44 @@ class DispatcherResourceTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    @Test
+    @TestSecurity(user = "service-account-freedriver-portal-jobs", roles = "dispatcher-admin")
+    void admin_jobs_lists_every_callers_assignments_newest_first_in_pages() throws Exception {
+        jobs.register("pc-admin", "admin.local", List.of("yuni"));
+        JobView older = jobs.submitNow("grok-admin-a",
+                new SubmitJobRequest(List.of("pc-admin"), "yuni", "admin older", Channel.TEXT));
+        Thread.sleep(5);
+        JobView newer = jobs.submitNow("grok-admin-b",
+                new SubmitJobRequest(List.of("pc-admin"), "yuni", "admin newer", Channel.TEXT));
+
+        List<String> prompts = given().queryParam("limit", 200)
+                .get("/api/dispatcher/admin/jobs")
+                .then()
+                .statusCode(200)
+                .extract().jsonPath().getList("assignments.prompt", String.class);
+        assertTrue(prompts.indexOf("admin newer") >= 0 && prompts.indexOf("admin newer") < prompts.indexOf("admin older"),
+                prompts.toString());
+
+        String next = given().queryParam("limit", 1)
+                .get("/api/dispatcher/admin/jobs")
+                .then()
+                .statusCode(200)
+                .body("assignments.size()", is(1))
+                .body("assignments[0].assignmentId", is(newer.assignments().getFirst().assignmentId().toString()))
+                .extract().path("next");
+        given().queryParam("limit", 1).queryParam("cursor", next)
+                .get("/api/dispatcher/admin/jobs")
+                .then()
+                .statusCode(200)
+                .body("assignments[0].assignmentId", is(older.assignments().getFirst().assignmentId().toString()));
+    }
+
+    @Test
+    @TestSecurity(user = "grok-admin", roles = "dispatcher")
+    void the_dispatcher_role_cannot_list_every_callers_jobs() {
+        given().get("/api/dispatcher/admin/jobs").then().statusCode(403);
     }
 
     private AssignmentView waitForQueued(String deviceId) throws InterruptedException {
