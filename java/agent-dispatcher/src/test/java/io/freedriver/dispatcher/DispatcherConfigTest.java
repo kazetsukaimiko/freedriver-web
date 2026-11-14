@@ -48,11 +48,14 @@ class DispatcherConfigTest {
                 "quarkus.http.auth.permission.metadata.paths=/api/dispatcher/oauth-protected-resource"));
         assertTrue(properties.contains("quarkus.http.auth.permission.metadata.policy=mcp-metadata"));
         assertTrue(properties.contains("quarkus.http.auth.permission.metadata.methods=GET"));
-        assertFalse(properties.contains("paths=/mcp"));
-        assertFalse(properties.contains("paths=/mcp/*"));
-        assertFalse(properties.contains("paths=/dispatch/mcp"));
-        assertFalse(properties.contains("paths=/api/dispatcher/*"));
-        assertFalse(properties.contains("paths=/api/device"));
+        String permissions = properties.lines()
+                .filter(line -> line.startsWith("quarkus.http.auth.permission."))
+                .collect(java.util.stream.Collectors.joining("\n"));
+        assertFalse(permissions.contains("paths=/mcp"));
+        assertFalse(permissions.contains("paths=/mcp/*"));
+        assertFalse(permissions.contains("paths=/dispatch/mcp"));
+        assertFalse(permissions.contains("paths=/api/dispatcher/*"));
+        assertFalse(permissions.contains("paths=/api/device"));
 
         String caddy = Files.readString(Path.of("../../Caddyfile"));
         assertTrue(caddy.contains(

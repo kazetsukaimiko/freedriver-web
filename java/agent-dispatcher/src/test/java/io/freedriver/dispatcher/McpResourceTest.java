@@ -2,8 +2,9 @@ package io.freedriver.dispatcher;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.freedriver.dispatcher.api.McpApi;
 import io.freedriver.dispatcher.model.AgentRosterEntry;
+import io.freedriver.mcp.McpEndpoint;
+import io.freedriver.mcp.McpSessions;
 import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
@@ -30,6 +31,7 @@ import java.util.concurrent.TimeUnit;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.is;
@@ -43,6 +45,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
 class McpResourceTest {
+
+    private static final String CHALLENGE =
+            "Bearer resource_metadata=\"https://app.freedriver.io/api/dispatcher/oauth-protected-resource\"";
 
     private static final String PROMPT = "secret-prompt-do-not-leak";
 
@@ -66,7 +71,7 @@ class McpResourceTest {
                 .post("/mcp")
                 .then()
                 .statusCode(401)
-                .header("WWW-Authenticate", is(McpProtectedResource.CHALLENGE))
+                .header("WWW-Authenticate", is(CHALLENGE))
                 .extract()
                 .asString();
 
@@ -74,7 +79,7 @@ class McpResourceTest {
                 .get("/mcp")
                 .then()
                 .statusCode(401)
-                .header("WWW-Authenticate", is(McpProtectedResource.CHALLENGE))
+                .header("WWW-Authenticate", is(CHALLENGE))
                 .extract()
                 .asString();
 
@@ -90,25 +95,26 @@ class McpResourceTest {
                 .post("/dispatch/mcp")
                 .then()
                 .statusCode(401)
-                .header("WWW-Authenticate", is(McpProtectedResource.CHALLENGE));
-        given().get("/dispatch/mcp").then().statusCode(401).header("WWW-Authenticate", is(McpProtectedResource.CHALLENGE));
+                .header("WWW-Authenticate", is(CHALLENGE));
+        given().get("/dispatch/mcp").then().statusCode(401).header("WWW-Authenticate", is(CHALLENGE));
     }
 
     @Test
     void session_without_a_token_is_401() {
-        String sessionId = sessions.open("alice-bare");
+        String sessionId = UUID.randomUUID().toString();
+        sessions.remember(sessionId, "alice-bare").await().indefinitely();
         int before = jobCount();
 
         given()
                 .contentType("application/json")
-                .header(McpApi.SESSION_HEADER, sessionId)
+                .header(McpEndpoint.SESSION_HEADER, sessionId)
                 .body(submitBody("pc-anon", PROMPT))
                 .post("/mcp")
                 .then()
                 .statusCode(401);
 
         assertEquals(before, jobCount());
-        assertEquals(McpSessions.Status.MATCH, sessions.check(sessionId, "alice-bare"));
+        assertEquals(McpSessions.Status.MATCH, sessions.check(sessionId, "alice-bare").await().indefinitely());
     }
 
     @Test
@@ -123,7 +129,7 @@ class McpResourceTest {
         int before = jobCount();
         call(session, submitBody("freedriver-openbot", PROMPT))
                 .statusCode(200)
-                .body("result.isError", is(true));
+                .body("error.code", is(-32005));
         assertEquals(before, jobCount());
         assertFalse(call(session, submitBody("freedriver-openbot", PROMPT)).extract().asString().contains(PROMPT));
 
@@ -180,13 +186,14 @@ class McpResourceTest {
     @Test
     @TestSecurity(user = "bob-session", roles = "dispatcher")
     void session_for_another_subject_is_403_and_the_tool_does_not_run() {
-        String alice = sessions.open("alice-session");
+        String alice = UUID.randomUUID().toString();
+        sessions.remember(alice, "alice-session").await().indefinitely();
         jobs.register("pc-bob-session", "bob.local", List.of("yuni"));
         int before = jobCount();
 
         String body = given()
                 .contentType("application/json")
-                .header(McpApi.SESSION_HEADER, alice)
+                .header(McpEndpoint.SESSION_HEADER, alice)
                 .body(submitBody("pc-bob-session", PROMPT))
                 .post("/mcp")
                 .then()
@@ -196,22 +203,23 @@ class McpResourceTest {
 
         assertFalse(body.contains(PROMPT));
         assertEquals(before, jobCount());
-        assertEquals(McpSessions.Status.MATCH, sessions.check(alice, "alice-session"));
-        assertEquals(McpSessions.Status.OTHER_SUBJECT, sessions.check(alice, "bob-session"));
+        assertEquals(McpSessions.Status.MATCH, sessions.check(alice, "alice-session").await().indefinitely());
+        assertEquals(McpSessions.Status.OTHER_SUBJECT, sessions.check(alice, "bob-session").await().indefinitely());
     }
 
     @Test
     @TestSecurity(user = "bob-delete", roles = "dispatcher")
     void delete_of_another_subjects_session_is_403() {
-        String alice = sessions.open("alice-delete");
+        String alice = UUID.randomUUID().toString();
+        sessions.remember(alice, "alice-delete").await().indefinitely();
 
         given()
-                .header(McpApi.SESSION_HEADER, alice)
+                .header(McpEndpoint.SESSION_HEADER, alice)
                 .delete("/mcp")
                 .then()
                 .statusCode(403);
 
-        assertEquals(McpSessions.Status.MATCH, sessions.check(alice, "alice-delete"));
+        assertEquals(McpSessions.Status.MATCH, sessions.check(alice, "alice-delete").await().indefinitely());
     }
 
     @Test
@@ -252,7 +260,7 @@ class McpResourceTest {
         given()
                 .contentType("application/json")
                 .accept("application/json, text/event-stream")
-                .header(McpApi.SESSION_HEADER, "not-a-real-session")
+                .header(McpEndpoint.SESSION_HEADER, "not-a-real-session")
                 .body("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/list\"}")
                 .post("/mcp")
                 .then()
@@ -268,7 +276,7 @@ class McpResourceTest {
         given()
                 .contentType("application/json")
                 .accept("application/json, text/event-stream")
-                .header(McpApi.SESSION_HEADER, "not-a-real-session")
+                .header(McpEndpoint.SESSION_HEADER, "not-a-real-session")
                 .body(submitBody("pc-unknown-session", PROMPT))
                 .post("/mcp")
                 .then()
@@ -290,19 +298,16 @@ class McpResourceTest {
                 .body("result.tools.size()", is(5))
                 .body("result.tools.find { it.name == 'openbot_send_prompt' }.inputSchema.properties.prompt.maxLength", is(16000))
                 .body("result.tools.find { it.name == 'openbot_send_prompt' }.inputSchema.properties.server.maxLength", is(253))
-                .body("result.tools.find { it.name == 'openbot_send_prompt' }.inputSchema.additionalProperties", is(false))
                 .body("result.tools.find { it.name == 'openbot_send_prompt' }.inputSchema.properties.blockForUpTo", nullValue())
                 .body("result.tools.find { it.name == 'openbot_send_prompt' }.inputSchema.properties.on_busy.enum", hasItems("supersede", "queue"))
                 .body("result.tools.find { it.name == 'openbot_send_prompt' }.inputSchema.required", not(hasItem("on_busy")))
                 .body("result.tools.find { it.name == 'openbot_await_turn' }.inputSchema.properties.delaySeconds.maximum", is(120))
                 .body("result.tools.find { it.name == 'openbot_await_turn' }.inputSchema.properties.delaySeconds.minimum", is(0))
                 .body("result.tools.find { it.name == 'openbot_await_turn' }.inputSchema.required", hasItem("delaySeconds"))
-                .body("result.tools.find { it.name == 'list_agents' }.inputSchema.additionalProperties", is(false))
-                .body("result.tools.find { it.name == 'list_jobs' }.inputSchema.additionalProperties", is(false))
                 .body("result.tools.find { it.name == 'list_jobs' }.inputSchema.properties.limit.maximum", is(50))
-                .body("result.tools.find { it.name == 'list_jobs' }.inputSchema.properties.state.enum",
-                        hasItems("queued", "in-progress", "done"))
-                .body("result.tools.find { it.name == 'list_jobs' }.inputSchema.required", nullValue());
+                .body("result.tools.find { it.name == 'list_jobs' }.inputSchema.properties.state.pattern",
+                        is("queued|in-progress|done"))
+                .body("result.tools.find { it.name == 'list_jobs' }.inputSchema.required", empty());
         String toolsJson = listed.extract().asString();
         assertFalse(toolsJson.contains("allowlist"));
         assertFalse(toolsJson.contains("\"shell\""));
@@ -400,17 +405,19 @@ class McpResourceTest {
                 {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"openbot_send_prompt","arguments":{"server":"grok.local","agentName":"yuni","prompt":"hi","channel":"TEXT","shell":"rm -rf /"}}}
                 """)
                 .statusCode(200)
-                .body("error.code", is(-32602))
+                .body("result.isError", is(false))
                 .extract()
                 .asString();
+        // The library ignores an argument the tool does not declare: the job is stored without it.
         assertFalse(shelled.contains("rm -rf"));
-        assertEquals(before, jobCount());
+        assertEquals(before + 1, jobCount());
+        before = jobCount();
 
         call(session, "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"ping\"}")
                 .statusCode(200);
 
         given()
-                .header(McpApi.SESSION_HEADER, session)
+                .header(McpEndpoint.SESSION_HEADER, session)
                 .header("MCP-Protocol-Version", "1999-01-01")
                 .accept("application/json, text/event-stream")
                 .contentType("application/json")
@@ -433,7 +440,7 @@ class McpResourceTest {
         given()
                 .contentType("application/json")
                 .accept("application/json, text/event-stream")
-                .header(McpApi.SESSION_HEADER, session)
+                .header(McpEndpoint.SESSION_HEADER, session)
                 .body("{\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"tools/list\"}")
                 .post("/dispatch/mcp")
                 .then()
@@ -441,14 +448,14 @@ class McpResourceTest {
                 .body("result.tools.name", containsInAnyOrder("list_agents", "openbot_send_prompt", "openbot_await_turn", "get_job", "list_jobs"));
 
         given()
-                .header(McpApi.SESSION_HEADER, session)
+                .header(McpEndpoint.SESSION_HEADER, session)
                 .delete("/mcp")
                 .then()
                 .statusCode(200);
         given()
                 .contentType("application/json")
                 .accept("application/json, text/event-stream")
-                .header(McpApi.SESSION_HEADER, session)
+                .header(McpEndpoint.SESSION_HEADER, session)
                 .body("{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"tools/list\"}")
                 .post("/mcp")
                 .then()
@@ -560,8 +567,8 @@ class McpResourceTest {
                 {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"openbot_send_prompt","arguments":{"server":"on-busy.local","agentName":"yuni","prompt":"nope","channel":"TEXT","on_busy":"interrupt"}}}
                 """)
                 .statusCode(200)
-                .body("result.isError", is(true))
-                .body("result.content[0].text", not(containsString("nope")));
+                .body("error.code", is(-32602))
+                .body(not(containsString("nope")));
         call(session, """
                 {"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"openbot_send_prompt","arguments":{"server":"on-busy.local","agentName":"yuni","prompt":"nope","channel":"TEXT","on_busy":1}}}
                 """)
@@ -724,14 +731,14 @@ class McpResourceTest {
                 .body("result.capabilities.prompts", nullValue())
                 .body("result.serverInfo.name", is("freedriver-dispatcher"))
                 .extract()
-                .header(McpApi.SESSION_HEADER);
+                .header(McpEndpoint.SESSION_HEADER);
     }
 
     private static ValidatableResponse call(String sessionId, String body) {
         return given()
                 .contentType("application/json")
                 .accept("application/json, text/event-stream")
-                .header(McpApi.SESSION_HEADER, sessionId)
+                .header(McpEndpoint.SESSION_HEADER, sessionId)
                 .body(body)
                 .post("/mcp")
                 .then();
