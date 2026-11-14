@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.5.2](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.5.1...v1.5.2) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ci:** ship the memory hit window as a module, not a test jar ([#506](https://github.com/kazetsukaimiko/freedriver-web/issues/506)) ([6adc2fd](https://github.com/kazetsukaimiko/freedriver-web/commit/6adc2fd2020ba0101197cf670da280745aa89555)), closes [#477](https://github.com/kazetsukaimiko/freedriver-web/issues/477)
+
+
+### Refactors
+
+* **dashboard:** call services through REST clients built from the JAX-RS interfaces ([#492](https://github.com/kazetsukaimiko/freedriver-web/issues/492)) ([1df098b](https://github.com/kazetsukaimiko/freedriver-web/commit/1df098ba728e05f3afad239f3bcf7b57682d71b9)), closes [#473](https://github.com/kazetsukaimiko/freedriver-web/issues/473)
+* **dashboard:** claim scheduled switches in Mongo ([#497](https://github.com/kazetsukaimiko/freedriver-web/issues/497)) ([9c61460](https://github.com/kazetsukaimiko/freedriver-web/commit/9c614608777961005acadea55c8bd80c4558e5a4)), closes [#478](https://github.com/kazetsukaimiko/freedriver-web/issues/478)
+* **dashboard:** make Keycloak admin calls with the Keycloak admin client ([#499](https://github.com/kazetsukaimiko/freedriver-web/issues/499)) ([7a130c6](https://github.com/kazetsukaimiko/freedriver-web/commit/7a130c649272aa221faa2f83e6d58482ecb1e7d4)), closes [#474](https://github.com/kazetsukaimiko/freedriver-web/issues/474)
+* **dashboard:** read other services' rows through their APIs ([#503](https://github.com/kazetsukaimiko/freedriver-web/issues/503)) ([589e715](https://github.com/kazetsukaimiko/freedriver-web/commit/589e715d65faf1f23a82bd6bf30e9c27160ea9a7)), closes [#481](https://github.com/kazetsukaimiko/freedriver-web/issues/481)
+* **dispatcher:** keep jobs in typed Mongo repositories with atomic transitions ([#494](https://github.com/kazetsukaimiko/freedriver-web/issues/494)) ([2965649](https://github.com/kazetsukaimiko/freedriver-web/commit/2965649f8cd5d87fce780e62132fa2df0437e48e)), closes [#476](https://github.com/kazetsukaimiko/freedriver-web/issues/476)
+* **dispatcher:** serve both MCP servers from quarkus-mcp-server and share MCP support ([#509](https://github.com/kazetsukaimiko/freedriver-web/issues/509)) ([e8b33ca](https://github.com/kazetsukaimiko/freedriver-web/commit/e8b33ca90377c079e2fc24bc09e1f2dbd2479ad0)), closes [#443](https://github.com/kazetsukaimiko/freedriver-web/issues/443) [#479](https://github.com/kazetsukaimiko/freedriver-web/issues/479)
+* **sms:** give each service one managed Redis client ([#498](https://github.com/kazetsukaimiko/freedriver-web/issues/498)) ([db7f83f](https://github.com/kazetsukaimiko/freedriver-web/commit/db7f83fc13e8bf81e35b076443fe2102a34de194)), closes [#477](https://github.com/kazetsukaimiko/freedriver-web/issues/477)
+* **sms:** keep invites and SMS consents in Mongo through Panache ([#500](https://github.com/kazetsukaimiko/freedriver-web/issues/500)) ([d25c8a4](https://github.com/kazetsukaimiko/freedriver-web/commit/d25c8a4d8bd2d10783b15ad58a40836150f310df)), closes [#480](https://github.com/kazetsukaimiko/freedriver-web/issues/480)
+
 ## [1.5.1](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.5.0...v1.5.1) (2026-11-13)
 
 
