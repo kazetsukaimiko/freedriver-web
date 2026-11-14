@@ -173,6 +173,7 @@ class McpResourceTest {
     void switch_sends_a_fixture_name_with_a_space() {
         String session = initialize();
         given().contentType("application/json")
+                .accept("application/json, text/event-stream")
                 .header(McpEndpoint.SESSION_HEADER, session)
                 .body(switchBody("Hallway (test)", false))
                 .post("/autonomy/mcp")
