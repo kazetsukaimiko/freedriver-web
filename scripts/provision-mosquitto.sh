@@ -10,9 +10,9 @@
 # __INSTANCE_ID__ in the template's topic lines:
 #   INSTANCE_ID=<uuid> ./scripts/provision-mosquitto.sh
 #   ./scripts/provision-mosquitto.sh --instance-id <uuid>
-# Appliances and commands are exact instance topics. Autonomy writes
-# freedriver/v1/<instanceId>/metrics/#. api reads freedriver/v1/+/metrics/#.
-# House users receive exact instance topics. Long-term, freedriver-web owns
+# Instance users keep exact appliances, commands, and metrics topics.
+# api reads freedriver/v1/+/appliances, writes freedriver/v1/+/commands,
+# and reads freedriver/v1/+/metrics/#. Long-term, freedriver-web owns
 # minting instanceId. Techops runs the first-house apply with the locked
 # first-house instanceId. Techops restarts Mosquitto afterwards to load the ACL.
 # TLS: self-signed and Let's Encrypt share server.crt/server.key.
@@ -56,8 +56,9 @@ Usage: provision-mosquitto.sh [--instance-id UUID] [--acl-only] [--acl-template 
 
 Git is the template. Compose does not mount it as live. First-house apply
 is Techops + the secrets file: instance topics in, leftover
-freedriver/v1/home/... out, same write. Metrics: autonomy writes
-freedriver/v1/<id>/metrics/#; api reads freedriver/v1/+/metrics/#; house
+freedriver/v1/home/... out, same write. Autonomy writes
+freedriver/v1/<id>/metrics/#. api reads freedriver/v1/+/appliances, writes
+freedriver/v1/+/commands, and reads freedriver/v1/+/metrics/#. House
 users receive exact instance topics. Do not open 1883.
 EOF
 }
@@ -104,9 +105,8 @@ same_path() {
 }
 
 # Checks topic lines only; comment lines carry free text.
-# Appliances and commands are exact instance topics. Autonomy writes
-# freedriver/v1/<id>/metrics/#. api reads freedriver/v1/+/metrics/#.
-# The + filter is api-only.
+# Instance users keep exact appliances, commands, and metrics topics.
+# api uses + for appliances, commands, and metrics.
 assert_acl_topics() {
   local file="$1"
   local instance_token="$2"
@@ -115,6 +115,8 @@ assert_acl_topics() {
   local line access filter
   local exact_id="freedriver/v1/${instance_token}"
   local autonomy_metrics="${exact_id}/metrics/#"
+  local api_appliances="freedriver/v1/+/appliances"
+  local api_commands="freedriver/v1/+/commands"
   local api_metrics="freedriver/v1/+/metrics/#"
 
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -137,13 +139,23 @@ assert_acl_topics() {
       echo "ACL topic line has no user: ${line}" >&2
       exit 1
     fi
+    if [[ "$current_user" == "api" ]]; then
+      if [[ "$access" == "read" && "$filter" == "$api_appliances" ]]; then
+        continue
+      fi
+      if [[ "$access" == "write" && "$filter" == "$api_commands" ]]; then
+        continue
+      fi
+      if [[ "$access" == "read" && "$filter" == "$api_metrics" ]]; then
+        continue
+      fi
+      echo "ACL topic not allowed for user ${current_user}: ${line}" >&2
+      exit 1
+    fi
     if [[ "$filter" == "${exact_id}/appliances" || "$filter" == "${exact_id}/commands" ]]; then
       continue
     fi
     if [[ "$current_user" == "autonomy" && "$access" == "write" && "$filter" == "$autonomy_metrics" ]]; then
-      continue
-    fi
-    if [[ "$current_user" == "api" && "$access" == "read" && "$filter" == "$api_metrics" ]]; then
       continue
     fi
     echo "ACL topic not allowed for user ${current_user}: ${line}" >&2
@@ -155,6 +167,14 @@ assert_acl_topics() {
   fi
   if ! grep -Fxq "topic write ${autonomy_metrics}" "$file"; then
     echo "ACL must grant autonomy write ${autonomy_metrics}" >&2
+    exit 1
+  fi
+  if ! grep -Fxq "topic read ${api_appliances}" "$file"; then
+    echo "ACL must grant api read ${api_appliances}" >&2
+    exit 1
+  fi
+  if ! grep -Fxq "topic write ${api_commands}" "$file"; then
+    echo "ACL must grant api write ${api_commands}" >&2
     exit 1
   fi
   if ! grep -Fxq "topic read ${api_metrics}" "$file"; then
@@ -171,6 +191,8 @@ apply_instance_acl() {
   local instance_id="$1"
   local template="$2"
   local out="$3"
+  local api_appliances="topic read freedriver/v1/+/appliances"
+  local api_commands="topic write freedriver/v1/+/commands"
   local api_metrics="topic read freedriver/v1/+/metrics/#"
 
   if ! is_instance_id "$instance_id"; then
@@ -201,15 +223,19 @@ apply_instance_acl() {
   tmp="$(mktemp)"
   # Placeholder is a fixed token and instance_id is lowercase hex+hyphens,
   # so both are literal in sed. Substitution edits topic lines; comments keep
-  # the documented token. api metrics keeps + and is not instance-scoped.
+  # the documented token. api + grants stay unscoped.
   sed "/^topic /s/${ACL_PLACEHOLDER}/${instance_id}/g" "$template" > "$tmp"
   if grep -E '^topic ' "$tmp" | grep -Fq "$ACL_PLACEHOLDER"; then
     echo "ACL topic lines still contain ${ACL_PLACEHOLDER} after substitution." >&2
     rm -f "$tmp"
     exit 1
   fi
-  if grep -E '^topic ' "$tmp" | grep -Fvx "$api_metrics" | grep -Fv "/${instance_id}/"; then
-    echo "ACL topic lines must include the applied instanceId (api metrics subscribe excepted)." >&2
+  if grep -E '^topic ' "$tmp" \
+    | grep -Fvx "$api_appliances" \
+    | grep -Fvx "$api_commands" \
+    | grep -Fvx "$api_metrics" \
+    | grep -Fv "/${instance_id}/"; then
+    echo "ACL topic lines must include the applied instanceId (api + grants excepted)." >&2
     rm -f "$tmp"
     exit 1
   fi

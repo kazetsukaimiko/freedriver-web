@@ -3,16 +3,16 @@
 # replaces the whole previous ACL (including leftover freedriver/v1/home/...
 # rules) in one write. The live ACL exists on the VPS.
 #
-# Appliances and commands are exact instance topics. Metrics uses the filters
-# below. The topic segment is the instanceId, the same source as
-# appliances/commands.
+# Instance users keep exact appliances, commands, and metrics topics.
+# user api uses + so a newly provisioned house is heard without an ACL edit.
 #
 # instanceId is the UUID the house mints (hex digits and hyphens, any UUID
 # version). kaze hands the house-minted id to Techops, who runs:
 #   INSTANCE_ID=<house-minted-uuid> ./scripts/provision-mosquitto.sh
 #
-# v1 serves one house with the broker users autonomy and api. Autonomy writes
+# v1 serves houses with the broker users autonomy and api. Autonomy writes
 # freedriver/v1/<instanceId>/metrics/#. api reads
+# freedriver/v1/+/appliances, writes freedriver/v1/+/commands, and reads
 # freedriver/v1/+/metrics/#. House users receive exact instance topics. Each
 # later instance gets its own autonomy user.
 #
@@ -24,6 +24,6 @@ topic read freedriver/v1/__INSTANCE_ID__/commands
 topic write freedriver/v1/__INSTANCE_ID__/metrics/#
 
 user api
-topic read freedriver/v1/__INSTANCE_ID__/appliances
-topic write freedriver/v1/__INSTANCE_ID__/commands
+topic read freedriver/v1/+/appliances
+topic write freedriver/v1/+/commands
 topic read freedriver/v1/+/metrics/#
