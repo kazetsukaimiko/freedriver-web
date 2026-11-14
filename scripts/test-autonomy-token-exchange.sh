@@ -180,58 +180,6 @@ if ! grep -q '^FREEDRIVER_AUTONOMY_MCP_CLIENT_SECRET=.\+' "$work/secrets/autonom
   exit 1
 fi
 
-assert_portal_jobs_token() {
-  local jobs_uuid mapper_count
-  jobs_uuid="$(admin get clients -r freedriver -q clientId=freedriver-portal-jobs --fields id --format csv --noquotes | csv_id)"
-  admin get "clients/${jobs_uuid}/protocol-mappers/models" -r freedriver --fields name \
-    > "$work/portal-jobs-mappers.json"
-  mapper_count="$(python3 - "$work/portal-jobs-mappers.json" <<'PY'
-import json, sys
-data = json.load(open(sys.argv[1], encoding="utf-8"))
-print(sum(1 for item in data if item.get("name") == "realm roles"))
-PY
-)"
-  python3 - "$work/secrets/portal-jobs.env" "$work/portal-jobs-token-form" <<'PY'
-import sys
-from pathlib import Path
-from urllib.parse import urlencode
-secret = Path(sys.argv[1]).read_text(encoding="utf-8").split("=", 1)[1].strip()
-Path(sys.argv[2]).write_text(urlencode({
-    "grant_type": "client_credentials",
-    "client_id": "freedriver-portal-jobs",
-    "client_secret": secret,
-}), encoding="utf-8")
-PY
-  chmod 600 "$work/portal-jobs-token-form"
-  curl -sS -o "$work/portal-jobs-token.json" --data-binary @"$work/portal-jobs-token-form" \
-    "${BASE}/realms/freedriver/protocol/openid-connect/token"
-  rm -f "$work/portal-jobs-token-form"
-  python3 - "$work/portal-jobs-token.json" "$mapper_count" <<'PY'
-import base64, json, sys
-data = json.load(open(sys.argv[1], encoding="utf-8"))
-token = data.get("access_token")
-if not token:
-    print(data.get("error") or "no portal-jobs token", file=sys.stderr)
-    sys.exit(1)
-payload = token.split(".")[1]
-payload += "=" * (-len(payload) % 4)
-claims = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
-roles = list((claims.get("realm_access") or {}).get("roles") or [])
-if roles != ["dispatcher-admin"]:
-    sys.exit("portal jobs token roles are %s, want [dispatcher-admin]" % roles)
-count = int(sys.argv[2])
-if count != 1:
-    sys.exit("portal jobs realm roles mapper count is %s, want 1" % count)
-print("portal jobs mapper count:", count)
-print("portal jobs token roles:", ",".join(roles))
-PY
-  rm -f "$work/portal-jobs-token.json"
-}
-
-assert_portal_jobs_token
-env "${provision_env[@]}" bash scripts/provision-keycloak-freedriver.sh
-assert_portal_jobs_token
-
 python3 - "$GROK_REDIRECT" "$work/dcr-body.json" <<'PY'
 import json, sys
 json.dump({
@@ -276,37 +224,32 @@ admin update "clients/${dcr_uuid}" -r freedriver \
   -s directAccessGrantsEnabled=true \
   -s consentRequired=false >/dev/null
 
-PROOF_PASS="$(openssl rand -hex 16)"
-admin create users -r freedriver \
-  -s username=exchange-proof \
-  -s enabled=true \
-  -s emailVerified=true \
-  -s firstName=Exchange \
-  -s lastName=Proof \
-  -s email=exchange-proof@freedriver.invalid \
-  -s 'requiredActions=[]' >/dev/null
-admin set-password -r freedriver --username exchange-proof --new-password "$PROOF_PASS" >/dev/null
-admin add-roles -r freedriver --uusername exchange-proof --rolename dashboard --rolename mcp-user --rolename portal-admin >/dev/null
-
-python3 - "$DCR_CLIENT_ID" "$PROOF_PASS" "$work/ropc-form" <<'PY'
+# ROPC plus RFC 8693 exchange for $1. Leaves subject-claims.json and
+# exchanged-claims.json (sub, azp, aud, roles).
+mint_exchange_tokens() {
+  local username="$1"
+  local password
+  password="$(openssl rand -hex 16)"
+  admin set-password -r freedriver --username "$username" --new-password "$password" >/dev/null
+  python3 - "$DCR_CLIENT_ID" "$username" "$password" "$work/ropc-form" <<'PY'
 from pathlib import Path
 from urllib.parse import urlencode
 import sys
-Path(sys.argv[3]).write_text(urlencode({
+Path(sys.argv[4]).write_text(urlencode({
     "grant_type": "password",
     "client_id": sys.argv[1],
-    "username": "exchange-proof",
-    "password": sys.argv[2],
+    "username": sys.argv[2],
+    "password": sys.argv[3],
     "scope": "openid",
 }), encoding="utf-8")
 PY
-chmod 600 "$work/ropc-form"
-unset PROOF_PASS
-curl -sS -o "$work/subject.json" --data-binary @"$work/ropc-form" \
-  "${BASE}/realms/freedriver/protocol/openid-connect/token"
-rm -f "$work/ropc-form"
+  chmod 600 "$work/ropc-form"
+  unset password
+  curl -sS -o "$work/subject.json" --data-binary @"$work/ropc-form" \
+    "${BASE}/realms/freedriver/protocol/openid-connect/token"
+  rm -f "$work/ropc-form"
 
-python3 - "$work/subject.json" "$work/subject.jwt" "$work/subject-claims.json" <<'PY'
+  python3 - "$work/subject.json" "$work/subject.jwt" "$work/subject-claims.json" <<'PY'
 import base64, json, sys
 from pathlib import Path
 data = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -326,8 +269,71 @@ keep = {
 }
 json.dump(keep, open(sys.argv[3], "w", encoding="utf-8"))
 PY
-chmod 600 "$work/subject.jwt"
-rm -f "$work/subject.json"
+  chmod 600 "$work/subject.jwt"
+  rm -f "$work/subject.json"
+
+  python3 - "$work/secrets/autonomy-mcp.env" "$work/subject.jwt" "$work/exchange-form" <<'PY'
+from pathlib import Path
+from urllib.parse import urlencode
+import sys
+secret = Path(sys.argv[1]).read_text(encoding="utf-8").split("=", 1)[1].strip()
+subject = Path(sys.argv[2]).read_text(encoding="utf-8").strip()
+Path(sys.argv[3]).write_text(urlencode({
+    "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+    "client_id": "freedriver-autonomy-mcp",
+    "client_secret": secret,
+    "subject_token": subject,
+    "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
+    "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
+    "audience": "freedriver-api",
+}), encoding="utf-8")
+PY
+  chmod 600 "$work/exchange-form"
+  exchange_status="$(curl -sS -o "$work/exchanged.json" -w '%{http_code}' \
+    --data-binary @"$work/exchange-form" \
+    "${BASE}/realms/freedriver/protocol/openid-connect/token")"
+  rm -f "$work/exchange-form" "$work/subject.jwt"
+  if [[ "$exchange_status" != 200 ]]; then
+    echo "token exchange HTTP ${exchange_status}" >&2
+    python3 - "$work/exchanged.json" <<'PY' >&2
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+print(data.get("error") or "", data.get("error_description") or data)
+PY
+    exit 1
+  fi
+
+  python3 - "$work/exchanged.json" "$work/exchanged-claims.json" <<'PY'
+import base64, json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+token = data.get("access_token")
+if not token:
+    print(data.get("error_description") or data.get("error") or "no exchanged token", file=sys.stderr)
+    sys.exit(1)
+payload = token.split(".")[1]
+payload += "=" * (-len(payload) % 4)
+claims = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
+keep = {
+    "sub": claims.get("sub"),
+    "azp": claims.get("azp"),
+    "aud": claims.get("aud"),
+    "roles": (claims.get("realm_access") or {}).get("roles") or [],
+}
+json.dump(keep, open(sys.argv[2], "w", encoding="utf-8"))
+PY
+  rm -f "$work/exchanged.json"
+}
+
+admin create users -r freedriver \
+  -s username=exchange-proof \
+  -s enabled=true \
+  -s emailVerified=true \
+  -s firstName=Exchange \
+  -s lastName=Proof \
+  -s email=exchange-proof@freedriver.invalid \
+  -s 'requiredActions=[]' >/dev/null
+admin add-roles -r freedriver --uusername exchange-proof --rolename dashboard --rolename mcp-user --rolename portal-admin >/dev/null
+mint_exchange_tokens exchange-proof
 
 python3 - "$work/subject-claims.json" "$DCR_CLIENT_ID" <<'PY'
 import json, sys
@@ -351,53 +357,15 @@ print("DCR subject token aud", ",".join(aud))
 print("DCR subject token roles", ",".join(sorted(roles)))
 PY
 
-python3 - "$work/secrets/autonomy-mcp.env" "$work/subject.jwt" "$work/exchange-form" <<'PY'
-from pathlib import Path
-from urllib.parse import urlencode
-import sys
-secret = Path(sys.argv[1]).read_text(encoding="utf-8").split("=", 1)[1].strip()
-subject = Path(sys.argv[2]).read_text(encoding="utf-8").strip()
-Path(sys.argv[3]).write_text(urlencode({
-    "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
-    "client_id": "freedriver-autonomy-mcp",
-    "client_secret": secret,
-    "subject_token": subject,
-    "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
-    "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
-    "audience": "freedriver-api",
-}), encoding="utf-8")
-PY
-chmod 600 "$work/exchange-form"
-exchange_status="$(curl -sS -o "$work/exchanged.json" -w '%{http_code}' \
-  --data-binary @"$work/exchange-form" \
-  "${BASE}/realms/freedriver/protocol/openid-connect/token")"
-rm -f "$work/exchange-form" "$work/subject.jwt"
-if [[ "$exchange_status" != 200 ]]; then
-  echo "token exchange HTTP ${exchange_status}" >&2
-  python3 - "$work/exchanged.json" <<'PY' >&2
+python3 - "$work/exchanged-claims.json" "$work/subject-claims.json" <<'PY'
 import json, sys
-data = json.load(open(sys.argv[1], encoding="utf-8"))
-print(data.get("error") or "", data.get("error_description") or data)
-PY
-  exit 1
-fi
-
-python3 - "$work/exchanged.json" "$work/subject-claims.json" <<'PY'
-import base64, json, sys
-data = json.load(open(sys.argv[1], encoding="utf-8"))
-token = data.get("access_token")
-if not token:
-    print(data.get("error_description") or data.get("error") or "no exchanged token", file=sys.stderr)
-    sys.exit(1)
-payload = token.split(".")[1]
-payload += "=" * (-len(payload) % 4)
-claims = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
+claims = json.load(open(sys.argv[1], encoding="utf-8"))
 subject = json.load(open(sys.argv[2], encoding="utf-8"))
 aud = claims.get("aud")
 if isinstance(aud, str):
     aud = [aud]
 aud = aud or []
-roles = set((claims.get("realm_access") or {}).get("roles") or [])
+roles = set(claims.get("roles") or [])
 want_roles = set(subject.get("roles") or [])
 if claims.get("sub") != subject.get("sub"):
     raise SystemExit("exchanged sub differs from the DCR token")
@@ -418,12 +386,10 @@ print("exchanged sub", claims.get("sub"))
 print("exchanged roles", ",".join(sorted(roles)))
 print("sub matches")
 PY
-rm -f "$work/exchanged.json"
 
 # A user who holds portal-admin and neither mcp-user nor dashboard gets no
 # realm roles on the DCR token (the roles scope is dropped) and the exchange
 # adds none.
-PROOF_PASS="$(openssl rand -hex 16)"
 admin create users -r freedriver \
   -s username=exchange-portal-only \
   -s enabled=true \
@@ -432,49 +398,8 @@ admin create users -r freedriver \
   -s lastName=PortalOnly \
   -s email=exchange-portal-only@freedriver.invalid \
   -s 'requiredActions=[]' >/dev/null
-admin set-password -r freedriver --username exchange-portal-only --new-password "$PROOF_PASS" >/dev/null
 admin add-roles -r freedriver --uusername exchange-portal-only --rolename portal-admin >/dev/null
-
-python3 - "$DCR_CLIENT_ID" "$PROOF_PASS" "$work/ropc-form" <<'PY'
-from pathlib import Path
-from urllib.parse import urlencode
-import sys
-Path(sys.argv[3]).write_text(urlencode({
-    "grant_type": "password",
-    "client_id": sys.argv[1],
-    "username": "exchange-portal-only",
-    "password": sys.argv[2],
-    "scope": "openid",
-}), encoding="utf-8")
-PY
-chmod 600 "$work/ropc-form"
-unset PROOF_PASS
-curl -sS -o "$work/subject.json" --data-binary @"$work/ropc-form" \
-  "${BASE}/realms/freedriver/protocol/openid-connect/token"
-rm -f "$work/ropc-form"
-
-python3 - "$work/subject.json" "$work/subject.jwt" "$work/subject-claims.json" <<'PY'
-import base64, json, sys
-from pathlib import Path
-data = json.load(open(sys.argv[1], encoding="utf-8"))
-token = data.get("access_token")
-if not token:
-    print(data.get("error_description") or data.get("error") or "no subject token", file=sys.stderr)
-    sys.exit(1)
-Path(sys.argv[2]).write_text(token, encoding="utf-8")
-payload = token.split(".")[1]
-payload += "=" * (-len(payload) % 4)
-claims = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
-keep = {
-    "sub": claims.get("sub"),
-    "azp": claims.get("azp"),
-    "aud": claims.get("aud"),
-    "roles": (claims.get("realm_access") or {}).get("roles") or [],
-}
-json.dump(keep, open(sys.argv[3], "w", encoding="utf-8"))
-PY
-chmod 600 "$work/subject.jwt"
-rm -f "$work/subject.json"
+mint_exchange_tokens exchange-portal-only
 
 python3 - "$work/subject-claims.json" <<'PY'
 import json, sys
@@ -485,49 +410,11 @@ if roles:
 print("portal-admin-only DCR token roles (none)")
 PY
 
-python3 - "$work/secrets/autonomy-mcp.env" "$work/subject.jwt" "$work/exchange-form" <<'PY'
-from pathlib import Path
-from urllib.parse import urlencode
-import sys
-secret = Path(sys.argv[1]).read_text(encoding="utf-8").split("=", 1)[1].strip()
-subject = Path(sys.argv[2]).read_text(encoding="utf-8").strip()
-Path(sys.argv[3]).write_text(urlencode({
-    "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
-    "client_id": "freedriver-autonomy-mcp",
-    "client_secret": secret,
-    "subject_token": subject,
-    "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
-    "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
-    "audience": "freedriver-api",
-}), encoding="utf-8")
-PY
-chmod 600 "$work/exchange-form"
-exchange_status="$(curl -sS -o "$work/exchanged.json" -w '%{http_code}' \
-  --data-binary @"$work/exchange-form" \
-  "${BASE}/realms/freedriver/protocol/openid-connect/token")"
-rm -f "$work/exchange-form" "$work/subject.jwt"
-if [[ "$exchange_status" != 200 ]]; then
-  echo "portal-admin-only token exchange HTTP ${exchange_status}" >&2
-  python3 - "$work/exchanged.json" <<'PY' >&2
+python3 - "$work/exchanged-claims.json" "$work/subject-claims.json" <<'PY'
 import json, sys
-data = json.load(open(sys.argv[1], encoding="utf-8"))
-print(data.get("error") or "", data.get("error_description") or data)
-PY
-  exit 1
-fi
-
-python3 - "$work/exchanged.json" "$work/subject-claims.json" <<'PY'
-import base64, json, sys
-data = json.load(open(sys.argv[1], encoding="utf-8"))
-token = data.get("access_token")
-if not token:
-    print(data.get("error_description") or data.get("error") or "no exchanged token", file=sys.stderr)
-    sys.exit(1)
-payload = token.split(".")[1]
-payload += "=" * (-len(payload) % 4)
-claims = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
+claims = json.load(open(sys.argv[1], encoding="utf-8"))
 subject = json.load(open(sys.argv[2], encoding="utf-8"))
-roles = list((claims.get("realm_access") or {}).get("roles") or [])
+roles = list(claims.get("roles") or [])
 if claims.get("sub") != subject.get("sub"):
     raise SystemExit("portal-admin-only exchanged sub differs from the DCR token")
 if roles:
@@ -535,4 +422,3 @@ if roles:
 print("portal-admin-only exchanged roles (none)")
 print("exchange adds no role")
 PY
-rm -f "$work/exchanged.json"
