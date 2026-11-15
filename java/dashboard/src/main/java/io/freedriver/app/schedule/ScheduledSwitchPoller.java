@@ -4,8 +4,11 @@ import io.freedriver.app.appliances.ApplianceAudit;
 import io.freedriver.app.appliances.ApplianceService;
 import io.freedriver.dashboard.model.InstanceView;
 import io.quarkus.scheduler.Scheduled;
+import io.quarkus.scheduler.ScheduledExecution;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,7 +49,7 @@ public class ScheduledSwitchPoller {
         this.clock = clock;
     }
 
-    @Scheduled(every = "1s", concurrentExecution = Scheduled.ConcurrentExecution.SKIP)
+    @Scheduled(every = "1s", concurrentExecution = Scheduled.ConcurrentExecution.SKIP, skipExecutionIf = PollOff.class)
     void tick() {
         try {
             pass();
@@ -105,5 +108,22 @@ public class ScheduledSwitchPoller {
         }
         audit.record(new ApplianceAudit.Event(
                 clock.instant(), instanceId, row.applianceName, row.on, row.id, "failed", row.subject));
+    }
+
+    /** {@code freedriver.scheduled-switches.poll=false} skips the pass; tests run passes directly. */
+    @Singleton
+    public static class PollOff implements Scheduled.SkipPredicate {
+
+        private final boolean poll;
+
+        @Inject
+        public PollOff(@ConfigProperty(name = "freedriver.scheduled-switches.poll") boolean poll) {
+            this.poll = poll;
+        }
+
+        @Override
+        public boolean test(ScheduledExecution execution) {
+            return !poll;
+        }
     }
 }

@@ -17,15 +17,27 @@ public class RecordingInstanceIdentity implements InstanceIdentity {
     private final ConcurrentHashMap<String, Stored> users = new ConcurrentHashMap<>();
     private final AtomicInteger creates = new AtomicInteger();
     private final AtomicBoolean refuse = new AtomicBoolean();
+    private final AtomicBoolean refuseList = new AtomicBoolean();
 
     public void clear() {
         users.clear();
         creates.set(0);
         refuse.set(false);
+        refuseList.set(false);
     }
 
     public void refuse(boolean value) {
         refuse.set(value);
+    }
+
+    /** Keycloak refuses the group member list, as when it is down. */
+    public void refuseList(boolean value) {
+        refuseList.set(value);
+    }
+
+    /** The house user is gone from {@code mqtt-instance}. */
+    public void remove(String instanceId) {
+        users.remove(instanceId);
     }
 
     public int creates() {
@@ -71,6 +83,9 @@ public class RecordingInstanceIdentity implements InstanceIdentity {
 
     @Override
     public List<InstanceSummary> list() {
+        if (refuseList.get()) {
+            throw new BrokerRefusedException();
+        }
         List<InstanceSummary> summaries = new ArrayList<>();
         for (Stored user : users.values()) {
             summaries.add(new InstanceSummary(user.instanceId(), user.label()));

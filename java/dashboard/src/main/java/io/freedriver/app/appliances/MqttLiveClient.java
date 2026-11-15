@@ -17,7 +17,6 @@ import jakarta.inject.Inject;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -27,10 +26,10 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Live MQTT adapter on the same CDI bus as {@link MockAutonomy}.
- * Connects and subscribes to appliance state when instance ids are set, from
- * {@code freedriver.mqtt.instance-ids} or the host file behind it.
- * Command publishing stays behind {@code live-commands}. A failed state connection
- * does not stop the portal. Logs on {@code io.freedriver.mqtt}.
+ * {@link InstanceSubscriptions} decides which houses' appliance state it follows; the session
+ * connects when the first house is followed. Command publishing stays behind
+ * {@code live-commands}. A failed state connection or a failed state write does not stop the
+ * portal. Logs on {@code io.freedriver.mqtt}.
  */
 @BlockingIo
 @ApplicationScoped
@@ -40,7 +39,7 @@ public class MqttLiveClient {
     static final int MAX_STATE_BYTES = 64 * 1024;
 
     private final AppliancesConfig appliances;
-    private final MqttSettings mqtt;
+    private final InstanceSubscriptions subscriptions;
     private final Instance<MqttConnection> connections;
     private final Event<ApplianceStateRouted> states;
     private final ConcurrentHashMap<UUID, Traffic> traffic = new ConcurrentHashMap<>();
@@ -51,11 +50,11 @@ public class MqttLiveClient {
     @Inject
     public MqttLiveClient(
             AppliancesConfig appliances,
-            MqttSettings mqtt,
+            InstanceSubscriptions subscriptions,
             Instance<MqttConnection> connections,
             Event<ApplianceStateRouted> states) {
         this.appliances = appliances;
-        this.mqtt = mqtt;
+        this.subscriptions = subscriptions;
         this.connections = connections;
         this.states = states;
     }
@@ -64,9 +63,36 @@ public class MqttLiveClient {
         if (appliances.liveCommands() && appliances.mock()) {
             throw new IllegalStateException("live MQTT must not run with mock=true");
         }
-        List<UUID> instances = mqtt.instances();
-        if (instances.isEmpty()) {
+    }
+
+    /**
+     * Subscribes to one house's appliance state, connecting the session first when this is the
+     * first house. A failed connect closes the session and throws; the next call tries again.
+     */
+    synchronized void follow(UUID instanceId) {
+        connect();
+        connection.subscribe(ApplianceSchemas.appliancesTopic(instanceId), ApplianceSchemas.QOS, this::onBrokerMessage);
+    }
+
+    /** Stops one house's appliance state. The session stays open for the other houses. */
+    synchronized void unfollow(UUID instanceId) {
+        if (connection != null) {
+            connection.unsubscribe(ApplianceSchemas.appliancesTopic(instanceId));
+        }
+    }
+
+    private void connect() {
+        if (connection != null) {
             return;
+        }
+        try {
+            MqttConnection opened = connections.get();
+            opened.connect();
+            connection = opened;
+        } catch (RuntimeException e) {
+            MqttLog.connectFailed();
+            stop();
+            throw e;
         }
         scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread thread = new Thread(r, "mqtt-live");
@@ -74,28 +100,16 @@ public class MqttLiveClient {
             return thread;
         });
         scheduler.scheduleAtFixedRate(this::logStateSummary, 1, 1, TimeUnit.MINUTES);
-        try {
-            connection = connections.get();
-            connection.connect();
-            for (UUID instanceId : instances) {
-                String topic = ApplianceSchemas.appliancesTopic(instanceId);
-                connection.subscribe(topic, ApplianceSchemas.QOS, this::onBrokerMessage);
-            }
-        } catch (RuntimeException e) {
-            stop();
-            if (appliances.liveCommands()) {
-                throw e;
-            }
-            MqttLog.connectFailed();
-        }
     }
 
     public boolean acceptsCommands() {
         return appliances.liveCommands() && connection != null;
     }
 
+    /** True while the MQTT session is connected to the broker, not only opened. */
     public boolean brokerConnected() {
-        return connection != null;
+        MqttConnection current = connection;
+        return current != null && current.connected();
     }
 
     public void onCommand(ApplianceCommandRouted routed, String actor) {
@@ -136,7 +150,7 @@ public class MqttLiveClient {
 
     void onBrokerMessage(String topic, byte[] payload) {
         UUID instanceId = MqttAcl.instanceIdFrom(topic, "appliances");
-        if (instanceId == null || !mqtt.instances().contains(instanceId)) {
+        if (instanceId == null || !subscriptions.contains(instanceId)) {
             MqttLog.stateRejected(topic, "unknown-instance");
             return;
         }
@@ -157,7 +171,12 @@ public class MqttLiveClient {
         if (state.appliedCommandId() != null) {
             pending.remove(state.appliedCommandId());
         }
-        states.fire(new ApplianceStateRouted(instanceId, state));
+        try {
+            states.fire(new ApplianceStateRouted(instanceId, state));
+        } catch (RuntimeException e) {
+            // A failed store must not end the MQTT callback thread; the next message is handled.
+            MqttLog.stateRejected(topic, "store-failed");
+        }
     }
 
     /** Once a minute. A failed pass must not cancel the next one. */
@@ -170,7 +189,7 @@ public class MqttLiveClient {
     }
 
     void logStateSummary(Instant now) {
-        for (UUID instanceId : mqtt.instances()) {
+        for (UUID instanceId : subscriptions.subscribed()) {
             Traffic heard = traffic.get(instanceId);
             long messages = heard == null ? 0 : heard.messages.get();
             long last = heard == null ? -1 : heard.lastHeardEpochMs.get();
@@ -190,7 +209,7 @@ public class MqttLiveClient {
     }
 
     @PreDestroy
-    void stop() {
+    synchronized void stop() {
         if (scheduler != null) {
             scheduler.shutdownNow();
             scheduler = null;

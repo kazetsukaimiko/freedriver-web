@@ -56,15 +56,13 @@ services:
         condition: service_started
       mongodb:
         condition: service_healthy
-    # Read-only host files for broker state. 1883 is the acl group and 1001
-    # is the api.pass group, so uid 185 can read those mode 770 files.
+    # The api password is a read-only host file. 1001 is the api.pass group, so
+    # uid 185 can read that mode 770 file. The houses come from Keycloak.
     group_add:
-      - 1883
       - 1001
     volumes:
       - /opt/freedriver-storage/invites:/deployments/data/invites
       - /opt/freedriver-secrets/mqtt-internal/ca.crt:/opt/freedriver-secrets/mqtt-internal/ca.crt:ro
-      - /opt/freedriver-secrets/mosquitto/acl:/opt/freedriver-secrets/mosquitto/acl:ro
       - /opt/freedriver-secrets/mosquitto/api.pass:/opt/freedriver-secrets/mosquitto/api.pass:ro
     expose:
       - "8080"
