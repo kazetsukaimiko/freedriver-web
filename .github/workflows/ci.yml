@@ -572,8 +572,5 @@ if not re.fullmatch(r"2\.[0-9]+", tag):
 print(image)
 ')"
           docker pull "$caddy_image"
-          if ! docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" "$caddy_image" \
-            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile; then
-            docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" "$caddy_image" \
-              caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
-          fi
+          docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" "$caddy_image" \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
