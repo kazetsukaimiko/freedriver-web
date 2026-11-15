@@ -211,8 +211,7 @@ class McpResourceTest {
                 "POST".equals(r.method())
                         && (r.path().contains("/Hallway (test)")
                                 || r.path().contains("/Hallway%20(test)"))
-                        && r.authorization() == null
-                        && "mcp-switch".equals(r.subject())));
+                        && asCaller(r, "mcp-switch")));
     }
 
     @Test
