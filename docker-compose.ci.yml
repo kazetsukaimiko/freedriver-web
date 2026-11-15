@@ -35,10 +35,15 @@ services:
       FREEDRIVER_APPLIANCES_LIVE_COMMANDS: "false"
       FREEDRIVER_APPLIANCES_ENABLED: "true"
       QUARKUS_TLS_TRUST_ALL: "true"
-      # Invite SPI POST uses Keycloak on the compose network. Token iss stays
-      # KC_HOSTNAME (https://auth.freedriver.io).
-      QUARKUS_REST_CLIENT_KEYCLOAK_INVITE_URL: http://keycloak:8080
-      JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Dquarkus.rest-client.keycloak-invite.url=http://keycloak:8080 -Xmx384m"
+      # Invite SPI is a frontend realm resource. Token iss is KC_HOSTNAME
+      # (https://auth.freedriver.io). hostname-strict is ignored when hostname
+      # is set, so an HTTP compose POST 302s to HTTPS and the rest-client
+      # follows it as GET (405). Call the public host through Caddy.
+      QUARKUS_TLS_SMOKE_TRUST_ALL: "true"
+      QUARKUS_TLS_SMOKE_HOSTNAME_VERIFICATION_ALGORITHM: "NONE"
+      QUARKUS_REST_CLIENT_KEYCLOAK_INVITE_URL: https://auth.freedriver.io
+      QUARKUS_REST_CLIENT_KEYCLOAK_INVITE_TLS_CONFIGURATION_NAME: smoke
+      JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Dquarkus.tls.smoke.trust-all=true -Dquarkus.tls.smoke.hostname-verification-algorithm=NONE -Dquarkus.rest-client.keycloak-invite.url=https://auth.freedriver.io -Dquarkus.rest-client.keycloak-invite.tls-configuration-name=smoke -Xmx384m"
 
   agent-dispatcher:
     pull_policy: missing
@@ -65,7 +70,6 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?KC_BOOTSTRAP_ADMIN_PASSWORD is required}
       KC_HOSTNAME: https://auth.freedriver.io
       KC_HOSTNAME_ADMIN: http://127.0.0.1:8080
-      KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
       KC_PROXY_HEADERS: xforwarded
       JAVA_OPTS_APPEND: "-Xms256m -Xmx768m"

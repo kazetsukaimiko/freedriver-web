@@ -19,8 +19,11 @@ import java.security.SecureRandom;
 /**
  * Realm resource for the invite service account. It creates a phone user and grants only the
  * realm role {@code dashboard}. The path is {@code /realms/{realm}/freedriver-invite/users}.
- * {@code @Provider} plus {@code META-INF/beans.xml} let RESTEasy Reactive index POST {@code /users}.
+ * RESTEasy Reactive indexes a subresource only when the class has {@code @Path};
+ * {@code @Provider} plus {@code META-INF/beans.xml} are not enough (Quarkus CDI Lite treats
+ * {@code bean-discovery-mode="all"} as {@code annotated}).
  */
+@Path("/")
 @Provider
 public class InviteAccountResource {
 
