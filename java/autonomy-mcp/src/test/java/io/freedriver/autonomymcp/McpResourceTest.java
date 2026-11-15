@@ -394,6 +394,23 @@ class McpResourceTest {
                 && line.contains("tool=debug") && line.endsWith("result=denied")), audit.lines()::toString);
     }
 
+    /** The exchanged token never carries portal-admin, so the tool asks for dashboard and nothing else. */
+    @Test
+    @TestSecurity(user = "mcp-portal", roles = {"mcp-user", "portal-admin"})
+    void portal_admin_without_dashboard_cannot_switch() {
+        String session = initialize();
+        given().contentType("application/json")
+                .accept("application/json, text/event-stream")
+                .header(McpEndpoint.SESSION_HEADER, session)
+                .body(switchArguments(baseSwitch()))
+                .post("/autonomy/mcp")
+                .then()
+                .statusCode(200)
+                .body("error.code", is(-32005))
+                .body("error.message", is("io.quarkus.security.ForbiddenException"));
+        assertTrue(DashboardStub.recorded.isEmpty(), DashboardStub.recorded::toString);
+    }
+
     @Test
     @TestSecurity(user = "mcp-all", roles = {"mcp-user", "dashboard", "mcp-debug"})
     void dashboard_down_is_spoken_refusal_for_every_tool() {

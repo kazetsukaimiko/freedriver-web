@@ -61,6 +61,34 @@ class InternalTenantTest {
                 .header("Set-Cookie", nullValue());
     }
 
+    /** No exchanged token carries {@code mcp-debug}; the debug tool checks that role on the caller's own token. */
+    @Test
+    void an_exchanged_mcp_user_token_reads_debug() {
+        given().header("Authorization", "Bearer " + exchanged("mcp-sub", Set.of("mcp-user")))
+                .when()
+                .get("/api/mcp/debug")
+                .then()
+                .statusCode(200)
+                .body("health", is("UP"));
+    }
+
+    @Test
+    void a_freedriver_api_token_from_another_client_is_401() {
+        String other = Jwt.preferredUserName("ada")
+                .groups(Set.of("mcp-user", "dashboard"))
+                .issuer("https://server.example.com")
+                .subject("mcp-sub-other")
+                .audience(EXCHANGED_AUDIENCE)
+                .claim("azp", "freedriver-portal-jobs")
+                .claim("typ", "Bearer")
+                .jws().keyId("1").sign("privateKey.jwk");
+        given().header("Authorization", "Bearer " + other)
+                .when()
+                .get("/api/mcp/appliances")
+                .then()
+                .statusCode(401);
+    }
+
     @Test
     void a_user_without_dashboard_is_refused_by_the_dashboards_roles() {
         String hallway = MockAutonomy.FIXTURE_NAMES.get(0);

@@ -1,6 +1,7 @@
 package io.freedriver.app.security;
 
 import io.quarkus.oidc.TenantResolver;
+import io.quarkus.oidc.runtime.OidcUtils;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.vertx.ext.web.RoutingContext;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -35,7 +36,7 @@ public class InternalTenant implements TenantResolver {
 
     /** True when quarkus-oidc authenticated this identity through the internal tenant. */
     static boolean authenticated(SecurityIdentity identity) {
-        return identity != null && ID.equals(identity.getAttribute("tenant-id"));
+        return identity != null && ID.equals(identity.getAttribute(OidcUtils.TENANT_ID_ATTRIBUTE));
     }
 
     private static boolean under(String path, String prefix) {

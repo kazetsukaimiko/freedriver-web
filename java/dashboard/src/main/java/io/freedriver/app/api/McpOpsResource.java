@@ -12,7 +12,6 @@ import io.freedriver.app.schedule.ScheduledSwitchRepository;
 import io.freedriver.app.security.OidcSubjects;
 import io.freedriver.dashboard.model.McpDebugResponse;
 import io.freedriver.dashboard.model.ScheduledSwitchRequest;
-import io.quarkus.security.ForbiddenException;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -62,9 +61,6 @@ public class McpOpsResource implements McpOpsApi {
 
     @Override
     public McpDebugResponse debug() {
-        if (!identity.hasRole("mcp-debug")) {
-            throw new ForbiddenException();
-        }
         HomeStatusResponse status = homeStatus();
         String category = !status.brokerConnected() ? "broker-down" : status.stale() ? "stale" : "none";
         return new McpDebugResponse("UP", category);
