@@ -77,7 +77,7 @@ public class AutonomyTools {
                     + "Omit it or pass 0 to switch now. "
                     + "To leave the fridge light on for five minutes, switch it on with no delay, "
                     + "then switch it off with delaySeconds 300.")
-    @RolesAllowed({Actors.DASHBOARD, Actors.PORTAL_ADMIN})
+    @RolesAllowed(Actors.DASHBOARD)
     ToolResponse switchAppliance(
             @ToolArg(name = "instanceId") @NotNull UUID instanceId,
             @ToolArg(name = "applianceName") @NotBlank @Size(max = 64) String applianceName,

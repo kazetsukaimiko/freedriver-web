@@ -31,18 +31,10 @@ app.freedriver.io {
 	@invite path /invite /invite/*
 	handle @invite {
 		header Referrer-Policy "no-referrer"
-		reverse_proxy dashboard:8080 {
-			header_up -X-Freedriver-Internal
-			header_up -X-Freedriver-Subject
-			header_up -X-Freedriver-Roles
-		}
+		reverse_proxy dashboard:8080
 	}
 	handle {
-		reverse_proxy dashboard:8080 {
-			header_up -X-Freedriver-Internal
-			header_up -X-Freedriver-Subject
-			header_up -X-Freedriver-Roles
-		}
+		reverse_proxy dashboard:8080
 	}
 }
 

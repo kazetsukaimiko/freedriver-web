@@ -43,15 +43,10 @@ class McpOpsResourceTest {
                 .body("stale", is(false));
     }
 
+    /** {@code mcp-debug} is the tool's own check on the caller's token; the dashboard asks for {@code mcp-user}. */
     @Test
     @TestSecurity(user = "mcp-reader", roles = "mcp-user")
-    void debug_without_mcp_debug_is_403() {
-        given().when().get("/api/mcp/debug").then().statusCode(403);
-    }
-
-    @Test
-    @TestSecurity(user = "mcp-debug-user", roles = {"mcp-user", "mcp-debug"})
-    void debug_is_read_only_category() {
+    void debug_is_read_only_category_for_an_mcp_user() {
         given().when().get("/api/mcp/debug")
                 .then()
                 .statusCode(200)

@@ -7,7 +7,6 @@ import jakarta.validation.constraints.NotBlank;
 import org.hibernate.validator.constraints.time.DurationMin;
 
 import java.time.Duration;
-import java.util.Optional;
 
 /**
  * This service's own {@code freedriver.mcp} keys. The endpoint and session keys under the same
@@ -26,9 +25,6 @@ public interface AutonomyMcpConfig {
      */
     @NotBlank
     String dashboardUrl();
-
-    /** {@code FREEDRIVER_MCP_INTERNAL_SECRET}, sent on every dashboard call. */
-    Optional<String> internalSecret();
 
     /** Calls per caller per tool. */
     ToolRateLimit toolRateLimit();
