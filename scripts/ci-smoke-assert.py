@@ -592,11 +592,14 @@ def assert_scheduled_switches_once() -> None:
         + 'db.getCollection("scheduled-switches").insertMany(docs);\n'
         + 'print(db.getCollection("scheduled-switches").countDocuments({subject: "ci-smoke"}));\n'
     )
-    inserted = subprocess.check_output(
-        ["docker", "exec", "-i", container, "mongosh", "--quiet", "freedriver"],
-        input=script,
+    out = subprocess.check_output(
+        ["docker", "exec", container, "mongosh", "--quiet", "freedriver", "--eval", script],
         text=True,
-    ).strip().splitlines()[-1]
+    )
+    inserted = next(
+        (line.strip() for line in reversed(out.splitlines()) if line.strip().isdigit()),
+        out.strip(),
+    )
     if inserted != "20":
         raise SystemExit(f"scheduled-switches insert count {inserted!r}, want 20")
     rows: list[dict] = []
