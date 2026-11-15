@@ -164,7 +164,7 @@ class OpenBotWorkerTest {
     private static AssignmentView view(UUID id, String agent, Channel channel, String prompt, AssignmentState state) {
         return new AssignmentView(
                 id, UUID.randomUUID(), OpenBotWorker.DEVICE_ID, agent, channel, prompt, state, null, null,
-                OnBusy.supersede);
+                OnBusy.supersede, null);
     }
 
     private static final class FakeRouter implements AgentRouter {

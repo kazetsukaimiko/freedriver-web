@@ -195,7 +195,7 @@ class DeviceDaemonTest {
     }
 
     private static AssignmentView view(UUID id, String agent, Channel channel, String prompt, AssignmentState state) {
-        return new AssignmentView(id, UUID.randomUUID(), "pc-luna", agent, channel, prompt, state, null, null, OnBusy.supersede);
+        return new AssignmentView(id, UUID.randomUUID(), "pc-luna", agent, channel, prompt, state, null, null, OnBusy.supersede, null);
     }
 
     private static final class FakeDevices implements DeviceApiClient {

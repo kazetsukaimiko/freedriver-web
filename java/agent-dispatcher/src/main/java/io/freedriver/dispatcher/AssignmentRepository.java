@@ -19,9 +19,12 @@ import java.util.Set;
 
 import static com.mongodb.client.model.Filters.and;
 import static com.mongodb.client.model.Filters.eq;
+import static com.mongodb.client.model.Filters.gte;
 import static com.mongodb.client.model.Filters.in;
 import static com.mongodb.client.model.Filters.lt;
+import static com.mongodb.client.model.Filters.lte;
 import static com.mongodb.client.model.Filters.ne;
+import static com.mongodb.client.model.Filters.nin;
 import static com.mongodb.client.model.Filters.or;
 
 /**
@@ -54,6 +57,84 @@ public class AssignmentRepository implements PanacheMongoRepositoryBase<Assignme
         return mongoCollection().findOneAndUpdate(
                 and(eq("_id", id), eq("deviceId", deviceId), in("status", names(from))),
                 Updates.combine(changes),
+                new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER));
+    }
+
+    /** Sets {@code heldUntil} on this device's open assignments among {@code ids}. Index {@code _id}. */
+    void hold(String deviceId, List<String> ids, Instant until) {
+        if (ids.isEmpty()) {
+            return;
+        }
+        mongoCollection().updateMany(
+                and(in("_id", ids), eq("deviceId", deviceId), in("status", names(OPEN))),
+                Updates.set("heldUntil", Date.from(until)));
+    }
+
+    /**
+     * Moves this device's queued assignments created before {@code cutoff} to {@code EXPIRED} with
+     * {@code note}. Index {@code {deviceId, status, ordinal}}.
+     */
+    void expireQueued(String deviceId, Instant cutoff, String note, Instant now) {
+        mongoCollection().updateMany(
+                and(eq("deviceId", deviceId), eq("status", AssignmentState.QUEUED.name()), lt("createdAt", Date.from(cutoff))),
+                Updates.combine(
+                        Updates.set("status", AssignmentState.EXPIRED.name()),
+                        Updates.set("note", note),
+                        Updates.set("updatedAt", Date.from(now))));
+    }
+
+    /**
+     * Takes this device's oldest queued assignment created at or after {@code cutoff}: {@code CLAIMED},
+     * held until {@code until}. Null when none matched. Index {@code {deviceId, status, ordinal}}.
+     */
+    Assignment claimQueued(String deviceId, Instant cutoff, Instant until, Instant now) {
+        return mongoCollection().findOneAndUpdate(
+                takeQueued(deviceId, cutoff),
+                Updates.combine(
+                        Updates.set("status", AssignmentState.CLAIMED.name()),
+                        Updates.set("heldUntil", Date.from(until)),
+                        Updates.set("updatedAt", Date.from(now))),
+                new FindOneAndUpdateOptions().sort(Sorts.ascending("createdAt", "ordinal"))
+                        .returnDocument(ReturnDocument.AFTER));
+    }
+
+    /**
+     * Holds again this device's oldest {@code CLAIMED} or {@code RUNNING} assignment outside
+     * {@code holding} whose hold has lapsed or was never set. Null when none matched. Index
+     * {@code {deviceId, status, ordinal}}.
+     */
+    Assignment reclaimLapsed(String deviceId, List<String> holding, Instant until, Instant now) {
+        return mongoCollection().findOneAndUpdate(
+                takeLapsed(deviceId, holding, now),
+                Updates.set("heldUntil", Date.from(until)),
+                new FindOneAndUpdateOptions().sort(Sorts.ascending("createdAt", "ordinal"))
+                        .returnDocument(ReturnDocument.AFTER));
+    }
+
+    static Bson takeQueued(String deviceId, Instant cutoff) {
+        return and(eq("deviceId", deviceId), eq("status", AssignmentState.QUEUED.name()),
+                gte("createdAt", Date.from(cutoff)));
+    }
+
+    static Bson takeLapsed(String deviceId, List<String> holding, Instant now) {
+        return and(eq("deviceId", deviceId),
+                in("status", AssignmentState.CLAIMED.name(), AssignmentState.RUNNING.name()),
+                nin("_id", holding),
+                or(eq("heldUntil", null), lte("heldUntil", Date.from(now))));
+    }
+
+    /**
+     * {@code CLAIMED} to {@code RUNNING} on this device, storing {@code deliveryRef} and holding it
+     * until {@code until}. Null when nothing matched.
+     */
+    Assignment start(String id, String deviceId, String deliveryRef, Instant until, Instant now) {
+        return mongoCollection().findOneAndUpdate(
+                and(eq("_id", id), eq("deviceId", deviceId), eq("status", AssignmentState.CLAIMED.name())),
+                Updates.combine(
+                        Updates.set("status", AssignmentState.RUNNING.name()),
+                        Updates.set("deliveryRef", deliveryRef),
+                        Updates.set("heldUntil", Date.from(until)),
+                        Updates.set("updatedAt", Date.from(now))),
                 new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER));
     }
 

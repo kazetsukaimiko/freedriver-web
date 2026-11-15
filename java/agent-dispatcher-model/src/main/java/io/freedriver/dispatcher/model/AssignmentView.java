@@ -7,6 +7,7 @@ import java.util.UUID;
 /**
  * One device's assignment. {@code channel} and {@code prompt} belong to this
  * assignment only. Callers must already have scoped the device or the dispatcher.
+ * {@code deliveryRef} is where the host runs it, set by {@code start_job}; null until then.
  */
 public record AssignmentView(
         UUID assignmentId,
@@ -18,5 +19,6 @@ public record AssignmentView(
         AssignmentState state,
         UUID grokSessionId,
         String note,
-        @JsonProperty("on_busy") OnBusy onBusy) {
+        @JsonProperty("on_busy") OnBusy onBusy,
+        String deliveryRef) {
 }

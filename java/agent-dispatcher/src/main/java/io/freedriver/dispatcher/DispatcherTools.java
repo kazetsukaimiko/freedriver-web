@@ -156,6 +156,38 @@ public class DispatcherTools {
         return guard(() -> jobs.finish(JobCallers.deviceId(identity), assignmentId, succeeded, note));
     }
 
+    @ToolGuardrails(input = DeclaredToolArguments.class)
+    @Tool(
+            name = "take_jobs",
+            description = "Freedriver dispatch: take this host's jobs. Each returned job is this host's until its lease ends. "
+                    + "holding lists the assignment ids this host still works on; their lease is renewed and they are not returned. "
+                    + "A queued job is returned CLAIMED. A claimed or running job whose lease ended is returned again with its state. "
+                    + "waitSeconds, 0 to 50, waits that long for a job when none is ready. Returns {\"jobs\":[...]}.")
+    @RolesAllowed(Actors.DEVICE)
+    @Blocking
+    String takeJobs(
+            @ToolArg(name = "waitSeconds") @Min(0) @Max(50) int waitSeconds,
+            @ToolArg(name = "holding", required = false) @Size(max = 64) List<@NotNull UUID> holding) {
+        return guard(() -> {
+            var body = mapper.createObjectNode();
+            body.set("jobs", mapper.valueToTree(jobs.take(JobCallers.deviceId(identity),
+                    holding == null ? List.of() : holding, Duration.ofSeconds(waitSeconds))));
+            return body;
+        });
+    }
+
+    @ToolGuardrails(input = DeclaredToolArguments.class)
+    @Tool(
+            name = "start_job",
+            description = "Freedriver dispatch: mark one claimed job RUNNING and store deliveryRef, this host's id for where it runs. "
+                    + "The same call again with the same deliveryRef returns the job unchanged.")
+    @RolesAllowed(Actors.DEVICE)
+    String startJob(
+            @ToolArg(name = "assignmentId") @NotNull UUID assignmentId,
+            @ToolArg(name = "deliveryRef") @NotNull @Size(min = 1, max = 128) @Pattern(regexp = JobStore.DELIVERY_REF) String deliveryRef) {
+        return guard(() -> jobs.start(JobCallers.deviceId(identity), assignmentId, deliveryRef));
+    }
+
     /** A refused store call is the tool's error result; its message names the reason. */
     private String guard(Supplier<Object> action) {
         try {

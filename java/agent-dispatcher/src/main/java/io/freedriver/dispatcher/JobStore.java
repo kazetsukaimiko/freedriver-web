@@ -15,6 +15,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.time.Duration;
@@ -26,6 +27,12 @@ import java.util.UUID;
  * There is no in-memory job map beside that database.
  */
 public interface JobStore {
+
+    /** 1 to 128 printable ASCII characters, no space. */
+    String DELIVERY_REF = "[\\x21-\\x7E]+";
+
+    /** The longest {@code take} wait. */
+    Duration LONGEST_TAKE_WAIT = Duration.ofSeconds(50);
 
     DeviceView register(@NotBlank String deviceId, @NotBlank @Size(max = 253) String hostname,
                         @NotNull @Size(min = 1, max = 32) List<@NotBlank @Size(max = 64) String> agents);
@@ -73,6 +80,22 @@ public interface JobStore {
     AssignmentPage allAssignments(int limit, String cursor);
 
     List<AssignmentView> poll(String deviceId, Duration wait);
+
+    /**
+     * The host's take, in order: hold every open assignment named in {@code holding}; expire queued
+     * ones no host took in time; claim the rest of the queued ones and hold again every claimed or
+     * running one outside {@code holding} whose hold has lapsed. When that returned nothing, the
+     * expire and claim steps repeat until {@code wait} (0 to 50 seconds) has passed. Each returned
+     * row is one conditional write this call made.
+     */
+    List<AssignmentView> take(@NotBlank String deviceId, @Size(max = 64) List<@NotNull UUID> holding, Duration wait);
+
+    /**
+     * {@code CLAIMED} to {@code RUNNING} with the host's {@code deliveryRef}, held again. The same
+     * reference on a running assignment returns it unchanged; another reference is a conflict.
+     */
+    AssignmentView start(@NotBlank String deviceId, @NotNull UUID assignmentId,
+                         @NotNull @Size(min = 1, max = 128) @Pattern(regexp = DELIVERY_REF) String deliveryRef);
 
     AssignmentView assignment(String deviceId, UUID assignmentId);
 
