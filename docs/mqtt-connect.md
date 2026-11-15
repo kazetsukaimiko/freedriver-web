@@ -80,7 +80,7 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
 
 ## Topics and ACL
 
-The live grants are in `mosquitto/acl.template`. The dashboard subscribes to the houses that are users in the Keycloak group `mqtt-instance`: it loads them at startup, every 60 seconds, and right after it provisions a house, so a new house is heard without a restart. It does not read the broker ACL.
+The live grants are in `mosquitto/acl.template`. The dashboard subscribes to the houses that are users in the Keycloak group `mqtt-instance`: it loads them at startup, every 60 seconds, and right after it provisions a house, so a new house is heard without a restart.
 
 | Topic | Writer | Reader |
 | --- | --- | --- |
