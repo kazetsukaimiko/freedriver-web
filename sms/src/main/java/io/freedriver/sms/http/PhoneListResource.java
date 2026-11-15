@@ -1,7 +1,6 @@
 package io.freedriver.sms.http;
 
 import io.freedriver.sms.api.SmsPhonesApi;
-import io.freedriver.sms.model.AddPhone;
 import io.freedriver.sms.model.Added;
 import io.freedriver.sms.model.AttachUser;
 import io.freedriver.sms.model.Attached;
@@ -65,14 +64,6 @@ public class PhoneListResource implements SmsPhonesApi {
             signIns.forget(request.phone());
         }
         return new Removed(removed);
-    }
-
-    /** Puts an invited number on the list after its code is verified. Role is {@code dashboard} only. */
-    @Override
-    public Added add(AddPhone request) {
-        boolean added = directory.add(new PhoneEntry(
-                request.phone(), request.name(), request.username(), request.role(), Instant.now()));
-        return new Added(added);
     }
 
     /** Lists a number before its Keycloak user exists. The role is always {@code dashboard}. */

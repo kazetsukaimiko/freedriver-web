@@ -20,8 +20,8 @@ it('shows a flat left nav and sends a portal admin to Phones/Accounts', async ()
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) =>
-      url === '/api/invites'
-        ? Response.json({ invites: [], csrfToken: 'csrf-1' })
+      url === '/api/phones'
+        ? Response.json({ phones: [], csrfToken: 'csrf-1' })
         : new Response(null, { status: 404 }),
     ),
   )
@@ -58,6 +58,12 @@ it('shows a flat left nav and sends a portal admin to Phones/Accounts', async ()
 
 it('keeps Phones/Accounts and Instances out of the nav without portal-admin', async () => {
   window.history.replaceState({}, '', '/changelog?splash=0')
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) =>
+      url === '/api/phones' ? new Response(null, { status: 403 }) : new Response(null, { status: 404 }),
+    ),
+  )
   render(<App />)
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0)
@@ -79,13 +85,30 @@ it('keeps Phones/Accounts and Instances out of the nav without portal-admin', as
   expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeTruthy()
 })
 
+it('keeps the admin links for a portal admin while sms is down', async () => {
+  window.history.replaceState({}, '', '/changelog?splash=0')
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) =>
+      url === '/api/phones' ? new Response(null, { status: 502 }) : new Response(null, { status: 404 }),
+    ),
+  )
+  render(<App />)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0)
+  })
+
+  expect(screen.getByRole('link', { name: 'Phones/Accounts' })).toBeTruthy()
+  expect(screen.getByRole('link', { name: 'Instances' })).toBeTruthy()
+})
+
 it('opens Instances beside Phones/Accounts for a portal admin', async () => {
   window.history.replaceState({}, '', '/?splash=0')
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) =>
-      url === '/api/invites'
-        ? Response.json({ invites: [], csrfToken: 'csrf-1' })
+      url === '/api/phones'
+        ? Response.json({ phones: [], csrfToken: 'csrf-1' })
         : url === '/api/instances'
           ? Response.json({ instances: [], csrfToken: 'csrf-1' })
           : new Response(null, { status: 404 }),
@@ -213,6 +236,19 @@ it('opens /changelog in the same tab from the build stamp link', async () => {
 
   expect(window.location.pathname).toBe('/changelog')
   expect(screen.getByRole('heading', { level: 1, name: 'Changelog' })).toBeTruthy()
+})
+
+it('shows the not-found page at /invite now the invite page is gone', async () => {
+  for (const href of ['/invite?splash=0', '/invite/?splash=0']) {
+    window.history.replaceState({}, '', href)
+    render(<App />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByRole('heading', { level: 1, name: '404' })).toBeTruthy()
+    expect(screen.queryByText(/one-time sign-in code/i)).toBeNull()
+    cleanup()
+  }
 })
 
 it('keeps Sign out at the end of the header on the dashboard, changelog, denied, and unknown pages', async () => {

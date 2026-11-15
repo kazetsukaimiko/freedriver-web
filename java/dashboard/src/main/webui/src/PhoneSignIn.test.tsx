@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { PhoneSignIn } from './PhoneSignIn'
-import { ALREADY_LISTED, EMPTY_INVITES, EMPTY_NUMBERS, ENTER_PHONE, INVITE_FAILED } from './phones'
+import { ALREADY_LISTED, EMPTY_NUMBERS, ENTER_PHONE, INVITE_FAILED } from './phones'
 
 const LOGIN_LINK = 'https://app.freedriver.io/sign-in#%2B15555550123'
 
@@ -14,10 +14,7 @@ function emptyLists() {
       return Response.json({ phone: '***0123', link: LOGIN_LINK })
     }
     if (url === '/api/phones') {
-      return Response.json({ phones: [] })
-    }
-    if (url === '/api/invites') {
-      return Response.json({ invites: [], csrfToken: 'csrf-1' })
+      return Response.json({ phones: [], csrfToken: 'csrf-1' })
     }
     return new Response(null, { status: 404 })
   })
@@ -34,10 +31,11 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-it('shows the empty phone and invite copy', async () => {
+it('shows the empty phone copy and reads only the phone list', async () => {
   render(<PhoneSignIn />)
   expect(await screen.findByText(EMPTY_NUMBERS)).toBeTruthy()
-  expect(screen.getByText(EMPTY_INVITES)).toBeTruthy()
+  expect(screen.queryByText(/open invites/i)).toBeNull()
+  expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual(['/api/phones'])
   expect(screen.getByRole('textbox', { name: 'Phone number' })).toBeTruthy()
   expect(screen.queryByRole('textbox', { name: 'Name' })).toBeNull()
   expect(screen.getByRole('button', { name: 'Create invite' })).toBeTruthy()
@@ -65,7 +63,6 @@ it('opens a modal with the login link and copies it', async () => {
   const link = screen.getByRole('textbox', { name: 'Login link' })
   expect(link).toHaveProperty('value', LOGIN_LINK)
   expect(String((link as HTMLInputElement).value)).not.toContain('?')
-  expect(screen.queryByText(/\/invite\/#/)).toBeNull()
 
   fireEvent.click(screen.getByRole('button', { name: 'Copy link' }))
   expect(await screen.findByRole('button', { name: 'Copied' })).toBeTruthy()
@@ -103,10 +100,7 @@ it('refuses a number already on the list with a stable reason', async () => {
       )
     }
     if (url === '/api/phones') {
-      return Response.json({ phones: [] })
-    }
-    if (url === '/api/invites') {
-      return Response.json({ invites: [], csrfToken: 'csrf-1' })
+      return Response.json({ phones: [], csrfToken: 'csrf-1' })
     }
     return new Response(null, { status: 404 })
   })
@@ -128,10 +122,7 @@ it('does not show a login link that puts the number in the query', async () => {
       return Response.json({ link: 'https://app.freedriver.io/sign-in?phone=%2B15555550123' })
     }
     if (url === '/api/phones') {
-      return Response.json({ phones: [] })
-    }
-    if (url === '/api/invites') {
-      return Response.json({ invites: [], csrfToken: 'csrf-1' })
+      return Response.json({ phones: [], csrfToken: 'csrf-1' })
     }
     return new Response(null, { status: 404 })
   })
@@ -170,10 +161,8 @@ it('opens the same link from the row until the first sign-in', async () => {
             loginLink: 'https://invite.example/sign-in#%2B15555550199',
           },
         ],
+        csrfToken: 'csrf-1',
       })
-    }
-    if (url === '/api/invites') {
-      return Response.json({ invites: [], csrfToken: 'csrf-1' })
     }
     return new Response(null, { status: 404 })
   })
@@ -191,15 +180,12 @@ it('hides a provider body when create fails', async () => {
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
     if (url === '/api/invites' && init?.method === 'POST') {
       return Response.json(
-        { error: 'Twilio 21211', detail: 'Keycloak grant failed', link: 'https://app.freedriver.io/invite/#abc' },
+        { error: 'Twilio 21211', detail: 'Keycloak grant failed', link: 'https://app.freedriver.io/elsewhere#abc' },
         { status: 502 },
       )
     }
     if (url === '/api/phones') {
-      return Response.json({ phones: [] })
-    }
-    if (url === '/api/invites') {
-      return Response.json({ invites: [], csrfToken: 'csrf-1' })
+      return Response.json({ phones: [], csrfToken: 'csrf-1' })
     }
     return new Response(null, { status: 404 })
   })
@@ -211,7 +197,7 @@ it('hides a provider body when create fails', async () => {
   expect(await screen.findByRole('alert')).toHaveProperty('textContent', INVITE_FAILED)
   expect(screen.queryByText(/Twilio/)).toBeNull()
   expect(screen.queryByText(/Keycloak/)).toBeNull()
-  expect(screen.queryByText(/\/invite\/#/)).toBeNull()
+  expect(screen.queryByText(/elsewhere#/)).toBeNull()
 })
 
 it('shows the masked number and remove still sends the full number', async () => {
@@ -231,10 +217,8 @@ it('shows the masked number and remove still sends the full number', async () =>
             lastSignIn: null,
           },
         ],
+        csrfToken: 'csrf-1',
       })
-    }
-    if (url === '/api/invites') {
-      return Response.json({ invites: [], csrfToken: 'csrf-1' })
     }
     return new Response(null, { status: 404 })
   })
@@ -246,33 +230,5 @@ it('shows the masked number and remove still sends the full number', async () =>
   fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
   const post = fetchMock.mock.calls.find((call) => call[0] === '/api/phones/remove')
   expect(JSON.parse(String(post?.[1].body))).toEqual({ phone: '+15555550123' })
-})
-
-it('keeps an invite when the cancel confirmation is dismissed', async () => {
-  fetchMock.mockImplementation(async (url: string) => {
-    if (url === '/api/phones') {
-      return Response.json({ phones: [] })
-    }
-    if (url === '/api/invites') {
-      return Response.json({
-        invites: [
-          {
-            id: 'inv-1',
-            name: 'Mom',
-            createdAt: '2026-10-20T12:00:00Z',
-            expiresAt: '2026-10-23T12:00:00Z',
-          },
-        ],
-        csrfToken: 'csrf-1',
-      })
-    }
-    return new Response(null, { status: 404 })
-  })
-  const confirm = vi.fn(() => false)
-  vi.stubGlobal('confirm', confirm)
-  render(<PhoneSignIn />)
-  fireEvent.click(await screen.findByRole('button', { name: 'Cancel invite' }))
-  expect(confirm).toHaveBeenCalledWith("Cancel Mom's invite? The link will stop working.")
-  const posted = fetchMock.mock.calls.some((call) => call[1]?.method === 'POST')
-  expect(posted).toBe(false)
+  expect(new Headers(post?.[1].headers).get('X-CSRF-Token')).toBe('csrf-1')
 })

@@ -39,7 +39,7 @@ public class PhoneRemovalResource {
 
     @GET
     public PhoneList list() {
-        return new PhoneList(sms.list().stream().map(this::listed).toList());
+        return new PhoneList(sms.list().stream().map(this::listed).toList(), null);
     }
 
     /** The login link stays until the first recorded sign-in. A number that cannot be a link has none. */
@@ -75,7 +75,8 @@ public class PhoneRemovalResource {
         return Response.noContent().build();
     }
 
-    public record PhoneList(List<ListedPhone> phones) {
+    /** The listed numbers plus the CSRF token {@code CsrfFilter} mints for create and remove. */
+    public record PhoneList(List<ListedPhone> phones, String csrfToken) {
     }
 
     public record ListedPhone(
