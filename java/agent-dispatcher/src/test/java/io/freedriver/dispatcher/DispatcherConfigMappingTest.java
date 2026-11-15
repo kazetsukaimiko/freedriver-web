@@ -39,6 +39,17 @@ class DispatcherConfigMappingTest {
         assertEquals(Duration.ofSeconds(51), mapping(Map.of("host-lease", "51s")).hostLease());
     }
 
+    @Test
+    void start_up_fails_when_the_take_window_is_under_one_second() {
+        for (String value : new String[] {"0s", "-1s", "999ms"}) {
+            ConfigValidationException refused = assertThrows(ConfigValidationException.class,
+                    () -> mapping(Map.of("take-within", value)), value);
+            assertTrue(refused.getMessage().contains("take-within"), refused.getMessage());
+        }
+
+        assertEquals(Duration.ofSeconds(1), mapping(Map.of("take-within", "1s")).takeWithin());
+    }
+
     private static DispatcherConfig mapping(Map<String, String> values) {
         Map<String, String> properties = new LinkedHashMap<>();
         properties.put("freedriver.dispatcher.client.dispatcher", "freedriver-dispatcher");

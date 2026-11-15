@@ -27,7 +27,8 @@ public interface DispatcherConfig {
     @WithDefault("90s")
     Duration hostLease();
 
-    /** A queued job no host takes within this time becomes {@code EXPIRED}. */
+    /** A queued job no host takes within this time becomes {@code EXPIRED}. At least one second. */
+    @DurationMin(seconds = 1)
     @WithDefault("10m")
     Duration takeWithin();
 

@@ -43,7 +43,7 @@ A host program takes each job exactly once with `take_jobs`, then says where it 
 
 `start_job` moves `CLAIMED` to `RUNNING`, stores `deliveryRef`, and renews `heldUntil`. The same call again on a `RUNNING` assignment with the same `deliveryRef` returns it unchanged. Another `deliveryRef` is a conflict, and another device's assignment is refused. `AssignmentView.deliveryRef` is null until `start_job` sets it.
 
-Lease and expiry: `freedriver.dispatcher.host-lease` is 90 seconds and `freedriver.dispatcher.take-within` is 10 minutes. Start-up fails when `host-lease` is 50 seconds or less, the longest `take_jobs` wait, so a host that names its jobs in `holding` on every take keeps them. A job whose host stops taking is handed out again once its lease has passed, with its state and `deliveryRef`. The dispatcher logs one INFO line per returned job and per `start_job`: assignment id, device id, state, and `ageMs` since the job was stored.
+Lease and expiry: `freedriver.dispatcher.host-lease` is 90 seconds and `freedriver.dispatcher.take-within` is 10 minutes. Start-up fails when `take-within` is under one second, and when `host-lease` is 50 seconds or less, the longest `take_jobs` wait, so a host that names its jobs in `holding` on every take keeps them. A job whose host stops taking is handed out again once its lease has passed, with its state and `deliveryRef`. The dispatcher logs one INFO line per returned job and per `start_job`: assignment id, device id, state, and `ageMs` since the job was stored.
 
 ## Deploy
 
