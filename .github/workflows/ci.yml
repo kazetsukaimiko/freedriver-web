@@ -563,14 +563,7 @@ jobs:
                   raise SystemExit(f"{name} publishes ports")
           print("compose config ok")
           PY
-          caddy_image="$(docker compose --env-file "$dummy" config --format json | python3 -c '
-import json, re, sys
-image = json.load(sys.stdin)["services"]["caddy"]["image"]
-tag = image.rsplit(":", 1)[-1]
-if not re.fullmatch(r"2\.[0-9]+", tag):
-    raise SystemExit(f"caddy image must be a 2.<minor> tag, got {image}")
-print(image)
-')"
+          caddy_image="$(docker compose --env-file "$dummy" config --format json | python3 -c 'import json,re,sys; image=json.load(sys.stdin)["services"]["caddy"]["image"]; tag=image.rsplit(":",1)[-1]; raise SystemExit("caddy image must be a 2.<minor> tag, got %s" % image) if not re.fullmatch(r"2\.[0-9]+", tag) else print(image)')"
           docker pull "$caddy_image"
           docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" "$caddy_image" \
             caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
