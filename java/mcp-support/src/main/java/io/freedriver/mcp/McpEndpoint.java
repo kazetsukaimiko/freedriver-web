@@ -2,11 +2,9 @@ package io.freedriver.mcp;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.net.URI;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * One service's MCP endpoint: its paths, the OAuth protected resource it is, where that resource's
@@ -25,17 +23,12 @@ public class McpEndpoint {
     private final List<String> roles;
 
     @Inject
-    public McpEndpoint(
-            @ConfigProperty(name = "freedriver.mcp.resource") String resource,
-            @ConfigProperty(name = "freedriver.mcp.authorization-servers") List<String> authorizationServers,
-            @ConfigProperty(name = "freedriver.mcp.metadata-path") String metadataPath,
-            @ConfigProperty(name = "freedriver.mcp.paths") List<String> paths,
-            @ConfigProperty(name = "freedriver.mcp.roles") Optional<List<String>> roles) {
-        this.resource = resource;
-        this.authorizationServers = List.copyOf(authorizationServers);
-        this.metadataPath = metadataPath;
-        this.paths = paths.stream().map(McpEndpoint::normalize).toList();
-        this.roles = roles.map(List::copyOf).orElse(List.of());
+    public McpEndpoint(McpEndpointConfig config) {
+        this.resource = config.resource();
+        this.authorizationServers = List.copyOf(config.authorizationServers());
+        this.metadataPath = config.metadataPath();
+        this.paths = config.paths().stream().map(McpEndpoint::normalize).toList();
+        this.roles = config.roles().map(List::copyOf).orElse(List.of());
     }
 
     /** The resource the access token is for, for example {@code https://app.freedriver.io/autonomy/mcp}. */

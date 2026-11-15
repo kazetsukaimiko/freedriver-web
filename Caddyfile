@@ -55,9 +55,6 @@ app.freedriver.io {
 			}
 			fail_duration 10s
 			lb_try_duration 5s
-			header_up -X-Freedriver-Internal
-			header_up -X-Freedriver-Subject
-			header_up -X-Freedriver-Roles
 		}
 	}
 	handle {
@@ -67,9 +64,6 @@ app.freedriver.io {
 			}
 			fail_duration 10s
 			lb_try_duration 5s
-			header_up -X-Freedriver-Internal
-			header_up -X-Freedriver-Subject
-			header_up -X-Freedriver-Roles
 		}
 	}
 }

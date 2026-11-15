@@ -102,7 +102,8 @@ public class CsrfFilter implements ContainerRequestFilter, ContainerResponseFilt
     }
 
     private boolean commandCaller() {
-        if (identity != null && Boolean.TRUE.equals(identity.getAttribute(McpInternalAuthMechanism.ATTRIBUTE))) {
+        // CSRF guards the cookie session. A bearer from the internal tenant is not sent by a browser.
+        if (InternalTenant.authenticated(identity)) {
             return false;
         }
         return identity != null

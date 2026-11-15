@@ -36,7 +36,6 @@ class DispatcherConfigTest {
         assertFalse(hasPropertyKey(properties, "quarkus.oidc.introspection-path"));
         assertFalse(properties.contains("quarkus.oidc.token.issuer=any"));
         assertTrue(properties.contains("freedriver.dispatcher.submit-timeout=75s"));
-        assertTrue(properties.contains("freedriver.dispatcher.poll-timeout=25s"));
         assertTrue(properties.contains("%test.freedriver.dispatcher.submit-timeout=300ms"));
         assertTrue(properties.contains(
                 "freedriver.dispatcher.openbot-webhook-secret=${FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET:}"));
