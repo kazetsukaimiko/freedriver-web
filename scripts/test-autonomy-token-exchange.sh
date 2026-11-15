@@ -349,8 +349,10 @@ if "https://app.freedriver.io/autonomy/mcp" not in aud:
 if claims.get("azp") != sys.argv[2]:
     raise SystemExit("DCR token azp is " + str(claims.get("azp")))
 roles = set(claims.get("roles") or [])
-if "dashboard" not in roles or "mcp-user" not in roles:
+if "mcp-user" not in roles:
     raise SystemExit("DCR token roles are " + ",".join(sorted(roles)))
+if "dashboard" in roles:
+    raise SystemExit("DCR token without a grant must not carry dashboard: " + ",".join(sorted(roles)))
 if "portal-admin" in roles:
     raise SystemExit("DCR token must not carry portal-admin: " + ",".join(sorted(roles)))
 print("DCR subject token aud", ",".join(aud))

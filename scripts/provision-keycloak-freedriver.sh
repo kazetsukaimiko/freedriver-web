@@ -40,19 +40,19 @@
 # Authorization code + PKCE S256, no secret, no service account. Enabled with
 # the grok.com connector callback (same URI as freedriver-dispatcher).
 # webOrigins stay empty. offline_access stays optional. 1-year access token.
-# Anonymous DCR grok.com clients inherit mcp-user and dashboard from the roles
-# client scope so an autonomy token can call tools/list and switch_appliance.
+# Anonymous DCR grok.com clients inherit mcp-user from the roles client scope
+# so connecting at all works. dashboard, mcp-debug, and later portal-admin
+# reach a token only through grant scopes the user ticks (#527).
 # Mapper audience-autonomy-mcp on freedriver-grok-mcp and grok.com DCR clients
 # puts access-token aud https://app.freedriver.io/autonomy/mcp. The same mapper
 # lives on client scope autonomy-mcp, a realm default so a later DCR client
 # gets that audience at registration.
 #
-# Token exchange (#491) is confidential client freedriver-autonomy-mcp.
-# Standard token exchange is on. Full Scope is off; realm scope mappings are
-# mcp-user and dashboard, the same roles a DCR autonomy token can carry.
-# DCR and grok-mcp access tokens list that client in aud. An exchange with
-# audience freedriver-api returns a token whose sub matches and whose realm
-# roles stay inside that mapping. The secret is written once.
+# Token exchange (#491, #527) is confidential client freedriver-autonomy-mcp.
+# Standard token exchange is on. Full Scope is off; realm scope mapping is
+# mcp-user. Grant scopes are optional on that client. A client policy with
+# downscope-assertion-grant-enforcer binds to it so an exchange cannot widen.
+# DCR and grok-mcp access tokens list that client in aud. The secret is written once.
 #
 # MQTT broker client (#317) is confidential client freedriver-mqtt. Direct access
 # grants. Client scope mqtt-acl fills mqtt_acl.publish and mqtt_acl.subscribe from
@@ -309,6 +309,7 @@ ensure_role grafana-viewer
 ensure_role grafana-editor
 ensure_role grafana-admin
 ensure_role mcp-user
+ensure_role mcp-debug
 
 ensure_user() {
   local username="$1"
@@ -713,11 +714,82 @@ PY
 }
 ensure_dcr_trusted_hosts
 
-# Anonymous DCR clients keep Full Scope Disabled. Map mcp-user and dashboard onto
-# the built-in roles client scope so those clients inherit the two autonomy roles
-# when the signed-in user holds them. grafana-admin stays off that mapping.
+# Keep realm role mappings on a client or client-scope path equal to the
+# named roles. Adds missing ones and deletes extras (dashboard leaves the
+# built-in roles scope in #527).
+sync_realm_scope_roles() {
+  local mapping_path="$1"
+  shift
+  local action
+  python3 - "$work/sync-wanted-names.json" "$@" <<'PY'
+import json, sys
+json.dump(sys.argv[2:], open(sys.argv[1], "w", encoding="utf-8"))
+PY
+  kcadm get "${mapping_path}" -r "$REALM" --fields id,name > "$work/sync-have.json"
+  action="$(python3 - "$work/sync-wanted-names.json" "$work/sync-have.json" \
+    "$work/sync-add.json" "$work/sync-remove.json" "$REALM" <<'PY'
+import json, sys
+wanted_names = json.load(open(sys.argv[1], encoding="utf-8"))
+have_list = json.load(open(sys.argv[2], encoding="utf-8"))
+have = {item.get("name"): item for item in have_list if item.get("name")}
+add, remove = [], []
+for name in wanted_names:
+    if name not in have:
+        add.append(name)
+for name, item in have.items():
+    if name not in wanted_names:
+        if not item.get("id"):
+            raise SystemExit("scope mapping role id is missing")
+        remove.append({"id": item["id"], "name": name})
+json.dump(add, open(sys.argv[3], "w", encoding="utf-8"))
+json.dump(remove, open(sys.argv[4], "w", encoding="utf-8"))
+print(("add" if add else "") + ("remove" if remove else "") or "ok")
+PY
+)"
+  if [[ "$action" == *add* ]]; then
+    python3 - "$work/sync-add.json" "$work" "$REALM" <<'PY'
+import json, sys
+names = json.load(open(sys.argv[1], encoding="utf-8"))
+work, realm = sys.argv[2], sys.argv[3]
+wanted = []
+for name in names:
+    path = f"{work}/sync-role-{name}.json"
+    # filled by kcadm in the shell loop
+    wanted.append(name)
+json.dump(wanted, open(f"{work}/sync-add-names.json", "w", encoding="utf-8"))
+PY
+    mapfile -t add_names < <(python3 - "$work/sync-add.json" <<'PY'
+import json, sys
+for name in json.load(open(sys.argv[1], encoding="utf-8")):
+    print(name)
+PY
+)
+    python3 -c 'import json,sys; json.dump([], open(sys.argv[1],"w",encoding="utf-8"))' "$work/sync-add-roles.json"
+    for name in "${add_names[@]}"; do
+      kcadm get "roles/${name}" -r "$REALM" --fields id,name > "$work/sync-role.json"
+      python3 - "$work/sync-role.json" "$work/sync-add-roles.json" <<'PY'
+import json, sys
+role = json.load(open(sys.argv[1], encoding="utf-8"))
+if not role.get("id") or not role.get("name"):
+    raise SystemExit("autonomy role id is missing")
+add = json.load(open(sys.argv[2], encoding="utf-8"))
+add.append({"id": role["id"], "name": role["name"]})
+json.dump(add, open(sys.argv[2], "w", encoding="utf-8"))
+PY
+    done
+    kcadm_stdin create "${mapping_path}" -r "$REALM" -f - < "$work/sync-add-roles.json" >/dev/null
+  fi
+  if [[ "$action" == *remove* ]]; then
+    kcadm_stdin delete "${mapping_path}" -r "$REALM" -f - < "$work/sync-remove.json" >/dev/null
+  fi
+  echo "${mapping_path} realm roles: $*"
+}
+
+# Anonymous DCR clients keep Full Scope Disabled. Map mcp-user only onto the
+# built-in roles client scope. dashboard leaves that mapping; it rides
+# appliances.write. grafana-admin stays off that mapping.
 ensure_dcr_autonomy_role_scope() {
-  local scope_id missing
+  local scope_id
   ensure_role mcp-user
   kcadm get client-scopes -r "$REALM" --fields id,name,protocol > "$work/client-scopes.json"
   scope_id="$(python3 - "$work/client-scopes.json" <<'PY'
@@ -735,34 +807,267 @@ PY
     echo "Failed to read client scope roles." >&2
     exit 1
   fi
-  kcadm get roles/mcp-user -r "$REALM" --fields id,name > "$work/role-mcp-user.json"
-  kcadm get roles/dashboard -r "$REALM" --fields id,name > "$work/role-dashboard.json"
-  kcadm get "client-scopes/${scope_id}/scope-mappings/realm" -r "$REALM" --fields id,name \
-    > "$work/roles-scope-mappings.json"
-  missing="$(python3 - "$work/role-mcp-user.json" "$work/role-dashboard.json" \
-    "$work/roles-scope-mappings.json" "$work/roles-scope-add.json" <<'PY'
-import json, sys
-mcp = json.load(open(sys.argv[1], encoding="utf-8"))
-dash = json.load(open(sys.argv[2], encoding="utf-8"))
-have = {item.get("name") for item in json.load(open(sys.argv[3], encoding="utf-8"))}
-wanted = [mcp, dash]
-for role in wanted:
-    if not role.get("id") or not role.get("name"):
-        raise SystemExit("autonomy role id is missing")
-add = [role for role in wanted if role.get("name") not in have]
-json.dump(add, open(sys.argv[4], "w", encoding="utf-8"))
-print("add" if add else "ok")
-PY
-)"
-  if [[ "$missing" == add ]]; then
-    kcadm_stdin create "client-scopes/${scope_id}/scope-mappings/realm" -r "$REALM" -f - \
-      < "$work/roles-scope-add.json" >/dev/null
-    echo "Client scope roles includes mcp-user and dashboard."
-  else
-    echo "Client scope roles already includes mcp-user and dashboard."
-  fi
+  sync_realm_scope_roles "client-scopes/${scope_id}/scope-mappings/realm" mcp-user
+  echo "Client scope roles maps mcp-user only."
 }
 ensure_dcr_autonomy_role_scope
+
+# Optional grant scopes (#527). Each has one realm role. phones.admin is #531.
+ensure_grant_scopes() {
+  local grok_redirect='https://grok.com/connectors-oauth-exchange-code/'
+  local name text role scope_id have_optional
+  ensure_role mcp-user
+  ensure_role dashboard
+  ensure_role mcp-debug
+  python3 - "$work/grant-defs.json" <<'PY'
+import json, sys
+json.dump([
+    {
+        "name": "appliances.read",
+        "text": "See your appliances and whether the house is online",
+        "role": "mcp-user",
+    },
+    {
+        "name": "appliances.write",
+        "text": "Switch your appliances on and off, now or later",
+        "role": "dashboard",
+    },
+    {
+        "name": "mcp.debug",
+        "text": "Read service health and recent error categories",
+        "role": "mcp-debug",
+    },
+], open(sys.argv[1], "w", encoding="utf-8"))
+PY
+  while IFS=$'\t' read -r name text role; do
+    [[ -n "$name" ]] || continue
+    kcadm get client-scopes -r "$REALM" --fields id,name,protocol > "$work/client-scopes.json"
+    scope_id="$(python3 - "$work/client-scopes.json" "$name" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+ids = [
+    s["id"]
+    for s in scopes
+    if s.get("name") == wanted and s.get("protocol") == "openid-connect" and s.get("id")
+]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+    if [[ -z "$scope_id" ]]; then
+      python3 - "$work/grant-scope.json" "$name" "$text" <<'PY'
+import json, sys
+name, text = sys.argv[2], sys.argv[3]
+json.dump({
+    "name": name,
+    "protocol": "openid-connect",
+    "description": text,
+    "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": text,
+        "freedriver.grant": "true",
+    },
+}, open(sys.argv[1], "w", encoding="utf-8"))
+PY
+      kcadm_stdin create client-scopes -r "$REALM" -f - < "$work/grant-scope.json" >/dev/null
+      kcadm get client-scopes -r "$REALM" --fields id,name,protocol > "$work/client-scopes.json"
+      scope_id="$(python3 - "$work/client-scopes.json" "$name" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+ids = [
+    s["id"]
+    for s in scopes
+    if s.get("name") == wanted and s.get("protocol") == "openid-connect" and s.get("id")
+]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+      echo "Created client scope ${name}."
+    else
+      python3 - "$work/grant-scope.json" "$name" "$text" <<'PY'
+import json, sys
+name, text = sys.argv[2], sys.argv[3]
+json.dump({
+    "name": name,
+    "protocol": "openid-connect",
+    "description": text,
+    "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": text,
+        "freedriver.grant": "true",
+    },
+}, open(sys.argv[1], "w", encoding="utf-8"))
+PY
+      kcadm_stdin update "client-scopes/${scope_id}" -r "$REALM" -f - < "$work/grant-scope.json" >/dev/null
+      echo "Client scope ${name} already exists."
+    fi
+    if [[ -z "$scope_id" ]]; then
+      echo "Failed to read client scope ${name}." >&2
+      exit 1
+    fi
+    sync_realm_scope_roles "client-scopes/${scope_id}/scope-mappings/realm" "$role"
+    kcadm get default-optional-client-scopes -r "$REALM" --fields id,name > "$work/realm-optional-scopes.json"
+    have_optional="$(python3 - "$work/realm-optional-scopes.json" "$scope_id" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+print("yes" if any(s.get("id") == wanted for s in scopes) else "no")
+PY
+)"
+    if [[ "$have_optional" != yes ]]; then
+      echo '{}' | kcadm_stdin update "default-optional-client-scopes/${scope_id}" -r "$REALM" >/dev/null
+      echo "Realm optional client scopes include ${name}."
+    else
+      echo "Realm optional client scopes already include ${name}."
+    fi
+  done < <(python3 - "$work/grant-defs.json" <<'PY'
+import json, sys
+for item in json.load(open(sys.argv[1], encoding="utf-8")):
+    print(item["name"] + "\t" + item["text"] + "\t" + item["role"])
+PY
+)
+
+  kcadm get "realms/${REALM}" --fields id > "$work/realm-id.json"
+  kcadm get components -r "$REALM" \
+    -q type=org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy \
+    > "$work/dcr-policies.json"
+  python3 - "$work/realm-id.json" "$work/dcr-policies.json" "$work/grant-defs.json" \
+    "$work/dcr-allowed-scopes.json" <<'PY'
+import json, sys
+realm = json.load(open(sys.argv[1], encoding="utf-8"))
+policies = json.load(open(sys.argv[2], encoding="utf-8"))
+grants = [item["name"] for item in json.load(open(sys.argv[3], encoding="utf-8"))]
+realm_id = realm.get("id") or ""
+comp = next(
+    (
+        c
+        for c in policies
+        if c.get("providerId") == "allowed-client-scopes" and c.get("subType") == "anonymous"
+    ),
+    None,
+)
+if not comp or not comp.get("id"):
+    json.dump({"action": "skip"}, open(sys.argv[4], "w", encoding="utf-8"))
+    raise SystemExit(0)
+config = dict(comp.get("config") or {})
+allowed = list(config.get("allowed-client-scopes") or [])
+changed = False
+for name in grants:
+    if name not in allowed:
+        allowed.append(name)
+        changed = True
+config["allowed-client-scopes"] = allowed
+if "allow-default-scopes" not in config:
+    config["allow-default-scopes"] = ["true"]
+body = {
+    "id": comp["id"],
+    "name": comp.get("name") or "Allowed Client Scopes",
+    "providerId": "allowed-client-scopes",
+    "providerType": "org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy",
+    "subType": "anonymous",
+    "parentId": realm_id,
+    "config": config,
+}
+json.dump({"action": "update" if changed else "ok", "body": body}, open(sys.argv[4], "w", encoding="utf-8"))
+PY
+  python3 - "$work/dcr-allowed-scopes.json" "$work/dcr-allowed-scopes-body.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+action = data.get("action")
+if action in ("update", "ok"):
+    json.dump(data["body"], open(sys.argv[2], "w", encoding="utf-8"))
+print(data.get("action") or "skip")
+PY
+  dcr_scope_action="$(python3 - "$work/dcr-allowed-scopes.json" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1], encoding="utf-8")).get("action") or "skip")
+PY
+)"
+  if [[ "$dcr_scope_action" == update ]]; then
+    kcadm_stdin update "components/$(python3 - "$work/dcr-allowed-scopes.json" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1], encoding="utf-8"))["body"]["id"]
+PY
+)" -r "$REALM" -f - < "$work/dcr-allowed-scopes-body.json" >/dev/null
+    echo "Anonymous DCR Allowed Client Scopes includes the grant scopes."
+  elif [[ "$dcr_scope_action" == ok ]]; then
+    echo "Anonymous DCR Allowed Client Scopes already includes the grant scopes."
+  else
+    echo "Anonymous DCR Allowed Client Scopes policy is absent; realm optional scopes stand."
+  fi
+
+  kcadm get clients -r "$REALM" > "$work/grant-clients-raw.json"
+  python3 - "$work/grant-clients-raw.json" "$work/grant-targets.json" "$work/grant-defs.json" \
+    "$grok_redirect" <<'PY'
+import json, sys
+raw_path, targets_path, defs_path, redirect = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+clients = json.load(open(raw_path, encoding="utf-8"))
+targets = []
+for client in clients:
+    if not isinstance(client, dict):
+        continue
+    client.pop("secret", None)
+    client_id = client.get("clientId") or ""
+    uid = client.get("id") or ""
+    uris = client.get("redirectUris") or []
+    if client_id == "freedriver-dispatcher" or not uid:
+        continue
+    if redirect in uris:
+        targets.append({"id": uid, "clientId": client_id})
+json.dump(targets, open(targets_path, "w", encoding="utf-8"))
+PY
+  rm -f "$work/grant-clients-raw.json"
+  kcadm get client-scopes -r "$REALM" --fields id,name,protocol > "$work/client-scopes.json"
+  while IFS=$'\t' read -r client_uuid client_id; do
+    [[ -n "$client_uuid" ]] || continue
+    while IFS=$'\t' read -r name _role; do
+      [[ -n "$name" ]] || continue
+      scope_id="$(python3 - "$work/client-scopes.json" "$name" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+ids = [
+    s["id"]
+    for s in scopes
+    if s.get("name") == wanted and s.get("protocol") == "openid-connect" and s.get("id")
+]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+      [[ -n "$scope_id" ]] || continue
+      kcadm get "clients/${client_uuid}/optional-client-scopes" -r "$REALM" \
+        > "$work/client-optional-scopes.json"
+      if python3 - "$work/client-optional-scopes.json" "$scope_id" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+raise SystemExit(0 if any(s.get("id") == wanted for s in scopes) else 1)
+PY
+      then
+        echo "Client ${client_id} already has optional scope ${name}."
+      else
+        echo '{}' | kcadm_stdin update "clients/${client_uuid}/optional-client-scopes/${scope_id}" \
+          -r "$REALM" >/dev/null
+        echo "Client ${client_id} optional scopes include ${name}."
+      fi
+    done < <(python3 - "$work/grant-defs.json" <<'PY'
+import json, sys
+for item in json.load(open(sys.argv[1], encoding="utf-8")):
+    print(item["name"] + "\t" + item["role"])
+PY
+)
+  done < <(python3 - "$work/grant-targets.json" <<'PY'
+import json, sys
+targets = json.load(open(sys.argv[1], encoding="utf-8"))
+for item in targets:
+    print(item["id"] + "\t" + item["clientId"])
+PY
+)
+}
+ensure_grant_scopes
 
 # Autonomy MCP verifies aud https://app.freedriver.io/autonomy/mcp. Put that
 # audience on freedriver-grok-mcp and grok.com DCR clients (JSON stdin; kcadm -s
@@ -934,15 +1239,15 @@ PY
 }
 ensure_autonomy_mcp_audience
 
-# Confidential requester for RFC 8693 standard token exchange (#491).
+# Confidential requester for RFC 8693 standard token exchange (#491, #527).
 # Subject tokens must list this client in aud. The exchanged token carries
 # audience freedriver-api from this client's mapper, filtered by the
 # audience parameter on the token request. Full Scope is off, so the token
-# only carries mcp-user and dashboard through this client's realm scope
-# mappings (the same pair anonymous DCR maps onto the roles client scope).
+# only carries mcp-user through this client's realm scope mapping. Grant
+# scopes are optional. A client policy forbids widening.
 ensure_autonomy_mcp_token_exchange() {
   local client_id='freedriver-autonomy-mcp'
-  local client_uuid mapper_id scope_id secret tmp has_scope
+  local client_uuid mapper_id scope_id secret tmp has_scope policy_action
   client_uuid="$(kcadm get clients -r "$REALM" -q "clientId=${client_id}" --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
   if [[ -z "$client_uuid" ]]; then
     kcadm create clients -r "$REALM" \
@@ -977,36 +1282,98 @@ ensure_autonomy_mcp_token_exchange() {
     -s 'webOrigins=[]' \
     -s 'attributes."standard.token.exchange.enabled"=true' \
     -s 'description=Confidential token-exchange client for /autonomy/mcp. Secret stays on the autonomy-mcp container.' >/dev/null
-  # fullScopeAllowed is off, so the realm roles reach the exchanged token only
-  # through this scope mapping. mcp-user and dashboard are the DCR autonomy pair.
+  # fullScopeAllowed is off, so mcp-user reaches the exchanged token only
+  # through this mapping. dashboard rides appliances.write on the subject token.
   ensure_role mcp-user
-  kcadm get roles/mcp-user -r "$REALM" --fields id,name > "$work/autonomy-mcp-role-mcp-user.json"
-  kcadm get roles/dashboard -r "$REALM" --fields id,name > "$work/autonomy-mcp-role-dashboard.json"
-  kcadm get "clients/${client_uuid}/scope-mappings/realm" -r "$REALM" --fields id,name \
-    > "$work/autonomy-mcp-scope.json"
-  has_scope="$(python3 - "$work/autonomy-mcp-role-mcp-user.json" \
-    "$work/autonomy-mcp-role-dashboard.json" "$work/autonomy-mcp-scope.json" \
-    "$work/autonomy-mcp-scope-add.json" <<'PY'
+  sync_realm_scope_roles "clients/${client_uuid}/scope-mappings/realm" mcp-user
+  echo "Client ${client_id} maps mcp-user only."
+  kcadm get client-scopes -r "$REALM" --fields id,name,protocol > "$work/client-scopes.json"
+  while IFS=$'\t' read -r name; do
+    [[ -n "$name" ]] || continue
+    scope_id="$(python3 - "$work/client-scopes.json" "$name" <<'PY'
 import json, sys
-mcp = json.load(open(sys.argv[1], encoding="utf-8"))
-dash = json.load(open(sys.argv[2], encoding="utf-8"))
-have = {item.get("name") for item in json.load(open(sys.argv[3], encoding="utf-8"))}
-wanted = [mcp, dash]
-for role in wanted:
-    if not role.get("id") or not role.get("name"):
-        raise SystemExit("autonomy MCP role id is missing")
-add = [role for role in wanted if role.get("name") not in have]
-json.dump(add, open(sys.argv[4], "w", encoding="utf-8"))
-print("add" if add else "ok")
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+ids = [
+    s["id"]
+    for s in scopes
+    if s.get("name") == wanted and s.get("protocol") == "openid-connect" and s.get("id")
+]
+print(ids[0] if len(ids) == 1 else "")
 PY
 )"
-  if [[ "$has_scope" == add ]]; then
-    kcadm_stdin create "clients/${client_uuid}/scope-mappings/realm" -r "$REALM" -f - \
-      < "$work/autonomy-mcp-scope-add.json" >/dev/null
-    echo "Mapped mcp-user and dashboard into the autonomy MCP token."
+    if [[ -z "$scope_id" ]]; then
+      echo "Grant scope ${name} is missing; run ensure_grant_scopes first." >&2
+      exit 1
+    fi
+    kcadm get "clients/${client_uuid}/optional-client-scopes" -r "$REALM" \
+      > "$work/autonomy-mcp-optional.json"
+    if python3 - "$work/autonomy-mcp-optional.json" "$scope_id" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+raise SystemExit(0 if any(s.get("id") == wanted for s in scopes) else 1)
+PY
+    then
+      echo "Client ${client_id} already has optional scope ${name}."
+    else
+      echo '{}' | kcadm_stdin update "clients/${client_uuid}/optional-client-scopes/${scope_id}" \
+        -r "$REALM" >/dev/null
+      echo "Client ${client_id} optional scopes include ${name}."
+    fi
+  done < <(printf '%s\n' appliances.read appliances.write mcp.debug)
+  if kcadm get "clients/${client_uuid}/roles/exchange-downscope" -r "$REALM" >/dev/null 2>&1; then
+    echo "Client role exchange-downscope already exists on ${client_id}."
   else
-    echo "Client ${client_id} already maps mcp-user and dashboard."
+    kcadm create "clients/${client_uuid}/roles" -r "$REALM" -s name=exchange-downscope >/dev/null
+    echo "Created client role exchange-downscope on ${client_id}."
   fi
+  kcadm get client-policies/profiles -r "$REALM" > "$work/client-policy-profiles.json" || \
+    echo '{"profiles":[]}' > "$work/client-policy-profiles.json"
+  python3 - "$work/client-policy-profiles.json" "$work/client-policy-profiles-put.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+profiles = [p for p in (data.get("profiles") or []) if p.get("name") != "freedriver-exchange-downscope"]
+profiles.append({
+    "name": "freedriver-exchange-downscope",
+    "description": "Token exchange may only copy scopes already on the subject token.",
+    "executors": [
+        {"executor": "downscope-assertion-grant-enforcer", "configuration": {}},
+    ],
+})
+json.dump({"profiles": profiles}, open(sys.argv[2], "w", encoding="utf-8"))
+PY
+  kcadm_stdin update client-policies/profiles -r "$REALM" -f - \
+    < "$work/client-policy-profiles-put.json" >/dev/null
+  kcadm get client-policies/policies -r "$REALM" > "$work/client-policy-policies.json" || \
+    echo '{"policies":[]}' > "$work/client-policy-policies.json"
+  python3 - "$work/client-policy-policies.json" "$work/client-policy-policies-put.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+policies = [p for p in (data.get("policies") or []) if p.get("name") != "freedriver-autonomy-mcp-downscope"]
+policies.append({
+    "name": "freedriver-autonomy-mcp-downscope",
+    "description": "Bind downscope-assertion-grant-enforcer to freedriver-autonomy-mcp.",
+    "enabled": True,
+    "conditions": [
+        {
+            "condition": "client-roles",
+            "configuration": {"roles": ["exchange-downscope"]},
+        },
+        {
+            "condition": "grant-type",
+            "configuration": {
+                "grant_types": ["urn:ietf:params:oauth:grant-type:token-exchange"],
+            },
+        },
+    ],
+    "profiles": ["freedriver-exchange-downscope"],
+})
+json.dump({"policies": policies}, open(sys.argv[2], "w", encoding="utf-8"))
+PY
+  kcadm_stdin update client-policies/policies -r "$REALM" -f - \
+    < "$work/client-policy-policies-put.json" >/dev/null
+  echo "Client policy freedriver-autonomy-mcp-downscope binds downscope-assertion-grant-enforcer."
 
   python3 - "$work/audience-api-mapper.json" <<'PY'
 import json, sys
