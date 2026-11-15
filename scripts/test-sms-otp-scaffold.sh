@@ -741,6 +741,9 @@ fi
 if ! grep -q 'assert_portal_jobs_token' scripts/test-invite-service-account.sh; then
   fail "invite throwaway must assert the portal-jobs access token roles"
 fi
+if ! grep -q '^assert_offline_access$' scripts/test-invite-service-account.sh; then
+  fail "invite throwaway must prove offline_access defaults and expires_in"
+fi
 if ! grep -q 'portal-admin-only DCR token roles (none)' scripts/test-autonomy-token-exchange.sh; then
   fail "token-exchange proof must cover a user who holds neither mcp-user nor dashboard"
 fi
@@ -832,8 +835,8 @@ for flag in (
     if flag not in timeouts:
         raise SystemExit(f"session timeouts must set {flag}")
 print("realm session timeouts 7200/28800/86400/1800")
-if script.count("31536000") != 3:
-    raise SystemExit("31536000 is the 1-year access token lifespan for dispatcher, grok-mcp, and OpenBot")
+if script.count("31536000") != 2:
+    raise SystemExit("31536000 is the 1-year access token lifespan for dispatcher and grok-mcp")
 for line in (
     """-s 'attributes."access.token.lifespan"=31536000'""",
     """-s 'attributes."client.session.idle.timeout"='"${SSO_SESSION_IDLE_TIMEOUT}\"""",
@@ -854,11 +857,20 @@ for line in openbot.splitlines():
             break
     kept.append(line)
 openbot_fn = "\n".join(kept)
-if 'attributes."access.token.lifespan"=31536000' not in openbot_fn:
-    raise SystemExit("ensure_openbot_mcp_client must set a 1-year access token")
-if "OpenBot is connect-and-forget like grok.com" not in script:
-    raise SystemExit("provision script must say OpenBot is connect-and-forget like grok.com")
-print("OpenBot MCP client uses a 1-year access token")
+if 'attributes."access.token.lifespan"=31536000' in openbot_fn:
+    raise SystemExit("ensure_openbot_mcp_client must not set a 1-year access token")
+if "clear_access_token_lifespan" not in openbot_fn:
+    raise SystemExit("ensure_openbot_mcp_client must clear a leftover access.token.lifespan")
+if "ensure_offline_access_default_scope" not in openbot_fn:
+    raise SystemExit("ensure_openbot_mcp_client must make offline_access a default scope")
+audience = script.split("ensure_autonomy_mcp_audience() {", 1)[1]
+if "ensure_offline_access_default_scope" not in audience:
+    raise SystemExit("grok.com DCR loop must add offline_access as a default scope")
+if '[[ "$client_id" != "freedriver-grok-mcp" ]]' not in audience:
+    raise SystemExit("grok.com DCR loop must skip offline_access on freedriver-grok-mcp")
+if "refuse_realm_default_offline_access" not in audience:
+    raise SystemExit("provision must refuse offline_access as a realm default scope")
+print("OpenBot MCP client uses realm-default access tokens and offline_access")
 PY
 
 python3 - <<'PY'
