@@ -35,7 +35,11 @@ services:
       FREEDRIVER_APPLIANCES_LIVE_COMMANDS: "false"
       FREEDRIVER_APPLIANCES_ENABLED: "true"
       QUARKUS_TLS_TRUST_ALL: "true"
-      JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Xmx384m"
+      # Invite SPI and the instances admin client interpolate these names.
+      # -D sets the hyphenated keys on the JVM; the URL is Keycloak on the compose network.
+      FREEDRIVER_KEYCLOAK_SERVER_URL: http://keycloak:8080
+      QUARKUS_KEYCLOAK_ADMIN_CLIENT_SERVER_URL: http://keycloak:8080
+      JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Dquarkus.keycloak.admin-client.server-url=http://keycloak:8080 -Dfreedriver.keycloak.server-url=http://keycloak:8080 -Xmx384m"
 
   agent-dispatcher:
     pull_policy: missing
