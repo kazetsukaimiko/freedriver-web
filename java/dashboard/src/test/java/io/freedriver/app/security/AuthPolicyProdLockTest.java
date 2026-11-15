@@ -239,9 +239,18 @@ class AuthPolicyProdLockTest {
         }
         String owners = Files.readString(Path.of("../../.github/CODEOWNERS"));
         assertEquals(
-                "/.github/ @kazetsukaimiko\n"
-                        + "/.github/scripts/grok_review.py @kazetsukaimiko\n"
-                        + "/.github/grok-security-prompt.md @kazetsukaimiko\n",
+                "# Default for everything under .github, including new files.\n"
+                        + "/.github/ @kazetsukaimiko\n"
+                        + "\n"
+                        + "# CI plumbing. A later line wins, so these override the default.\n"
+                        + "/.github/workflows/ci.yml                   @lonewatt-architect\n"
+                        + "/.github/workflows/commitlint.yml           @lonewatt-architect\n"
+                        + "/.github/workflows/pr-ready-when-green.yml  @lonewatt-architect\n"
+                        + "/.github/scripts/pr_ready_when_green.py     @lonewatt-architect\n"
+                        + "/.github/workflows/publish-sms.yml          @lonewatt-architect\n"
+                        + "/.github/workflows/release-please.yml       @lonewatt-architect\n"
+                        + "/.github/workflows/ci-notify-openbot.yml    @lonewatt-architect\n"
+                        + "/.github/workflows/pr-notify-openbot.yml    @lonewatt-architect\n",
                 owners);
     }
 
