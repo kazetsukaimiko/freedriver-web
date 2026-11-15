@@ -8,7 +8,6 @@ import io.quarkus.security.identity.SecurityIdentity;
 import io.smallrye.common.annotation.Blocking;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.time.Duration;
 import java.util.List;
@@ -25,10 +24,10 @@ public class DispatcherResource implements DispatcherApi {
     public DispatcherResource(
             JobStore jobs,
             SecurityIdentity identity,
-            @ConfigProperty(name = "freedriver.dispatcher.submit-timeout", defaultValue = "75s") Duration submitTimeout) {
+            DispatcherConfig config) {
         this.jobs = jobs;
         this.identity = identity;
-        this.submitTimeout = submitTimeout;
+        this.submitTimeout = config.submitTimeout();
     }
 
     @Override

@@ -6,10 +6,8 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.MultivaluedMap;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.ext.ClientHeadersFactory;
 
-import java.util.Optional;
 
 /**
  * The caller's subject and roles, and the internal secret, on every dashboard call. The incoming
@@ -27,10 +25,9 @@ public class McpCallerHeaders implements ClientHeadersFactory {
     private final String secret;
 
     @Inject
-    McpCallerHeaders(SecurityIdentity identity,
-                     @ConfigProperty(name = "freedriver.mcp.internal-secret") Optional<String> secret) {
+    McpCallerHeaders(SecurityIdentity identity, AutonomyMcpConfig config) {
         this.identity = identity;
-        this.secret = secret.map(String::trim).orElse("");
+        this.secret = config.internalSecret().map(String::trim).orElse("");
     }
 
     @Override
