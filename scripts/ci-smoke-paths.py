@@ -18,6 +18,8 @@ PATTERNS = (
     "auth-policy.properties",
     "scripts/ci-smoke",
     "scripts/provision-keycloak",
+    "scripts/provision-mosquitto.sh",
+    "mosquitto/",
     "ci/",
     ".github/workflows/ci.yml",
 )
@@ -82,6 +84,10 @@ def self_test() -> None:
         "java/dashboard/src/main/resources/auth-policy.properties",
         "scripts/ci-smoke.sh",
         "ci/twilio-verify-stub/stub.py",
+        "ci/fixture-house/responder.py",
+        "mosquitto/acl.template",
+        "mosquitto/mosquitto.conf",
+        "scripts/provision-mosquitto.sh",
         ".github/workflows/ci.yml",
     )
     misses = ("README.md", "docs/appliances.md", "site/index.html")

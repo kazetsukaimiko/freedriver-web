@@ -23,6 +23,11 @@ APP = "https://app.freedriver.io"
 AUTH = "https://auth.freedriver.io"
 PHONE = os.environ.get("FREEDRIVER_SEED_PHONE", "+15555550100")
 PROJECT = os.environ.get("COMPOSE_PROJECT_NAME", "freedriver-web")
+ROOT = Path(__file__).resolve().parent.parent
+SECRETS = Path(os.environ.get("FREEDRIVER_SMOKE_SECRETS", "/opt/freedriver-secrets"))
+ENV_FILE = Path(os.environ.get("FREEDRIVER_SMOKE_ENV", str(SECRETS / ".env")))
+FIXTURE_LABEL = "Fixture"
+FIXTURE_APPLIANCES = ("hallway", "fridge")
 AUTONOMY_META = f"{APP}/api/autonomy/oauth-protected-resource"
 DISPATCH_META = f"{APP}/api/dispatcher/oauth-protected-resource"
 AUTONOMY_CHALLENGE = f'Bearer resource_metadata="{AUTONOMY_META}"'
@@ -105,11 +110,52 @@ def https_handler() -> urllib.request.HTTPSHandler:
 
 
 def env_value(name: str) -> str:
-    path = Path("/opt/freedriver-secrets/.env")
-    for line in path.read_text(encoding="utf-8").splitlines():
+    if not ENV_FILE.is_file():
+        return ""
+    for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
         if line.startswith(name + "="):
             return line.split("=", 1)[1]
     return ""
+
+
+def set_env_value(name: str, value: str) -> None:
+    lines: list[str] = []
+    replaced = False
+    if ENV_FILE.is_file():
+        for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+            if line.startswith(name + "="):
+                lines.append(f"{name}={value}")
+                replaced = True
+            else:
+                lines.append(line)
+    if not replaced:
+        lines.append(f"{name}={value}")
+    ENV_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def compose(*args: str) -> None:
+    subprocess.check_call(
+        [
+            "docker",
+            "compose",
+            "--env-file",
+            str(ENV_FILE),
+            "-f",
+            str(ROOT / "docker-compose.yml"),
+            "-f",
+            str(ROOT / "docker-compose.ci.yml"),
+            *args,
+        ]
+    )
+
+
+def mcp_text(body: bytes) -> str:
+    payload = json.loads(body)
+    if payload.get("result", {}).get("isError"):
+        raise SystemExit(f"mcp error {body[:300]!r}")
+    contents = payload.get("result", {}).get("content") or []
+    texts = [item.get("text", "") for item in contents if isinstance(item, dict)]
+    return "\n".join(texts)
 
 
 def parse_forms(html: str) -> list[dict]:
@@ -268,6 +314,94 @@ def assert_phone_sign_in(client: Client) -> None:
     print("phone sign-in", status, url.split("?", 1)[0])
 
 
+def provision_fixture_house(client: Client) -> tuple[str, str]:
+    status, _, body, _ = client.request(f"{APP}/api/instances")
+    if status != 200:
+        raise SystemExit(f"GET /api/instances HTTP {status} body={body[:300]!r}")
+    listed = json.loads(body)
+    csrf = listed.get("csrfToken") or ""
+    if not csrf:
+        raise SystemExit("GET /api/instances missing csrfToken")
+    status, _, body, _ = client.request(
+        f"{APP}/api/instances",
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "X-CSRF-Token": csrf,
+        },
+        data=json.dumps({"label": FIXTURE_LABEL}).encode(),
+    )
+    if status not in {200, 201}:
+        raise SystemExit(f"POST /api/instances HTTP {status} body={body[:300]!r}")
+    created = json.loads(body)
+    instance_id = created.get("instanceId") or ""
+    password = created.get("password") or ""
+    if not instance_id or not password:
+        raise SystemExit("POST /api/instances missing instanceId or password")
+    print("fixture house", instance_id)
+    return instance_id, password
+
+
+def apply_fixture_acl(instance_id: str) -> None:
+    subprocess.check_call(
+        [
+            str(ROOT / "scripts/provision-mosquitto.sh"),
+            "--acl-only",
+            "--instance-id",
+            instance_id,
+            "--acl-out",
+            str(SECRETS / "mosquitto/acl"),
+        ]
+    )
+    compose("kill", "-s", "HUP", "mosquitto")
+
+
+def start_fixture_house(instance_id: str, password: str) -> None:
+    set_env_value("FIXTURE_INSTANCE_ID", instance_id)
+    set_env_value("FIXTURE_HOUSE_PASSWORD", password)
+    compose("up", "-d", "--no-build", "fixture-house")
+    container = f"{PROJECT}-fixture-house-1"
+    for _ in range(30):
+        try:
+            raw = subprocess.check_output(
+                [
+                    "docker",
+                    "exec",
+                    container,
+                    "python3",
+                    "-c",
+                    "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/health').getcode())",
+                ],
+                text=True,
+                stderr=subprocess.STDOUT,
+            )
+        except subprocess.CalledProcessError:
+            time.sleep(2)
+            continue
+        if raw.strip() == "200":
+            print("fixture-house ready")
+            return
+        time.sleep(2)
+    raise SystemExit("fixture-house never became ready")
+
+
+def fixture_command_count() -> int:
+    container = f"{PROJECT}-fixture-house-1"
+    raw = subprocess.check_output(
+        [
+            "docker",
+            "exec",
+            container,
+            "python3",
+            "-c",
+            "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/commands').read().decode())",
+        ],
+        text=True,
+    )
+    payload = json.loads(raw)
+    return int(payload.get("count", -1))
+
+
 def assert_mcp_tools(client: Client) -> None:
     verifier, challenge = pkce()
     redirect = "https://grok.com/connectors-oauth-exchange-code/"
@@ -352,27 +486,73 @@ def assert_mcp_tools(client: Client) -> None:
         raise SystemExit(f"tools/list HTTP {status}")
     payload = json.loads(body)
     names = [tool.get("name") for tool in payload.get("result", {}).get("tools", [])]
-    if "home_status" not in names:
-        raise SystemExit(f"tools/list missing home_status: {names}")
-    call = json.dumps(
-        {
-            "jsonrpc": "2.0",
-            "id": 3,
-            "method": "tools/call",
-            "params": {"name": "home_status", "arguments": {}},
-        }
-    ).encode()
-    status, _, body, _ = client.request(
-        f"{APP}/autonomy/mcp",
-        method="POST",
-        headers=session_headers,
-        data=call,
+    for required in ("home_status", "list_appliances", "switch_appliance"):
+        if required not in names:
+            raise SystemExit(f"tools/list missing {required}: {names}")
+
+    def call_tool(rpc_id: int, name: str, arguments: dict) -> tuple[int, bytes]:
+        payload = json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": rpc_id,
+                "method": "tools/call",
+                "params": {"name": name, "arguments": arguments},
+            }
+        ).encode()
+        status, _, body, _ = client.request(
+            f"{APP}/autonomy/mcp",
+            method="POST",
+            headers=session_headers,
+            data=payload,
+        )
+        return status, body
+
+    houses: list[dict] = []
+    for _ in range(20):
+        status, body = call_tool(3, "list_appliances", {})
+        if status != 200:
+            raise SystemExit(f"list_appliances HTTP {status} body={body[:300]!r}")
+        try:
+            houses = json.loads(mcp_text(body))
+        except json.JSONDecodeError:
+            houses = []
+        if houses and houses[0].get("appliances"):
+            break
+        time.sleep(2)
+    if not houses:
+        raise SystemExit("list_appliances returned no houses")
+    house = houses[0]
+    instance_id = house.get("instanceId") or ""
+    if instance_id != os.environ.get("FIXTURE_INSTANCE_ID", instance_id):
+        raise SystemExit(f"list_appliances instance {instance_id}")
+    got = {item.get("name"): item.get("state") for item in house.get("appliances") or []}
+    for name in FIXTURE_APPLIANCES:
+        if name not in got:
+            raise SystemExit(f"list_appliances missing {name}: {got}")
+    print("appliances", sorted(got))
+
+    before = fixture_command_count()
+    status, body = call_tool(
+        4,
+        "switch_appliance",
+        {"instanceId": instance_id, "applianceName": "hallway", "on": False},
     )
     if status != 200:
+        raise SystemExit(f"switch_appliance HTTP {status} body={body[:300]!r}")
+    spoken = mcp_text(body)
+    if "turned off" not in spoken.lower():
+        raise SystemExit(f"switch_appliance not confirmed: {spoken!r}")
+    after = fixture_command_count()
+    if after - before != 1:
+        raise SystemExit(f"fixture-house saw {after - before} commands, want 1")
+    print("switch_appliance confirmed")
+
+    status, body = call_tool(5, "home_status", {})
+    if status != 200:
         raise SystemExit(f"home_status HTTP {status} body={body[:300]!r}")
-    result = json.loads(body)
-    if result.get("result", {}).get("isError"):
-        raise SystemExit(f"home_status error {body[:300]!r}")
+    spoken = mcp_text(body)
+    if "broker is connected" not in spoken.lower():
+        raise SystemExit(f"home_status {spoken!r}")
     print("mcp tools ok")
 
 
@@ -382,6 +562,10 @@ def main() -> int:
     assert_mcp_challenges(client)
     assert_headers_anonymous(client)
     assert_phone_sign_in(client)
+    instance_id, password = provision_fixture_house(client)
+    apply_fixture_acl(instance_id)
+    start_fixture_house(instance_id, password)
+    os.environ["FIXTURE_INSTANCE_ID"] = instance_id
     assert_mcp_tools(client)
     return 0
 
