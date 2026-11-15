@@ -35,6 +35,7 @@ class DispatcherResourceTest {
     @Test
     void anonymous_health_is_open() {
         given().get("/q/health/live").then().statusCode(200);
+        given().get("/q/health/ready").then().statusCode(anyOf(is(200), is(503)));
         given().get("/q/health").then().statusCode(anyOf(is(200), is(503)));
     }
 
