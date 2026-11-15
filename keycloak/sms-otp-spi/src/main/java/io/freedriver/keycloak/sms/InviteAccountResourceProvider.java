@@ -12,9 +12,9 @@ import org.keycloak.services.resource.RealmResourceProvider;
 /**
  * RealmResourceSPI instance and JAX-RS subresource. RESTEasy Reactive indexes
  * {@code POST /users} on the runtime class {@code getResource()} returns; a
- * separate resource object is not in that index (HTTP 405).
+ * separate resource object is not in that index (HTTP 405). Class-level
+ * {@code @Path} on a provider JAR resource 405s under Keycloak's Quarkus REST.
  */
-@Path("/")
 public final class InviteAccountResourceProvider extends InviteAccountResource
         implements RealmResourceProvider {
 

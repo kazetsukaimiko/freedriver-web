@@ -42,6 +42,7 @@ need io/freedriver/keycloak/sms/SmsOtpAuthenticator.class
 need META-INF/services/org.keycloak.authentication.AuthenticatorFactory
 need META-INF/services/org.keycloak.services.resource.RealmResourceProviderFactory
 need META-INF/beans.xml
+need META-INF/jandex.idx
 
 if grep -qx 'io/freedriver/keycloak/sms/SmsOtpClient.class' "$list"; then
   echo "hand-written SmsOtpClient is still in the provider jar" >&2
