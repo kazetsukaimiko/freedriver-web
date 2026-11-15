@@ -86,6 +86,7 @@ class DispatcherConfigTest {
         assertTrue(compose.contains("replicas: ${DASHBOARD_REPLICAS:-1}"));
         assertTrue(compose.contains("replicas: ${DISPATCHER_REPLICAS:-1}"));
         assertTrue(compose.contains("replicas: ${AUTONOMY_MCP_REPLICAS:-1}"));
+        assertTrue(compose.contains("image: caddy:2.11"));
         assertTrue(compose.contains("/usr/local/bin/health-ready.sh"));
         assertFalse(compose.contains("QUARKUS_OIDC_ENABLED"));
         assertFalse(compose.contains("QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8080"));
