@@ -141,11 +141,9 @@ build_service() {
 # when this pull request changed their sources.
 "${COMPOSE[@]}" build twilio-stub
 
-if should_build dashboard java/dashboard/ java/dashboard-api/ java/dashboard-model/ java/hit-window/; then
-  build_service dashboard
-else
-  pull_or_build dashboard || build_service dashboard
-fi
+# Overlay turns mock appliances on. This branch's dashboard keeps MockAutonomy
+# in the prod image so that env can seed Cabin. GHCR 1.5.2 compiles the bean out.
+build_service dashboard
 if should_build agent-dispatcher java/agent-dispatcher/ java/agent-dispatcher-api/ java/agent-dispatcher-model/; then
   build_service agent-dispatcher
 else

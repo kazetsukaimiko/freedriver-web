@@ -24,8 +24,12 @@ class DefaultProfileSafetyTest {
         assertFalse(properties.contains("freedriver.appliances.backend="));
         assertFalse(Files.exists(Path.of("src/main/java/io/freedriver/app/appliances/FakeApplianceBackend.java")));
         assertFalse(Files.exists(Path.of("src/main/java/io/freedriver/app/appliances/ApplianceBackend.java")));
+        String mockAutonomy = Files.readString(
+                Path.of("src/main/java/io/freedriver/app/appliances/MockAutonomy.java"));
         assertTrue(Files.exists(Path.of("src/main/java/io/freedriver/app/appliances/MockAutonomy.java")));
         assertTrue(Files.exists(Path.of("src/main/java/io/freedriver/app/appliances/ApplianceControl.java")));
+        assertFalse(mockAutonomy.contains("@IfBuildProfile"),
+                "runtime mock=false is the prod gate; CI overlay sets mock=true on a prod image");
         assertTrue(auth.contains("quarkus.oidc.enabled=false"));
         assertFalse(auth.matches("(?s).*\\nquarkus\\.oidc\\.enabled=true.*"));
         assertTrue(properties.contains("freedriver.mqtt.host=mosquitto"));
