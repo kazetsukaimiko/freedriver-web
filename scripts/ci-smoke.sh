@@ -101,11 +101,24 @@ EOF
 fi
 
 # Production Caddyfile plus a CI global block and the Twilio stub site.
-{
-  printf '%s\n' '{' '	skip_install_trust' '	local_certs' '}' ''
-  cat "$ROOT/Caddyfile"
-  printf '%s\n' '' 'verify.twilio.com {' '	reverse_proxy twilio-stub:8080' '}'
-} >"$ROOT/Caddyfile.smoke"
+# House list talks to https://auth.freedriver.io; smoke reverse_proxies /admin
+# to Keycloak. Production Caddyfile still 404s /admin.
+python3 - "$ROOT/Caddyfile" "$ROOT/Caddyfile.smoke" <<'PY'
+from pathlib import Path
+import sys
+
+src, dest = Path(sys.argv[1]), Path(sys.argv[2])
+text = src.read_text()
+block = "\t@admin path /admin /admin/*\n\thandle @admin {\n\t\trespond 404\n\t}\n"
+if block not in text:
+    raise SystemExit("Caddyfile is missing the auth.freedriver.io /admin 404 handle")
+text = text.replace(block, "", 1)
+dest.write_text(
+    "{\n\tskip_install_trust\n\tlocal_certs\n}\n\n"
+    + text
+    + "\nverify.twilio.com {\n\treverse_proxy twilio-stub:8080\n}\n"
+)
+PY
 
 "${COMPOSE[@]}" config --quiet
 

@@ -34,9 +34,10 @@ services:
       FREEDRIVER_APPLIANCES_ENABLED: "true"
       QUARKUS_TLS_TRUST_ALL: "true"
       # House list interpolates quarkus.keycloak.admin-client.server-url from this.
+      # -D uses the exact property names; env mapping can miss the hyphenated key.
       FREEDRIVER_KEYCLOAK_SERVER_URL: http://keycloak:8080
       QUARKUS_KEYCLOAK_ADMIN_CLIENT_SERVER_URL: http://keycloak:8080
-      JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Xmx512m"
+      JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Dquarkus.keycloak.admin-client.server-url=http://keycloak:8080 -Dfreedriver.keycloak.server-url=http://keycloak:8080 -Xmx512m"
 
   agent-dispatcher:
     pull_policy: missing
