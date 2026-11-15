@@ -228,7 +228,8 @@ def assert_subject_stripped(client: Client) -> None:
             raise SystemExit(
                 f"outside X-Freedriver-Subject reached the dashboard ({status}) url={url} body={snippet!r}"
             )
-        if status in {401, 302, 303}:
+        # No session: 401, or 499 for X-Requested-With (java-script-auto-redirect=false).
+        if status in {401, 302, 303, 499}:
             print("subject stripped", status, flush=True)
             return
         last = (status, url, snippet)
