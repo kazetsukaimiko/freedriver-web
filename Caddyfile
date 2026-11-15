@@ -28,7 +28,7 @@ app.freedriver.io {
 			}
 			fail_duration 10s
 			lb_try_duration 5s
-			lb_policy header Mcp-Session-Id {
+			lb_policy cookie mcp_dispatcher {
 				fallback round_robin
 			}
 		}
@@ -41,7 +41,7 @@ app.freedriver.io {
 			}
 			fail_duration 10s
 			lb_try_duration 5s
-			lb_policy header Mcp-Session-Id {
+			lb_policy cookie mcp_autonomy {
 				fallback round_robin
 			}
 		}
