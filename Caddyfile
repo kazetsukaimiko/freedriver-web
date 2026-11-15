@@ -33,6 +33,18 @@ app.freedriver.io {
 			}
 		}
 	}
+	# Throwaway #484 proof: steal /autonomy/mcp so smoke sees a missing upstream.
+	# Close this branch. Do not merge.
+	@autonomyBroken path /autonomy/mcp /autonomy/mcp/*
+	handle @autonomyBroken {
+		reverse_proxy {
+			dynamic a autonomy-mcp-missing 8080 {
+				refresh 5s
+			}
+			fail_duration 10s
+			lb_try_duration 5s
+		}
+	}
 	@autonomy path /autonomy/mcp /autonomy/mcp/* /api/autonomy /api/autonomy/*
 	handle @autonomy {
 		reverse_proxy {
