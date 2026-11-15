@@ -11,6 +11,7 @@ import socket
 import ssl
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -147,6 +148,13 @@ def compose(*args: str) -> None:
             *args,
         ]
     )
+
+
+def as_root(argv: list[str]) -> None:
+    if os.geteuid() == 0:
+        subprocess.check_call(argv)
+    else:
+        subprocess.check_call(["sudo", *argv])
 
 
 def mcp_text(body: bytes) -> str:
@@ -343,16 +351,24 @@ def provision_fixture_house(client: Client) -> tuple[str, str]:
 
 
 def apply_fixture_acl(instance_id: str) -> None:
-    subprocess.check_call(
-        [
-            str(ROOT / "scripts/provision-mosquitto.sh"),
-            "--acl-only",
-            "--instance-id",
-            instance_id,
-            "--acl-out",
-            str(SECRETS / "mosquitto/acl"),
-        ]
-    )
+    fd, tmp_name = tempfile.mkstemp(prefix="smoke-acl-", suffix=".acl")
+    os.close(fd)
+    tmp = Path(tmp_name)
+    dest = SECRETS / "mosquitto" / "acl"
+    try:
+        subprocess.check_call(
+            [
+                str(ROOT / "scripts/provision-mosquitto.sh"),
+                "--acl-only",
+                "--instance-id",
+                instance_id,
+                "--acl-out",
+                str(tmp),
+            ]
+        )
+        as_root(["install", "-m", "0644", str(tmp), str(dest)])
+    finally:
+        tmp.unlink(missing_ok=True)
     compose("kill", "-s", "HUP", "mosquitto")
 
 
