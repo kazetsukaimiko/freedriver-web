@@ -145,12 +145,14 @@ def assert_replica_counts() -> None:
 
 
 def wait_caddy_dns(name: str, want: int = 2) -> None:
+    # Alpine getent hosts uses gethostbyname (one A record). Caddy dynamic a
+    # uses LookupIP; ahostsv4 lists every IPv4 address the same way.
     container = f"{PROJECT}-caddy-1"
     last = ""
     for _ in range(30):
         try:
             raw = subprocess.check_output(
-                ["docker", "exec", container, "getent", "hosts", name],
+                ["docker", "exec", container, "getent", "ahostsv4", name],
                 text=True,
                 stderr=subprocess.STDOUT,
             )
