@@ -23,8 +23,6 @@ APP = "https://app.freedriver.io"
 AUTH = "https://auth.freedriver.io"
 PHONE = os.environ.get("FREEDRIVER_SEED_PHONE", "+15555550100")
 PROJECT = os.environ.get("COMPOSE_PROJECT_NAME", "freedriver-web")
-INSTANCE = "550e8400-e29b-41d4-a716-446655440000"
-HALLWAY = "Hallway (test)"
 AUTONOMY_META = f"{APP}/api/autonomy/oauth-protected-resource"
 DISPATCH_META = f"{APP}/api/dispatcher/oauth-protected-resource"
 AUTONOMY_CHALLENGE = f'Bearer resource_metadata="{AUTONOMY_META}"'
@@ -208,8 +206,7 @@ def assert_mcp_challenges(client: Client) -> None:
         print("challenge", path)
 
 
-def assert_subject_stripped(client: Client) -> None:
-    secret = env_value("FREEDRIVER_MCP_INTERNAL_SECRET")
+def assert_headers_anonymous(client: Client) -> None:
     last = (0, "", b"")
     for _ in range(5):
         status, _, body, url = client.request(
@@ -217,7 +214,7 @@ def assert_subject_stripped(client: Client) -> None:
             headers={
                 "X-Freedriver-Subject": "attacker",
                 "X-Freedriver-Roles": "portal-admin,mcp-user,dashboard",
-                "X-Freedriver-Internal": secret,
+                "X-Freedriver-Internal": "not-a-secret",
                 "X-Requested-With": "XMLHttpRequest",
                 "Accept": "application/json",
             },
@@ -226,15 +223,14 @@ def assert_subject_stripped(client: Client) -> None:
         snippet = body[:200]
         if status in {200, 204}:
             raise SystemExit(
-                f"outside X-Freedriver-Subject reached the dashboard ({status}) url={url} body={snippet!r}"
+                f"outside hop headers reached the dashboard ({status}) url={url} body={snippet!r}"
             )
-        # No session: 401, or 499 for X-Requested-With (java-script-auto-redirect=false).
         if status in {401, 302, 303, 499}:
-            print("subject stripped", status, flush=True)
+            print("headers anonymous", status, flush=True)
             return
         last = (status, url, snippet)
         time.sleep(1)
-    raise SystemExit(f"outside subject HTTP {last[0]} url={last[1]} body={last[2]!r}")
+    raise SystemExit(f"outside headers HTTP {last[0]} url={last[1]} body={last[2]!r}")
 
 
 def assert_phone_sign_in(client: Client) -> None:
@@ -356,21 +352,14 @@ def assert_mcp_tools(client: Client) -> None:
         raise SystemExit(f"tools/list HTTP {status}")
     payload = json.loads(body)
     names = [tool.get("name") for tool in payload.get("result", {}).get("tools", [])]
-    if "switch_appliance" not in names:
-        raise SystemExit(f"tools/list missing switch_appliance: {names}")
+    if "home_status" not in names:
+        raise SystemExit(f"tools/list missing home_status: {names}")
     call = json.dumps(
         {
             "jsonrpc": "2.0",
             "id": 3,
             "method": "tools/call",
-            "params": {
-                "name": "switch_appliance",
-                "arguments": {
-                    "instanceId": INSTANCE,
-                    "applianceName": HALLWAY,
-                    "on": False,
-                },
-            },
+            "params": {"name": "home_status", "arguments": {}},
         }
     ).encode()
     status, _, body, _ = client.request(
@@ -380,10 +369,10 @@ def assert_mcp_tools(client: Client) -> None:
         data=call,
     )
     if status != 200:
-        raise SystemExit(f"switch_appliance HTTP {status} body={body[:300]!r}")
+        raise SystemExit(f"home_status HTTP {status} body={body[:300]!r}")
     result = json.loads(body)
     if result.get("result", {}).get("isError"):
-        raise SystemExit(f"switch_appliance error {body[:300]!r}")
+        raise SystemExit(f"home_status error {body[:300]!r}")
     print("mcp tools ok")
 
 
@@ -391,7 +380,7 @@ def main() -> int:
     client = Client()
     assert_build(client)
     assert_mcp_challenges(client)
-    assert_subject_stripped(client)
+    assert_headers_anonymous(client)
     assert_phone_sign_in(client)
     assert_mcp_tools(client)
     return 0

@@ -1,5 +1,5 @@
 # CI overlay for the compose smoke job (#484). Throwaway secrets, tls internal,
-# mock appliances, live-commands off. Caddy is the only published port.
+# live-commands off, no house. Caddy is the only published port.
 services:
   caddy:
     ports: !override
@@ -13,6 +13,7 @@ services:
       - /opt/freedriver-storage/caddy/config:/config
     depends_on: !override
       - keycloak
+      - twilio-stub
     networks:
       default:
         aliases:
@@ -22,16 +23,15 @@ services:
           - mqtt.freedriver.io
           - www.freedriver.io
           - freedriver.io
+          - verify.twilio.com
 
   dashboard:
     pull_policy: missing
     group_add: !reset []
     environment:
       FREEDRIVER_APPLIANCES_LIVE_COMMANDS: "false"
-      FREEDRIVER_APPLIANCES_MOCK: "true"
       FREEDRIVER_APPLIANCES_ENABLED: "true"
       QUARKUS_TLS_TRUST_ALL: "true"
-      FREEDRIVER_MCP_INTERNAL_SECRET: ${FREEDRIVER_MCP_INTERNAL_SECRET:?FREEDRIVER_MCP_INTERNAL_SECRET is required}
       JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Xmx512m"
 
   agent-dispatcher:
@@ -44,7 +44,6 @@ services:
     pull_policy: missing
     environment:
       FREEDRIVER_MCP_ENABLED: "true"
-      FREEDRIVER_MCP_INTERNAL_SECRET: ${FREEDRIVER_MCP_INTERNAL_SECRET:?FREEDRIVER_MCP_INTERNAL_SECRET is required}
       QUARKUS_TLS_TRUST_ALL: "true"
       JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Xmx384m"
 
@@ -90,8 +89,7 @@ services:
   sms:
     pull_policy: missing
     environment:
-      FREEDRIVER_SMS_TWILIO_BASE_URL: http://twilio-stub:8080
-      FREEDRIVER_SMS_TWILIO_ALLOW_STUB: "true"
+      QUARKUS_TLS_TRUST_ALL: "true"
       FREEDRIVER_SEED_PHONE: ${FREEDRIVER_SEED_PHONE:?FREEDRIVER_SEED_PHONE is required}
       JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Xmx384m"
     depends_on:

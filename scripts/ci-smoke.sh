@@ -56,7 +56,6 @@ hex32() { python3 -c 'import secrets; print(secrets.token_hex(16))'; }
 rand_secret() { python3 -c 'import secrets; print(secrets.token_urlsafe(32))'; }
 
 if [[ ! -f "$ENV_FILE" ]]; then
-  MCP_SECRET="$(rand_secret)"
   BOOTSTRAP="$(rand_secret)"
   SMS_SECRET="$(rand_secret)"
   cat >"$ENV_FILE" <<EOF
@@ -69,7 +68,6 @@ GF_SECURITY_ADMIN_PASSWORD=$(rand_secret)
 FREEDRIVER_SMS_DAILY_SEND_CAP=20
 SMS_OTP_SHARED_SECRET=${SMS_SECRET}
 FREEDRIVER_SEED_PHONE=${PHONE}
-FREEDRIVER_MCP_INTERNAL_SECRET=${MCP_SECRET}
 FREEDRIVER_AUTONOMY_MCP_ENABLED=true
 FREEDRIVER_APPLIANCES_LIVE_COMMANDS=false
 EOF
@@ -86,7 +84,7 @@ chmod 600 "$SECRETS/twilio-verify.env"
 
 # Bind-mount sources for the dashboard. A topic line with the template
 # placeholder is an ACL with no house UUID, so MetricsMqttForwarder keeps
-# the idle MQTT client while mock appliances run.
+# the idle MQTT client. Fixture house is #533.
 printf '%s\n' 'topic read freedriver/v1/__INSTANCE_ID__/appliances' >"$SECRETS/mosquitto/acl"
 printf '%s\n' 'smoke' >"$SECRETS/mosquitto/api.pass"
 if [[ ! -s "$SECRETS/mqtt-internal/ca.crt" ]]; then
@@ -141,25 +139,31 @@ build_service() {
 # when this pull request changed their sources.
 "${COMPOSE[@]}" build twilio-stub
 
-# Overlay turns mock appliances on. This branch's dashboard keeps MockAutonomy
-# in the prod image so that env can seed Cabin. GHCR 1.5.2 compiles the bean out.
-build_service dashboard
+if should_build dashboard java/dashboard/; then
+  build_service dashboard
+else
+  pull_or_build dashboard || build_service dashboard
+fi
 if should_build agent-dispatcher java/agent-dispatcher/ java/agent-dispatcher-api/ java/agent-dispatcher-model/; then
   build_service agent-dispatcher
 else
   pull_or_build agent-dispatcher || build_service agent-dispatcher
 fi
-# Smoke calls switch_appliance on Hallway (test). This branch's REST client
-# percent-encodes the name. GHCR 1.5.1 concatenates it into URI.create.
-build_service autonomy-mcp
+if should_build autonomy-mcp java/autonomy-mcp/; then
+  build_service autonomy-mcp
+else
+  pull_or_build autonomy-mcp || build_service autonomy-mcp
+fi
 if should_build keycloak keycloak/ sms-client/ sms-api/ sms-model/; then
   build_service keycloak
 else
   pull_or_build keycloak || build_service keycloak
 fi
-# Overlay always points the production sender at the stub, so this image
-# has to include freedriver.sms.twilio.allow-stub.
-build_service sms
+if should_build sms sms/ sms-client/ sms-api/ sms-model/; then
+  build_service sms
+else
+  pull_or_build sms || build_service sms
+fi
 
 "${COMPOSE[@]}" up -d keycloak-db mongodb redis keycloak sms twilio-stub mosquitto caddy
 
