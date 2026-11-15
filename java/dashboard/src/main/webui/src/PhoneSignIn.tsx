@@ -1,18 +1,16 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { apiFetch, goToSignIn } from './api'
 import { Denied } from './Dashboard'
-import { canonicalPhone } from './invitePhone'
 import {
-  EMPTY_INVITES,
   EMPTY_NUMBERS,
   ENTER_PHONE,
   INVITE_FAILED,
   acceptLoginLink,
+  canonicalPhone,
   displayPhone,
   inviteFailureReason,
   loadPhonePage,
   when,
-  type OpenInvite,
   type PhoneRow,
 } from './phones'
 import './phones.css'
@@ -21,7 +19,7 @@ type View =
   | { kind: 'loading' }
   | { kind: 'denied' }
   | { kind: 'error' }
-  | { kind: 'ready'; phones: PhoneRow[]; invites: OpenInvite[]; csrfToken: string }
+  | { kind: 'ready'; phones: PhoneRow[]; csrfToken: string }
 
 export function PhoneSignIn() {
   const [view, setView] = useState<View>({ kind: 'loading' })
@@ -40,7 +38,6 @@ export function PhoneSignIn() {
         setView({
           kind: 'ready',
           phones: result.phones,
-          invites: result.invites,
           csrfToken: result.csrfToken,
         })
         return
@@ -61,7 +58,6 @@ export function PhoneSignIn() {
           setView({
             kind: 'ready',
             phones: result.phones,
-            invites: result.invites,
             csrfToken: result.csrfToken,
           })
           return
@@ -161,20 +157,6 @@ export function PhoneSignIn() {
     event.currentTarget.form?.requestSubmit()
   }
 
-  async function cancelInvite(invite: OpenInvite) {
-    if (!window.confirm(`Cancel ${invite.name}'s invite? The link will stop working.`)) {
-      return
-    }
-    const response = await apiFetch(`/api/invites/${invite.id}/cancel`, {
-      method: 'POST',
-      headers: { 'X-CSRF-Token': view.kind === 'ready' ? view.csrfToken : '' },
-    })
-    if (signIn(response) || !response.ok) {
-      return
-    }
-    await reload()
-  }
-
   async function removePhone(row: PhoneRow) {
     if (!window.confirm(`Remove ${row.name}'s number? They won't be able to sign in with a text code.`)) {
       return
@@ -263,26 +245,6 @@ export function PhoneSignIn() {
               })}
             </tbody>
           </table>
-        )}
-      </section>
-
-      <section className="card">
-        <h2>Open invites</h2>
-        {view.invites.length === 0 ? (
-          <p>{EMPTY_INVITES}</p>
-        ) : (
-          <ul>
-            {view.invites.map((invite) => (
-              <li key={invite.id}>
-                <span>{invite.name}</span>
-                <span>{when(invite.createdAt)}</span>
-                <span>{when(invite.expiresAt)}</span>
-                <button type="button" className="danger" onClick={() => void cancelInvite(invite)}>
-                  Cancel invite
-                </button>
-              </li>
-            ))}
-          </ul>
         )}
       </section>
       {openLink && <LoginLinkModal url={openLink} onClose={() => setOpenLink(null)} />}

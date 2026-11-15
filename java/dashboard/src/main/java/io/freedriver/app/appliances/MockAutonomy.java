@@ -6,6 +6,7 @@ import io.freedriver.mqtt.contract.ApplianceStateMessage;
 import io.quarkus.logging.Log;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.annotation.PreDestroy;
+import io.quarkus.arc.profile.IfBuildProfile;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.enterprise.event.Observes;
@@ -29,10 +30,9 @@ import java.util.concurrent.TimeUnit;
  * Holds a map of autonomy instance id to instance name and appliance on/off.
  * Startup seeds the Cabin fixture only. A command for an unknown instance id is ignored.
  * Each fixture name ends with {@code (test)}, for example {@code Hallway (test)}.
- * The class ships in every packaged image so the CI overlay can turn mock on in a
- * prod-profile container. {@code mock=false} (prod default) leaves it idle.
  */
 @ApplicationScoped
+@IfBuildProfile(anyOf = {"dev", "test"})
 public class MockAutonomy {
 
     public static final UUID INSTANCE_ID = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");

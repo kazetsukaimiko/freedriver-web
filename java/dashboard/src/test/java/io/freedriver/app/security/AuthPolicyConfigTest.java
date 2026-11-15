@@ -36,12 +36,10 @@ class AuthPolicyConfigTest {
         assertTrue(auth.contains("quarkus.http.auth.permission.login.policy=authenticated"));
         assertTrue(auth.contains("quarkus.http.auth.permission.logout.paths=/logout"));
         assertTrue(auth.contains("quarkus.http.auth.permission.logout.policy=authenticated"));
-        assertTrue(auth.contains("quarkus.http.auth.permission.invites.paths=/api/invites,/api/invites/*"));
+        assertTrue(auth.contains("quarkus.http.auth.permission.invites.paths=/api/invites\n"));
         assertTrue(auth.contains("quarkus.http.auth.permission.invites.policy=authenticated"));
-        assertTrue(auth.contains("quarkus.http.auth.permission.invite-use.paths=/api/invites/use"));
-        assertTrue(auth.contains("quarkus.http.auth.permission.invite-use.policy=permit"));
-        assertTrue(auth.contains("quarkus.http.auth.permission.invite-redeem.paths=/api/invites/redeem,/api/invites/redeem/*"));
-        assertTrue(auth.contains("quarkus.http.auth.permission.invite-redeem.policy=permit"));
+        assertFalse(auth.contains("invite-use"));
+        assertFalse(auth.contains("invite-redeem"));
         assertTrue(auth.contains("quarkus.http.auth.permission.phones.paths=/api/phones,/api/phones/*"));
         assertTrue(auth.contains("quarkus.http.auth.permission.phones.policy=authenticated"));
         assertTrue(auth.contains("quarkus.http.auth.permission.sign-ins.paths=/api/sign-ins,/api/sign-ins/*"));
@@ -79,14 +77,11 @@ class AuthPolicyConfigTest {
         assertEquals("/logout", config.getValue("quarkus.http.auth.permission.logout.paths", String.class));
         assertEquals("authenticated", config.getValue("quarkus.http.auth.permission.logout.policy", String.class));
         assertEquals(
-                "/api/invites,/api/invites/*",
+                "/api/invites",
                 config.getValue("quarkus.http.auth.permission.invites.paths", String.class));
         assertEquals("authenticated", config.getValue("quarkus.http.auth.permission.invites.policy", String.class));
-        assertEquals("/api/invites/use", config.getValue("quarkus.http.auth.permission.invite-use.paths", String.class));
-        assertEquals("permit", config.getValue("quarkus.http.auth.permission.invite-use.policy", String.class));
-        assertEquals("/api/invites/redeem,/api/invites/redeem/*",
-                config.getValue("quarkus.http.auth.permission.invite-redeem.paths", String.class));
-        assertEquals("permit", config.getValue("quarkus.http.auth.permission.invite-redeem.policy", String.class));
+        assertTrue(config.getOptionalValue("quarkus.http.auth.permission.invite-use.paths", String.class).isEmpty());
+        assertTrue(config.getOptionalValue("quarkus.http.auth.permission.invite-redeem.paths", String.class).isEmpty());
         assertEquals(
                 "/api/phones,/api/phones/*",
                 config.getValue("quarkus.http.auth.permission.phones.paths", String.class));

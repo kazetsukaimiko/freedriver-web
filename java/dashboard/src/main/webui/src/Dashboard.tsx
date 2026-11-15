@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { goToSignIn } from './api'
-import { InviteWelcome } from './InviteWelcome'
 import './dashboard.css'
 import {
   COMMAND_WAIT_MS,
@@ -382,17 +381,13 @@ export function Dashboard({ search }: { search: string }) {
 
   if (view.kind === 'denied') {
     return (
-      <>
-        <InviteWelcome />
-        <Denied />
-      </>
+      <Denied />
     )
   }
 
   return (
     <main className="content">
       <h1>Dashboard</h1>
-      <InviteWelcome />
       {view.kind === 'waiting' && (
         <section className="card" aria-labelledby="home-status">
           <h2 id="home-status" className="visually-hidden">

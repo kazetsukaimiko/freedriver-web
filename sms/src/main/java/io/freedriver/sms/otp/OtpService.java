@@ -68,14 +68,6 @@ public class OtpService {
     }
 
     /**
-     * Texts a code to a number that already has an agreement and is not on the list yet.
-     * The invite page sends the code before the number is listed.
-     */
-    public SendOutcome sendAgreed(String phone) {
-        return replaceVerification(phone, true);
-    }
-
-    /**
      * Checks a code. A missing, cancelled, replaced, or more-than-5-minute-old verification is
      * expired. The check after the fifth attempt throws {@link TooManyAttemptsException}. Any
      * other miss throws {@link CodeRejectedException}. While the provider is down, an unlisted
@@ -93,18 +85,6 @@ public class OtpService {
             }
             throw new CodeRejectedException(VerifyFailure.WRONG_CODE);
         }
-        check(phone, code);
-    }
-
-    /**
-     * Checks a code for a number that agreed on the invite page and is not on the list yet.
-     * The attempt limit and the 5-minute expiry are the same as {@link #verify}.
-     */
-    public void verifyAgreed(String phone, String code) {
-        if (code == null || !CODE.matcher(code).matches()) {
-            throw new CodeRejectedException();
-        }
-        rejectIfExpired(phone);
         check(phone, code);
     }
 

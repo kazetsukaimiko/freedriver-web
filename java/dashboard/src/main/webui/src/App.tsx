@@ -3,7 +3,7 @@ import { Account } from './Account'
 import { AgentJobs } from './AgentJobs'
 import { AGENT_JOBS_PATH } from './agentJobs'
 import { ACCOUNT_PATH } from './account'
-import { SIGN_OUT_PATH, apiFetch } from './api'
+import { SIGN_OUT_PATH, apiFetch, signInRequired } from './api'
 import { Brand } from './Brand'
 import { BuildStamp } from './BuildStamp'
 import { Changelog } from './Changelog'
@@ -11,7 +11,6 @@ import { CHANGELOG_PATH } from './changelog'
 import { Dashboard } from './Dashboard'
 import { DispatcherJobs } from './DispatcherJobs'
 import { DISPATCHER_PATH } from './dispatcher'
-import { InvitePage } from './InvitePage'
 import { Instances } from './Instances'
 import { INSTANCES_PATH } from './instances'
 import { PhoneRecords } from './PhoneRecords'
@@ -125,15 +124,9 @@ function markSplashSeen() {
   window.history.replaceState({}, '', next)
 }
 
-function isInvitePath(pathname: string) {
-  return pathname === '/invite' || pathname === '/invite/'
-}
-
 function App() {
   const [path, setPath] = useState(() => window.location.pathname)
-  const [splash, setSplash] = useState<Splash>(() =>
-    isInvitePath(window.location.pathname) || !shouldPlaySplash() ? 'done' : 'playing',
-  )
+  const [splash, setSplash] = useState<Splash>(() => (shouldPlaySplash() ? 'playing' : 'done'))
   const [search, setSearch] = useState(() => window.location.search)
   const [signingOut, setSigningOut] = useState(false)
   const [portalAdmin, setPortalAdmin] = useState(false)
@@ -181,14 +174,11 @@ function App() {
   }, [splash])
 
   useEffect(() => {
-    if (isInvitePath(path)) {
-      return
-    }
     let cancelled = false
-    apiFetch('/api/invites')
+    apiFetch('/api/phones')
       .then((response) => {
         if (!cancelled) {
-          setPortalAdmin(response.ok)
+          setPortalAdmin(!signInRequired(response) && response.status !== 403)
         }
       })
       .catch(() => {
@@ -230,10 +220,6 @@ function App() {
     }, 0)
     return () => window.clearTimeout(id)
   }, [signingOut])
-
-  if (isInvitePath(path)) {
-    return <InvitePage />
-  }
 
   const page: Page = pageFor(path)
   const hrefFor = (to: string) => to + search
