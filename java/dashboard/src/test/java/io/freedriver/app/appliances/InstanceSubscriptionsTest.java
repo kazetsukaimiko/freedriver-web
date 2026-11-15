@@ -55,6 +55,9 @@ class InstanceSubscriptionsTest {
     InstanceSubscriptions subscriptions;
 
     @Inject
+    SubscribedHouses followed;
+
+    @Inject
     HouseProvision houses;
 
     @Inject
@@ -80,12 +83,12 @@ class InstanceSubscriptionsTest {
     void a_provisioned_house_receives_state_after_one_refresh_without_a_restart() {
         UUID house = UUID.fromString(houses.create("porch").instanceId());
         String state = ApplianceSchemas.appliancesTopic(house);
-        assertFalse(subscriptions.contains(house), "the refresh switch is off in this profile");
+        assertFalse(followed.contains(house), "the refresh switch is off in this profile");
         assertFalse(mqtt.subscriptions().contains(state));
 
         subscriptions.refresh();
 
-        assertTrue(subscriptions.contains(house));
+        assertTrue(followed.contains(house));
         assertTrue(mqtt.subscriptions().containsAll(List.of(state, MetricsTopics.metricsTopic(house))),
                 mqtt.subscriptions()::toString);
         mqtt.publishState(state, ApplianceJson.writeState(new ApplianceStateMessage(
@@ -103,7 +106,7 @@ class InstanceSubscriptionsTest {
         identity.remove(house.toString());
         subscriptions.refresh();
 
-        assertFalse(subscriptions.contains(house));
+        assertFalse(followed.contains(house));
         assertFalse(mqtt.subscriptions().contains(state), mqtt.subscriptions()::toString);
         assertFalse(mqtt.subscriptions().contains(MetricsTopics.metricsTopic(house)), mqtt.subscriptions()::toString);
         assertThrows(IllegalStateException.class, () -> mqtt.publishState(state, "{}"));
@@ -119,7 +122,7 @@ class InstanceSubscriptionsTest {
     void a_failed_refresh_keeps_the_current_set() {
         UUID kept = UUID.fromString(houses.create("barn").instanceId());
         subscriptions.refresh();
-        assertEquals(Set.of(kept), subscriptions.subscribed());
+        assertEquals(Set.of(kept), followed.subscribed());
 
         identity.remove(kept.toString());
         identity.refuseList(true);
@@ -128,12 +131,12 @@ class InstanceSubscriptionsTest {
             assertTrue(logs.all().contains("mqtt instances refresh failed"), logs.all());
         }
 
-        assertEquals(Set.of(kept), subscriptions.subscribed());
+        assertEquals(Set.of(kept), followed.subscribed());
         assertTrue(mqtt.subscriptions().contains(ApplianceSchemas.appliancesTopic(kept)));
 
         identity.refuseList(false);
         subscriptions.refresh();
-        assertTrue(subscriptions.subscribed().isEmpty());
+        assertTrue(followed.subscribed().isEmpty());
     }
 
     @Test

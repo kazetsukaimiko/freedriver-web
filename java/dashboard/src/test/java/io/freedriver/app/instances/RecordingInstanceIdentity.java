@@ -1,7 +1,9 @@
 package io.freedriver.app.instances;
 
 import io.quarkus.test.Mock;
+import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,6 +20,15 @@ public class RecordingInstanceIdentity implements InstanceIdentity {
     private final AtomicInteger creates = new AtomicInteger();
     private final AtomicBoolean refuse = new AtomicBoolean();
     private final AtomicBoolean refuseList = new AtomicBoolean();
+
+    /** A test profile sets this to start with Keycloak refusing the list, as when it is not up yet. */
+    @ConfigProperty(name = "recording-identity.refuse-list-at-start", defaultValue = "false")
+    boolean refuseListAtStart;
+
+    @PostConstruct
+    void start() {
+        refuseList.set(refuseListAtStart);
+    }
 
     public void clear() {
         users.clear();

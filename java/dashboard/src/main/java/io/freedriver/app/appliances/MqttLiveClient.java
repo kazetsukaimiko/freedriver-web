@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Live MQTT adapter on the same CDI bus as {@link MockAutonomy}.
- * {@link InstanceSubscriptions} decides which houses' appliance state it follows; the session
+ * {@link SubscribedHouses} holds the houses whose appliance state it follows; the session
  * connects when the first house is followed. Command publishing stays behind
  * {@code live-commands}. A failed state connection or a failed state write does not stop the
  * portal. Logs on {@code io.freedriver.mqtt}.
@@ -39,7 +39,7 @@ public class MqttLiveClient {
     static final int MAX_STATE_BYTES = 64 * 1024;
 
     private final AppliancesConfig appliances;
-    private final InstanceSubscriptions subscriptions;
+    private final SubscribedHouses subscriptions;
     private final Instance<MqttConnection> connections;
     private final Event<ApplianceStateRouted> states;
     private final ConcurrentHashMap<UUID, Traffic> traffic = new ConcurrentHashMap<>();
@@ -50,7 +50,7 @@ public class MqttLiveClient {
     @Inject
     public MqttLiveClient(
             AppliancesConfig appliances,
-            InstanceSubscriptions subscriptions,
+            SubscribedHouses subscriptions,
             Instance<MqttConnection> connections,
             Event<ApplianceStateRouted> states) {
         this.appliances = appliances;

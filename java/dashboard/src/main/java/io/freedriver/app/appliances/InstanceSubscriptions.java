@@ -19,12 +19,11 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * The houses this process is subscribed to: a cache of {@link InstanceIdentity#list()}, the users
- * in the Keycloak group {@code mqtt-instance}, plus {@code freedriver.mqtt.instance-ids} in dev and
- * test. Loaded at startup, refreshed every 60 seconds, and refreshed at once when this replica
+ * Keeps {@link SubscribedHouses} equal to {@link InstanceIdentity#list()}, the users in the Keycloak
+ * group {@code mqtt-instance}, plus {@code freedriver.mqtt.instance-ids} in dev and test, and calls
+ * the clients' follow and unfollow for the difference. Loaded at startup, refreshed every 60 seconds, and refreshed at once when this replica
  * provisions a house; {@code freedriver.mqtt.refresh} turns the two automatic refreshes off.
  * A refresh subscribes new houses and unsubscribes removed ones. A refresh whose list call fails
  * keeps the current set: it never unsubscribes on an error. A failed load at startup leaves only
@@ -38,16 +37,17 @@ public class InstanceSubscriptions {
     private final AppliancesConfig appliances;
     private final MqttLiveClient state;
     private final MetricsMqttForwarder metrics;
-    private final Set<UUID> subscribed = ConcurrentHashMap.newKeySet();
+    private final SubscribedHouses subscribed;
 
     @Inject
     public InstanceSubscriptions(InstanceIdentity identity, MqttSettings mqtt, AppliancesConfig appliances,
-                                 MqttLiveClient state, MetricsMqttForwarder metrics) {
+                                 MqttLiveClient state, MetricsMqttForwarder metrics, SubscribedHouses subscribed) {
         this.identity = identity;
         this.mqtt = mqtt;
         this.appliances = appliances;
         this.state = state;
         this.metrics = metrics;
+        this.subscribed = subscribed;
     }
 
     /** After {@link MqttLiveClient}'s startup check. With live commands on, a failed connect stops startup. */
@@ -74,14 +74,6 @@ public class InstanceSubscriptions {
         } catch (RuntimeException e) {
             MqttLog.instancesRefreshFailed();
         }
-    }
-
-    public boolean contains(UUID instanceId) {
-        return instanceId != null && subscribed.contains(instanceId);
-    }
-
-    public Set<UUID> subscribed() {
-        return Set.copyOf(subscribed);
     }
 
     private synchronized void apply(boolean failOnConnect) {
@@ -122,7 +114,7 @@ public class InstanceSubscriptions {
         if (!listed) {
             return;
         }
-        for (UUID id : List.copyOf(subscribed)) {
+        for (UUID id : List.copyOf(subscribed.subscribed())) {
             if (wanted.contains(id)) {
                 continue;
             }

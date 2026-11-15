@@ -1,6 +1,6 @@
 package io.freedriver.app.metrics;
 
-import io.freedriver.app.appliances.InstanceSubscriptions;
+import io.freedriver.app.appliances.SubscribedHouses;
 import io.freedriver.app.appliances.MqttAcl;
 import io.freedriver.mqtt.MqttConnection;
 import io.freedriver.mqtt.MqttLog;
@@ -13,7 +13,7 @@ import java.util.UUID;
 
 /**
  * Subscribes to each followed house's metrics topic and forwards points to Grafana via
- * Micrometer. {@link InstanceSubscriptions} decides the houses. Uses the same MQTT session as
+ * Micrometer. {@link SubscribedHouses} holds the houses. Uses the same MQTT session as
  * appliance state, after {@code MqttLiveClient} has connected it. Does not publish.
  */
 @BlockingIo
@@ -21,13 +21,13 @@ import java.util.UUID;
 public class MetricsMqttForwarder {
     static final int MAX_BYTES = 64 * 1024;
 
-    private final InstanceSubscriptions subscriptions;
+    private final SubscribedHouses subscriptions;
     private final MqttConnection connection;
     private final GrafanaMetricsEmitter emitter;
 
     @Inject
     public MetricsMqttForwarder(
-            InstanceSubscriptions subscriptions, MqttConnection connection, GrafanaMetricsEmitter emitter) {
+            SubscribedHouses subscriptions, MqttConnection connection, GrafanaMetricsEmitter emitter) {
         this.subscriptions = subscriptions;
         this.connection = connection;
         this.emitter = emitter;

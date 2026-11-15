@@ -30,7 +30,7 @@ class InstanceSubscriptionsOnProvisionTest {
     }
 
     @Inject
-    InstanceSubscriptions subscriptions;
+    SubscribedHouses followed;
 
     @Inject
     HouseProvision houses;
@@ -46,7 +46,7 @@ class InstanceSubscriptionsOnProvisionTest {
         identity.clear();
         UUID house = UUID.fromString(houses.create("garage").instanceId());
 
-        assertTrue(subscriptions.contains(house));
+        assertTrue(followed.contains(house));
         assertTrue(mqtt.subscriptions().contains(ApplianceSchemas.appliancesTopic(house)), mqtt.subscriptions()::toString);
     }
 }
