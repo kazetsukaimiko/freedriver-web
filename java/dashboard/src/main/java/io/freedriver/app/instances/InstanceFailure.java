@@ -6,15 +6,15 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record InstanceFailure(String type, String cause, String instanceId) {
 
-    static InstanceFailure label() {
+    public static InstanceFailure label() {
         return new InstanceFailure("instance", "label", null);
     }
 
-    static InstanceFailure broker() {
+    public static InstanceFailure broker() {
         return new InstanceFailure("instance", "broker", null);
     }
 
-    static InstanceFailure missing(String instanceId) {
+    public static InstanceFailure missing(String instanceId) {
         return new InstanceFailure("instance", "missing", instanceId);
     }
 }

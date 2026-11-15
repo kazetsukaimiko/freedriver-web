@@ -5,7 +5,6 @@ import io.quarkus.redis.datasource.value.ReactiveValueCommands;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.time.Duration;
 
@@ -32,8 +31,11 @@ public class RedisSessionRecords implements McpSessionRecords {
     private final String prefix;
 
     @Inject
-    public RedisSessionRecords(ReactiveRedisDataSource redis,
-                               @ConfigProperty(name = "freedriver.mcp.session-prefix") String prefix) {
+    public RedisSessionRecords(ReactiveRedisDataSource redis, McpEndpointConfig config) {
+        this(redis, config.sessionPrefix());
+    }
+
+    public RedisSessionRecords(ReactiveRedisDataSource redis, String prefix) {
         this.redis = redis;
         this.values = redis.value(String.class);
         this.prefix = prefix;

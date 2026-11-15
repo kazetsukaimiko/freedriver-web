@@ -17,7 +17,7 @@ Long-term, **freedriver-web owns minting `instanceId`**. For v1, Techops applies
 
 ## First-house apply (Techops only)
 
-The live ACL is `/opt/freedriver-secrets/mosquitto/acl`. `mosquitto.conf` reads it as `acl_file /mosquitto/config/secrets/acl` through the existing `/opt/freedriver-secrets/mosquitto` bind. Git keeps the template, `mosquitto/acl.template`, with `__INSTANCE_ID__` in its topic lines.
+The live ACL is `/opt/freedriver-secrets/mosquitto/acl`. `mosquitto.conf` reads it as `acl_file /mosquitto/config/secrets/acl` through the existing `/opt/freedriver-secrets/mosquitto` bind. Git keeps the template, `mosquitto/acl.template`, with `__INSTANCE_ID__` on instance topic lines.
 
 Copy-paste apply (Techops, root/sudo), with `__INSTANCE_ID__` replaced by the first-house instanceId:
 
@@ -31,9 +31,11 @@ The script accepts a lowercase UUID only. It checks the value before writing the
 
 That **one write** puts instance topics into `/opt/freedriver-secrets/mosquitto/acl` and drops leftover `freedriver/v1/home/...` in the same step:
 
-- `freedriver/v1/__INSTANCE_ID__/appliances`
-- `freedriver/v1/__INSTANCE_ID__/commands`
+- autonomy write `freedriver/v1/__INSTANCE_ID__/appliances`
+- autonomy read `freedriver/v1/__INSTANCE_ID__/commands`
 - autonomy write `freedriver/v1/__INSTANCE_ID__/metrics/#`
+- api read `freedriver/v1/+/appliances`
+- api write `freedriver/v1/+/commands`
 - api read `freedriver/v1/+/metrics/#`
 
 The live ACL sits outside the deploy checkout (`/opt/freedriver-web`), so deploys leave it as applied.
@@ -56,7 +58,7 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
   - Container port 8884 is published as host `8883`. That certificate is Let's Encrypt for `DNS:mqtt.freedriver.io` only.
 - Host port 8883 stays reachable from any address because the home IP is dynamic. Broker passwords and instance ACLs guard it. `allow_anonymous false`, the password file, and the ACL apply to both listeners. Do not set `listener_allow_anonymous true`. Port 1883 stays closed.
 - Sysadmin still needs `mqtt.freedriver.io` A → `138.197.90.42`.
-- Auth: every client logs in with a broker password (`allow_anonymous false`). v1 has one house, which shares broker users `autonomy` and `api`. The OAuth plugin is loaded. The dashboard service account `service-account-freedriver-mqtt` (group `portal-broker`) publishes `freedriver/v1/+/commands` and subscribes to `freedriver/v1/+/appliances` through the plugin. House users receive exact instance topics from JWT claims; `api` receives the `+/metrics/#` filter until #321.
+- Auth: every client logs in with a broker password (`allow_anonymous false`). v1 has one house, which shares broker users `autonomy` and `api`. The OAuth plugin is loaded. The dashboard service account `service-account-freedriver-mqtt` (group `portal-broker`) publishes `freedriver/v1/+/commands` and subscribes to `freedriver/v1/+/appliances` through the plugin. House users receive exact instance topics from JWT claims. `api` reads `freedriver/v1/+/appliances`, writes `freedriver/v1/+/commands`, and reads `freedriver/v1/+/metrics/#`.
 - Persistence: `/opt/freedriver-storage/mosquitto`.
 - Command-live arrives with #27.
 
@@ -78,12 +80,12 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
 
 ## Topics and ACL
 
-Appliances and commands are exact instance topics, one pair per instance. Metrics uses the filters below. Instance id is the same source as appliances and commands (host broker ACL). House users receive exact instance topics; `api` receives the `+/metrics/#` filter.
+The live grants are in `mosquitto/acl.template`. Instance id is the same source as appliances and commands (host broker ACL).
 
 | Topic | Writer | Reader |
 | --- | --- | --- |
-| `freedriver/v1/{instanceId}/appliances` | that instance's autonomy user | api |
-| `freedriver/v1/{instanceId}/commands` | api | that instance's autonomy user |
+| `freedriver/v1/{instanceId}/appliances` | that instance's autonomy user | api via `freedriver/v1/+/appliances` |
+| `freedriver/v1/{instanceId}/commands` | api via `freedriver/v1/+/commands` | that instance's autonomy user |
 | `freedriver/v1/{instanceId}/metrics/#` | that instance's autonomy user | — |
 | `freedriver/v1/+/metrics/#` | — | api |
 

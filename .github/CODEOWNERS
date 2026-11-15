@@ -1,3 +1,12 @@
+# Default for everything under .github, including new files.
 /.github/ @kazetsukaimiko
-/.github/scripts/grok_review.py @kazetsukaimiko
-/.github/grok-security-prompt.md @kazetsukaimiko
+
+# CI plumbing. A later line wins, so these override the default.
+/.github/workflows/ci.yml                   @lonewatt-architect
+/.github/workflows/commitlint.yml           @lonewatt-architect
+/.github/workflows/pr-ready-when-green.yml  @lonewatt-architect
+/.github/scripts/pr_ready_when_green.py     @lonewatt-architect
+/.github/workflows/publish-sms.yml          @lonewatt-architect
+/.github/workflows/release-please.yml       @lonewatt-architect
+/.github/workflows/ci-notify-openbot.yml    @lonewatt-architect
+/.github/workflows/pr-notify-openbot.yml    @lonewatt-architect

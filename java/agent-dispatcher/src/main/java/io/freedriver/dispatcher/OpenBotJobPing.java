@@ -5,7 +5,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.core.Response;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.net.URI;
@@ -13,7 +12,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Locale;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -40,10 +38,8 @@ class OpenBotJobPing implements JobPing {
     private final AtomicReference<OpenBotWebhook> webhook = new AtomicReference<>();
 
     @Inject
-    OpenBotJobPing(
-            @ConfigProperty(name = "freedriver.dispatcher.openbot-webhook-secret")
-            Optional<String> secret) {
-        this(secret == null ? "" : secret.orElse(""), WEBHOOK, Clock.systemUTC());
+    OpenBotJobPing(DispatcherConfig config) {
+        this(config.openbotWebhookSecret().orElse(""), WEBHOOK, Clock.systemUTC());
     }
 
     OpenBotJobPing(String secret, URI url, Clock clock) {

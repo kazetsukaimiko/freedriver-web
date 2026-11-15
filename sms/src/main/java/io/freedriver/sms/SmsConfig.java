@@ -62,6 +62,21 @@ public interface SmsConfig {
         /** Connect and request timeout for each Verify call. */
         @WithDefault("5s")
         Duration timeout();
+
+        /*
+         * The four Verify credentials, from TWILIO_ACCOUNT_SID, TWILIO_API_KEY_SID,
+         * TWILIO_API_KEY_SECRET and TWILIO_VERIFY_SERVICE_SID through application.properties.
+         * Optional here because the fake sender needs none; TwilioCredentials checks presence and
+         * shape when the Twilio sender starts, and its message names the variables, never a value.
+         */
+
+        Optional<String> accountSid();
+
+        Optional<String> apiKeySid();
+
+        Optional<String> apiKeySecret();
+
+        Optional<String> verifyServiceSid();
     }
 
     final class TwilioDefaults {
