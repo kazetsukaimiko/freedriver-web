@@ -38,11 +38,13 @@ services:
       # Invite SPI is a frontend realm resource. Token iss is KC_HOSTNAME
       # (https://auth.freedriver.io). The rest-client must call that host
       # through Caddy. quarkus.tls.trust-all is the default bucket; REST
-      # clients use a named bucket. tls internal is the smoke CA.
+      # clients use a named bucket. Named trust-all still verifies hostnames
+      # (Quarkus 3.38 TLS registry); tls internal SAN may not match.
       QUARKUS_TLS_SMOKE_TRUST_ALL: "true"
+      QUARKUS_TLS_SMOKE_HOSTNAME_VERIFICATION_ALGORITHM: "NONE"
       QUARKUS_REST_CLIENT_KEYCLOAK_INVITE_URL: https://auth.freedriver.io
       QUARKUS_REST_CLIENT_KEYCLOAK_INVITE_TLS_CONFIGURATION_NAME: smoke
-      JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Dquarkus.tls.smoke.trust-all=true -Dquarkus.rest-client.keycloak-invite.url=https://auth.freedriver.io -Dquarkus.rest-client.keycloak-invite.tls-configuration-name=smoke -Xmx384m"
+      JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Dquarkus.tls.smoke.trust-all=true -Dquarkus.tls.smoke.hostname-verification-algorithm=NONE -Dquarkus.rest-client.keycloak-invite.url=https://auth.freedriver.io -Dquarkus.rest-client.keycloak-invite.tls-configuration-name=smoke -Xmx384m"
 
   agent-dispatcher:
     pull_policy: missing
