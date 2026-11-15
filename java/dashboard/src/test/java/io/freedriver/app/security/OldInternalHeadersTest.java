@@ -53,10 +53,14 @@ class OldInternalHeadersTest {
         assertFalse(read(Path.of("src/main/resources/application.properties")).contains("mcp.internal"));
     }
 
+    /** Caddy `request_header -Name` / `header_up -Name` delete the header; they are not a hop credential. */
     private static boolean mentionsTheOldSecret(String text) {
-        return text.contains("FREEDRIVER_MCP_INTERNAL_SECRET") || text.contains("internal-secret")
-                || text.contains("X-Freedriver-Internal") || text.contains("X-Freedriver-Subject")
-                || text.contains("X-Freedriver-Roles");
+        String remaining = text.replaceAll(
+                "(?m)^[\\t ]*(?:request_header|header_up)[\\t ]+-X-Freedriver-(?:Internal|Subject|Roles)[\\t ]*$",
+                "");
+        return remaining.contains("FREEDRIVER_MCP_INTERNAL_SECRET") || remaining.contains("internal-secret")
+                || remaining.contains("X-Freedriver-Internal") || remaining.contains("X-Freedriver-Subject")
+                || remaining.contains("X-Freedriver-Roles");
     }
 
     private static Stream<Path> walk(Path root) {
