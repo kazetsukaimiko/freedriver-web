@@ -125,7 +125,7 @@ def republish() -> None:
 def main() -> int:
     global CLIENT
     threading.Thread(
-        target=lambda: ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever(),
+        target=lambda: ThreadingHTTPServer(("127.0.0.1", 8080), Handler).serve_forever(),
         daemon=True,
     ).start()
     client = mqtt.Client(

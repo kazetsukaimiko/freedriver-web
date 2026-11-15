@@ -350,6 +350,85 @@ def provision_fixture_house(client: Client) -> tuple[str, str]:
     return instance_id, password
 
 
+def kcadm(*args: str) -> str:
+    container = os.environ.get("KEYCLOAK_CONTAINER", f"{PROJECT}-keycloak-1")
+    try:
+        return subprocess.check_output(
+            ["docker", "exec", container, "/opt/keycloak/bin/kcadm.sh", *args],
+            text=True,
+            stderr=subprocess.STDOUT,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit(f"kcadm {args[0]} failed: {(exc.output or '')[:300]!r}") from exc
+
+
+def complete_fixture_profile(instance_id: str) -> None:
+    """Fill firstName, lastName, and email so VERIFY_PROFILE is clear.
+
+    Realm user profile requires those fields. Admin create of the house
+    username leaves required action VERIFY_PROFILE, and the broker plugin
+    password grant then returns HTTP 400 Account is not fully set up.
+    ci-smoke.sh already fills the same fields on kaze.
+    """
+    config = "/tmp/kcadm-smoke-admin.config"
+    admin_password = env_value("KC_BOOTSTRAP_ADMIN_PASSWORD")
+    if not admin_password:
+        raise SystemExit("KC_BOOTSTRAP_ADMIN_PASSWORD missing")
+    kcadm(
+        "config",
+        "credentials",
+        "--config",
+        config,
+        "--server",
+        "http://127.0.0.1:8080",
+        "--realm",
+        "master",
+        "--user",
+        "admin",
+        "--password",
+        admin_password,
+    )
+    raw = kcadm(
+        "get",
+        "users",
+        "--config",
+        config,
+        "-r",
+        "freedriver",
+        "-q",
+        f"username={instance_id}",
+        "-q",
+        "exact=true",
+        "--fields",
+        "id",
+        "--format",
+        "csv",
+        "--noquotes",
+    )
+    user_id = next((line.strip() for line in raw.splitlines() if line.strip() and line.strip() != "id"), "")
+    if not user_id:
+        raise SystemExit(f"fixture house user {instance_id} missing in Keycloak")
+    kcadm(
+        "update",
+        f"users/{user_id}",
+        "--config",
+        config,
+        "-r",
+        "freedriver",
+        "-s",
+        "firstName=Fixture",
+        "-s",
+        "lastName=House",
+        "-s",
+        f"email=fixture-{instance_id}@freedriver.invalid",
+        "-s",
+        "emailVerified=true",
+        "-s",
+        "requiredActions=[]",
+    )
+    print("fixture house profile complete")
+
+
 def apply_fixture_acl(instance_id: str) -> None:
     fd, tmp_name = tempfile.mkstemp(prefix="smoke-acl-", suffix=".acl")
     os.close(fd)
@@ -579,6 +658,7 @@ def main() -> int:
     assert_headers_anonymous(client)
     assert_phone_sign_in(client)
     instance_id, password = provision_fixture_house(client)
+    complete_fixture_profile(instance_id)
     apply_fixture_acl(instance_id)
     start_fixture_house(instance_id, password)
     os.environ["FIXTURE_INSTANCE_ID"] = instance_id
