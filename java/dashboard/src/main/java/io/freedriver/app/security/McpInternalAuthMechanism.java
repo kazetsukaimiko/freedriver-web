@@ -9,11 +9,9 @@ import io.quarkus.vertx.http.runtime.security.HttpAuthenticationMechanism;
 import io.smallrye.mutiny.Uni;
 import io.vertx.ext.web.RoutingContext;
 import jakarta.enterprise.context.ApplicationScoped;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.Optional;
 
 /**
  * Compose-network identity for the autonomy MCP process. The Grok Authorization
@@ -29,9 +27,8 @@ public class McpInternalAuthMechanism implements HttpAuthenticationMechanism {
 
     private final String secret;
 
-    public McpInternalAuthMechanism(
-            @ConfigProperty(name = "freedriver.mcp.internal-secret") Optional<String> secret) {
-        this.secret = secret.map(String::trim).filter(value -> !value.isEmpty()).orElse("");
+    public McpInternalAuthMechanism(McpInternalConfig config) {
+        this.secret = config.internalSecret().map(String::trim).filter(value -> !value.isEmpty()).orElse("");
     }
 
     @Override
