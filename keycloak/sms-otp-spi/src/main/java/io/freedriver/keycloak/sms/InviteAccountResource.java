@@ -1,12 +1,12 @@
 package io.freedriver.keycloak.sms;
 
+import jakarta.enterprise.context.Dependent;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.ext.Provider;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -19,18 +19,22 @@ import java.security.SecureRandom;
 /**
  * Realm resource for the invite service account. It creates a phone user and grants only the
  * realm role {@code dashboard}. The path is {@code /realms/{realm}/freedriver-invite/users}.
- * RESTEasy Reactive indexes a subresource only when the class has {@code @Path};
- * {@code @Provider} plus {@code META-INF/beans.xml} are not enough (Quarkus CDI Lite treats
- * {@code bean-discovery-mode="all"} as {@code annotated}).
+ * Keycloak 24+ RESTEasy Reactive 405s when this class is {@code @Provider}. CDI Lite treats
+ * beans.xml {@code all} as {@code annotated}, so {@code @Dependent} is the bean-defining
+ * annotation that puts {@code POST /users} in the resource index. The SPI still constructs
+ * this with a session; the no-arg constructor is for Arc.
  */
-@Path("/")
-@Provider
+@Dependent
 public class InviteAccountResource {
 
     static final String CLIENT_ID = "freedriver-invite";
 
     private final KeycloakSession session;
     private final SecureRandom random = new SecureRandom();
+
+    public InviteAccountResource() {
+        this.session = null;
+    }
 
     public InviteAccountResource(KeycloakSession session) {
         this.session = session;
@@ -56,6 +60,9 @@ public class InviteAccountResource {
 
     /** True only for the {@code freedriver-invite} service account. A user token is refused. */
     private boolean inviteServiceAccount() {
+        if (session == null) {
+            return false;
+        }
         AuthenticationManager.AuthResult auth = new AppAuthManager.BearerTokenAuthenticator(session).authenticate();
         if (auth == null || auth.getUser() == null) {
             return false;

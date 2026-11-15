@@ -65,6 +65,12 @@
             <version>3.1.0</version>
             <scope>provided</scope>
         </dependency>
+        <dependency>
+            <groupId>jakarta.enterprise</groupId>
+            <artifactId>jakarta.enterprise.cdi-api</artifactId>
+            <version>4.1.0</version>
+            <scope>provided</scope>
+        </dependency>
         <!-- Jackson and validation-api are provided by the build, not bundled.
              Keycloak 26.7 supplies Jackson, JAX-RS, and validation-api at runtime;
              the provider jar never instantiates a Validator. -->
