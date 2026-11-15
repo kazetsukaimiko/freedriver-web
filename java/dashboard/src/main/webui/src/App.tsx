@@ -3,7 +3,7 @@ import { Account } from './Account'
 import { AgentJobs } from './AgentJobs'
 import { AGENT_JOBS_PATH } from './agentJobs'
 import { ACCOUNT_PATH } from './account'
-import { SIGN_OUT_PATH, apiFetch } from './api'
+import { SIGN_OUT_PATH, apiFetch, signInRequired } from './api'
 import { Brand } from './Brand'
 import { BuildStamp } from './BuildStamp'
 import { Changelog } from './Changelog'
@@ -178,7 +178,7 @@ function App() {
     apiFetch('/api/phones')
       .then((response) => {
         if (!cancelled) {
-          setPortalAdmin(response.ok)
+          setPortalAdmin(!signInRequired(response) && response.status !== 403)
         }
       })
       .catch(() => {

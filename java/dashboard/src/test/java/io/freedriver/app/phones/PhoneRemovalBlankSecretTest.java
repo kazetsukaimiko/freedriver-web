@@ -3,7 +3,6 @@ package io.freedriver.app.phones;
 import io.freedriver.app.api.LoginLinks;
 import io.freedriver.app.invites.InviteUpstreamException;
 import io.freedriver.sms.api.SmsPhonesApi;
-import io.freedriver.sms.model.AddPhone;
 import io.freedriver.sms.model.Added;
 import io.freedriver.sms.model.AttachUser;
 import io.freedriver.sms.model.Attached;
@@ -123,12 +122,6 @@ class PhoneRemovalBlankSecretTest {
         public Removed remove(RemovePhone request) {
             answer();
             return new Removed(true);
-        }
-
-        @Override
-        public Added add(AddPhone request) {
-            answer();
-            return new Added(true);
         }
 
         @Override

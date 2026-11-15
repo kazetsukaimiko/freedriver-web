@@ -1,6 +1,5 @@
 package io.freedriver.sms.api;
 
-import io.freedriver.sms.model.AddPhone;
 import io.freedriver.sms.model.Added;
 import io.freedriver.sms.model.AttachUser;
 import io.freedriver.sms.model.Attached;
@@ -35,12 +34,6 @@ public interface SmsPhonesApi {
     @Path("remove")
     @Consumes(MediaType.APPLICATION_JSON)
     Removed remove(@Valid @NotNull RemovePhone request);
-
-    /** Puts an invited number on the list after its code is verified. */
-    @POST
-    @Path("add")
-    @Consumes(MediaType.APPLICATION_JSON)
-    Added add(@Valid @NotNull AddPhone request);
 
     /** Lists a number before its Keycloak user exists. The role is always {@code dashboard}. */
     @POST
