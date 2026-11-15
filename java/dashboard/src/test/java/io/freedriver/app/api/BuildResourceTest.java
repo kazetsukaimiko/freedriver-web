@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.Matchers.anyOf;
 
 @QuarkusTest
 class BuildResourceTest {
@@ -16,5 +17,11 @@ class BuildResourceTest {
                 .statusCode(200)
                 .contentType("application/json")
                 .body("build", is("1.0.0-SNAPSHOT"));
+    }
+
+    @Test
+    void anonymous_ready_is_open() {
+        given().get("/q/health/live").then().statusCode(200);
+        given().get("/q/health/ready").then().statusCode(anyOf(is(200), is(503)));
     }
 }
