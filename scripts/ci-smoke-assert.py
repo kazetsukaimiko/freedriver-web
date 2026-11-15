@@ -319,9 +319,20 @@ def assert_mcp_tools(client: Client) -> None:
     session_headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
-        "Accept": "application/json",
+        "Accept": "application/json, text/event-stream",
     }
-    init = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}).encode()
+    init = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": {"name": "ci-smoke", "version": "0"},
+            },
+        }
+    ).encode()
     status, headers, body, _ = client.request(
         f"{APP}/autonomy/mcp",
         method="POST",
