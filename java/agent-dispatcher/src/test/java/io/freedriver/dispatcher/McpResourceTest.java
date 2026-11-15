@@ -19,7 +19,6 @@ import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -124,8 +123,8 @@ class McpResourceTest {
         String session = initialize();
         call(session, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}")
                 .statusCode(200)
-                .body("result.tools.name", containsInAnyOrder("report_host", "finish_job", "take_jobs", "start_job"))
-                .body("result.tools.size()", is(4));
+                .body("result.tools.name", containsInAnyOrder("report_host", "finish_job"))
+                .body("result.tools.size()", is(2));
 
         int before = jobCount();
         call(session, submitBody("freedriver-openbot", PROMPT))
@@ -182,94 +181,6 @@ class McpResourceTest {
         } finally {
             pool.shutdownNow();
         }
-    }
-
-    @Test
-    @TestSecurity(user = "pc-take-mcp", roles = "device")
-    void host_takes_a_job_once_and_starts_it_on_both_paths() throws Exception {
-        jobs.register("pc-take-mcp", "take.local", List.of("yuni"));
-        String queued = jobs.submitNow("grok-take", new SubmitJobRequest(
-                List.of("pc-take-mcp"), "yuni", "take-me", Channel.TEXT)).assignments().getFirst().assignmentId().toString();
-        String session = initialize();
-
-        String taken = call(session, takeBody(0, null))
-                .statusCode(200)
-                .body("result.isError", is(false))
-                .extract()
-                .path("result.content[0].text");
-        JsonNode first = mapper.readTree(taken).path("jobs");
-        assertEquals(1, first.size());
-        assertEquals(queued, first.get(0).path("assignmentId").asText());
-        assertEquals("CLAIMED", first.get(0).path("state").asText());
-        assertTrue(first.get(0).path("deliveryRef").isNull());
-
-        String again = given()
-                .contentType("application/json")
-                .accept("application/json, text/event-stream")
-                .header(McpEndpoint.SESSION_HEADER, session)
-                .body(takeBody(0, List.of(queued)))
-                .post("/dispatch/mcp")
-                .then()
-                .statusCode(200)
-                .body("result.isError", is(false))
-                .extract()
-                .path("result.content[0].text");
-        assertEquals(0, mapper.readTree(again).path("jobs").size());
-
-        String started = call(session, startBody(queued, "openbot:task-7"))
-                .statusCode(200)
-                .body("result.isError", is(false))
-                .extract()
-                .path("result.content[0].text");
-        assertEquals("RUNNING", mapper.readTree(started).path("state").asText());
-        assertEquals("openbot:task-7", mapper.readTree(started).path("deliveryRef").asText());
-        call(session, startBody(queued, "openbot:task-7"))
-                .statusCode(200)
-                .body("result.isError", is(false));
-        call(session, startBody(queued, "openbot:task-8"))
-                .statusCode(200)
-                .body("result.isError", is(true));
-
-        call(session, takeBody(51, null))
-                .statusCode(200)
-                .body("error.code", is(-32602));
-        List<String> tooMany = new ArrayList<>();
-        for (int i = 0; i < 65; i++) {
-            tooMany.add(UUID.randomUUID().toString());
-        }
-        call(session, takeBody(0, tooMany))
-                .statusCode(200)
-                .body("error.code", is(-32602));
-        call(session, startBody(queued, "has space"))
-                .statusCode(200)
-                .body("error.code", is(-32602));
-        call(session, startBody(queued, "r".repeat(129)))
-                .statusCode(200)
-                .body("error.code", is(-32602));
-        assertEquals("openbot:task-7", jobs.assignment("pc-take-mcp", UUID.fromString(queued)).deliveryRef());
-    }
-
-    @Test
-    @TestSecurity(user = "grok-no-host-tools", roles = "dispatcher")
-    void a_dispatcher_token_cannot_list_or_call_the_host_tools() {
-        jobs.register("grok-no-host-tools", "nohost.local", List.of("yuni"));
-        String queued = jobs.submitNow("grok-no-host-tools", new SubmitJobRequest(
-                List.of("grok-no-host-tools"), "yuni", "stay-queued", Channel.TEXT))
-                .assignments().getFirst().assignmentId().toString();
-        String session = initialize();
-
-        call(session, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}")
-                .statusCode(200)
-                .body("result.tools.name", not(hasItem("take_jobs")))
-                .body("result.tools.name", not(hasItem("start_job")));
-        call(session, takeBody(0, null))
-                .statusCode(200)
-                .body("error.code", is(-32005));
-        call(session, startBody(queued, "ref"))
-                .statusCode(200)
-                .body("error.code", is(-32005));
-        assertEquals(AssignmentState.QUEUED,
-                jobs.assignment("grok-no-host-tools", UUID.fromString(queued)).state());
     }
 
     @Test
@@ -837,20 +748,6 @@ class McpResourceTest {
                 .body(body)
                 .post("/mcp")
                 .then();
-    }
-
-    private static String takeBody(int waitSeconds, List<String> holding) {
-        String held = holding == null ? "" : ",\"holding\":[" + String.join(",",
-                holding.stream().map(id -> "\"" + id + "\"").toList()) + "]";
-        return """
-                {"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"take_jobs","arguments":{"waitSeconds":%d%s}}}
-                """.formatted(waitSeconds, held);
-    }
-
-    private static String startBody(String assignmentId, String deliveryRef) {
-        return """
-                {"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"start_job","arguments":{"assignmentId":"%s","deliveryRef":"%s"}}}
-                """.formatted(assignmentId, deliveryRef);
     }
 
     private static String submitBody(String server, String prompt) {

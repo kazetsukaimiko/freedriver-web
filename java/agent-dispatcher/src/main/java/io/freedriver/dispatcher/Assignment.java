@@ -29,9 +29,9 @@ public class Assignment {
     public int ordinal;
     public String sessionId;
     public String note;
-    /** Until when the host that took it holds it. After that {@code take_jobs} hands it out again. */
+    /** Until when the host that took it holds it. After that a take hands it out again. */
     public Instant heldUntil;
-    /** The host's id for where the job runs, from {@code start_job}. */
+    /** The host's id for where the job runs, from the host's start. */
     public String deliveryRef;
     public Instant createdAt;
     public Instant updatedAt;

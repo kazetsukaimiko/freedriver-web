@@ -21,7 +21,7 @@ public interface DispatcherConfig {
 
     /**
      * How long a host holds a job it took or started. It is longer than the longest
-     * {@code take_jobs} wait (50 seconds), so a host that renews on every take keeps its jobs.
+     * take wait (50 seconds), so a host that renews on every take keeps its jobs.
      */
     @DurationMin(seconds = 50, inclusive = false)
     @WithDefault("90s")

@@ -7,7 +7,7 @@ import java.util.UUID;
 /**
  * One device's assignment. {@code channel} and {@code prompt} belong to this
  * assignment only. Callers must already have scoped the device or the dispatcher.
- * {@code deliveryRef} is where the host runs it, set by {@code start_job}; null until then.
+ * {@code deliveryRef} is where the host runs it, set by the host's start; null until then.
  */
 public record AssignmentView(
         UUID assignmentId,

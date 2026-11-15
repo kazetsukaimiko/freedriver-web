@@ -4,6 +4,7 @@ import io.freedriver.dispatcher.model.AgentRosterEntry;
 import io.freedriver.dispatcher.model.AssignmentPage;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.DeviceView;
+import io.freedriver.dispatcher.model.StartRequest;
 import io.freedriver.dispatcher.model.JobPage;
 import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.ReportedBot;
@@ -29,7 +30,7 @@ import java.util.UUID;
 public interface JobStore {
 
     /** 1 to 128 printable ASCII characters, no space. */
-    String DELIVERY_REF = "[\\x21-\\x7E]+";
+    String DELIVERY_REF = StartRequest.DELIVERY_REF;
 
     /** The longest {@code take} wait. */
     Duration LONGEST_TAKE_WAIT = Duration.ofSeconds(50);

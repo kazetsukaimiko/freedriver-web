@@ -18,7 +18,7 @@ import java.util.Set;
 public class DispatcherToolRoles implements ToolFilter {
 
     private static final Set<String> DEVICE = Set.of(
-            "report_host", "finish_job", "take_jobs", "start_job");
+            "report_host", "finish_job");
     private static final Set<String> DISPATCHER = Set.of(
             "list_agents", "openbot_send_prompt", "openbot_await_turn", "get_job", "list_jobs");
 
