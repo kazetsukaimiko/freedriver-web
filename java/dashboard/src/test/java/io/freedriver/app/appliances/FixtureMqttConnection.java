@@ -39,6 +39,12 @@ public class FixtureMqttConnection implements MqttConnection {
     }
 
     @Override
+    public void unsubscribe(String topic) {
+        MqttBrokers.assertExactTopic(topic);
+        handlers.remove(topic);
+    }
+
+    @Override
     public void publish(String topic, byte[] payload, int qos, boolean retain) {
         published.add(new Published(topic, payload, qos, retain));
     }
@@ -49,8 +55,14 @@ public class FixtureMqttConnection implements MqttConnection {
         handlers.clear();
     }
 
+    @Override
     public boolean connected() {
         return connected;
+    }
+
+    /** The broker dropped the session. Subscriptions stay, as Paho keeps them for its reconnect. */
+    public void drop() {
+        connected = false;
     }
 
     public List<Published> published() {

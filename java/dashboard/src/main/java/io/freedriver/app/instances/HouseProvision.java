@@ -3,14 +3,17 @@ package io.freedriver.app.instances;
 import io.freedriver.mqtt.MqttLog;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /**
- * Mints the house id and password and calls the Keycloak user stage.
+ * Mints the house id and password and calls the Keycloak user stage, then fires
+ * {@link HouseCreated} so this replica subscribes to the house at once.
  * Does not insert a Mongo document, and does not store {@code brokerSecret} or a Keycloak user id.
  */
 @ApplicationScoped
@@ -18,15 +21,22 @@ public class HouseProvision {
 
     private final InstanceIdentity identity;
     private final SecureRandom random;
+    private final Consumer<HouseCreated> created;
 
     @Inject
-    public HouseProvision(InstanceIdentity identity) {
-        this(identity, new SecureRandom());
+    public HouseProvision(InstanceIdentity identity, Event<HouseCreated> created) {
+        this(identity, new SecureRandom(), created::fire);
     }
 
     HouseProvision(InstanceIdentity identity, SecureRandom random) {
+        this(identity, random, house -> {
+        });
+    }
+
+    HouseProvision(InstanceIdentity identity, SecureRandom random, Consumer<HouseCreated> created) {
         this.identity = identity;
         this.random = random;
+        this.created = created;
     }
 
     public ProvisionedInstance create(String rawLabel) {
@@ -81,6 +91,7 @@ public class HouseProvision {
             MqttLog.house(id, "refused");
             throw new BrokerRefusedException();
         }
+        created.accept(new HouseCreated(id));
         return new ProvisionedInstance(username, label, password);
     }
 

@@ -69,6 +69,16 @@ public final class MqttLog {
         warn("mqtt state rejected topic=" + oneLine(topic, "-") + " reason=" + oneLine(reason, "rejected"));
     }
 
+    /** Keeping a house's topics subscribed. {@code outcome} is {@code subscribed}, {@code unsubscribed}, or {@code failed}. */
+    public static void instanceSubscription(UUID instanceId, String outcome) {
+        info("mqtt instance subscription instance=" + instanceId + " outcome=" + oneLine(outcome, "-"));
+    }
+
+    /** The house list could not be read; the subscribed houses stay as they were. */
+    public static void instancesRefreshFailed() {
+        warn("mqtt instances refresh failed reason=list-failed");
+    }
+
     public static void metricsReceived(UUID instanceId) {
         debug("mqtt metrics received instance=" + instanceId);
     }
