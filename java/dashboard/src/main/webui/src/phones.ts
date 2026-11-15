@@ -2,10 +2,23 @@ import { apiFetch, signInRequired } from './api'
 
 export const PHONES_PATH = '/phones'
 export const EMPTY_NUMBERS = 'No phone numbers yet. Create an invite to let someone sign in with a text code.'
-export const EMPTY_INVITES = 'No open invites.'
 export const ENTER_PHONE = 'Enter a 10-digit US phone number.'
 export const ALREADY_LISTED = 'That number is already on the list.'
 export const INVITE_FAILED = 'The number could not be added.'
+
+/** Whole-entry US shapes from the phone-or-username router (#155). */
+const SHAPE =
+  /^(?:[0-9]{10}|[0-9]{3}-[0-9]{3}-[0-9]{4}|\([0-9]{3}\) [0-9]{3}-[0-9]{4}|[0-9]{3}\.[0-9]{3}\.[0-9]{4}|[0-9]{3} [0-9]{3} [0-9]{4}|1-[0-9]{3}-[0-9]{3}-[0-9]{4}|\+1 [0-9]{3} [0-9]{3} [0-9]{4}|\+1[0-9]{10})$/
+
+/** `+1` and ten digits, or null when `raw` is not one of the shapes. */
+export function canonicalPhone(raw: string): string | null {
+  if (!SHAPE.test(raw)) {
+    return null
+  }
+  const digits = raw.replace(/\D/g, '')
+  const national = digits.length === 10 ? digits : digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : ''
+  return national.length === 10 ? `+1${national}` : null
+}
 
 const STABLE_REASONS: Record<string, string> = {
   phone: ENTER_PHONE,
@@ -55,15 +68,8 @@ export type PhoneRow = {
   loginLink?: string | null
 }
 
-export type OpenInvite = {
-  id: string
-  name: string
-  createdAt: string
-  expiresAt: string
-}
-
 export type PhonePage =
-  | { status: 'ok'; phones: PhoneRow[]; invites: OpenInvite[]; csrfToken: string }
+  | { status: 'ok'; phones: PhoneRow[]; csrfToken: string }
   | { status: 'login' }
   | { status: 'denied' }
   | { status: 'error' }
@@ -86,21 +92,18 @@ export function when(iso: string) {
   })
 }
 
+/** The phone list carries the CSRF token for invite create and phone removal. */
 export async function loadPhonePage(signal?: AbortSignal): Promise<PhonePage> {
-  const [phonesResponse, invitesResponse] = await Promise.all([
-    apiFetch('/api/phones', { signal }),
-    apiFetch('/api/invites', { signal }),
-  ])
-  if (signInRequired(phonesResponse) || signInRequired(invitesResponse)) {
+  const response = await apiFetch('/api/phones', { signal })
+  if (signInRequired(response)) {
     return { status: 'login' }
   }
-  if (phonesResponse.status === 403 || invitesResponse.status === 403) {
+  if (response.status === 403) {
     return { status: 'denied' }
   }
-  if (!phonesResponse.ok || !invitesResponse.ok) {
+  if (!response.ok) {
     return { status: 'error' }
   }
-  const phones = (await phonesResponse.json()) as { phones: PhoneRow[] }
-  const invites = (await invitesResponse.json()) as { invites: OpenInvite[]; csrfToken: string }
-  return { status: 'ok', phones: phones.phones, invites: invites.invites, csrfToken: invites.csrfToken }
+  const page = (await response.json()) as { phones: PhoneRow[]; csrfToken: string }
+  return { status: 'ok', phones: page.phones, csrfToken: page.csrfToken }
 }

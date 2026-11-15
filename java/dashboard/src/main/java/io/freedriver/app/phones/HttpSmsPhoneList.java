@@ -1,16 +1,11 @@
 package io.freedriver.app.phones;
 
 import io.freedriver.app.invites.InviteUpstreamException;
-import io.freedriver.app.invites.InviteWording;
 import io.freedriver.app.metrics.BlockingIo;
-import io.freedriver.sms.api.SmsInviteApi;
 import io.freedriver.sms.api.SmsPhonesApi;
-import io.freedriver.sms.model.AddPhone;
 import io.freedriver.sms.model.AttachUser;
-import io.freedriver.sms.model.InviteSend;
 import io.freedriver.sms.model.ListedPhone;
 import io.freedriver.sms.model.RemovePhone;
-import io.freedriver.sms.model.VerifyRequest;
 import io.freedriver.sms.model.WhitelistPhone;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -20,28 +15,24 @@ import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.function.Supplier;
 
-/** Calls the sms service through the two sms REST clients. The shared secret never goes to the browser. */
+/** Calls the sms service through the sms phone-list REST client. The shared secret never goes to the browser. */
 @BlockingIo
 @ApplicationScoped
 public class HttpSmsPhoneList implements SmsPhoneList {
 
     private final SmsPhonesApi phones;
-    private final SmsInviteApi invites;
     private final String secret;
 
     @Inject
     HttpSmsPhoneList(@RestClient SmsPhones phones,
-                     @RestClient SmsInvite invites,
                      @ConfigProperty(name = "sms.otp.shared-secret") Optional<String> secret) {
-        this((SmsPhonesApi) phones, invites, secret.orElse(""));
+        this((SmsPhonesApi) phones, secret.orElse(""));
     }
 
-    HttpSmsPhoneList(SmsPhonesApi phones, SmsInviteApi invites, String secret) {
+    HttpSmsPhoneList(SmsPhonesApi phones, String secret) {
         this.phones = phones;
-        this.invites = invites;
         this.secret = secret == null ? "" : secret;
     }
 
@@ -58,39 +49,6 @@ public class HttpSmsPhoneList implements SmsPhoneList {
     @Override
     public void requireSharedSecret() {
         requireSecret();
-    }
-
-    @Override
-    public InviteText sendInviteCode(String phone, UUID inviteId) {
-        try {
-            call(() -> invites.send(new InviteSend(phone, InviteWording.TEXT, inviteId.toString())));
-            return InviteText.SENT;
-        } catch (SmsRefused refused) {
-            return switch (refused.status()) {
-                case 409 -> InviteText.ALREADY_LISTED;
-                case 429 -> InviteText.LIMITED;
-                default -> InviteText.UNAVAILABLE;
-            };
-        }
-    }
-
-    @Override
-    public InviteCheck checkInviteCode(String phone, String code) {
-        try {
-            call(() -> invites.verify(new VerifyRequest(phone, code)));
-            return InviteCheck.APPROVED;
-        } catch (SmsRefused refused) {
-            return switch (refused.status()) {
-                case 400 -> InviteCheck.WRONG;
-                case 429 -> InviteCheck.LIMITED;
-                default -> InviteCheck.UNAVAILABLE;
-            };
-        }
-    }
-
-    @Override
-    public boolean addInvited(String phone, String name, String username) {
-        return call(() -> phones.add(new AddPhone(phone, name, username, "dashboard")).added());
     }
 
     @Override

@@ -28,11 +28,6 @@ app.freedriver.io {
 	handle @autonomy {
 		reverse_proxy autonomy-mcp:8080
 	}
-	@invite path /invite /invite/*
-	handle @invite {
-		header Referrer-Policy "no-referrer"
-		reverse_proxy dashboard:8080
-	}
 	handle {
 		reverse_proxy dashboard:8080
 	}

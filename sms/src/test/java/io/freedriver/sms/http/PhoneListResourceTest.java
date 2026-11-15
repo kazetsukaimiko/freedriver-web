@@ -72,4 +72,15 @@ class PhoneListResourceTest {
                 .then().statusCode(400);
         directory.remove(phone);
     }
+
+    /** The invite-page code routes and the redeem flow's list add are gone (#521), even with the shared secret. */
+    @Test
+    void the_invite_code_routes_are_not_served() {
+        for (String path : new String[] {"/sms/invite/send", "/sms/invite/verify", "/sms/phones/add"}) {
+            given().header("X-Freedriver-Sms-Secret", SECRET).contentType("application/json")
+                    .body("{\"phone\":\"+15555550123\",\"code\":\"123456\"}")
+                    .post(path)
+                    .then().statusCode(404);
+        }
+    }
 }

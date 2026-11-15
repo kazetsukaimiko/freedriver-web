@@ -1,7 +1,7 @@
 package io.freedriver.app.security;
 
 import io.freedriver.app.instances.InstanceList;
-import io.freedriver.app.invites.InviteList;
+import io.freedriver.app.phones.PhoneRemovalResource.PhoneList;
 import io.freedriver.dashboard.model.ApplianceMapResponse;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.annotation.Priority;
@@ -79,8 +79,8 @@ public class CsrfFilter implements ContainerRequestFilter, ContainerResponseFilt
         String path = path(request);
         if ("api/appliances".equals(path) && response.getEntity() instanceof ApplianceMapResponse map) {
             response.setEntity(new ApplianceMapResponse(map.instances(), token(request, response)));
-        } else if ("api/invites".equals(path) && response.getEntity() instanceof InviteList list) {
-            response.setEntity(new InviteList(list.invites(), token(request, response)));
+        } else if ("api/phones".equals(path) && response.getEntity() instanceof PhoneList list) {
+            response.setEntity(new PhoneList(list.phones(), token(request, response)));
         } else if ("api/instances".equals(path) && response.getEntity() instanceof InstanceList list) {
             response.setEntity(new InstanceList(list.instances(), token(request, response)));
         }
@@ -124,7 +124,6 @@ public class CsrfFilter implements ContainerRequestFilter, ContainerResponseFilt
                 || "api/invites".equals(path)
                 || "api/instances".equals(path)
                 || "api/phones/remove".equals(path)
-                || (path.startsWith("api/invites/") && path.endsWith("/cancel"))
                 || (path.startsWith("api/instances/") && path.endsWith("/open"));
     }
 

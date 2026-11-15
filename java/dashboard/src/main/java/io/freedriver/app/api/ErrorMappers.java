@@ -10,7 +10,6 @@ import io.freedriver.app.instances.BrokerRefusedException;
 import io.freedriver.app.instances.InstanceFailure;
 import io.freedriver.app.instances.InstanceNotFoundException;
 import io.freedriver.app.instances.InvalidLabelException;
-import io.freedriver.app.invites.BadInviteException;
 import io.freedriver.app.invites.InviteUpstreamException;
 import io.freedriver.app.jobs.DispatcherUnavailable;
 import io.freedriver.app.security.RateLimitedException;
@@ -87,11 +86,6 @@ public class ErrorMappers {
     @ServerExceptionMapper
     public Response missing(InstanceNotFoundException exception) {
         return json(404, InstanceFailure.missing(exception.instanceId()));
-    }
-
-    @ServerExceptionMapper
-    public Response badInvite(BadInviteException exception) {
-        return Response.status(400).type(MediaType.APPLICATION_JSON_TYPE).entity("{}").build();
     }
 
     @ServerExceptionMapper

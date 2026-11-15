@@ -4,7 +4,6 @@ import io.quarkus.test.Mock;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /** Test double for the sms phone list. */
@@ -14,14 +13,10 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
 
     private final List<String> removed = new CopyOnWriteArrayList<>();
     private final List<PhoneRow> rows = new CopyOnWriteArrayList<>();
-    private final List<String> sent = new CopyOnWriteArrayList<>();
-    private final List<UUID> agreements = new CopyOnWriteArrayList<>();
     private final List<PhoneRow> added = new CopyOnWriteArrayList<>();
     private final List<String> usernames = new CopyOnWriteArrayList<>();
     private final List<String> steps = new CopyOnWriteArrayList<>();
     private final java.util.Set<String> pending = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    private InviteText sendResult = InviteText.SENT;
-    private InviteCheck checkResult = InviteCheck.APPROVED;
     private RuntimeException listFailure;
 
     public void add(PhoneRow row) {
@@ -54,22 +49,6 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
     public void requireSharedSecret() {
     }
 
-    public void sendResult(InviteText result) {
-        this.sendResult = result;
-    }
-
-    public void checkResult(InviteCheck result) {
-        this.checkResult = result;
-    }
-
-    public List<String> sent() {
-        return List.copyOf(sent);
-    }
-
-    public List<UUID> agreements() {
-        return List.copyOf(agreements);
-    }
-
     public List<PhoneRow> added() {
         return List.copyOf(added);
     }
@@ -80,36 +59,6 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
 
     public List<String> steps() {
         return List.copyOf(steps);
-    }
-
-    @Override
-    public InviteText sendInviteCode(String phone, UUID inviteId) {
-        sent.add(phone);
-        agreements.add(inviteId);
-        return sendResult;
-    }
-
-    @Override
-    public InviteCheck checkInviteCode(String phone, String code) {
-        if (checkResult == InviteCheck.APPROVED && !"123456".equals(code)) {
-            return InviteCheck.WRONG;
-        }
-        if (checkResult == InviteCheck.APPROVED && !sent.contains(phone)) {
-            return InviteCheck.WRONG;
-        }
-        return checkResult;
-    }
-
-    @Override
-    public boolean addInvited(String phone, String name, String username) {
-        if (rows.stream().anyMatch(row -> row.phone().equals(phone))) {
-            return false;
-        }
-        PhoneRow row = new PhoneRow(phone, name, "dashboard", java.time.Instant.EPOCH, null, null);
-        rows.add(row);
-        added.add(row);
-        usernames.add(username);
-        return true;
     }
 
     @Override
@@ -139,14 +88,10 @@ public class RecordingSmsPhoneList implements SmsPhoneList {
     public void clear() {
         removed.clear();
         rows.clear();
-        sent.clear();
-        agreements.clear();
         added.clear();
         usernames.clear();
         steps.clear();
         pending.clear();
-        sendResult = InviteText.SENT;
-        checkResult = InviteCheck.APPROVED;
         listFailure = null;
     }
 }
