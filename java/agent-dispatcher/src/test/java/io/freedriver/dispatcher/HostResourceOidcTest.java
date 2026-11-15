@@ -53,6 +53,16 @@ class HostResourceOidcTest {
                 .post(HostPaths.ROOT + HostPaths.TAKE).then().statusCode(403);
     }
 
+    /** The device role is accepted only from the device client; that pairing guards this route behind Caddy. */
+    @Test
+    void a_device_role_from_another_client_is_403() {
+        for (String client : new String[] {"freedriver-dispatcher", "freedriver-portal-jobs", "freedriver-grok-mcp"}) {
+            given().auth().oauth2(token(client, "device"))
+                    .contentType("application/json").body("{\"waitSeconds\":0}")
+                    .post(HostPaths.ROOT + HostPaths.TAKE).then().statusCode(403);
+        }
+    }
+
     private static String token(String azp, String role) {
         return Jwt.preferredUserName(azp)
                 .subject("service-account-" + azp)
