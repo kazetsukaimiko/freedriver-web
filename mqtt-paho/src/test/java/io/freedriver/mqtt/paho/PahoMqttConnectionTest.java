@@ -60,6 +60,7 @@ class PahoMqttConnectionTest {
     private static Issued otherIssuer;
     private static Issued wrongName;
     private static Issued selfSigned;
+    private static Issued local;
 
     @BeforeAll
     static void generateCa() throws Exception {
@@ -68,6 +69,7 @@ class PahoMqttConnectionTest {
         otherIssuer = issue(temp.resolve("other"), "mosquitto");
         wrongName = issue(temp.resolve("wrong-name"), "mqtt.freedriver.io");
         selfSigned = selfSigned(temp.resolve("self-signed"), "mosquitto");
+        local = issue(temp.resolve("localhost"), "localhost");
     }
 
     @AfterAll
@@ -314,6 +316,144 @@ class PahoMqttConnectionTest {
         try (LogLines logs = LogLines.open()) {
             callbacks.connectionLost(new RuntimeException(SECRET));
             assertEquals("", logs.all());
+        }
+    }
+
+    /**
+     * A stub broker on loopback 8883, the only port a live endpoint takes: {@code unsubscribe} sends
+     * UNSUBSCRIBE and forgets the topic, and {@code connected()} turns false when the broker drops.
+     */
+    @Test
+    void unsubscribe_reaches_the_broker_and_connected_turns_false_when_it_drops() throws Exception {
+        try (StubBroker broker = StubBroker.start(serverContext(local.serverPkcs12()))) {
+            PahoMqttConnection connection = new PahoMqttConnection(
+                    new MqttEndpoint("localhost", 8883, true, "api"), BROKER_PASSWORD, local.certificatePem());
+            try {
+                assertFalse(connection.connected());
+                connection.connect();
+                assertTrue(connection.connected());
+                connection.subscribe(TOPIC, 1, (topic, payload) -> {
+                });
+                connection.unsubscribe(TOPIC);
+                assertEquals(List.of(TOPIC), broker.subscribed());
+                assertEquals(List.of(TOPIC), broker.unsubscribed());
+
+                broker.drop();
+
+                long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+                while (connection.connected() && System.nanoTime() < deadline) {
+                    Thread.sleep(20);
+                }
+                assertFalse(connection.connected());
+            } finally {
+                connection.close();
+            }
+            assertFalse(connection.connected());
+        }
+    }
+
+    /** Just enough MQTT 3.1.1 over TLS for one client: CONNACK, SUBACK, UNSUBACK, PINGRESP. */
+    private static final class StubBroker implements AutoCloseable {
+
+        private final SSLServerSocket server;
+        private final List<String> subscribed = new CopyOnWriteArrayList<>();
+        private final List<String> unsubscribed = new CopyOnWriteArrayList<>();
+        private final AtomicReference<Socket> session = new AtomicReference<>();
+        private final Thread thread;
+
+        private StubBroker(SSLServerSocket server) {
+            this.server = server;
+            this.thread = new Thread(this::serve, "mqtt-stub-broker");
+            this.thread.setDaemon(true);
+        }
+
+        static StubBroker start(SSLContext context) throws IOException {
+            SSLServerSocket server = (SSLServerSocket) context.getServerSocketFactory()
+                    .createServerSocket(8883, 50, InetAddress.getByName("localhost"));
+            StubBroker broker = new StubBroker(server);
+            broker.thread.start();
+            return broker;
+        }
+
+        List<String> subscribed() {
+            return List.copyOf(subscribed);
+        }
+
+        List<String> unsubscribed() {
+            return List.copyOf(unsubscribed);
+        }
+
+        /** Closes the listener and the session, as a broker restart does. */
+        void drop() throws IOException {
+            server.close();
+            Socket socket = session.get();
+            if (socket != null) {
+                socket.close();
+            }
+        }
+
+        @Override
+        public void close() throws Exception {
+            drop();
+            thread.join(5_000);
+        }
+
+        private void serve() {
+            try (Socket socket = server.accept()) {
+                session.set(socket);
+                InputStream in = socket.getInputStream();
+                var out = socket.getOutputStream();
+                while (true) {
+                    int header = in.read();
+                    if (header < 0) {
+                        return;
+                    }
+                    byte[] body = in.readNBytes(remainingLength(in));
+                    int type = (header >> 4) & 0x0F;
+                    if (type == 1) {
+                        out.write(new byte[] {0x20, 0x02, 0x00, 0x00});
+                    } else if (type == 8) {
+                        subscribed.addAll(topics(body, true));
+                        out.write(new byte[] {(byte) 0x90, 0x03, body[0], body[1], 0x01});
+                    } else if (type == 10) {
+                        unsubscribed.addAll(topics(body, false));
+                        out.write(new byte[] {(byte) 0xB0, 0x02, body[0], body[1]});
+                    } else if (type == 12) {
+                        out.write(new byte[] {(byte) 0xD0, 0x00});
+                    } else if (type == 14) {
+                        return;
+                    }
+                    out.flush();
+                }
+            } catch (IOException ignored) {
+                // drop() closes the socket under the reader.
+            }
+        }
+
+        private static int remainingLength(InputStream in) throws IOException {
+            int value = 0;
+            int multiplier = 1;
+            int next;
+            do {
+                next = in.read();
+                if (next < 0) {
+                    throw new IOException("closed");
+                }
+                value += (next & 0x7F) * multiplier;
+                multiplier *= 128;
+            } while ((next & 0x80) != 0);
+            return value;
+        }
+
+        private static List<String> topics(byte[] body, boolean withQos) {
+            List<String> topics = new ArrayList<>();
+            int at = 2;
+            while (at < body.length) {
+                int length = ((body[at] & 0xFF) << 8) | (body[at + 1] & 0xFF);
+                topics.add(new String(body, at + 2, length, StandardCharsets.UTF_8));
+                at += 2 + length + (withQos ? 1 : 0);
+            }
+            return topics;
         }
     }
 
