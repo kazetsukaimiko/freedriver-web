@@ -17,14 +17,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.is;
@@ -39,8 +34,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class InviteResourceTest {
 
     @Inject
-    InviteStore store;
-    @Inject
     TestClock clock;
     @Inject
     RecordingSmsPhoneList sms;
@@ -52,7 +45,6 @@ class InviteResourceTest {
 
     @BeforeEach
     void reset() {
-        store.deleteAll();
         clock.useSystemTime();
         sms.clear();
         keycloak.clear();
@@ -66,11 +58,7 @@ class InviteResourceTest {
         assertEquals("***0123", created.path("phone"));
         assertLoginLink(created, "+15555550123");
         assertNoProviderBody(created);
-        assertTrue(store.open().isEmpty());
-        assertTrue(sms.sent().isEmpty());
-        assertTrue(sms.agreements().isEmpty());
         assertNull(sms.list().getFirst().consentedAt());
-        given().when().get("/api/invites").then().statusCode(200).body("invites.size()", is(0));
         given().when().get("/api/phones").then().statusCode(200)
                 .body("phones.size()", is(1))
                 .body("phones[0].loginLink", is(SignInLink.url(publicBaseUrl, "+15555550123")))
@@ -87,7 +75,6 @@ class InviteResourceTest {
         created.then().statusCode(201);
         assertEquals("***0123", created.path("phone"));
         assertLoginLink(created, "+15555550123");
-        assertTrue(store.open().isEmpty());
         assertEquals(List.of("whitelist", "attach"), sms.steps());
         assertEquals(List.of("+15555550123"), keycloak.created());
         assertEquals(List.of(RecordingPhoneSignIn.USERNAME), sms.usernames());
@@ -111,7 +98,6 @@ class InviteResourceTest {
         Response created = csrf().body("{\"name\":\"Mom\"}").post("/api/invites");
         created.then().statusCode(400).body("reason", is("phone"));
         assertNoProviderBody(created);
-        assertTrue(store.open().isEmpty());
     }
 
     @Test
@@ -135,8 +121,6 @@ class InviteResourceTest {
         Response created = csrf().body("{\"phone\":\"5555550123\"}").post("/api/invites");
         created.then().statusCode(409).body("reason", is("listed"));
         assertNoProviderBody(created);
-        assertTrue(store.open().isEmpty());
-        assertTrue(sms.sent().isEmpty());
         assertTrue(sms.added().isEmpty());
         assertTrue(keycloak.created().isEmpty());
         given().when().get("/api/phones").then().body("phones.size()", is(1));
@@ -145,78 +129,64 @@ class InviteResourceTest {
     @Test
     @TestSecurity(user = "yuni", roles = {"portal-admin"})
     void an_upstream_failure_hides_the_provider_body() {
+        io.restassured.specification.RequestSpecification withToken = csrf();
         sms.failList(new InviteUpstreamException("Twilio 21211 Keycloak error body +15555550123"));
-        Response created = csrf().body("{\"phone\":\"+15555550123\"}").post("/api/invites");
+        Response created = withToken.body("{\"phone\":\"+15555550123\"}").post("/api/invites");
         created.then().statusCode(502).body("error", is("unavailable"));
         assertNoProviderBody(created);
         assertFalse(created.asString().contains("+15555550123"));
-        assertTrue(store.open().isEmpty());
     }
 
+    /** The anonymous redeem flow is gone: its four routes and the admin list and cancel are not served. */
     @Test
-    @TestSecurity(user = "yuni", roles = {"portal-admin"})
-    void an_existing_link_still_works_until_it_expires() {
-        InviteStore.Created existing = store.create("Mom");
-        given().when().get("/api/invites").then().statusCode(200)
-                .body("invites.size()", is(1))
-                .body("invites[0].name", is("Mom"));
-        given().contentType(ContentType.JSON).body("{\"code\":\"" + existing.code() + "\"}")
-                .post("/api/invites/use").then().statusCode(200).body("used", is(true));
-        given().when().get("/api/invites").then().body("invites.size()", is(0));
-    }
-
-    @Test
-    @TestSecurity(user = "yuni", roles = {"portal-admin"})
-    void one_invite_is_used_once_including_two_concurrent_callers() throws Exception {
-        String code = store.create("Mom").code();
-        CountDownLatch start = new CountDownLatch(1);
-        ExecutorService pool = Executors.newFixedThreadPool(2);
-        try {
-            Future<InviteStore.UseResult> first = pool.submit(() -> {
-                start.await();
-                return store.use(code);
-            });
-            Future<InviteStore.UseResult> second = pool.submit(() -> {
-                start.await();
-                return store.use(code);
-            });
-            start.countDown();
-            List<InviteStore.UseResult> results = List.of(first.get(), second.get());
-            assertEquals(1, results.stream().filter(result -> result == InviteStore.UseResult.USED).count());
-            assertEquals(1, results.stream().filter(result -> result == InviteStore.UseResult.REJECTED).count());
-        } finally {
-            pool.shutdownNow();
+    void the_removed_invite_routes_answer_404() {
+        for (String path : List.of("/api/invites/redeem/start", "/api/invites/redeem/resend",
+                "/api/invites/redeem/verify", "/api/invites/use")) {
+            given().contentType(ContentType.JSON).body("{\"code\":\"nope\",\"phone\":\"+15555550123\"}")
+                    .post(path).then().statusCode(404);
         }
-        given().contentType(ContentType.JSON).body("{\"code\":\"" + code + "\"}")
-                .post("/api/invites/use").then().statusCode(409).body("used", is(false));
-        given().when().get("/api/invites").then().body("invites.size()", is(0));
     }
 
     @Test
     @TestSecurity(user = "yuni", roles = {"portal-admin"})
-    void expired_and_cancelled_invites_fail_the_same_update() {
-        String expired = store.create("Mom").code();
-        clock.fix(Instant.now().plus(Duration.ofHours(72)));
-        given().contentType(ContentType.JSON).body("{\"code\":\"" + expired + "\"}")
-                .post("/api/invites/use").then().statusCode(409);
-
-        clock.useSystemTime();
-        InviteStore.Created created = store.create("Dad");
-        csrf().post("/api/invites/" + created.invite().id() + "/cancel").then().statusCode(204);
-        String code = created.code();
-        given().contentType(ContentType.JSON).body("{\"code\":\"" + code + "\"}")
-                .post("/api/invites/use").then().statusCode(409);
+    void the_admin_invite_list_and_cancel_are_not_served() {
+        given().when().get("/api/invites").then().statusCode(405);
+        csrf().post("/api/invites/" + java.util.UUID.randomUUID() + "/cancel").then().statusCode(404);
+        for (String path : List.of("/api/invites/redeem/start", "/api/invites/use")) {
+            csrf().body("{\"code\":\"nope\"}").post(path).then().statusCode(404);
+        }
     }
 
+    /** The admin page reads its CSRF token from the phone list, then creates and removes with it. */
     @Test
-    void anonymous_invite_use_stays_open() {
-        given().contentType(ContentType.JSON).body("{\"code\":\"nope\"}")
-                .post("/api/invites/use").then().statusCode(409).body("used", is(false));
+    @TestSecurity(user = "yuni", roles = {"portal-admin"})
+    void the_phone_list_token_creates_and_removes_a_number() {
+        Response phones = given().when().get("/api/phones");
+        phones.then().statusCode(200).body("phones.size()", is(0));
+        String token = phones.path("csrfToken");
+        assertTrue(token != null && !token.isBlank(), phones.asString());
+        assertEquals(token, phones.cookie(CsrfFilter.COOKIE));
+
+        Response created = given().contentType(ContentType.JSON)
+                .cookie(CsrfFilter.COOKIE, token)
+                .header(CsrfFilter.HEADER, token)
+                .body("{\"phone\":\"+15555550123\"}")
+                .post("/api/invites");
+        created.then().statusCode(201);
+        assertLoginLink(created, "+15555550123");
+
+        given().contentType(ContentType.JSON)
+                .cookie(CsrfFilter.COOKIE, token)
+                .header(CsrfFilter.HEADER, token)
+                .body("{\"phone\":\"+15555550123\"}")
+                .post("/api/phones/remove")
+                .then().statusCode(204);
+        assertEquals(List.of("+15555550123"), sms.removed());
+        assertEquals(List.of("+15555550123"), keycloak.removed());
     }
 
     @Test
     void anonymous_admin_routes_need_a_session() {
-        given().when().get("/api/invites").then().statusCode(401);
         given().contentType(ContentType.JSON).body("{\"phone\":\"+15555550123\"}").post("/api/invites").then().statusCode(401);
         given().when().get("/api/phones").then().statusCode(401);
         given().when().get("/api/jobs").then().statusCode(401);
@@ -227,7 +197,7 @@ class InviteResourceTest {
     @Test
     @TestSecurity(user = "bob", roles = {"user"})
     void a_non_admin_is_refused() {
-        given().when().get("/api/invites").then().statusCode(403);
+        given().when().get("/api/phones").then().statusCode(403);
         given().when().get("/api/jobs").then().statusCode(403);
         given().contentType(ContentType.JSON).body("{\"phone\":\"+15555550123\"}").post("/api/invites").then().statusCode(403);
     }
@@ -237,7 +207,6 @@ class InviteResourceTest {
     void create_without_csrf_is_refused() {
         given().contentType(ContentType.JSON).body("{\"phone\":\"+15555550123\"}").post("/api/invites")
                 .then().statusCode(400).body(is("{}"));
-        assertTrue(store.open().isEmpty());
     }
 
     @Test
@@ -259,7 +228,6 @@ class InviteResourceTest {
             statuses.add(csrf().body("{\"phone\":\"" + phone + "\"}").post("/api/invites").statusCode());
         }
         assertEquals(List.of(201, 201, 201, 201, 201, 201, 201, 201, 429), statuses);
-        assertTrue(store.open().isEmpty());
     }
 
     private void assertLoginLink(Response response, String phone) {
@@ -281,7 +249,7 @@ class InviteResourceTest {
     }
 
     private static io.restassured.specification.RequestSpecification csrf() {
-        Response get = given().when().get("/api/invites");
+        Response get = given().when().get("/api/phones");
         get.then().statusCode(200);
         return given().contentType(ContentType.JSON)
                 .cookie(CsrfFilter.COOKIE, get.cookie(CsrfFilter.COOKIE))
