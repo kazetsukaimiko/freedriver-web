@@ -189,6 +189,17 @@ def cmd_self_test() -> None:
         die("self-test: markPullRequestReadyForReview mutation")
     if "convertPullRequestToReadyForReview" in source:
         die("self-test: old convertPullRequestToReadyForReview mutation")
+    forbidden = [
+        {
+            "type": "FORBIDDEN",
+            "path": ["markPullRequestReadyForReview"],
+            "message": "Resource not accessible by integration",
+        }
+    ]
+    if convert_skip_reason(forbidden) != "convert-forbidden":
+        die("self-test: convert FORBIDDEN skip")
+    if convert_skip_reason([{"type": "INTERNAL", "path": ["markPullRequestReadyForReview"]}]) is not None:
+        die("self-test: other GraphQL errors must still fail")
     print("self-test OK")
 
 
@@ -203,7 +214,24 @@ def find_pr(repo: str, sha: str, token: str) -> dict | None:
     return None
 
 
-def convert_ready(node_id: str, token: str) -> None:
+def convert_skip_reason(errors: object) -> str | None:
+    """Skip owner-blocked convert; other GraphQL errors still fail the job."""
+    if not isinstance(errors, list):
+        return None
+    for error in errors:
+        if not isinstance(error, dict):
+            continue
+        err_type = str(error.get("type") or "").upper()
+        message = str(error.get("message") or "")
+        path = error.get("path") or []
+        path_hit = isinstance(path, list) and "markPullRequestReadyForReview" in path
+        forbidden = err_type == "FORBIDDEN" or "Resource not accessible by integration" in message
+        if forbidden and (path_hit or not path):
+            return "convert-forbidden"
+    return None
+
+
+def convert_ready(node_id: str, token: str) -> str | None:
     payload = {
         "query": (
             "mutation($id:ID!){markPullRequestReadyForReview(input:{pullRequestId:$id})"
@@ -214,7 +242,11 @@ def convert_ready(node_id: str, token: str) -> None:
     body = http_json(f"{GITHUB_API}/graphql", token, payload)
     errors = (body or {}).get("errors") if isinstance(body, dict) else None
     if errors:
+        reason = convert_skip_reason(errors)
+        if reason:
+            return reason
         die(f"convert to ready failed: {errors}")
+    return None
 
 
 def request_reviewer(repo: str, number: int, token: str) -> None:
@@ -262,7 +294,10 @@ def cmd_run() -> None:
     if reason:
         print(json.dumps({"skip": reason, "pr": number, "sha": sha}))
         return
-    convert_ready(pr["node_id"], token)
+    convert_skip = convert_ready(pr["node_id"], token)
+    if convert_skip:
+        print(json.dumps({"skip": convert_skip, "pr": number, "sha": sha}))
+        return
     request_reviewer(repo, number, token)
     print(json.dumps({"ready": True, "pr": number, "sha": sha, "reviewer": REVIEWER}))
 
