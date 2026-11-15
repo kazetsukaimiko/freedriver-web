@@ -33,6 +33,8 @@ services:
       FREEDRIVER_APPLIANCES_LIVE_COMMANDS: "true"
       FREEDRIVER_APPLIANCES_ENABLED: "true"
       QUARKUS_TLS_TRUST_ALL: "true"
+      # Caddy 404s public /admin. House list talks to Keycloak on the compose network.
+      QUARKUS_KEYCLOAK_ADMIN_CLIENT_SERVER_URL: http://keycloak:8080
       JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Xmx512m"
 
   agent-dispatcher:
