@@ -6,6 +6,7 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.ext.Provider;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -17,9 +18,10 @@ import java.security.SecureRandom;
 
 /**
  * Realm resource for the invite service account. It creates a phone user and grants only the
- * realm role {@code dashboard}. It does not grant {@code portal-admin} or realm-management, and
- * it has no general role grant. The path is {@code /realms/{realm}/freedriver-invite/users}.
+ * realm role {@code dashboard}. The path is {@code /realms/{realm}/freedriver-invite/users}.
+ * {@code @Provider} plus {@code META-INF/beans.xml} let RESTEasy Reactive index POST {@code /users}.
  */
+@Provider
 public class InviteAccountResource {
 
     static final String CLIENT_ID = "freedriver-invite";
