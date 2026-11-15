@@ -675,20 +675,10 @@ PY
 if grep -RIn 'offline_access' java/dashboard keycloak/themes >/dev/null; then
   fail "the app must not request offline_access"
 fi
-if ! grep -q 'Referrer-Policy "no-referrer"' Caddyfile; then
-  fail "Caddy must set Referrer-Policy no-referrer"
+# The self-service invite page is gone (#521): no @invite block, no /invite route in Caddy.
+if grep -q '@invite' Caddyfile; then
+  fail "Caddy must not route /invite"
 fi
-python3 - <<'PY'
-from pathlib import Path
-text = Path("Caddyfile").read_text()
-start = text.find("app.freedriver.io {")
-end = text.find("\n}\n", start)
-block = text[start:end]
-invite = block.split("@invite path /invite /invite/*", 1)
-if len(invite) != 2 or 'header Referrer-Policy "no-referrer"' not in invite[1].split("handle {", 1)[0]:
-    raise SystemExit("Referrer-Policy no-referrer applies to /invite/ only")
-print("invite responses set Referrer-Policy")
-PY
 if [[ "$(grep -v '^#' secrets/keycloak-freedriver-invite.env.example | grep -v '^$')" != "FREEDRIVER_INVITE_CLIENT_SECRET=" ]]; then
   fail "invite example file holds one empty assignment"
 fi

@@ -15,8 +15,8 @@ import jakarta.ws.rs.core.Response;
 import org.jboss.resteasy.reactive.server.ServerExceptionMapper;
 
 /**
- * Every sms exception the REST layer turns into a status, in one place. The bodies are the
- * {@link ErrorResponse} values {@code PhoneRateLimitFilter} reads back.
+ * Every sms exception the REST layer turns into a status, in one place. The bodies are
+ * {@link ErrorResponse} values.
  */
 @ApplicationScoped
 public class ErrorMappers {

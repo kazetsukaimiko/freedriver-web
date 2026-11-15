@@ -1,9 +1,9 @@
 package io.freedriver.app.phones;
 
 import com.sun.net.httpserver.HttpServer;
-import io.freedriver.sms.model.InviteSend;
 import io.freedriver.sms.model.PhoneList;
 import io.freedriver.sms.model.RemovePhone;
+import io.freedriver.sms.model.WhitelistPhone;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.common.QuarkusTestResourceLifecycleManager;
 import io.quarkus.test.junit.QuarkusTest;
@@ -24,16 +24,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** The two sms REST clients against a local stub: path, secret header, JSON, and status mapping. */
+/** The sms phone-list REST client against a local stub: path, secret header, JSON, and status mapping. */
 @QuarkusTest
 @QuarkusTestResource(value = SmsClientWireTest.SmsStub.class, restrictToAnnotatedClass = true)
 class SmsClientWireTest {
 
     @RestClient
     SmsPhones phones;
-
-    @RestClient
-    SmsInvite invites;
 
     @BeforeEach
     void clear() {
@@ -57,17 +54,17 @@ class SmsClientWireTest {
     @Test
     void an_error_status_becomes_sms_refused() {
         SmsRefused refused = assertThrows(SmsRefused.class,
-                () -> invites.send(new InviteSend("+15555550199", "wording", "id")));
+                () -> phones.whitelist(new WhitelistPhone("+15555550199", null)));
         assertEquals(409, refused.status());
     }
 
     @Test
-    void a_code_the_client_refuses_is_a_wrong_code_and_never_reaches_sms() {
-        HttpSmsPhoneList sms = new HttpSmsPhoneList(phones, invites, "wire-secret");
+    void a_number_the_client_refuses_is_a_400_and_never_reaches_sms() {
+        HttpSmsPhoneList sms = new HttpSmsPhoneList(phones, "wire-secret");
 
-        assertEquals(SmsPhoneList.InviteCheck.WRONG, sms.checkInviteCode("+15555550123", "1".repeat(17)));
-        assertEquals(SmsPhoneList.InviteCheck.WRONG, sms.checkInviteCode("+15555550123", null));
-        assertTrue(SmsStub.calls.stream().noneMatch(call -> call.contains("/sms/invite/verify")), SmsStub.calls::toString);
+        SmsRefused refused = assertThrows(SmsRefused.class, () -> sms.whitelist("not-a-number", null));
+        assertEquals(400, refused.status());
+        assertTrue(SmsStub.calls.stream().noneMatch(call -> call.contains("/sms/phones/whitelist")), SmsStub.calls::toString);
     }
 
     public static final class SmsStub implements QuarkusTestResourceLifecycleManager {
@@ -94,7 +91,7 @@ class SmsClientWireTest {
                             + "\"addedAt\":\"2026-11-01T00:00:00Z\",\"consentedAt\":null,\"lastSignIn\":null}]}";
                 } else if ("/sms/phones/remove".equals(path)) {
                     answer = "{\"removed\":true}";
-                } else if ("/sms/invite/send".equals(path)) {
+                } else if ("/sms/phones/whitelist".equals(path)) {
                     status = 409;
                     answer = "{\"error\":\"already-listed\"}";
                 }

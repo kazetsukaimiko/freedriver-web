@@ -39,13 +39,10 @@ class BffSessionLockTest {
         assertTrue(properties.contains("quarkus.oidc.logout.post-logout-path=/"));
         assertTrue(properties.contains("quarkus.http.auth.permission.logout.paths=/logout"));
         assertTrue(properties.contains("quarkus.http.auth.permission.logout.policy=authenticated"));
-        assertTrue(properties.contains("quarkus.http.auth.permission.invites.paths=/api/invites,/api/invites/*"));
+        assertTrue(properties.contains("quarkus.http.auth.permission.invites.paths=/api/invites\n"));
         assertTrue(properties.contains("quarkus.http.auth.permission.invites.policy=authenticated"));
-        assertTrue(properties.contains("quarkus.http.auth.permission.invite-use.paths=/api/invites/use"));
-        assertTrue(properties.contains("quarkus.http.auth.permission.invite-use.policy=permit"));
-        assertTrue(properties.contains(
-                "quarkus.http.auth.permission.invite-redeem.paths=/api/invites/redeem,/api/invites/redeem/*"));
-        assertTrue(properties.contains("quarkus.http.auth.permission.invite-redeem.policy=permit"));
+        assertFalse(properties.contains("invite-use"));
+        assertFalse(properties.contains("invite-redeem"));
         assertTrue(properties.contains("quarkus.http.auth.permission.phones.paths=/api/phones,/api/phones/*"));
         assertTrue(properties.contains("quarkus.http.auth.permission.sign-ins.paths=/api/sign-ins,/api/sign-ins/*"));
         assertTrue(properties.contains("quarkus.http.auth.permission.sign-ins.policy=authenticated"));

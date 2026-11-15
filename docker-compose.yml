@@ -1,6 +1,6 @@
 services:
   caddy:
-    image: caddy:2
+    image: caddy:2.11
     restart: unless-stopped
     ports:
       - "80:80"
@@ -34,7 +34,6 @@ services:
       QUARKUS_OIDC_CREDENTIALS_SECRET: ${QUARKUS_OIDC_CREDENTIALS_SECRET:?QUARKUS_OIDC_CREDENTIALS_SECRET is required}
       SMS_OTP_SHARED_SECRET: ${SMS_OTP_SHARED_SECRET:-}
       FREEDRIVER_SMS_BASE_URL: http://sms:8080
-      FREEDRIVER_INVITES_DIR: /deployments/data/invites
       # No credential in the default. A password, if one is set later, comes from the env file.
       QUARKUS_MONGODB_CONNECTION_STRING: ${QUARKUS_MONGODB_CONNECTION_STRING:-mongodb://mongodb:27017/freedriver}
       FREEDRIVER_REDIS_URL: ${FREEDRIVER_REDIS_URL:-redis://redis:6379}
@@ -61,11 +60,18 @@ services:
     group_add:
       - 1001
     volumes:
-      - /opt/freedriver-storage/invites:/deployments/data/invites
       - /opt/freedriver-secrets/mqtt-internal/ca.crt:/opt/freedriver-secrets/mqtt-internal/ca.crt:ro
       - /opt/freedriver-secrets/mosquitto/api.pass:/opt/freedriver-secrets/mosquitto/api.pass:ro
+    deploy:
+      replicas: ${DASHBOARD_REPLICAS:-1}
     expose:
       - "8080"
+    healthcheck:
+      test: ["CMD", "bash", "/usr/local/bin/health-ready.sh"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
 
   # No host port. Caddy on app.freedriver.io sends /mcp, /dispatch/mcp, and /api/dispatcher here.
   agent-dispatcher:
@@ -87,8 +93,16 @@ services:
     depends_on:
       mongodb:
         condition: service_healthy
+    deploy:
+      replicas: ${DISPATCHER_REPLICAS:-1}
     expose:
       - "8080"
+    healthcheck:
+      test: ["CMD", "bash", "/usr/local/bin/health-ready.sh"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
 
   # No host port. Caddy on app.freedriver.io sends /autonomy/mcp here.
   # Off unless FREEDRIVER_AUTONOMY_MCP_ENABLED is true. Not /mcp or /appliances/mcp.
@@ -116,8 +130,16 @@ services:
     depends_on:
       dashboard:
         condition: service_started
+    deploy:
+      replicas: ${AUTONOMY_MCP_REPLICAS:-1}
     expose:
       - "8080"
+    healthcheck:
+      test: ["CMD", "bash", "/usr/local/bin/health-ready.sh"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
 
   keycloak:
     build:

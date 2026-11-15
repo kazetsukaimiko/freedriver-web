@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -117,11 +116,6 @@ class PhoneInviteCreateTest {
                 order.add("attach");
                 attached = username;
                 return true;
-            }
-
-            @Override
-            public InviteText sendInviteCode(String phone, UUID inviteId) {
-                throw new UnsupportedOperationException();
             }
         };
         PhoneSignInDirectory keycloak = new PhoneSignInDirectory() {
