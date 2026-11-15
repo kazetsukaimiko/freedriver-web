@@ -87,7 +87,7 @@ services:
     pull_policy: missing
     ports: !reset []
     environment:
-      CURL_CA_BUNDLE: /caddy-local-ca/root.crt
+      # Plugin libcurl reads SSL_CERT_FILE as CURLOPT_CAINFO (ropc-form-body.patch).
       SSL_CERT_FILE: /caddy-local-ca/root.crt
     volumes:
       - /opt/freedriver-secrets/caddy-local-root.crt:/caddy-local-ca/root.crt:ro
