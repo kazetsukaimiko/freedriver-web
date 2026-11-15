@@ -82,10 +82,8 @@ TWILIO_VERIFY_SERVICE_SID=VA$(hex32)
 EOF
 chmod 600 "$SECRETS/twilio-verify.env"
 
-# Bind-mount sources for the dashboard. A topic line with the template
-# placeholder is an ACL with no house UUID, so MetricsMqttForwarder keeps
-# the idle MQTT client. Fixture house is #533.
-printf '%s\n' 'topic read freedriver/v1/__INSTANCE_ID__/appliances' >"$SECRETS/mosquitto/acl"
+# Dashboard still mounts api.pass (gid 1001). It no longer mounts the ACL;
+# houses come from Keycloak. Fixture house is #533.
 printf '%s\n' 'smoke' >"$SECRETS/mosquitto/api.pass"
 if [[ ! -s "$SECRETS/mqtt-internal/ca.crt" ]]; then
   openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
@@ -123,6 +121,7 @@ PRODUCT_PATHS=(
   sms/
   keycloak/
   scripts/health-ready.sh
+  scripts/check-sms-otp-provider-jar.sh
 )
 RELEASE_TAG="v${GHCR_TAG}"
 if ! git rev-parse -q --verify "refs/tags/${RELEASE_TAG}^{commit}" >/dev/null; then
@@ -130,7 +129,12 @@ if ! git rev-parse -q --verify "refs/tags/${RELEASE_TAG}^{commit}" >/dev/null; t
 fi
 
 product_differs_from_release() {
-  local path prefix
+  local path prefix rc=0 files
+  files="$(git diff --name-only "${RELEASE_TAG}...HEAD")" || rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    echo "git diff ${RELEASE_TAG}...HEAD failed (exit ${rc}); building" >&2
+    return 0
+  fi
   while IFS= read -r path; do
     [[ -z "$path" ]] && continue
     for prefix in "${PRODUCT_PATHS[@]}"; do
@@ -142,7 +146,7 @@ product_differs_from_release() {
         return 0
       fi
     done
-  done < <(git diff --name-only "${RELEASE_TAG}...HEAD")
+  done <<< "$files"
   return 1
 }
 

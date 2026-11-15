@@ -27,7 +27,6 @@ services:
 
   dashboard:
     pull_policy: missing
-    group_add: !reset []
     environment:
       FREEDRIVER_APPLIANCES_LIVE_COMMANDS: "false"
       FREEDRIVER_APPLIANCES_ENABLED: "true"
