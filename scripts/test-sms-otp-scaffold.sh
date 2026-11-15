@@ -741,6 +741,12 @@ fi
 if ! grep -q 'assert_portal_jobs_token' scripts/test-invite-service-account.sh; then
   fail "invite throwaway must assert the portal-jobs access token roles"
 fi
+if ! grep -q 'scope-mappings/clients/${rm_uuid}' scripts/provision-keycloak-freedriver.sh; then
+  fail "instances client must map realm-management manage-users into the token"
+fi
+if ! grep -q 'assert_instances_token' scripts/test-invite-service-account.sh; then
+  fail "invite throwaway must assert the instances access token can list mqtt-instance"
+fi
 if ! grep -q 'portal-admin-only DCR token roles (none)' scripts/test-autonomy-token-exchange.sh; then
   fail "token-exchange proof must cover a user who holds neither mcp-user nor dashboard"
 fi
