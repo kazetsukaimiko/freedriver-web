@@ -1,5 +1,7 @@
 package io.freedriver.sms.twilio;
 
+import io.freedriver.sms.SmsConfig;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
@@ -43,6 +45,17 @@ public record TwilioCredentials(String accountSid, String apiKeySid, String apiK
             throw new IllegalStateException(message.toString());
         }
         return new TwilioCredentials(account, keySid, keySecret, service);
+    }
+
+    /** The four settings as {@link SmsConfig.Twilio} maps them, by their environment names. */
+    public static Function<String, String> lookup(SmsConfig.Twilio twilio) {
+        return name -> switch (name) {
+            case ACCOUNT_SID -> twilio.accountSid().orElse(null);
+            case API_KEY_SID -> twilio.apiKeySid().orElse(null);
+            case API_KEY_SECRET -> twilio.apiKeySecret().orElse(null);
+            case VERIFY_SERVICE_SID -> twilio.verifyServiceSid().orElse(null);
+            default -> null;
+        };
     }
 
     private static String read(Function<String, String> lookup, String name, Pattern shape,

@@ -1,11 +1,11 @@
 package io.freedriver.app.security;
 
 import io.freedriver.app.appliances.AppliancesConfig;
+import io.freedriver.app.appliances.TestAppliancesConfig;
 import io.freedriver.ratelimit.MemoryHitWindow;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
-import java.time.Duration;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -14,10 +14,9 @@ class CommandRateLimiterTest {
 
     @Test
     void tryAcquire_rejects_after_permit_window() {
-        AppliancesConfig config = new AppliancesConfig();
-        // Rate-limit fields stay package-private on AppliancesConfig. This test no longer shares that package.
-        set(config, "rateLimitPermits", 2);
-        set(config, "rateLimitWindow", Duration.ofSeconds(60));
+        AppliancesConfig config = TestAppliancesConfig.of(Map.of(
+                "rate-limit.permits", "2",
+                "rate-limit.window", "60s"));
         CommandRateLimiter limiter = new CommandRateLimiter(config, new MemoryHitWindow());
 
         assertTrue(limiter.tryAcquire("ada"));
@@ -32,15 +31,5 @@ class CommandRateLimiterTest {
         assertTrue(second.tryAcquire("ada"));
         assertFalse(first.tryAcquire("ada"));
         assertTrue(second.tryAcquire("yuni"));
-    }
-
-    private static void set(AppliancesConfig config, String name, Object value) {
-        try {
-            Field field = AppliancesConfig.class.getDeclaredField(name);
-            field.setAccessible(true);
-            field.set(config, value);
-        } catch (ReflectiveOperationException e) {
-            throw new AssertionError(e);
-        }
     }
 }
