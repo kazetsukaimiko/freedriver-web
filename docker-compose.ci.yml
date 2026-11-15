@@ -7,7 +7,7 @@ services:
       - "443:443"
       - "443:443/udp"
     volumes: !override
-      - ./Caddyfile.ci:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile.smoke:/etc/caddy/Caddyfile:ro
       - ./site:/srv:ro
       - /opt/freedriver-storage/caddy/data:/data
       - /opt/freedriver-storage/caddy/config:/config

@@ -100,32 +100,63 @@ if ! grep -q 'app.freedriver.io' /etc/hosts; then
 EOF
 fi
 
+# Production Caddyfile plus a CI global block and the Twilio stub site.
+{
+  printf '%s\n' '{' '	skip_install_trust' '	local_certs' '}' ''
+  cat "$ROOT/Caddyfile"
+  printf '%s\n' '' 'verify.twilio.com {' '	reverse_proxy twilio-stub:8080' '}'
+} >"$ROOT/Caddyfile.smoke"
+
 "${COMPOSE[@]}" config --quiet
 
-mapfile -t CHANGED < <(git diff --name-only "${SMOKE_BASE_SHA:-HEAD^}"...HEAD 2>/dev/null || true)
-should_build() {
-  local service="$1"
-  shift
-  local path
-  for path in "${CHANGED[@]:-}"; do
-    for prefix in "$@"; do
-      if [[ "$path" == "$prefix"* ]]; then
+PRODUCT_PATHS=(
+  pom.xml
+  mvnw
+  .mvn/
+  java/
+  mqtt-contract/
+  mqtt/
+  mqtt-paho/
+  sms-model/
+  sms-api/
+  sms-client/
+  sms/
+  keycloak/
+  scripts/health-ready.sh
+)
+RELEASE_TAG="v${GHCR_TAG}"
+if ! git rev-parse -q --verify "refs/tags/${RELEASE_TAG}^{commit}" >/dev/null; then
+  git fetch origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+fi
+
+product_differs_from_release() {
+  local path prefix
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    for prefix in "${PRODUCT_PATHS[@]}"; do
+      if [[ "$prefix" == */ ]]; then
+        if [[ "$path" == "$prefix"* ]]; then
+          return 0
+        fi
+      elif [[ "$path" == "$prefix" || "$path" == "$prefix"/* ]]; then
         return 0
       fi
     done
-  done
+  done < <(git diff --name-only "${RELEASE_TAG}...HEAD")
   return 1
 }
 
+PULLED=()
 pull_or_build() {
   local service="$1"
   local image="ghcr.io/kazetsukaimiko/freedriver-web/${service}:${GHCR_TAG}"
   local local_name="${COMPOSE_PROJECT_NAME}-${service}"
   if docker pull "$image"; then
     docker tag "$image" "$local_name"
+    PULLED+=("$service")
     return 0
   fi
-  "${COMPOSE[@]}" build "$service"
+  return 1
 }
 
 BUILT=()
@@ -135,35 +166,24 @@ build_service() {
   "${COMPOSE[@]}" build "$service"
 }
 
-# Always build the Twilio stub. Pull unchanged product images, or build them
-# when this pull request changed their sources.
+# Always build the Twilio stub. Pull the five product images at v<version.txt>
+# only when none of their Dockerfile inputs differs from that tag; otherwise
+# build all five from this commit.
 "${COMPOSE[@]}" build twilio-stub
-
-if should_build dashboard java/dashboard/; then
-  build_service dashboard
+SERVICES=(dashboard agent-dispatcher autonomy-mcp keycloak sms)
+if product_differs_from_release; then
+  echo "product paths differ from ${RELEASE_TAG}; building ${SERVICES[*]}"
+  for service in "${SERVICES[@]}"; do
+    build_service "$service"
+  done
 else
-  pull_or_build dashboard || build_service dashboard
+  echo "product paths match ${RELEASE_TAG}; pulling ${SERVICES[*]}"
+  for service in "${SERVICES[@]}"; do
+    pull_or_build "$service" || build_service "$service"
+  done
 fi
-if should_build agent-dispatcher java/agent-dispatcher/ java/agent-dispatcher-api/ java/agent-dispatcher-model/; then
-  build_service agent-dispatcher
-else
-  pull_or_build agent-dispatcher || build_service agent-dispatcher
-fi
-if should_build autonomy-mcp java/autonomy-mcp/; then
-  build_service autonomy-mcp
-else
-  pull_or_build autonomy-mcp || build_service autonomy-mcp
-fi
-if should_build keycloak keycloak/ sms-client/ sms-api/ sms-model/; then
-  build_service keycloak
-else
-  pull_or_build keycloak || build_service keycloak
-fi
-if should_build sms sms/ sms-client/ sms-api/ sms-model/; then
-  build_service sms
-else
-  pull_or_build sms || build_service sms
-fi
+echo "smoke images built: ${BUILT[*]:-none}"
+echo "smoke images pulled: ${PULLED[*]:-none}"
 
 "${COMPOSE[@]}" up -d keycloak-db mongodb redis keycloak sms twilio-stub mosquitto caddy
 
@@ -173,11 +193,12 @@ for _ in $(seq 1 90); do
   if docker exec "$KEYCLOAK_CONTAINER" /opt/keycloak/bin/kcadm.sh config credentials \
       --config /tmp/kcadm-smoke-admin.config \
       --server http://127.0.0.1:8080 --realm master --user admin \
-      --password "$(python3 - <<'PY'
+      --password "$(python3 - "$ENV_FILE" <<'PY'
 from pathlib import Path
-for line in Path("/opt/freedriver-secrets/.env").read_text().splitlines():
+import sys
+for line in Path(sys.argv[1]).read_text().splitlines():
     if line.startswith("KC_BOOTSTRAP_ADMIN_PASSWORD="):
-        print(line.split("=",1)[1])
+        print(line.split("=", 1)[1])
         break
 PY
 )" >/dev/null 2>&1; then

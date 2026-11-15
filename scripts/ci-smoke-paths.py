@@ -17,6 +17,7 @@ PATTERNS = (
     "application",
     "auth-policy.properties",
     "scripts/ci-smoke",
+    "scripts/provision-keycloak",
     "ci/",
     ".github/workflows/ci.yml",
 )
@@ -72,8 +73,9 @@ def self_test() -> None:
         "docker-compose.yml",
         "docker-compose.ci.yml",
         "Caddyfile",
-        "Caddyfile.ci",
         "keycloak/Dockerfile",
+        "scripts/provision-keycloak-freedriver.sh",
+        "scripts/provision-keycloak-sms-otp.sh",
         "sms/src/main/docker/Dockerfile.compose",
         "sms/src/main/resources/application.properties",
         "java/dashboard/src/main/resources/application.properties",
