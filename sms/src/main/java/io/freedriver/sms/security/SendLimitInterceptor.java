@@ -45,7 +45,8 @@ public class SendLimitInterceptor {
     Object limit(InvocationContext context) throws Exception {
         Object[] arguments = context.getParameters();
         if (arguments.length != 1 || !(arguments[0] instanceof OtpSendRequest send)) {
-            return context.proceed();
+            throw new IllegalStateException("@PhoneRateLimited(SEND) needs one OtpSendRequest argument: "
+                    + context.getMethod());
         }
         String phone = send.phone();
         if (!limiter.tryAcquireSend(phone)) {

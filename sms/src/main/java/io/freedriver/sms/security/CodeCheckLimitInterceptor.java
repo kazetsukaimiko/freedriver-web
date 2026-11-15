@@ -43,7 +43,8 @@ public class CodeCheckLimitInterceptor {
     Object limit(InvocationContext context) throws Exception {
         Object[] arguments = context.getParameters();
         if (arguments.length != 1 || !(arguments[0] instanceof VerifyRequest verify)) {
-            return context.proceed();
+            throw new IllegalStateException("@PhoneRateLimited(CODE_CHECK) needs one VerifyRequest argument: "
+                    + context.getMethod());
         }
         String phone = verify.phone();
         if (verifications.expired(phone)) {
