@@ -9,6 +9,7 @@ import io.freedriver.sms.model.SentResponse;
 import io.freedriver.sms.model.VerifiedResponse;
 import io.freedriver.sms.model.VerifyRequest;
 import io.freedriver.sms.otp.OtpService;
+import io.freedriver.sms.security.PhoneRateLimited;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
@@ -36,6 +37,7 @@ public class SmsResource implements SmsApi {
     }
 
     @Override
+    @PhoneRateLimited(PhoneRateLimited.Kind.SEND)
     public SentResponse send(SendRequest request) {
         return switch (request) {
             case OtpSendRequest code -> {
@@ -65,6 +67,7 @@ public class SmsResource implements SmsApi {
     }
 
     @Override
+    @PhoneRateLimited(PhoneRateLimited.Kind.CODE_CHECK)
     public VerifiedResponse verify(VerifyRequest request) {
         otp.verify(request.phone(), request.code());
         return VerifiedResponse.otp(request.phone());
