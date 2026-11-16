@@ -6,6 +6,7 @@ import io.freedriver.app.phones.PhoneRow;
 import io.freedriver.app.phones.RecordingPhoneSignIn;
 import io.freedriver.app.phones.RecordingSmsPhoneList;
 import io.freedriver.app.security.CsrfFilter;
+import io.freedriver.ratelimit.HitWindow;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.TestProfile;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -42,6 +44,14 @@ class InviteResourceTest {
     @Inject
     @ConfigProperty(name = "freedriver.public-base-url")
     String publicBaseUrl;
+    @Inject
+    HitWindow hits;
+    @Inject
+    @ConfigProperty(name = "freedriver.appliances.rate-limit.permits")
+    int permits;
+    @Inject
+    @ConfigProperty(name = "freedriver.appliances.rate-limit.window")
+    Duration window;
 
     @BeforeEach
     void reset() {
@@ -228,6 +238,36 @@ class InviteResourceTest {
             statuses.add(csrf().body("{\"phone\":\"" + phone + "\"}").post("/api/invites").statusCode());
         }
         assertEquals(List.of(201, 201, 201, 201, 201, 201, 201, 201, 429), statuses);
+    }
+
+    /** Invite creation and phone removal have their own windows: a full {@code invites} leaves {@code phones} open. */
+    @Test
+    @TestSecurity(user = "bucket-invites-full", roles = {"portal-admin"})
+    void a_full_invite_window_leaves_phone_removal_open() {
+        for (int i = 0; i < permits; i++) {
+            csrf().body("{\"phone\":\"+1555556" + String.format("%04d", i) + "\"}").post("/api/invites")
+                    .then().statusCode(201);
+        }
+        csrf().body("{\"phone\":\"+15555569999\"}").post("/api/invites").then().statusCode(429);
+        assertEquals(permits, hits.count("invites:bucket-invites-full", window.toMillis()));
+
+        csrf().body("{\"phone\":\"+15555560000\"}").post("/api/phones/remove").then().statusCode(204);
+        assertEquals(List.of("+15555560000"), sms.removed());
+        assertEquals(1, hits.count("phones:bucket-invites-full", window.toMillis()));
+    }
+
+    @Test
+    @TestSecurity(user = "bucket-phones-full", roles = {"portal-admin"})
+    void a_full_phone_window_leaves_invite_creation_open() {
+        for (int i = 0; i < permits; i++) {
+            csrf().body("{\"phone\":\"+1555557" + String.format("%04d", i) + "\"}").post("/api/phones/remove")
+                    .then().statusCode(204);
+        }
+        csrf().body("{\"phone\":\"+15555579999\"}").post("/api/phones/remove").then().statusCode(429);
+        assertEquals(permits, hits.count("phones:bucket-phones-full", window.toMillis()));
+
+        csrf().body("{\"phone\":\"+15555578888\"}").post("/api/invites").then().statusCode(201);
+        assertEquals(1, hits.count("invites:bucket-phones-full", window.toMillis()));
     }
 
     private void assertLoginLink(Response response, String phone) {

@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Auth permissions and the command rate limit still load, from the code-owned file. */
+/** Auth permissions and the @RateLimited allowance still load, from the code-owned file. */
 @QuarkusTest
 class AuthPolicyConfigTest {
 
