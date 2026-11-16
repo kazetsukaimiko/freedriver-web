@@ -744,6 +744,15 @@ fi
 if ! grep -q '^assert_offline_access$' scripts/test-invite-service-account.sh; then
   fail "invite throwaway must prove offline_access defaults and expires_in"
 fi
+if grep -q 'scope": "openid offline_access"' scripts/test-invite-service-account.sh; then
+  fail "offline_access proof must request scope=openid only"
+fi
+if ! grep -q 'refresh_expires_in is %s, want 0' scripts/test-invite-service-account.sh; then
+  fail "offline_access proof must require refresh_expires_in 0"
+fi
+if ! grep -q 'users/${openbot_sa}/offline-sessions/${openbot_uuid}' scripts/test-invite-service-account.sh; then
+  fail "offline_access proof must count service-account offline sessions"
+fi
 if ! grep -q 'portal-admin-only DCR token roles (none)' scripts/test-autonomy-token-exchange.sh; then
   fail "token-exchange proof must cover a user who holds neither mcp-user nor dashboard"
 fi

@@ -423,31 +423,40 @@ Path(sys.argv[2]).write_text(urlencode({
     "client_id": "dcr-offline-proof",
     "username": "offline-proof",
     "password": password,
-    "scope": "openid offline_access",
+    "scope": "openid",
 }), encoding="utf-8")
 PY
   chmod 600 "$work/dcr-ropc.form" "$work/openbot-cc.form"
-  curl -sS --max-time 30 -o "$work/openbot-token.json" -w "%{http_code}" \
+  curl -sS --max-time 30 -o "$work/openbot-token-1.json" -w "%{http_code}" \
     -X POST "${BASE}/realms/freedriver/protocol/openid-connect/token" \
     -H "Content-Type: application/x-www-form-urlencoded" \
-    --data-binary @"$work/openbot-cc.form" > "$work/openbot-token.status"
+    --data-binary @"$work/openbot-cc.form" > "$work/openbot-token-1.status"
+  curl -sS --max-time 30 -o "$work/openbot-token-2.json" -w "%{http_code}" \
+    -X POST "${BASE}/realms/freedriver/protocol/openid-connect/token" \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    --data-binary @"$work/openbot-cc.form" > "$work/openbot-token-2.status"
   curl -sS --max-time 30 -o "$work/dcr-token.json" -w "%{http_code}" \
     -X POST "${BASE}/realms/freedriver/protocol/openid-connect/token" \
     -H "Content-Type: application/x-www-form-urlencoded" \
     --data-binary @"$work/dcr-ropc.form" > "$work/dcr-token.status"
-  python3 - "$work/openbot-token.status" "$work/openbot-token.json" \
+  python3 - "$work/openbot-token-1.status" "$work/openbot-token-1.json" \
+    "$work/openbot-token-2.status" "$work/openbot-token-2.json" \
     "$work/dcr-token.status" "$work/dcr-token.json" <<'PY'
 import json, sys
-openbot_status, openbot_path, dcr_status, dcr_path = sys.argv[1:]
-openbot_code = open(openbot_status, encoding="utf-8").read().strip()
+s1, p1, s2, p2, dcr_status, dcr_path = sys.argv[1:]
+code1 = open(s1, encoding="utf-8").read().strip()
+code2 = open(s2, encoding="utf-8").read().strip()
 dcr_code = open(dcr_status, encoding="utf-8").read().strip()
-openbot = json.load(open(openbot_path, encoding="utf-8"))
+openbot1 = json.load(open(p1, encoding="utf-8"))
+openbot2 = json.load(open(p2, encoding="utf-8"))
 dcr = json.load(open(dcr_path, encoding="utf-8"))
-if openbot_code != "200":
-    sys.exit("openbot client-credentials HTTP " + openbot_code)
+if code1 != "200":
+    sys.exit("openbot client-credentials HTTP " + code1)
+if code2 != "200":
+    sys.exit("openbot client-credentials second HTTP " + code2)
 if dcr_code != "200":
     sys.exit("dcr password grant HTTP " + dcr_code)
-openbot_exp = openbot.get("expires_in")
+openbot_exp = openbot1.get("expires_in")
 dcr_exp = dcr.get("expires_in")
 refresh_exp = dcr.get("refresh_expires_in")
 if not isinstance(openbot_exp, int) or openbot_exp <= 0:
@@ -456,16 +465,45 @@ if not isinstance(dcr_exp, int) or dcr_exp <= 0:
     sys.exit("dcr token missing expires_in")
 if "refresh_token" not in dcr:
     sys.exit("dcr token missing refresh_token")
+if refresh_exp != 0:
+    sys.exit("dcr refresh_expires_in is %s, want 0" % refresh_exp)
 print("openbot expires_in", openbot_exp)
 print("dcr expires_in", dcr_exp)
 print("dcr refresh_expires_in", refresh_exp)
+print("openbot client-credentials calls 2")
 if openbot_exp > 86400:
     sys.exit("openbot expires_in is still a 1-year override")
 PY
+  openbot_sa="$(admin get "clients/${openbot_uuid}/service-account-user" -r freedriver \
+    --fields id --format csv --noquotes | csv_id)"
+  admin get "users/${openbot_sa}/offline-sessions/${openbot_uuid}" -r freedriver \
+    > "$work/openbot-sa-offline-sessions.json"
+  admin get "clients/${openbot_uuid}/offline-session-count" -r freedriver \
+    > "$work/openbot-offline-session-count.json"
+  python3 - "$work/openbot-sa-offline-sessions.json" \
+    "$work/openbot-offline-session-count.json" <<'PY'
+import json, sys
+sessions = json.load(open(sys.argv[1], encoding="utf-8"))
+count_body = json.load(open(sys.argv[2], encoding="utf-8"))
+if not isinstance(sessions, list):
+    sys.exit("openbot service-account offline sessions are not a list")
+count = count_body.get("count") if isinstance(count_body, dict) else count_body
+if count is None:
+    sys.exit("openbot offline-session-count missing count")
+print("openbot service-account offline sessions", len(sessions))
+print("openbot client offline-session-count", count)
+if len(sessions) != 0 or count != 0:
+    sys.exit(
+        "client-credentials created offline sessions for freedriver-openbot "
+        "(service-account %s, client count %s)" % (len(sessions), count)
+    )
+PY
   unset OFFLINE_PASS
   rm -f "$work/openbot.secret" "$work/openbot-cc.form" "$work/dcr-ropc.form" \
-    "$work/openbot-token.json" "$work/dcr-token.json" "$work/offline-proof.pass" \
-    "$work/openbot-token.status" "$work/dcr-token.status"
+    "$work/openbot-token-1.json" "$work/openbot-token-2.json" "$work/dcr-token.json" \
+    "$work/offline-proof.pass" "$work/openbot-token-1.status" \
+    "$work/openbot-token-2.status" "$work/dcr-token.status" \
+    "$work/openbot-sa-offline-sessions.json" "$work/openbot-offline-session-count.json"
 }
 
 assert_portal_jobs_token() {
