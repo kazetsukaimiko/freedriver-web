@@ -387,6 +387,10 @@ if token:
         scope_set = set(str(scope).split())
     out["scope"] = sorted(scope_set)
     out["roles"] = (claims.get("realm_access") or {}).get("roles") or []
+    aud = claims.get("aud") or []
+    if isinstance(aud, str):
+        aud = [aud]
+    out["aud"] = aud
 json.dump(out, open(sys.argv[2], "w", encoding="utf-8"))
 PY
   rm -f "$work/exchanged.json"
@@ -510,7 +514,10 @@ for label, row in rows:
     http = row.get("http")
     scope = set(row.get("scope") or [])
     roles = set(row.get("roles") or [])
-    print(f"exchange {label}: http={http} scope={','.join(sorted(scope)) or '(none)'} roles={','.join(sorted(r for r in roles if r in {'mcp-user','dashboard','mcp-debug','portal-admin'})) or '(none)'}")
+    aud = row.get("aud") or []
+    if isinstance(aud, str):
+        aud = [aud]
+    print(f"exchange {label}: http={http} scope={','.join(sorted(scope)) or '(none)'} roles={','.join(sorted(r for r in roles if r in {'mcp-user','dashboard','mcp-debug','portal-admin'})) or '(none)'} aud={','.join(aud) or '(none)'}")
     if row.get("error"):
         print(f"  error {row.get('error')}: {row.get('error_description')}")
     if http == 200:
@@ -520,6 +527,16 @@ for label, row in rows:
 if widen:
     raise SystemExit("exchange widened to dashboard or appliances.write")
 print("exchange: none returned dashboard or appliances.write")
+none = rows[0][1]
+if none.get("http") != 200:
+    raise SystemExit("exchange 1 (no extra scope) must be HTTP 200")
+if "mcp-user" not in set(none.get("roles") or []):
+    raise SystemExit("exchange 1 must carry mcp-user")
+none_aud = none.get("aud") or []
+if isinstance(none_aud, str):
+    none_aud = [none_aud]
+if "freedriver-api" not in none_aud:
+    raise SystemExit("exchange 1 must include audience freedriver-api")
 if rows[0][1].get("http") == 200 and rows[2][1].get("http") == 200:
     print("#530: Keycloak narrows a fixed list; autonomy-mcp can send every grant")
 elif rows[2][1].get("http") != 200:

@@ -173,6 +173,12 @@ if "standard.token.exchange.enabled" not in fn:
     raise SystemExit("token exchange client must enable standard.token.exchange.enabled")
 if "included.client.audience" not in fn or "freedriver-api" not in fn:
     raise SystemExit("token exchange client must map audience freedriver-api")
+if '"include.in.token.scope": "false"' not in fn:
+    raise SystemExit("audience-freedriver-api client scope must stay out of the token scope string")
+if "clients/${client_uuid}/default-client-scopes/${scope_id}" not in fn:
+    raise SystemExit("audience-freedriver-api must be a default scope of the exchange client")
+if "default-default-client-scopes" in fn:
+    raise SystemExit("audience-freedriver-api must not be a realm default")
 if "audience-autonomy-mcp-client" not in fn:
     raise SystemExit("DCR tokens must list freedriver-autonomy-mcp in aud")
 if "FREEDRIVER_AUTONOMY_MCP_CLIENT_SECRET" not in fn:
