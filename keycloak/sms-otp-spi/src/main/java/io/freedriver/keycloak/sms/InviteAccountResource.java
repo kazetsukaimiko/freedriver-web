@@ -12,7 +12,8 @@ import java.security.SecureRandom;
 
 /**
  * Realm resource for the invite service account. It creates a phone user and grants only the
- * realm role {@code dashboard}. The path is {@code /realms/{realm}/freedriver-invite/users}.
+ * realm role {@code dashboard}. It does not grant {@code portal-admin} or realm-management, and
+ * it has no general role grant. The path is {@code /realms/{realm}/freedriver-invite/users}.
  * {@link InviteAccountResourceProvider} is the SPI instance RESTEasy indexes.
  */
 public class InviteAccountResource {
