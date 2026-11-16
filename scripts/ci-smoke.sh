@@ -53,7 +53,15 @@ as_root mkdir -p \
 as_root chmod -R a+rwX "$SECRETS" "$STORAGE"
 
 hex32() { python3 -c 'import secrets; print(secrets.token_hex(16))'; }
-rand_secret() { python3 -c 'import secrets; print(secrets.token_urlsafe(32))'; }
+rand_secret() {
+  python3 -c 'import secrets
+while True:
+    value = secrets.token_urlsafe(32)
+    if not value.startswith("-"):
+        print(value)
+        break
+'
+}
 
 if [[ ! -f "$ENV_FILE" ]]; then
   BOOTSTRAP="$(rand_secret)"
@@ -258,7 +266,7 @@ docker exec -e TECHOPS_PASS "$KEYCLOAK_CONTAINER" \
   /opt/keycloak/bin/kcadm.sh create users --config /tmp/kcadm-smoke-admin.config \
   -r master -s username=techops -s enabled=true >/dev/null
 docker exec -e TECHOPS_PASS "$KEYCLOAK_CONTAINER" \
-  sh -c '/opt/keycloak/bin/kcadm.sh set-password --config /tmp/kcadm-smoke-admin.config -r master --username techops --new-password "$TECHOPS_PASS"' \
+  sh -c '/opt/keycloak/bin/kcadm.sh set-password --config /tmp/kcadm-smoke-admin.config -r master --username techops --new-password="$TECHOPS_PASS"' \
   >/dev/null
 docker exec "$KEYCLOAK_CONTAINER" \
   /opt/keycloak/bin/kcadm.sh add-roles --config /tmp/kcadm-smoke-admin.config \
