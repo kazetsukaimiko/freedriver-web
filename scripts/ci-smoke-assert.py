@@ -239,6 +239,27 @@ def authorization_code_token(client: Client, client_id: str) -> str:
     return json.loads(body)["access_token"]
 
 
+def access_token_claims(token: str) -> dict:
+    parts = token.split(".")
+    if len(parts) < 2:
+        return {}
+    payload = parts[1] + "=" * (-len(parts[1]) % 4)
+    try:
+        data = json.loads(base64.urlsafe_b64decode(payload))
+    except (json.JSONDecodeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def token_role_summary(token: str) -> str:
+    claims = access_token_claims(token)
+    roles = (claims.get("realm_access") or {}).get("roles")
+    return (
+        f"azp={claims.get('azp')!r} actor={claims.get('actor')!r} "
+        f"device_id={claims.get('device_id')!r} realm_access.roles={roles!r}"
+    )
+
+
 def client_credentials_token(client_id: str, secret: str) -> str:
     token_body = urllib.parse.urlencode(
         {
@@ -652,7 +673,9 @@ def assert_dispatcher_claim_race(client: Client) -> None:
         report,
     )
     if status != 200:
-        raise SystemExit(f"host report HTTP {status} body={body[:300]!r}")
+        raise SystemExit(
+            f"host report HTTP {status} body={body[:300]!r} {token_role_summary(device_token)}"
+        )
     submit = json.dumps(
         {
             "deviceIds": ["freedriver-openbot"],

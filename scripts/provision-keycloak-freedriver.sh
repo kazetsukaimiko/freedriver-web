@@ -635,6 +635,18 @@ ensure_openbot_mcp_client() {
   ensure_mapper "$uuid" role-device \
     -s protocolMapper=oidc-hardcoded-role-mapper \
     -s 'config."role"=device'
+  # The built-in roles client scope maps mcp-user and dashboard, so Keycloak
+  # drops that whole scope for this service account. A client mapper puts
+  # realm_access.roles on the access token; the service account already has
+  # device. Same pattern as freedriver-portal-jobs.
+  ensure_mapper "$uuid" "realm roles" \
+    -s protocolMapper=oidc-usermodel-realm-role-mapper \
+    -s 'config."claim.name"=realm_access.roles' \
+    -s 'config."jsonType.label"=String' \
+    -s 'config.multivalued=true' \
+    -s 'config."access.token.claim"=true' \
+    -s 'config."id.token.claim"=false' \
+    -s 'config."userinfo.token.claim"=false'
   if [[ "${PROVISION_ALLOW_NON_ROOT:-}" == "1" ]]; then
     echo "Throwaway realm: OpenBot MCP client present; secret not written."
     return
