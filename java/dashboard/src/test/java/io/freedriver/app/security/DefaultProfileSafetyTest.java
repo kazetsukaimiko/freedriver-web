@@ -70,7 +70,7 @@ class DefaultProfileSafetyTest {
         assertTrue(prod.contains("freedriver.appliances.mock=false"));
         assertTrue(prod.contains("freedriver.appliances.live-commands=true"));
         assertTrue(prod.contains("freedriver.appliances.mock-refresh=false"));
-        assertTrue(prod.contains("freedriver.mqtt.instance-ids-file=/opt/freedriver-secrets/mosquitto/acl"));
+        assertFalse(prod.stream().anyMatch(line -> line.startsWith("freedriver.mqtt.instance-ids")));
         assertTrue(prod.contains("freedriver.mqtt.password-file=/opt/freedriver-secrets/mosquitto/api.pass"));
         assertEquals(1, prod.stream().filter(line -> line.startsWith("freedriver.appliances.mock=")).count());
         assertFalse(prod.stream().anyMatch(line -> line.startsWith("freedriver.appliances.live-commands=false")));

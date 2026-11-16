@@ -2,11 +2,13 @@ package io.freedriver.app.api;
 
 import io.quarkus.redis.datasource.RedisDataSource;
 import io.freedriver.app.appliances.ApplianceAudit;
+import io.freedriver.app.appliances.AppliancesConfig;
+import io.freedriver.ratelimit.HitWindow;
 import io.freedriver.app.appliances.ApplianceControl;
 import io.freedriver.app.appliances.ApplianceRoster;
 import io.freedriver.app.appliances.RosterRow;
 import io.freedriver.app.appliances.ApplianceCommandRouted;
-import io.freedriver.app.security.CommandRateLimiter;
+import io.freedriver.app.security.CallerRateLimiter;
 import io.freedriver.app.appliances.MockAutonomy;
 import io.freedriver.app.security.CsrfFilter;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
@@ -56,7 +58,13 @@ class AppliancesResourceTest {
     ApplianceRoster roster;
 
     @Inject
-    CommandRateLimiter rateLimiter;
+    CallerRateLimiter rateLimiter;
+
+    @Inject
+    HitWindow hits;
+
+    @Inject
+    AppliancesConfig config;
 
     private static final String HALLWAY = MockAutonomy.FIXTURE_NAMES.get(0);
     private static final String KITCHEN = MockAutonomy.FIXTURE_NAMES.get(1);
@@ -310,6 +318,23 @@ class AppliancesResourceTest {
             }
         }
         assertTrue(limited >= 1, "expected at least one 429");
+    }
+
+    /** {@code CsrfFilter} (AUTHORIZATION + 50) refuses a token-less post before the limiter spends a permit. */
+    @Test
+    @TestSecurity(user = "csrf-before-limit", roles = {"dashboard"})
+    void a_post_refused_for_csrf_spends_no_permit() {
+        mock.setConfirmCommands(true);
+        String key = "appliances.commands:csrf-before-limit";
+        long windowMs = config.rateLimit().window().toMillis();
+        commandSpec().body("{\"on\":true}").when().post(commandPath(HALLWAY)).then().statusCode(200);
+        assertEquals(1, hits.count(key, windowMs));
+
+        given().contentType(ContentType.JSON)
+                .body("{\"on\":true}")
+                .when().post(commandPath(HALLWAY))
+                .then().statusCode(400).body(is("{}"));
+        assertEquals(1, hits.count(key, windowMs));
     }
 
     @Test

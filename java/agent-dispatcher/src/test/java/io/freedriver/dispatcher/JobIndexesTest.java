@@ -12,11 +12,13 @@ import org.bson.Document;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 
 import static com.mongodb.client.model.Filters.and;
 import static com.mongodb.client.model.Filters.eq;
+import static com.mongodb.client.model.Filters.lt;
 import static com.mongodb.client.model.Filters.ne;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -42,6 +44,12 @@ class JobIndexesTest {
         var jobs = assignments.mongoCollection();
         assertIndexed(jobs.find(and(eq("deviceId", "pc-a"), eq("status", AssignmentState.QUEUED.name())))
                 .sort(Sorts.ascending("ordinal")).explain(), "deviceId_1_status_1_ordinal_1");
+        assertIndexed(jobs.find(AssignmentRepository.takeQueued("pc-a", Instant.EPOCH))
+                .sort(Sorts.ascending("createdAt", "ordinal")).explain(), "deviceId_1_status_1_ordinal_1");
+        assertIndexed(jobs.find(AssignmentRepository.takeLapsed("pc-a", List.of("held"), Instant.EPOCH))
+                .sort(Sorts.ascending("createdAt", "ordinal")).explain(), "deviceId_1_status_1_ordinal_1");
+        assertIndexed(jobs.find(and(eq("deviceId", "pc-a"), eq("status", AssignmentState.QUEUED.name()),
+                lt("createdAt", new java.util.Date(0)))).explain(), "deviceId_1_status_1_ordinal_1");
         assertIndexed(jobs.find(eq("jobId", "j")).sort(Sorts.ascending("ordinal")).explain(), "jobId_1");
         assertIndexed(jobs.find(ne("jobId", null)).sort(Sorts.descending("createdAt", "_id")).explain(),
                 "createdAt_-1__id_-1");
@@ -68,6 +76,12 @@ class JobIndexesTest {
                 List.of(new ReportedBot("yuni", "asleep", ""))));
         assertThrows(ConstraintViolationException.class, () -> store.finish("pc-a",
                 java.util.UUID.randomUUID(), true, "n".repeat(2001)));
+        assertThrows(ConstraintViolationException.class, () -> store.take("pc-a",
+                java.util.stream.Stream.generate(java.util.UUID::randomUUID).limit(65).toList(), Duration.ZERO));
+        assertThrows(ConstraintViolationException.class, () -> store.start("pc-a",
+                java.util.UUID.randomUUID(), "has space"));
+        assertThrows(ConstraintViolationException.class, () -> store.start("pc-a",
+                java.util.UUID.randomUUID(), "r".repeat(129)));
     }
 
     private static void assertIndexed(Document explain, String index) {

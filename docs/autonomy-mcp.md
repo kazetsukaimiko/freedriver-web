@@ -31,4 +31,4 @@ Compose service `autonomy-mcp` has no host port. On `app.freedriver.io`, Caddy s
 
 Compose loads `/opt/freedriver-secrets/keycloak-freedriver-autonomy-mcp.env` into `autonomy-mcp`. `scripts/provision-keycloak-freedriver.sh` creates the client `freedriver-autonomy-mcp` and writes `FREEDRIVER_AUTONOMY_MCP_CLIENT_SECRET` to that file once. Run the script on the live realm before the release that carries the token exchange. Until the client and the file exist, every tool that calls the dashboard is refused.
 
-A Streamable HTTP session keeps state in the process that opened it, so a second replica needs sticky routing on the session header: `lb_policy header Mcp-Session-Id` in the Caddy `reverse_proxy` block. TechOps adds that line when a second replica exists.
+A Streamable HTTP session keeps state in the process that opened it, so a second replica uses Caddy stickiness on the MCP reverse_proxy: cookie `mcp_autonomy`, then the `Authorization` header, then round_robin. A client that stores the cookie stays on that replica. A client that does not, such as Grok, is pinned by its bearer until that token is renewed (#547).

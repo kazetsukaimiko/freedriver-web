@@ -11,15 +11,13 @@ import java.nio.file.Path;
 public class MqttConnectionProducer {
 
     /**
-     * A session exists when instance ids are set. An empty list does not open a client,
-     * including the resubscribe thread. Command publishing stays behind {@code live-commands}.
+     * The Paho session when the api password is set. {@link MqttLiveClient} connects it when the
+     * first house is subscribed, so no house means no client thread. Command publishing stays
+     * behind {@code live-commands}.
      */
     @Produces
     @ApplicationScoped
     MqttConnection liveConnection(MqttSettings settings) {
-        if (settings.instances().isEmpty()) {
-            return new IdleMqttConnection();
-        }
         String password = settings.password().orElse("").strip();
         if (password.isEmpty()) {
             password = MqttHouseIds.password(settings.passwordFile().orElse(""));
@@ -33,7 +31,7 @@ public class MqttConnectionProducer {
                 Path.of(settings.trustCertificate()));
     }
 
-    /** No broker, no threads. Used only when no instance id is configured. */
+    /** No broker, no threads. Used when the api password is not set. */
     static final class IdleMqttConnection implements MqttConnection {
         @Override
         public void connect() {
@@ -41,6 +39,15 @@ public class MqttConnectionProducer {
 
         @Override
         public void subscribe(String topic, int qos, MessageHandler handler) {
+        }
+
+        @Override
+        public void unsubscribe(String topic) {
+        }
+
+        @Override
+        public boolean connected() {
+            return false;
         }
 
         @Override

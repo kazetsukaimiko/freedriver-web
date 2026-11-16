@@ -34,21 +34,23 @@ public interface MqttSettings {
     @WithName("password-file")
     Optional<String> passwordFile();
 
+    /**
+     * Comma-separated house ids for dev and test. {@link InstanceSubscriptions} keeps them subscribed
+     * beside the houses in Keycloak.
+     */
     @WithName("instance-ids")
     Optional<String> instanceIds();
 
-    /**
-     * Host file of instance ids, or a broker ACL whose appliances topics name them.
-     * Used only when {@link #instanceIds()} is blank. The id is not in git.
-     */
-    @WithName("instance-ids-file")
-    Optional<String> instanceIdsFile();
+    /** Subscribes the houses every 60 seconds and after this replica provisions one. */
+    @WithDefault("true")
+    boolean refresh();
 
     default MqttEndpoint endpoint() {
         return new MqttEndpoint(host(), port(), tls(), username());
     }
 
-    default List<UUID> instances() {
-        return MqttHouseIds.instances(instanceIds().orElse(""), instanceIdsFile().orElse(""));
+    /** The parsed {@link #instanceIds()}; empty when unset. */
+    default List<UUID> configuredInstances() {
+        return MqttHouseIds.parseList(instanceIds().orElse(""));
     }
 }

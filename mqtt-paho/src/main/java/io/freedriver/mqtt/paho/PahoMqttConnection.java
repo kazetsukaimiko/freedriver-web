@@ -35,11 +35,7 @@ public final class PahoMqttConnection implements MqttConnection {
     private final String password;
     private final Path trustCertificate;
     private final Map<String, Subscription> handlers = new ConcurrentHashMap<>();
-    private final ExecutorService resubscribeExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "mqtt-resubscribe");
-        thread.setDaemon(true);
-        return thread;
-    });
+    private volatile ExecutorService resubscribeExecutor = resubscribeThread();
     private volatile MqttClient client;
     private volatile boolean closing;
 
@@ -49,8 +45,17 @@ public final class PahoMqttConnection implements MqttConnection {
         this.trustCertificate = trustCertificate;
     }
 
+    /**
+     * Opens the session. After a failed connect or a {@link #close()}, a later call opens a new
+     * session; the caller subscribes its topics again.
+     */
     @Override
     public void connect() {
+        closing = false;
+        if (resubscribeExecutor.isShutdown()) {
+            resubscribeExecutor = resubscribeThread();
+        }
+        ExecutorService resubscribe = resubscribeExecutor;
         announceConnecting();
         String uri = (endpoint.tls() ? "ssl://" : "tcp://") + endpoint.host() + ":" + endpoint.port();
         try {
@@ -61,13 +66,21 @@ public final class PahoMqttConnection implements MqttConnection {
                     endpoint.port(),
                     handlers,
                     this::subscribeTopic,
-                    resubscribeExecutor::execute,
+                    resubscribe::execute,
                     () -> !closing));
             client.connect(options);
         } catch (Exception e) {
             close();
             throw new IllegalStateException("Live MQTT connect failed", e);
         }
+    }
+
+    private static ExecutorService resubscribeThread() {
+        return Executors.newSingleThreadExecutor(r -> {
+            Thread thread = new Thread(r, "mqtt-resubscribe");
+            thread.setDaemon(true);
+            return thread;
+        });
     }
 
     void announceConnecting() {
@@ -95,6 +108,27 @@ public final class PahoMqttConnection implements MqttConnection {
         MqttBrokers.assertExactTopic(topic);
         handlers.put(topic, new Subscription(qos, handler));
         subscribeTopic(topic, qos);
+    }
+
+    @Override
+    public void unsubscribe(String topic) {
+        MqttBrokers.assertExactTopic(topic);
+        handlers.remove(topic);
+        MqttClient current = client;
+        if (current == null || !current.isConnected()) {
+            return;
+        }
+        try {
+            current.unsubscribe(topic);
+        } catch (MqttException e) {
+            throw new IllegalStateException("Live MQTT unsubscribe failed", e);
+        }
+    }
+
+    @Override
+    public boolean connected() {
+        MqttClient current = client;
+        return current != null && current.isConnected();
     }
 
     private void subscribeTopic(String topic, int qos) {

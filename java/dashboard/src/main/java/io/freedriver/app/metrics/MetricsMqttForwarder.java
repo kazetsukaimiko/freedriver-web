@@ -1,60 +1,54 @@
 package io.freedriver.app.metrics;
 
+import io.freedriver.app.appliances.SubscribedHouses;
 import io.freedriver.app.appliances.MqttAcl;
-import io.freedriver.app.appliances.MqttSettings;
 import io.freedriver.mqtt.MqttConnection;
 import io.freedriver.mqtt.MqttLog;
-import io.quarkus.runtime.StartupEvent;
-import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
-import jakarta.interceptor.Interceptor;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * Subscribes to each house metrics topic and forwards points to Grafana via Micrometer.
- * Uses the same MQTT session as appliance state. Does not publish.
+ * Subscribes to each followed house's metrics topic and forwards points to Grafana via
+ * Micrometer. {@link SubscribedHouses} holds the houses. Uses the same MQTT session as
+ * appliance state, after {@code MqttLiveClient} has connected it. Does not publish.
  */
 @BlockingIo
 @ApplicationScoped
 public class MetricsMqttForwarder {
     static final int MAX_BYTES = 64 * 1024;
 
-    private final MqttSettings mqtt;
+    private final SubscribedHouses subscriptions;
     private final MqttConnection connection;
     private final GrafanaMetricsEmitter emitter;
 
     @Inject
     public MetricsMqttForwarder(
-            MqttSettings mqtt, MqttConnection connection, GrafanaMetricsEmitter emitter) {
-        this.mqtt = mqtt;
+            SubscribedHouses subscriptions, MqttConnection connection, GrafanaMetricsEmitter emitter) {
+        this.subscriptions = subscriptions;
         this.connection = connection;
         this.emitter = emitter;
     }
 
-    void start(@Observes @Priority(Interceptor.Priority.APPLICATION + 100) StartupEvent event) {
-        List<UUID> instances = mqtt.instances();
-        if (instances.isEmpty()) {
-            return;
-        }
+    /** Subscribes to one house's metrics. A failure is logged; the house's appliance state still flows. */
+    public void follow(UUID instanceId) {
         try {
-            for (UUID instanceId : instances) {
-                connection.subscribe(
-                        MetricsTopics.metricsTopic(instanceId), MetricsTopics.QOS, this::onBrokerMessage);
-            }
+            connection.subscribe(MetricsTopics.metricsTopic(instanceId), MetricsTopics.QOS, this::onBrokerMessage);
         } catch (RuntimeException e) {
-            MqttLog.metricsRejected("-", "subscribe-failed");
+            MqttLog.metricsRejected(MetricsTopics.metricsTopic(instanceId), "subscribe-failed");
         }
+    }
+
+    public void unfollow(UUID instanceId) {
+        connection.unsubscribe(MetricsTopics.metricsTopic(instanceId));
     }
 
     void onBrokerMessage(String topic, byte[] payload) {
         UUID instanceId = MqttAcl.instanceIdFrom(topic, "metrics");
-        if (instanceId == null || !mqtt.instances().contains(instanceId)) {
+        if (instanceId == null || !subscriptions.contains(instanceId)) {
             MqttLog.metricsRejected(topic, "unknown-instance");
             return;
         }

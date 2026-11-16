@@ -35,7 +35,10 @@ public interface AppliancesConfig {
     @WithDefault("false")
     boolean mockRefresh();
 
-    /** The per-user appliance command limit. auth-policy.properties sets and locks both values. */
+    /**
+     * The allowance for every {@code @RateLimited} route, applied per bucket per caller: each caller has its own
+     * window in each bucket. auth-policy.properties sets and locks both values.
+     */
     RateLimit rateLimit();
 
     /** REST-side confirm wait for one command, clamped between a 50 ms floor and {@code command-timeout-max}. */
