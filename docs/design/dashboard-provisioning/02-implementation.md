@@ -39,7 +39,7 @@ Paths under `java/dashboard/src/main/java/io/freedriver/app/instances/`:
 | `InstanceNotFoundException.java` | Open's lookup found no user in `mqtt-instance` with that username. |
 | `InstanceFailureMapper.java` | Maps those three exceptions to `InstanceFailure` and the HTTP status in document 1. |
 
-`InstancesApi` carries the JAX-RS, validation, role, and rate-limit annotations. `InstancesResource` is the application-scoped implementation. `HouseProvision` returns `ProvisionedInstance` or throws a domain exception. The role check lives on `InstancesApi`. The rate limit lives on the existing `RateLimitedFilter`, keyed by the authenticated subject. The annotation value marks the method. The limiter key is that subject, the same key the other command paths use.
+`InstancesApi` carries the JAX-RS, validation, role, and rate-limit annotations. `InstancesResource` is the application-scoped implementation. `HouseProvision` returns `ProvisionedInstance` or throws a domain exception. The role check lives on `InstancesApi`. The rate limit lives on the existing `RateLimitedFilter`. The annotation value is the bucket: `RateLimitedFeature` reads it per route and registers the filter for that bucket. The limiter key is `<bucket>:<caller>`, where the caller is the authenticated subject, so each bucket has its own 30-per-60 s window per caller. Create and open share the `instances` bucket.
 
 `CsrfFilter` in `java/dashboard/src/main/java/io/freedriver/app/security/CsrfFilter.java` already requires `X-CSRF-Token` on `POST /api/invites` and writes `csrfToken` onto `InviteList`. The change treats `POST /api/instances` and `POST /api/instances/{instanceId}/open` as command paths and writes `csrfToken` onto an `InstanceList` from `GET /api/instances`.
 
