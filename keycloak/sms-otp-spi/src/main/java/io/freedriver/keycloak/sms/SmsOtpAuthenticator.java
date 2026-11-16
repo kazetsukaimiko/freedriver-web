@@ -280,7 +280,8 @@ public final class SmsOtpAuthenticator implements Authenticator {
     private static Response phonePage(AuthenticationFlowContext context, String error) {
         LoginFormsProvider form = context.form()
                 .setAttribute(ATTR_AGREEMENT, SignInAgreement.WORDING)
-                .setAttribute(ATTR_PASSWORD_ALLOWED, passwordAllowed(context));
+                .setAttribute(ATTR_PASSWORD_ALLOWED, passwordAllowed(context))
+                .setAttribute(SignInLifetime.ATTR, SignInLifetime.seconds(context.getRealm()));
         if (error != null) {
             form.setError(error);
         }
@@ -305,7 +306,8 @@ public final class SmsOtpAuthenticator implements Authenticator {
         LoginFormsProvider form = context.form()
                 .setAttribute(ATTR_PASSWORD_ALLOWED, passwordAllowed(context));
         if (phoneForm) {
-            form.setAttribute(ATTR_AGREEMENT, SignInAgreement.WORDING);
+            form.setAttribute(ATTR_AGREEMENT, SignInAgreement.WORDING)
+                    .setAttribute(SignInLifetime.ATTR, SignInLifetime.seconds(context.getRealm()));
         } else {
             form.setAttribute(ATTR_RESEND_ALLOWED, sendAllowed(context));
         }

@@ -1,6 +1,7 @@
 <#import "template.ftl" as layout>
 <#import "field.ftl" as field>
 <#import "buttons.ftl" as buttons>
+<#import "freedriver-renew.ftl" as renewal>
 <@layout.registrationLayout; section>
 <!-- template: freedriver-sms-phone.ftl -->
     <#if section = "header">
@@ -13,6 +14,7 @@
                 <@buttons.button id="freedriver-sms-send" name="send" label="freedriverSmsSend" class=["kcButtonPrimaryClass", "kcButtonBlockClass"] />
             </@buttons.actionGroup>
         </form>
+        <@renewal.renew/>
         <#if freedriverSmsPasswordAllowed!false>
         <div id="freedriver-sms-password" class="${properties.kcFormGroupClass!}">
             <a class="${properties.kcButtonLinkClass!}" href="${url.loginRestartFlowUrl}">${msg("freedriverSmsUsePassword")}</a>

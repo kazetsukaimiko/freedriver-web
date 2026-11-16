@@ -53,6 +53,7 @@ public final class PhoneUsernameRouter implements Authenticator {
     public void authenticate(AuthenticationFlowContext context) {
         context.challenge(context.form()
                 .setAttribute(SmsOtpAuthenticator.ATTR_AGREEMENT, SignInAgreement.WORDING)
+                .setAttribute(SignInLifetime.ATTR, SignInLifetime.seconds(context.getRealm()))
                 .createForm(TEMPLATE));
     }
 

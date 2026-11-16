@@ -35,6 +35,10 @@
 #
 # Sessions (#353): accessCodeLifespanLogin 7200, ssoSessionIdleTimeout 28800,
 # ssoSessionMaxLifespan 86400, accessCodeLifespanUserAction 1800.
+# ACCESS_CODE_LIFESPAN_LOGIN is how long a sign-in may take (#552). The login theme reads it from the
+# realm and renews a sign-in page after half of it; the dashboard's OIDC state cookie
+# (quarkus.oidc.authentication.state-cookie-age in auth-policy.properties) lives exactly as long,
+# held equal by the dashboard's SignInLifetimeTest. Change the two together.
 #
 # Appliances MCP (#112 / #333) is the public client freedriver-grok-mcp.
 # Authorization code + PKCE S256, no secret, no service account. Enabled with

@@ -9,6 +9,7 @@ import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.http.HttpRequest;
 import org.keycloak.models.AuthenticationExecutionModel;
+import org.keycloak.models.RealmModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
 import java.io.IOException;
@@ -106,6 +107,9 @@ class PhoneUsernameRouterTest {
         when(context.getAuthenticationSession()).thenReturn(authSession);
         when(context.getHttpRequest()).thenReturn(http);
         when(context.form()).thenAnswer(inv -> newForm());
+        RealmModel realm = mock(RealmModel.class);
+        when(realm.getAccessCodeLifespanLogin()).thenReturn(7200);
+        when(context.getRealm()).thenReturn(realm);
         when(context.getUser()).thenThrow(new AssertionError("no user"));
         when(context.getSession()).thenThrow(new AssertionError("no session"));
         doThrow(new AssertionError("setUser")).when(context).setUser(any());
@@ -218,6 +222,7 @@ class PhoneUsernameRouterTest {
         assertEquals("challenge", outcome);
         assertEquals(PhoneUsernameRouter.TEMPLATE, pages.get(shown));
         assertEquals(SignInAgreement.WORDING, formAttributes.get(SmsOtpAuthenticator.ATTR_AGREEMENT));
+        assertEquals(7200, formAttributes.get(SignInLifetime.ATTR));
         assertTrue(records.isEmpty());
         assertNoUserAndNoSession();
     }
@@ -298,6 +303,27 @@ class PhoneUsernameRouterTest {
         assertFalse(factory.isConfigurable());
         assertFalse(factory.isUserSetupAllowed());
         assertTrue(factory.create(null) instanceof PhoneUsernameRouter);
+    }
+
+    /** Both sign-in pages before a code is sent renew themselves after half of the realm's login lifespan (#552). */
+    @Test
+    void signInPagesRenewThemselvesAfterHalfTheLifetime() throws IOException {
+        for (String page : List.of("freedriver-phone-username.ftl", "freedriver-sms-phone.ftl")) {
+            String form = repoText("keycloak/themes/freedriver/login/" + page,
+                    "../themes/freedriver/login/" + page, "themes/freedriver/login/" + page);
+            assertTrue(form.contains("<#import \"freedriver-renew.ftl\" as renewal>"), page);
+            assertTrue(form.contains("<@renewal.renew/>"), page);
+        }
+        String renew = repoText("keycloak/themes/freedriver/login/freedriver-renew.ftl",
+                "../themes/freedriver/login/freedriver-renew.ftl", "themes/freedriver/login/freedriver-renew.ftl");
+        assertTrue(renew.contains("<#if " + SignInLifetime.ATTR + "??>"), renew);
+        assertTrue(renew.contains("(" + SignInLifetime.ATTR + " / 2)?floor"), renew);
+        assertTrue(renew.contains("<noscript><meta http-equiv=\"refresh\" content=\"${renewAfter?c};url=https://app.freedriver.io/\"></noscript>"), renew);
+        assertTrue(renew.contains("js/sign-in-renew.js\" data-renew-after-seconds=\"${renewAfter?c}\" data-restart-url=\"https://app.freedriver.io/\""), renew);
+        String js = repoText("keycloak/themes/freedriver/login/resources/js/sign-in-renew.js",
+                "../themes/freedriver/login/resources/js/sign-in-renew.js",
+                "themes/freedriver/login/resources/js/sign-in-renew.js");
+        assertTrue(js.contains("\"freedriver.login.phone\""), "same key as phone-fragment.js");
     }
 
     @Test
