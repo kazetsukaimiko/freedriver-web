@@ -862,6 +862,8 @@ for line in openbot.splitlines():
 openbot_fn = "\n".join(kept)
 if 'attributes."access.token.lifespan"=31536000' not in openbot_fn:
     raise SystemExit("ensure_openbot_mcp_client must set a 1-year access token")
+if "oidc-usermodel-realm-role-mapper" not in openbot_fn:
+    raise SystemExit("ensure_openbot_mcp_client must map realm roles onto the access token")
 if "OpenBot is connect-and-forget like grok.com" not in script:
     raise SystemExit("provision script must say OpenBot is connect-and-forget like grok.com")
 print("OpenBot MCP client uses a 1-year access token")

@@ -54,7 +54,15 @@ as_root mkdir -p \
 as_root chmod -R a+rwX "$SECRETS" "$STORAGE"
 
 hex32() { python3 -c 'import secrets; print(secrets.token_hex(16))'; }
-rand_secret() { python3 -c 'import secrets; print(secrets.token_urlsafe(32))'; }
+rand_secret() {
+  python3 -c 'import secrets
+while True:
+    value = secrets.token_urlsafe(32)
+    if not value.startswith("-"):
+        print(value)
+        break
+'
+}
 
 if [[ ! -f "$ENV_FILE" ]]; then
   BOOTSTRAP="$(rand_secret)"
@@ -73,9 +81,42 @@ FREEDRIVER_AUTONOMY_MCP_ENABLED=true
 FREEDRIVER_APPLIANCES_LIVE_COMMANDS=true
 FIXTURE_INSTANCE_ID=pending
 FIXTURE_HOUSE_PASSWORD=pending
+DASHBOARD_REPLICAS=2
+DISPATCHER_REPLICAS=2
+AUTONOMY_MCP_REPLICAS=2
 EOF
   chmod 600 "$ENV_FILE"
 fi
+
+# Smoke runs each of the three Caddy upstreams at count 2. Production compose
+# still defaults those settings to 1.
+python3 - "$ENV_FILE" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+wanted = {
+    "DASHBOARD_REPLICAS": "2",
+    "DISPATCHER_REPLICAS": "2",
+    "AUTONOMY_MCP_REPLICAS": "2",
+}
+lines = path.read_text().splitlines() if path.exists() else []
+seen = set()
+out = []
+for line in lines:
+    key = line.split("=", 1)[0] if "=" in line else ""
+    if key in wanted:
+        out.append(f"{key}={wanted[key]}")
+        seen.add(key)
+    else:
+        out.append(line)
+for key, value in wanted.items():
+    if key not in seen:
+        out.append(f"{key}={value}")
+path.write_text("\n".join(out) + "\n")
+PY
+export DASHBOARD_REPLICAS=2
+export DISPATCHER_REPLICAS=2
+export AUTONOMY_MCP_REPLICAS=2
 
 cat >"$SECRETS/twilio-verify.env" <<EOF
 TWILIO_ACCOUNT_SID=AC$(hex32)
@@ -243,7 +284,7 @@ docker exec -e TECHOPS_PASS "$KEYCLOAK_CONTAINER" \
   /opt/keycloak/bin/kcadm.sh create users --config /tmp/kcadm-smoke-admin.config \
   -r master -s username=techops -s enabled=true >/dev/null
 docker exec -e TECHOPS_PASS "$KEYCLOAK_CONTAINER" \
-  sh -c '/opt/keycloak/bin/kcadm.sh set-password --config /tmp/kcadm-smoke-admin.config -r master --username techops --new-password "$TECHOPS_PASS"' \
+  sh -c '/opt/keycloak/bin/kcadm.sh set-password --config /tmp/kcadm-smoke-admin.config -r master --username techops --new-password="$TECHOPS_PASS"' \
   >/dev/null
 docker exec "$KEYCLOAK_CONTAINER" \
   /opt/keycloak/bin/kcadm.sh add-roles --config /tmp/kcadm-smoke-admin.config \
@@ -297,8 +338,7 @@ docker exec "$KEYCLOAK_CONTAINER" /opt/keycloak/bin/kcadm.sh update "users/${KAZ
   -s firstName=Kaze -s lastName=Smoke \
   -s email=kaze@freedriver.invalid -s emailVerified=true \
   -s 'requiredActions=[]' >/dev/null
-# Throwaway realm only: instance create needs portal-admin, switch_appliance
-# needs dashboard on the grok-mcp token.
+# Throwaway realm: portal-admin for instance create and invite; dashboard for switch_appliance.
 docker exec "$KEYCLOAK_CONTAINER" /opt/keycloak/bin/kcadm.sh add-roles \
   --config /tmp/kcadm-smoke-admin.config -r freedriver \
   --uusername kaze --rolename portal-admin --rolename dashboard >/dev/null
@@ -367,6 +407,24 @@ PY
 unset API_SECRET
 
 "${COMPOSE[@]}" up -d dashboard agent-dispatcher autonomy-mcp caddy
+
+echo "waiting for two replicas of each Caddy upstream"
+for svc in dashboard agent-dispatcher autonomy-mcp; do
+  got=0
+  for _ in $(seq 1 90); do
+    got="$("${COMPOSE[@]}" ps -q "$svc" | grep -c . || true)"
+    if [[ "$got" == 2 ]]; then
+      echo "replicas ${svc} ${got}"
+      break
+    fi
+    sleep 2
+  done
+  if [[ "$got" != 2 ]]; then
+    echo "${svc} replica count ${got}, want 2" >&2
+    "${COMPOSE[@]}" ps >&2 || true
+    exit 1
+  fi
+done
 
 echo "waiting for Caddy and the dashboard stamp"
 stamp_ok=0

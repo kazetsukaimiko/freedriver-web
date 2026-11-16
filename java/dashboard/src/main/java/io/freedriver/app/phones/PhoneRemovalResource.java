@@ -59,7 +59,7 @@ public class PhoneRemovalResource {
     @POST
     @Path("remove")
     @Consumes(MediaType.APPLICATION_JSON)
-    @RateLimited("invites")
+    @RateLimited("phones")
     public Response remove(RemovePhone request) {
         String phone = request == null ? null : request.phone();
         if (phone == null || !PHONE.matcher(phone).matches()) {

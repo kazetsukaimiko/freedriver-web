@@ -2,6 +2,8 @@
 # internal, one fixture house on the stack Mosquitto. Live commands on against
 # that broker only. Caddy is the only published port. Production compose is
 # unchanged.
+# Replica counts are DASHBOARD_REPLICAS, DISPATCHER_REPLICAS, and
+# AUTONOMY_MCP_REPLICAS (smoke sets each to 2; production compose defaults 1).
 services:
   caddy:
     ports: !override
@@ -29,6 +31,8 @@ services:
 
   dashboard:
     pull_policy: missing
+    deploy:
+      replicas: ${DASHBOARD_REPLICAS:-2}
     environment:
       FREEDRIVER_APPLIANCES_LIVE_COMMANDS: "true"
       FREEDRIVER_APPLIANCES_ENABLED: "true"
@@ -37,20 +41,32 @@ services:
       # -D uses the exact property names; env mapping can miss the hyphenated key.
       FREEDRIVER_KEYCLOAK_SERVER_URL: http://keycloak:8080
       QUARKUS_KEYCLOAK_ADMIN_CLIENT_SERVER_URL: http://keycloak:8080
-      JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Dquarkus.keycloak.admin-client.server-url=http://keycloak:8080 -Dfreedriver.keycloak.server-url=http://keycloak:8080 -Xmx512m"
+      # Invite SPI is a frontend realm resource. Token iss is KC_HOSTNAME
+      # (https://auth.freedriver.io). hostname-strict is ignored when hostname
+      # is set, so an HTTP compose POST 302s to HTTPS and the rest-client
+      # follows it as GET (405). Call the public host through Caddy.
+      QUARKUS_TLS_SMOKE_TRUST_ALL: "true"
+      QUARKUS_TLS_SMOKE_HOSTNAME_VERIFICATION_ALGORITHM: "NONE"
+      QUARKUS_REST_CLIENT_KEYCLOAK_INVITE_URL: https://auth.freedriver.io
+      QUARKUS_REST_CLIENT_KEYCLOAK_INVITE_TLS_CONFIGURATION_NAME: smoke
+      JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Dquarkus.keycloak.admin-client.server-url=http://keycloak:8080 -Dfreedriver.keycloak.server-url=http://keycloak:8080 -Dquarkus.tls.smoke.trust-all=true -Dquarkus.tls.smoke.hostname-verification-algorithm=NONE -Dquarkus.rest-client.keycloak-invite.url=https://auth.freedriver.io -Dquarkus.rest-client.keycloak-invite.tls-configuration-name=smoke -Xmx512m"
 
   agent-dispatcher:
     pull_policy: missing
+    deploy:
+      replicas: ${DISPATCHER_REPLICAS:-2}
     environment:
       QUARKUS_TLS_TRUST_ALL: "true"
-      JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Xmx384m"
+      JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Xmx256m"
 
   autonomy-mcp:
     pull_policy: missing
+    deploy:
+      replicas: ${AUTONOMY_MCP_REPLICAS:-2}
     environment:
       FREEDRIVER_MCP_ENABLED: "true"
       QUARKUS_TLS_TRUST_ALL: "true"
-      JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Xmx384m"
+      JAVA_OPTS_APPEND: "-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -Xmx256m"
 
   keycloak:
     pull_policy: missing

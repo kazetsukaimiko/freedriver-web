@@ -1,14 +1,19 @@
 package io.freedriver.app.instances;
 
 import io.freedriver.app.security.CsrfFilter;
+import io.freedriver.ratelimit.HitWindow;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
@@ -25,6 +30,17 @@ class InstancesResourceTest {
 
     @Inject
     RecordingInstanceIdentity identity;
+
+    @Inject
+    HitWindow hits;
+
+    @Inject
+    @ConfigProperty(name = "freedriver.appliances.rate-limit.permits")
+    int permits;
+
+    @Inject
+    @ConfigProperty(name = "freedriver.appliances.rate-limit.window")
+    Duration window;
 
     @BeforeEach
     void reset() {
@@ -109,6 +125,26 @@ class InstancesResourceTest {
         csrf().post("/api/instances/" + instanceId.toUpperCase() + "/open").then()
                 .statusCode(404)
                 .body("cause", is("missing"));
+    }
+
+    /** Create and open both carry {@code instances}: one window per caller across the two routes. */
+    @Test
+    @TestSecurity(user = "instances-bucket", roles = {"portal-admin"})
+    void create_and_open_draw_on_one_instances_window() {
+        Response created = csrf().body("{\"label\":\"shared\"}").post("/api/instances");
+        created.then().statusCode(201);
+        String instanceId = created.path("instanceId");
+        List<Integer> statuses = new ArrayList<>();
+        statuses.add(created.statusCode());
+        for (int i = 1; i < permits; i++) {
+            statuses.add(csrf().post("/api/instances/" + instanceId + "/open").statusCode());
+        }
+        assertEquals(permits, statuses.stream().filter(status -> status == 200 || status == 201).count(), statuses::toString);
+        assertEquals(permits, hits.count("instances:instances-bucket", window.toMillis()));
+
+        csrf().post("/api/instances/" + instanceId + "/open").then().statusCode(429);
+        csrf().body("{}").post("/api/instances").then().statusCode(429);
+        assertEquals(1, identity.creates());
     }
 
     @Test
