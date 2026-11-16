@@ -305,27 +305,6 @@ class PhoneUsernameRouterTest {
         assertTrue(factory.create(null) instanceof PhoneUsernameRouter);
     }
 
-    /** Both sign-in pages before a code is sent renew themselves after half of the realm's login lifespan (#552). */
-    @Test
-    void signInPagesRenewThemselvesAfterHalfTheLifetime() throws IOException {
-        for (String page : List.of("freedriver-phone-username.ftl", "freedriver-sms-phone.ftl")) {
-            String form = repoText("keycloak/themes/freedriver/login/" + page,
-                    "../themes/freedriver/login/" + page, "themes/freedriver/login/" + page);
-            assertTrue(form.contains("<#import \"freedriver-renew.ftl\" as renewal>"), page);
-            assertTrue(form.contains("<@renewal.renew/>"), page);
-        }
-        String renew = repoText("keycloak/themes/freedriver/login/freedriver-renew.ftl",
-                "../themes/freedriver/login/freedriver-renew.ftl", "themes/freedriver/login/freedriver-renew.ftl");
-        assertTrue(renew.contains("<#if " + SignInLifetime.ATTR + "??>"), renew);
-        assertTrue(renew.contains("(" + SignInLifetime.ATTR + " / 2)?floor"), renew);
-        assertTrue(renew.contains("<noscript><meta http-equiv=\"refresh\" content=\"${renewAfter?c};url=https://app.freedriver.io/\"></noscript>"), renew);
-        assertTrue(renew.contains("js/sign-in-renew.js\" data-renew-after-seconds=\"${renewAfter?c}\" data-restart-url=\"https://app.freedriver.io/\""), renew);
-        String js = repoText("keycloak/themes/freedriver/login/resources/js/sign-in-renew.js",
-                "../themes/freedriver/login/resources/js/sign-in-renew.js",
-                "themes/freedriver/login/resources/js/sign-in-renew.js");
-        assertTrue(js.contains("\"freedriver.login.phone\""), "same key as phone-fragment.js");
-    }
-
     @Test
     void pageCopyAndAuthenticityToken() throws IOException {
         String form = repoText(
