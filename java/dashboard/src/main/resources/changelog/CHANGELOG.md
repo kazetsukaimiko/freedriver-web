@@ -1,5 +1,49 @@
 # Changelog
 
+## [1.6.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.5.2...v1.6.0) (2026-11-16)
+
+
+### Features
+
+* **auth:** carry the connecting user's token from autonomy-mcp to the dashboard ([#518](https://github.com/kazetsukaimiko/freedriver-web/issues/518)) ([bde2077](https://github.com/kazetsukaimiko/freedriver-web/commit/bde2077c8930a4b5554077dbcca551502d202717)), closes [#475](https://github.com/kazetsukaimiko/freedriver-web/issues/475)
+* **dashboard:** give each named rate limit its own window per caller ([#549](https://github.com/kazetsukaimiko/freedriver-web/issues/549)) ([1f8b84b](https://github.com/kazetsukaimiko/freedriver-web/commit/1f8b84ba6da88ab9e669931dcb2bd9c6cee30303)), closes [#482](https://github.com/kazetsukaimiko/freedriver-web/issues/482)
+* **dashboard:** remove the self-service invite flow ([#524](https://github.com/kazetsukaimiko/freedriver-web/issues/524)) ([44d12dc](https://github.com/kazetsukaimiko/freedriver-web/commit/44d12dcc8491a0a9cb7f502126acd4f61c812c53)), closes [#521](https://github.com/kazetsukaimiko/freedriver-web/issues/521)
+* **dashboard:** subscribe MQTT to houses as they are provisioned ([#525](https://github.com/kazetsukaimiko/freedriver-web/issues/525)) ([18f83cd](https://github.com/kazetsukaimiko/freedriver-web/commit/18f83cd3a792e2cf2cb0eea0b27373f84024dd78)), closes [#483](https://github.com/kazetsukaimiko/freedriver-web/issues/483)
+* **deploy:** set each service replica count with one number ([#519](https://github.com/kazetsukaimiko/freedriver-web/issues/519)) ([ec3fca7](https://github.com/kazetsukaimiko/freedriver-web/commit/ec3fca7831ff97fb282941731ba2226f937319da)), closes [#488](https://github.com/kazetsukaimiko/freedriver-web/issues/488)
+* **dispatcher:** a host REST API where a program takes each job once ([#542](https://github.com/kazetsukaimiko/freedriver-web/issues/542)) ([bdbd52c](https://github.com/kazetsukaimiko/freedriver-web/commit/bdbd52c282007a64776b5c511729f2886294c6ff)), closes [#537](https://github.com/kazetsukaimiko/freedriver-web/issues/537)
+* **dispatcher:** add quarkus-smallrye-health for in-network probes ([#489](https://github.com/kazetsukaimiko/freedriver-web/issues/489)) ([226c383](https://github.com/kazetsukaimiko/freedriver-web/commit/226c3838f3ed63887482a7ebee6eb7ec9e7921a2)), closes [#488](https://github.com/kazetsukaimiko/freedriver-web/issues/488)
+* **keycloak:** enable token exchange for autonomy MCP ([#495](https://github.com/kazetsukaimiko/freedriver-web/issues/495)) ([4d37447](https://github.com/kazetsukaimiko/freedriver-web/commit/4d3744734b2b5415da3a6834da5687bdb3de599d)), closes [#491](https://github.com/kazetsukaimiko/freedriver-web/issues/491)
+* **mosquitto:** grant api a pattern ACL for all houses ([#496](https://github.com/kazetsukaimiko/freedriver-web/issues/496)) ([808389d](https://github.com/kazetsukaimiko/freedriver-web/commit/808389d14936cb9a597f93b3828e41615022c8ab)), closes [#486](https://github.com/kazetsukaimiko/freedriver-web/issues/486)
+
+
+### Bug Fixes
+
+* **ci:** pin MCP replicas with a Caddy cookie ([115201d](https://github.com/kazetsukaimiko/freedriver-web/commit/115201d5db564341d6bbfe0cdc13640d65116e57)), closes [#488](https://github.com/kazetsukaimiko/freedriver-web/issues/488)
+* **ci:** pin MCP stickiness with Authorization fallback ([b176b79](https://github.com/kazetsukaimiko/freedriver-web/commit/b176b79e53e2dbbe93fe0ef0fa53c54644c39fab)), closes [#488](https://github.com/kazetsukaimiko/freedriver-web/issues/488)
+* **ci:** pin smoke dashboard Keycloak to compose listener ([9844465](https://github.com/kazetsukaimiko/freedriver-web/commit/984446554b43c6885b716d16982556dafc74a79b)), closes [#488](https://github.com/kazetsukaimiko/freedriver-web/issues/488)
+* **ci:** POST invite SPI on the compose Keycloak listener ([bdd6256](https://github.com/kazetsukaimiko/freedriver-web/commit/bdd6256f53a4944729b77b6842eab1de918dd975)), closes [#488](https://github.com/kazetsukaimiko/freedriver-web/issues/488)
+* **ci:** queue the smoke claim race with submitNow ([62e8ce8](https://github.com/kazetsukaimiko/freedriver-web/commit/62e8ce8a2e878d41c8a543cbf68f23425fee625b)), closes [#488](https://github.com/kazetsukaimiko/freedriver-web/issues/488)
+* **ci:** read mongosh insert count past the prompt ([8746df2](https://github.com/kazetsukaimiko/freedriver-web/commit/8746df245a8e6b2673990147d07c19df0ec85b69)), closes [#488](https://github.com/kazetsukaimiko/freedriver-web/issues/488)
+* **ci:** skip forbidden pr-ready convert ([#502](https://github.com/kazetsukaimiko/freedriver-web/issues/502)) ([5fa1c96](https://github.com/kazetsukaimiko/freedriver-web/commit/5fa1c968338c5bcf44a9dbe4dd3875ec0e39e3e0)), closes [#501](https://github.com/kazetsukaimiko/freedriver-web/issues/501)
+* **ci:** skip hostname checks on the smoke invite TLS bucket ([8726e36](https://github.com/kazetsukaimiko/freedriver-web/commit/8726e360cb26c08bc95728deecaef6c25a7c1cd1)), closes [#488](https://github.com/kazetsukaimiko/freedriver-web/issues/488)
+* **ci:** trust the smoke Caddy CA on the invite rest-client ([bdf390d](https://github.com/kazetsukaimiko/freedriver-web/commit/bdf390d80003f3b0e9f0ed22df55d9e5d86eaad5)), closes [#488](https://github.com/kazetsukaimiko/freedriver-web/issues/488)
+* **keycloak:** index invite SPI as a CDI bean ([9708200](https://github.com/kazetsukaimiko/freedriver-web/commit/97082007325f081c248eb1acf61a62da298d3b98)), closes [#488](https://github.com/kazetsukaimiko/freedriver-web/issues/488)
+* **keycloak:** index invite SPI with a class @Path ([06b1a8f](https://github.com/kazetsukaimiko/freedriver-web/commit/06b1a8fa3b619dd1fee40b21c1c07f7a04eb8c67)), closes [#488](https://github.com/kazetsukaimiko/freedriver-web/issues/488)
+* **keycloak:** index invite SPI with Jandex, drop class @Path ([41d3a5c](https://github.com/kazetsukaimiko/freedriver-web/commit/41d3a5c0b2f460d647962018dba5343c65ef119a)), closes [#488](https://github.com/kazetsukaimiko/freedriver-web/issues/488)
+* **keycloak:** index the invite realm resource for RESTEasy ([024579d](https://github.com/kazetsukaimiko/freedriver-web/commit/024579d4eccf913a3dc2f0742938736d517fe571)), closes [#488](https://github.com/kazetsukaimiko/freedriver-web/issues/488)
+* **keycloak:** map realm roles onto OpenBot client-credentials tokens ([594bfc7](https://github.com/kazetsukaimiko/freedriver-web/commit/594bfc7bacc8f1131a99a365deced558fb376673)), closes [#488](https://github.com/kazetsukaimiko/freedriver-web/issues/488)
+* **keycloak:** pass portal-jobs scope mapping on stdin ([#507](https://github.com/kazetsukaimiko/freedriver-web/issues/507)) ([19dac05](https://github.com/kazetsukaimiko/freedriver-web/commit/19dac051d054fde1056a408677895a6beeb6d551)), closes [#481](https://github.com/kazetsukaimiko/freedriver-web/issues/481)
+* **keycloak:** put dispatcher-admin on the portal-jobs access token ([#516](https://github.com/kazetsukaimiko/freedriver-web/issues/516)) ([d9d0f9b](https://github.com/kazetsukaimiko/freedriver-web/commit/d9d0f9b09c2342451572f39207f91815ac776466)), closes [#481](https://github.com/kazetsukaimiko/freedriver-web/issues/481)
+* **keycloak:** return invite SPI as the indexed JAX-RS resource ([ce60816](https://github.com/kazetsukaimiko/freedriver-web/commit/ce608162529efeffd9be2c9187a5cd89fa463b50)), closes [#488](https://github.com/kazetsukaimiko/freedriver-web/issues/488)
+
+
+### Refactors
+
+* **dashboard:** one ServerExceptionMapper class per service ([#514](https://github.com/kazetsukaimiko/freedriver-web/issues/514)) ([5979d1f](https://github.com/kazetsukaimiko/freedriver-web/commit/5979d1f7a0338c10358b4bd467d30e4b5ba5d720)), closes [#482](https://github.com/kazetsukaimiko/freedriver-web/issues/482)
+* **dashboard:** put CDI on Quarkus mechanisms ([#482](https://github.com/kazetsukaimiko/freedriver-web/issues/482) CDI group) ([#512](https://github.com/kazetsukaimiko/freedriver-web/issues/512)) ([2edcb59](https://github.com/kazetsukaimiko/freedriver-web/commit/2edcb59d5e9b22b15fe8f1d8146e8ab42192539f))
+* **dashboard:** read feature settings through @ConfigMapping ([#517](https://github.com/kazetsukaimiko/freedriver-web/issues/517)) ([6fd7db4](https://github.com/kazetsukaimiko/freedriver-web/commit/6fd7db4d500aec9f7507512d779b2c7becc66981)), closes [#482](https://github.com/kazetsukaimiko/freedriver-web/issues/482)
+* **sms:** rate-limit phones with a CDI interceptor ([#520](https://github.com/kazetsukaimiko/freedriver-web/issues/520)) ([7a2aa4b](https://github.com/kazetsukaimiko/freedriver-web/commit/7a2aa4b1cb0482975fb0072e9666db9683905733)), closes [#482](https://github.com/kazetsukaimiko/freedriver-web/issues/482)
+
 ## [1.5.2](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.5.1...v1.5.2) (2026-11-14)
 
 
