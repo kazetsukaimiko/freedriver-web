@@ -39,7 +39,11 @@
 # Appliances MCP (#112 / #333) is the public client freedriver-grok-mcp.
 # Authorization code + PKCE S256, no secret, no service account. Enabled with
 # the grok.com connector callback (same URI as freedriver-dispatcher).
-# webOrigins stay empty. offline_access stays optional. 1-year access token.
+# webOrigins stay empty. offline_access stays optional until a token-endpoint
+# confirm shows this client is the live Grok connector. 1-year access token.
+# Dynamically registered grok.com clients get offline_access as a default
+# client scope in the same loop that assigns autonomy-mcp (#534). That scope
+# is not a realm default.
 # Anonymous DCR grok.com clients inherit mcp-user and dashboard from the roles
 # client scope so an autonomy token can call tools/list and switch_appliance.
 # Mapper audience-autonomy-mcp on freedriver-grok-mcp and grok.com DCR clients
@@ -171,6 +175,105 @@ kcadm_stdin() {
   else
     docker exec -i "$CONTAINER" "$KCADM" "$verb" --config "$KCADM_CONFIG" "$@"
   fi
+}
+
+offline_access_scope_id() {
+  kcadm get client-scopes -r "$REALM" --fields id,name,protocol > "$work/client-scopes.json"
+  python3 - "$work/client-scopes.json" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+ids = [
+    s["id"]
+    for s in scopes
+    if s.get("name") == "offline_access" and s.get("protocol") == "openid-connect" and s.get("id")
+]
+print(ids[0] if len(ids) == 1 else "")
+PY
+}
+
+scope_list_has_id() {
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+raise SystemExit(0 if any(s.get("id") == wanted for s in scopes) else 1)
+PY
+}
+
+ensure_offline_access_default_scope() {
+  local client_uuid="$1"
+  local client_id="$2"
+  local scope_id
+  scope_id="$(offline_access_scope_id)"
+  if [[ -z "$scope_id" ]]; then
+    echo "Failed to read client scope offline_access." >&2
+    exit 1
+  fi
+  # Built-in clients already list offline_access as optional. The default-scope
+  # PUT is a no-op until that optional assignment is removed.
+  kcadm get "clients/${client_uuid}/optional-client-scopes" -r "$REALM" > "$work/offline-scopes-optional.json"
+  if scope_list_has_id "$work/offline-scopes-optional.json" "$scope_id"; then
+    kcadm delete "clients/${client_uuid}/optional-client-scopes/${scope_id}" -r "$REALM" >/dev/null
+  fi
+  kcadm get "clients/${client_uuid}/default-client-scopes" -r "$REALM" > "$work/offline-scopes-assigned.json"
+  if scope_list_has_id "$work/offline-scopes-assigned.json" "$scope_id"; then
+    echo "Client ${client_id} already has default scope offline_access."
+  else
+    echo '{}' | kcadm_stdin update "clients/${client_uuid}/default-client-scopes/${scope_id}" -r "$REALM" >/dev/null
+  fi
+  kcadm get "clients/${client_uuid}/default-client-scopes" -r "$REALM" > "$work/offline-scopes-assigned.json"
+  if ! scope_list_has_id "$work/offline-scopes-assigned.json" "$scope_id"; then
+    echo "Client ${client_id} default scopes still omit offline_access." >&2
+    exit 1
+  fi
+  echo "Client ${client_id} default scopes include offline_access."
+}
+
+# Drop a leftover 1-year override. kcadm -s cannot delete an attribute.
+clear_access_token_lifespan() {
+  local uuid="$1"
+  local client_id="$2"
+  kcadm get "clients/${uuid}" -r "$REALM" > "$work/client-lifespan.json"
+  if python3 - "$work/client-lifespan.json" "$work/client-lifespan-put.json" <<'PY'
+import json, sys
+src, dest = sys.argv[1], sys.argv[2]
+client = json.load(open(src, encoding="utf-8"))
+client.pop("secret", None)
+attrs = client.get("attributes") or {}
+had = "access.token.lifespan" in attrs
+attrs.pop("access.token.lifespan", None)
+client["attributes"] = attrs
+json.dump(client, open(dest, "w", encoding="utf-8"))
+raise SystemExit(0 if had else 1)
+PY
+  then
+    kcadm_stdin update "clients/${uuid}" -r "$REALM" -f - < "$work/client-lifespan-put.json" >/dev/null
+    echo "Cleared access.token.lifespan on ${client_id}."
+  else
+    echo "Client ${client_id} has no access.token.lifespan override."
+  fi
+  rm -f "$work/client-lifespan.json" "$work/client-lifespan-put.json"
+}
+
+refuse_realm_default_offline_access() {
+  local scope_id
+  scope_id="$(offline_access_scope_id)"
+  if [[ -z "$scope_id" ]]; then
+    echo "Failed to read client scope offline_access." >&2
+    exit 1
+  fi
+  kcadm get default-default-client-scopes -r "$REALM" --fields id,name > "$work/realm-default-scopes-offline.json"
+  if python3 - "$work/realm-default-scopes-offline.json" "$scope_id" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+raise SystemExit(0 if any(s.get("id") == wanted for s in scopes) else 1)
+PY
+  then
+    echo "offline_access is a realm default client scope, so every client would get offline tokens." >&2
+    exit 1
+  fi
+  echo "Realm default client scopes do not include offline_access."
 }
 
 # root:lonewatt-techops mode 640 on the server. The throwaway test is not root.
@@ -570,7 +673,9 @@ fi
 # remain for the worker. Realm role device. Existing secret files stay as they
 # are. Throwaway realms skip the host secret file. This runs after
 # ensure_device_client so shizuku and other device ids stay client-credentials.
-# OpenBot is connect-and-forget like grok.com.
+# OpenBot Sign-in uses offline_access as a default client scope so the refresh
+# token outlives the 24-hour SSO session (#534). Access tokens use the realm
+# default lifetime; the 1-year override is removed. #540 turns this Sign-in off.
 OPENBOT_MCP_CLIENT=freedriver-openbot
 OPENBOT_MCP_SECRET_FILE="${OPENBOT_MCP_SECRET_FILE:-/opt/freedriver-secrets/keycloak-device-${OPENBOT_MCP_CLIENT}.secret}"
 OPENBOT_MCP_REDIRECT_URI='http://127.0.0.1:28417/mcp-auth'
@@ -613,8 +718,9 @@ ensure_openbot_mcp_client() {
     -s implicitFlowEnabled=false \
     -s directAccessGrantsEnabled=false \
     -s "redirectUris=${OPENBOT_MCP_REDIRECT_URIS}" \
-    -s 'attributes."pkce.code.challenge.method"=S256' \
-    -s 'attributes."access.token.lifespan"=31536000' >/dev/null
+    -s 'attributes."pkce.code.challenge.method"=S256' >/dev/null
+  clear_access_token_lifespan "$uuid" "$id"
+  ensure_offline_access_default_scope "$uuid" "$id"
   kcadm add-roles -r "$REALM" --uusername "service-account-${id}" --rolename device >/dev/null
   ensure_mapper "$uuid" actor-device \
     -s protocolMapper=oidc-hardcoded-claim-mapper \
@@ -937,6 +1043,9 @@ PY
       echo '{}' | kcadm_stdin update "clients/${client_uuid}/default-client-scopes/${scope_id}" -r "$REALM" >/dev/null
       echo "Client ${client_id} default scopes include autonomy-mcp."
     fi
+    if [[ "$client_id" != "freedriver-grok-mcp" ]]; then
+      ensure_offline_access_default_scope "$client_uuid" "$client_id"
+    fi
   done < <(python3 - "$work/audience-targets.json" <<'PY'
 import json, sys
 targets = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -944,6 +1053,7 @@ for item in targets:
     print(item["id"] + "\t" + item["clientId"])
 PY
 )
+  refuse_realm_default_offline_access
 }
 ensure_autonomy_mcp_audience
 
