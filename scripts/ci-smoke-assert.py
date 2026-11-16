@@ -327,6 +327,25 @@ def mcp_session(client: Client, url: str, token: str) -> dict[str, str]:
     return headers
 
 
+def mcp_tool_payload(payload: dict) -> object:
+    if payload.get("error"):
+        raise SystemExit(f"mcp error {payload['error']}")
+    result = payload.get("result") or {}
+    if result.get("isError"):
+        raise SystemExit(f"mcp tool error {payload}")
+    text = ""
+    for item in result.get("content") or []:
+        if isinstance(item, dict) and item.get("text"):
+            text = item["text"]
+            break
+    if not text:
+        return result
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return text
+
+
 def mcp_ten_calls(client: Client, url: str, headers: dict[str, str], start_id: int = 2) -> None:
     for offset in range(10):
         rpc_id = start_id + offset
@@ -676,30 +695,37 @@ def assert_dispatcher_claim_race(client: Client) -> None:
         raise SystemExit(
             f"host report HTTP {status} body={body[:300]!r} {token_role_summary(device_token)}"
         )
-    submit = json.dumps(
+    # REST POST /api/dispatcher/jobs waits until every assignment is terminal
+    # (75s). openbot_send_prompt is submitNow: it stores the row and returns.
+    dispatcher_path = f"{APP}/mcp"
+    session = mcp_session(client, dispatcher_path, dispatcher_token)
+    status, _, payload = mcp_post(
+        client,
+        dispatcher_path,
+        session,
         {
-            "deviceIds": ["freedriver-openbot"],
-            "agentName": "yuni",
-            "prompt": "smoke-claim",
-            "channel": "TEXT",
-        }
-    ).encode()
-    status, _, body = raw_request(
-        f"{APP}/api/dispatcher/jobs",
-        "POST",
-        {
-            "Authorization": f"Bearer {dispatcher_token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "tools/call",
+            "params": {
+                "name": "openbot_send_prompt",
+                "arguments": {
+                    "server": "smoke-host.local",
+                    "agentName": "yuni",
+                    "prompt": "smoke-claim",
+                    "channel": "TEXT",
+                },
+            },
         },
-        submit,
     )
     if status != 200:
-        raise SystemExit(f"submit job HTTP {status} body={body[:300]!r}")
-    job = json.loads(body)
+        raise SystemExit(f"openbot_send_prompt HTTP {status} body={payload}")
+    job = mcp_tool_payload(payload)
+    if not isinstance(job, dict):
+        raise SystemExit(f"openbot_send_prompt result {job!r}")
     queued = [row.get("assignmentId") for row in job.get("assignments", [])]
     if len(queued) != 1 or not queued[0]:
-        raise SystemExit(f"submit job assignments {job}")
+        raise SystemExit(f"openbot_send_prompt assignments {job}")
     take_headers = {
         "Authorization": f"Bearer {device_token}",
         "Content-Type": "application/json",
