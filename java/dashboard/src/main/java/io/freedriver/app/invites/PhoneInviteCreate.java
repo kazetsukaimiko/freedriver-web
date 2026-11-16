@@ -57,7 +57,7 @@ public class PhoneInviteCreate {
             return new Result.Rejected(409);
         } catch (RuntimeException e) {
             drop(phone);
-            LOG.warnf("Invite account was not created for %s", PhoneLog.mask(phone));
+            LOG.warnf(e, "Invite account was not created for %s", PhoneLog.mask(phone));
             return new Result.Rejected(502);
         }
         try {

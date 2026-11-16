@@ -1,10 +1,5 @@
 package io.freedriver.keycloak.sms;
 
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
@@ -17,8 +12,8 @@ import java.security.SecureRandom;
 
 /**
  * Realm resource for the invite service account. It creates a phone user and grants only the
- * realm role {@code dashboard}. It does not grant {@code portal-admin} or realm-management, and
- * it has no general role grant. The path is {@code /realms/{realm}/freedriver-invite/users}.
+ * realm role {@code dashboard}. The path is {@code /realms/{realm}/freedriver-invite/users}.
+ * {@link InviteAccountResourceProvider} is the SPI instance RESTEasy indexes.
  */
 public class InviteAccountResource {
 
@@ -31,10 +26,6 @@ public class InviteAccountResource {
         this.session = session;
     }
 
-    @POST
-    @Path("users")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
     public Response create(CreateUser body) {
         if (!inviteServiceAccount()) {
             return Response.status(Response.Status.UNAUTHORIZED).entity("{}").build();
