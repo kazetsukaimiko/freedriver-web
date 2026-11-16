@@ -70,9 +70,42 @@ SMS_OTP_SHARED_SECRET=${SMS_SECRET}
 FREEDRIVER_SEED_PHONE=${PHONE}
 FREEDRIVER_AUTONOMY_MCP_ENABLED=true
 FREEDRIVER_APPLIANCES_LIVE_COMMANDS=false
+DASHBOARD_REPLICAS=2
+DISPATCHER_REPLICAS=2
+AUTONOMY_MCP_REPLICAS=2
 EOF
   chmod 600 "$ENV_FILE"
 fi
+
+# Smoke runs each of the three Caddy upstreams at count 2. Production compose
+# still defaults those settings to 1.
+python3 - "$ENV_FILE" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+wanted = {
+    "DASHBOARD_REPLICAS": "2",
+    "DISPATCHER_REPLICAS": "2",
+    "AUTONOMY_MCP_REPLICAS": "2",
+}
+lines = path.read_text().splitlines() if path.exists() else []
+seen = set()
+out = []
+for line in lines:
+    key = line.split("=", 1)[0] if "=" in line else ""
+    if key in wanted:
+        out.append(f"{key}={wanted[key]}")
+        seen.add(key)
+    else:
+        out.append(line)
+for key, value in wanted.items():
+    if key not in seen:
+        out.append(f"{key}={value}")
+path.write_text("\n".join(out) + "\n")
+PY
+export DASHBOARD_REPLICAS=2
+export DISPATCHER_REPLICAS=2
+export AUTONOMY_MCP_REPLICAS=2
 
 cat >"$SECRETS/twilio-verify.env" <<EOF
 TWILIO_ACCOUNT_SID=AC$(hex32)
@@ -279,6 +312,10 @@ docker exec "$KEYCLOAK_CONTAINER" /opt/keycloak/bin/kcadm.sh update "users/${KAZ
   -s firstName=Kaze -s lastName=Smoke \
   -s email=kaze@freedriver.invalid -s emailVerified=true \
   -s 'requiredActions=[]' >/dev/null
+# Throwaway realm: concurrent invite create needs portal-admin on the session.
+docker exec "$KEYCLOAK_CONTAINER" /opt/keycloak/bin/kcadm.sh add-roles \
+  --config /tmp/kcadm-smoke-admin.config -r freedriver \
+  --uusername kaze --rolename portal-admin --rolename dashboard >/dev/null
 unset KAZE_ID
 
 API_SECRET="$(tr -d '\n' <"$SECRETS/keycloak-freedriver-api.secret")"
@@ -302,6 +339,24 @@ PY
 unset API_SECRET
 
 "${COMPOSE[@]}" up -d dashboard agent-dispatcher autonomy-mcp caddy
+
+echo "waiting for two replicas of each Caddy upstream"
+for svc in dashboard agent-dispatcher autonomy-mcp; do
+  got=0
+  for _ in $(seq 1 90); do
+    got="$("${COMPOSE[@]}" ps -q "$svc" | grep -c . || true)"
+    if [[ "$got" == 2 ]]; then
+      echo "replicas ${svc} ${got}"
+      break
+    fi
+    sleep 2
+  done
+  if [[ "$got" != 2 ]]; then
+    echo "${svc} replica count ${got}, want 2" >&2
+    "${COMPOSE[@]}" ps >&2 || true
+    exit 1
+  fi
+done
 
 echo "waiting for Caddy and the dashboard stamp"
 stamp_ok=0

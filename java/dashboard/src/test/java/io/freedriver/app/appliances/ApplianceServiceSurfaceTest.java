@@ -16,7 +16,7 @@ class ApplianceServiceSurfaceTest {
         String source = Files.readString(Path.of("src/main/java/io/freedriver/app/appliances/ApplianceService.java"));
         assertFalse(source.contains("jakarta.ws.rs"), source);
         assertFalse(source.contains("SecurityIdentity"), source);
-        assertFalse(source.contains("CommandRateLimiter"), source);
+        assertFalse(source.contains("CallerRateLimiter"), source);
         assertFalse(source.contains("assertCanAccess"), source);
         assertFalse(source.contains("CommandTimeoutException"), source);
     }
@@ -26,7 +26,7 @@ class ApplianceServiceSurfaceTest {
         String source = Files.readString(Path.of("src/main/java/io/freedriver/app/appliances/ApplianceControl.java"));
         assertFalse(source.contains("jakarta.ws.rs"), source);
         assertFalse(source.contains("SecurityIdentity"), source);
-        assertFalse(source.contains("CommandRateLimiter"), source);
+        assertFalse(source.contains("CallerRateLimiter"), source);
     }
 
     @Test

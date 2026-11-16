@@ -15,7 +15,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -97,6 +99,35 @@ class JobStoreReplicaTest {
                     .filter(AssignmentView.class::isInstance).findFirst().orElseThrow();
             assertEquals(winner.state(), stored.state());
             assertEquals(winner.note(), stored.note());
+        }
+    }
+
+    @Test
+    void two_replicas_race_take_jobs_and_each_job_is_returned_once() throws Exception {
+        first.register("pc-a", "a.local", List.of("yuni"));
+        for (int round = 0; round < ROUNDS; round++) {
+            assignments.deleteAll();
+            Set<UUID> queued = new HashSet<>();
+            for (int job = 0; job < 6; job++) {
+                queued.add(queued(first).assignmentId());
+            }
+
+            List<Object> outcomes = race(
+                    () -> first.take("pc-a", List.of(), Duration.ZERO),
+                    () -> second.take("pc-a", List.of(), Duration.ZERO));
+
+            List<UUID> returned = new ArrayList<>();
+            for (Object outcome : outcomes) {
+                assertTrue(outcome instanceof List<?>, String.valueOf(outcome));
+                for (Object row : (List<?>) outcome) {
+                    returned.add(((AssignmentView) row).assignmentId());
+                }
+            }
+            assertEquals(queued.size(), returned.size(), returned::toString);
+            assertEquals(queued, new HashSet<>(returned));
+            for (UUID id : queued) {
+                assertEquals(AssignmentState.CLAIMED, first.assignment("pc-a", id).state());
+            }
         }
     }
 

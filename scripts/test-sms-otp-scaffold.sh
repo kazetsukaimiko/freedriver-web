@@ -863,6 +863,8 @@ if "clear_access_token_lifespan" not in openbot_fn:
     raise SystemExit("ensure_openbot_mcp_client must clear a leftover access.token.lifespan")
 if "ensure_offline_access_default_scope" not in openbot_fn:
     raise SystemExit("ensure_openbot_mcp_client must make offline_access a default scope")
+if "oidc-usermodel-realm-role-mapper" not in openbot_fn:
+    raise SystemExit("ensure_openbot_mcp_client must map realm roles onto the access token")
 audience = script.split("ensure_autonomy_mcp_audience() {", 1)[1]
 if "ensure_offline_access_default_scope" not in audience:
     raise SystemExit("grok.com DCR loop must add offline_access as a default scope")

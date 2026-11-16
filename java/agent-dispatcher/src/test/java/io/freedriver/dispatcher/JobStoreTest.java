@@ -414,6 +414,152 @@ class JobStoreTest {
         assertEquals(DispatcherException.Kind.NOT_FOUND, error.kind());
     }
 
+    @Test
+    void take_claims_each_queued_job_once_and_holds_it_for_the_lease() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-11-15T12:00:00Z"));
+        JobStore store = service(clock, null);
+        store.register("pc-a", "a.local", List.of("yuni"));
+        UUID queued = store.submitNow("grok", job(List.of("pc-a"), "yuni")).assignments().getFirst().assignmentId();
+
+        List<AssignmentView> taken = store.take("pc-a", List.of(), Duration.ZERO);
+
+        assertEquals(1, taken.size());
+        assertEquals(queued, taken.getFirst().assignmentId());
+        assertEquals(AssignmentState.CLAIMED, taken.getFirst().state());
+        assertNull(taken.getFirst().deliveryRef());
+        clock.advance(Duration.ofSeconds(89));
+        assertTrue(store.take("pc-a", List.of(), Duration.ZERO).isEmpty());
+        assertEquals(Instant.parse("2026-11-15T12:01:30Z"), storedJobs().getFirst().getDate("heldUntil").toInstant());
+    }
+
+    @Test
+    void a_job_named_in_holding_is_not_returned_again_however_old() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-11-15T12:00:00Z"));
+        JobStore store = service(clock, null);
+        store.register("pc-a", "a.local", List.of("yuni"));
+        store.submitNow("grok", job(List.of("pc-a"), "yuni"));
+        UUID held = store.take("pc-a", List.of(), Duration.ZERO).getFirst().assignmentId();
+
+        for (int hour = 0; hour < 24; hour++) {
+            clock.advance(Duration.ofHours(1));
+            assertTrue(store.take("pc-a", List.of(held), Duration.ZERO).isEmpty());
+        }
+        assertEquals(clock.now.plusSeconds(90), storedJobs().getFirst().getDate("heldUntil").toInstant());
+        assertEquals(AssignmentState.CLAIMED, store.assignment("pc-a", held).state());
+    }
+
+    @Test
+    void a_running_job_outside_holding_is_returned_once_its_lease_has_passed() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-11-15T12:00:00Z"));
+        JobStore store = service(clock, null);
+        store.register("pc-a", "a.local", List.of("yuni"));
+        store.submitNow("grok", job(List.of("pc-a"), "yuni"));
+        UUID id = store.take("pc-a", List.of(), Duration.ZERO).getFirst().assignmentId();
+        store.start("pc-a", id, "openbot:task-42");
+
+        clock.advance(Duration.ofSeconds(89));
+        assertTrue(store.take("pc-a", List.of(), Duration.ZERO).isEmpty());
+        clock.advance(Duration.ofSeconds(2));
+        List<AssignmentView> again = store.take("pc-a", List.of(), Duration.ZERO);
+
+        assertEquals(1, again.size());
+        assertEquals(id, again.getFirst().assignmentId());
+        assertEquals(AssignmentState.RUNNING, again.getFirst().state());
+        assertEquals("openbot:task-42", again.getFirst().deliveryRef());
+        assertTrue(store.take("pc-a", List.of(), Duration.ZERO).isEmpty());
+    }
+
+    @Test
+    void a_queued_job_older_than_take_within_expires_and_is_not_returned() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-11-15T12:00:00Z"));
+        JobStore store = service(clock, null);
+        store.register("pc-a", "a.local", List.of("yuni"));
+        JobView old = store.submitNow("grok", job(List.of("pc-a"), "yuni"));
+        clock.advance(Duration.ofMinutes(10).plusMillis(1));
+        JobView fresh = store.submitNow("grok", job(List.of("pc-a"), "yuni"));
+
+        List<AssignmentView> taken = store.take("pc-a", List.of(), Duration.ZERO);
+
+        assertEquals(List.of(fresh.assignments().getFirst().assignmentId()),
+                taken.stream().map(AssignmentView::assignmentId).toList());
+        AssignmentView expired = store.getJob("grok", old.jobId()).assignments().getFirst();
+        assertEquals(AssignmentState.EXPIRED, expired.state());
+        assertEquals("no host took it", expired.note());
+    }
+
+    @Test
+    void take_with_a_wait_returns_soon_after_a_submit_and_empty_at_the_deadline() throws Exception {
+        JobStore store = store();
+        store.register("pc-a", "a.local", List.of("yuni"));
+
+        long started = System.nanoTime();
+        assertTrue(store.take("pc-a", List.of(), Duration.ofSeconds(1)).isEmpty());
+        assertTrue(Duration.ofNanos(System.nanoTime() - started).compareTo(Duration.ofMillis(950)) >= 0);
+
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            Future<List<AssignmentView>> waiting = pool.submit(() -> store.take("pc-a", List.of(), Duration.ofSeconds(20)));
+            Thread.sleep(1500);
+            assertFalse(waiting.isDone());
+            long submitted = System.nanoTime();
+            UUID id = store.submitNow("grok", job(List.of("pc-a"), "yuni")).assignments().getFirst().assignmentId();
+            List<AssignmentView> taken = waiting.get(5, TimeUnit.SECONDS);
+            Duration latency = Duration.ofNanos(System.nanoTime() - submitted);
+
+            assertEquals(List.of(id), taken.stream().map(AssignmentView::assignmentId).toList());
+            assertTrue(latency.compareTo(Duration.ofMillis(1500)) < 0, latency::toString);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void take_refuses_a_wait_over_fifty_seconds() {
+        JobStore store = store();
+        DispatcherException error = assertThrows(DispatcherException.class,
+                () -> store.take("pc-a", List.of(), Duration.ofSeconds(51)));
+        assertEquals(DispatcherException.Kind.BAD_REQUEST, error.kind());
+    }
+
+    @Test
+    void start_runs_a_claimed_job_repeats_with_the_same_ref_and_refuses_another() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-11-15T12:00:00Z"));
+        JobStore store = service(clock, null);
+        store.register("pc-a", "a.local", List.of("yuni"));
+        store.register("pc-b", "b.local", List.of("yuni"));
+        store.submitNow("grok", job(List.of("pc-a"), "yuni"));
+        UUID id = store.take("pc-a", List.of(), Duration.ZERO).getFirst().assignmentId();
+
+        clock.advance(Duration.ofSeconds(30));
+        AssignmentView running = store.start("pc-a", id, "openbot:task-42");
+        assertEquals(AssignmentState.RUNNING, running.state());
+        assertEquals("openbot:task-42", running.deliveryRef());
+        assertEquals(clock.now.plusSeconds(90), storedJobs().getFirst().getDate("heldUntil").toInstant());
+
+        clock.advance(Duration.ofSeconds(10));
+        assertEquals(running, store.start("pc-a", id, "openbot:task-42"));
+        assertEquals(clock.now.plusSeconds(80), storedJobs().getFirst().getDate("heldUntil").toInstant());
+
+        DispatcherException other = assertThrows(DispatcherException.class,
+                () -> store.start("pc-a", id, "openbot:task-43"));
+        assertEquals(DispatcherException.Kind.CONFLICT, other.kind());
+        DispatcherException foreign = assertThrows(DispatcherException.class,
+                () -> store.start("pc-b", id, "openbot:task-42"));
+        assertEquals(DispatcherException.Kind.FORBIDDEN, foreign.kind());
+        assertEquals("openbot:task-42", store.assignment("pc-a", id).deliveryRef());
+    }
+
+    @Test
+    void start_refuses_a_queued_job() {
+        JobStore store = store();
+        store.register("pc-a", "a.local", List.of("yuni"));
+        UUID id = store.submitNow("grok", job(List.of("pc-a"), "yuni")).assignments().getFirst().assignmentId();
+
+        DispatcherException error = assertThrows(DispatcherException.class, () -> store.start("pc-a", id, "ref"));
+        assertEquals(DispatcherException.Kind.CONFLICT, error.kind());
+        assertEquals(AssignmentState.QUEUED, store.assignment("pc-a", id).state());
+    }
+
     private static AssignmentView waitForQueued(JobStore store, String deviceId) throws Exception {
         long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
         while (System.nanoTime() < deadline) {

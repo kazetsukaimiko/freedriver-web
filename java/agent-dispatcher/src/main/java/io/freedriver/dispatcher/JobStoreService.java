@@ -15,6 +15,7 @@ import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.bson.Document;
+import org.jboss.logging.Logger;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -34,11 +35,17 @@ import java.util.function.BooleanSupplier;
  * The dispatch queue on {@link AssignmentRepository}, {@link DeviceRepository}, and
  * {@link SubmitLocks}. Every state change is one conditional write, so replicas need no lock.
  * A wait re-reads Mongo on an interval that starts at 250 ms and rises to 1 s.
+ * A host holds a job it took for {@code hostLease}; a queued job no host takes within
+ * {@code takeWithin} expires.
  */
 @ApplicationScoped
 public class JobStoreService implements JobStore {
 
     static final Duration LOCK_TTL = Duration.ofMinutes(3);
+    static final Duration DEFAULT_HOST_LEASE = Duration.ofSeconds(90);
+    static final Duration DEFAULT_TAKE_WITHIN = Duration.ofMinutes(10);
+    static final String NOBODY_TOOK_IT = "no host took it";
+    private static final Logger LOG = Logger.getLogger(JobStoreService.class);
     private static final long FIRST_WAIT_MILLIS = 250;
     private static final long LONGEST_WAIT_MILLIS = 1000;
 
@@ -47,19 +54,29 @@ public class JobStoreService implements JobStore {
     private final SubmitLocks locks;
     private final Clock clock;
     private final JobPing jobPing;
+    private final Duration hostLease;
+    private final Duration takeWithin;
 
     @Inject
-    JobStoreService(AssignmentRepository assignments, DeviceRepository devices, SubmitLocks locks, JobPing jobPing) {
-        this(assignments, devices, locks, Clock.systemUTC(), jobPing);
+    JobStoreService(AssignmentRepository assignments, DeviceRepository devices, SubmitLocks locks, JobPing jobPing,
+                    DispatcherConfig config) {
+        this(assignments, devices, locks, Clock.systemUTC(), jobPing, config.hostLease(), config.takeWithin());
     }
 
     JobStoreService(AssignmentRepository assignments, DeviceRepository devices, SubmitLocks locks, Clock clock,
                     JobPing jobPing) {
+        this(assignments, devices, locks, clock, jobPing, DEFAULT_HOST_LEASE, DEFAULT_TAKE_WITHIN);
+    }
+
+    JobStoreService(AssignmentRepository assignments, DeviceRepository devices, SubmitLocks locks, Clock clock,
+                    JobPing jobPing, Duration hostLease, Duration takeWithin) {
         this.assignments = assignments;
         this.devices = devices;
         this.locks = locks;
         this.clock = clock;
         this.jobPing = jobPing == null ? JobPing.NONE : jobPing;
+        this.hostLease = hostLease;
+        this.takeWithin = takeWithin;
     }
 
     @Override
@@ -372,6 +389,70 @@ public class JobStoreService implements JobStore {
     }
 
     @Override
+    public List<AssignmentView> take(String deviceId, List<UUID> holding, Duration wait) {
+        Duration waited = wait == null ? Duration.ZERO : wait;
+        if (waited.isNegative() || waited.compareTo(LONGEST_TAKE_WAIT) > 0) {
+            throw badRequest("waitSeconds");
+        }
+        List<String> held = holding == null ? List.of() : holding.stream().map(UUID::toString).distinct().toList();
+        assignments.hold(deviceId, held, clock.instant().plus(hostLease));
+        List<Assignment> taken = new ArrayList<>();
+        waitUntil(System.nanoTime() + waited.toNanos(), () -> {
+            taken.addAll(takeOnce(deviceId, held));
+            return !taken.isEmpty();
+        });
+        Instant now = clock.instant();
+        for (Assignment row : taken) {
+            logHandOut("take", row, now);
+        }
+        return taken.stream().map(JobStoreService::viewAssignment).toList();
+    }
+
+    /** Steps 2 and 3 of a take: expire what no host took in time, then claim and reclaim. */
+    private List<Assignment> takeOnce(String deviceId, List<String> held) {
+        Instant now = clock.instant();
+        Instant cutoff = now.minus(takeWithin);
+        Instant until = now.plus(hostLease);
+        assignments.expireQueued(deviceId, cutoff, NOBODY_TOOK_IT, now);
+        List<Assignment> taken = new ArrayList<>();
+        for (Assignment row = assignments.claimQueued(deviceId, cutoff, until, now); row != null;
+             row = assignments.claimQueued(deviceId, cutoff, until, now)) {
+            taken.add(row);
+        }
+        for (Assignment row = assignments.reclaimLapsed(deviceId, held, until, now); row != null;
+             row = assignments.reclaimLapsed(deviceId, held, until, now)) {
+            taken.add(row);
+        }
+        return taken;
+    }
+
+    @Override
+    public AssignmentView start(String deviceId, UUID assignmentId, String deliveryRef) {
+        String id = assignmentId.toString();
+        Instant now = clock.instant();
+        Assignment started = assignments.start(id, deviceId, deliveryRef, now.plus(hostLease), now);
+        if (started == null) {
+            Assignment row = own(deviceId, id);
+            if (row.status != AssignmentState.RUNNING) {
+                throw conflict("assignment is " + row.status);
+            }
+            if (!deliveryRef.equals(row.deliveryRef)) {
+                throw conflict("assignment runs under another deliveryRef");
+            }
+            started = row;
+        }
+        logHandOut("start", started, now);
+        return viewAssignment(started);
+    }
+
+    /** One line per handed-out job: ids, state, and age. Never the prompt, the note, or a token. */
+    private static void logHandOut(String action, Assignment row, Instant now) {
+        long ageMs = row.createdAt == null ? -1 : Duration.between(row.createdAt, now).toMillis();
+        LOG.infof("dispatch %s assignment=%s device=%s state=%s ageMs=%d", action, row.id, row.deviceId, row.status,
+                ageMs);
+    }
+
+    @Override
     public AssignmentView assignment(String deviceId, UUID assignmentId) {
         return viewAssignment(own(deviceId, assignmentId.toString()));
     }
@@ -492,7 +573,8 @@ public class JobStoreService implements JobStore {
                 row.status,
                 row.sessionId == null || row.sessionId.isBlank() ? null : UUID.fromString(row.sessionId),
                 row.note,
-                row.onBusy == null ? OnBusy.supersede : row.onBusy);
+                row.onBusy == null ? OnBusy.supersede : row.onBusy,
+                row.deliveryRef);
     }
 
     private static DeviceView viewDevice(Device device) {

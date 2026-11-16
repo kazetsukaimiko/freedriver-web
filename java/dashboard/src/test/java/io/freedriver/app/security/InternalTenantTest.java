@@ -2,6 +2,8 @@ package io.freedriver.app.security;
 
 import io.quarkus.redis.datasource.RedisDataSource;
 import io.freedriver.app.appliances.ApplianceAudit;
+import io.freedriver.app.appliances.AppliancesConfig;
+import io.freedriver.ratelimit.HitWindow;
 import io.freedriver.app.appliances.MockAutonomy;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
@@ -43,6 +45,12 @@ class InternalTenantTest {
 
     @Inject
     MockAutonomy mock;
+
+    @Inject
+    HitWindow hits;
+
+    @Inject
+    AppliancesConfig config;
 
     @BeforeEach
     void reset() {
@@ -124,6 +132,23 @@ class InternalTenantTest {
                         + " appliance=" + Pattern.quote(hallway) + " on=true commandId=[0-9a-fA-F-]{36}"
                         + " result=confirmed subject=mcp-switch-sub"),
                 line);
+    }
+
+    /** The internal tenant skips CSRF, and its command still spends the caller's {@code appliances.commands} window. */
+    @Test
+    void a_csrf_exempt_bearer_command_spends_its_window() {
+        String hallway = MockAutonomy.FIXTURE_NAMES.get(0);
+        String key = "appliances.commands:mcp-limit-sub";
+        long windowMs = config.rateLimit().window().toMillis();
+        assertEquals(0, hits.count(key, windowMs));
+        given().header("Authorization", "Bearer " + exchanged("mcp-limit-sub", Set.of("mcp-user", "dashboard")))
+                .contentType("application/json")
+                .body("{\"on\":true}")
+                .when()
+                .post("/api/appliances/" + MockAutonomy.INSTANCE_ID + "/" + hallway)
+                .then()
+                .statusCode(200);
+        assertEquals(1, hits.count(key, windowMs));
     }
 
     @Test
