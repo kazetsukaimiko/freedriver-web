@@ -1,35 +1,39 @@
 package io.freedriver.app.security;
 
 import io.quarkus.security.identity.SecurityIdentity;
-import jakarta.annotation.Priority;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
-import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
+import lombok.NonNull;
 
 import java.security.Principal;
 
-@ApplicationScoped
-@Priority(Priorities.AUTHORIZATION + 100)
+/**
+ * Spends one permit from the caller's window in one bucket. {@link RateLimitedFeature} builds one
+ * instance per bucket and registers it on the routes that carry that bucket.
+ */
 public class RateLimitedFilter implements ContainerRequestFilter {
 
-    private final CommandRateLimiter limiter;
+    private final String bucket;
+    private final CallerRateLimiter limiter;
     private final SecurityIdentity identity;
 
-    @Inject
-    public RateLimitedFilter(CommandRateLimiter limiter, SecurityIdentity identity) {
+    public RateLimitedFilter(@NonNull String bucket, @NonNull CallerRateLimiter limiter, @NonNull SecurityIdentity identity) {
+        this.bucket = bucket;
         this.limiter = limiter;
         this.identity = identity;
     }
 
+    String bucket() {
+        return bucket;
+    }
+
     @Override
     public void filter(ContainerRequestContext requestContext) {
-        String key = callerKey(identity);
-        if (key == null) {
+        String caller = callerKey(identity);
+        if (caller == null) {
             throw new RateLimitedException();
         }
-        if (!limiter.tryAcquire(key)) {
+        if (!limiter.tryAcquire(bucket, caller)) {
             throw new RateLimitedException();
         }
     }
