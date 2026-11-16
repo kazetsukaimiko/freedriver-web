@@ -62,11 +62,14 @@ class FormParser(HTMLParser):
 
 
 class Client:
-    def __init__(self) -> None:
+    def __init__(self, cookies: bool = True) -> None:
+        self.cookies = cookies
         self.jar = CookieJar()
         https = urllib.request.HTTPSHandler(context=SSL)
-        cookies = urllib.request.HTTPCookieProcessor(self.jar)
-        self.opener = urllib.request.build_opener(https, cookies)
+        handlers: list = [https]
+        if cookies:
+            handlers.append(urllib.request.HTTPCookieProcessor(self.jar))
+        self.opener = urllib.request.build_opener(*handlers)
 
     def _open(self, req: urllib.request.Request, follow: bool = True):
         opener = self.opener
@@ -75,7 +78,10 @@ class Client:
                 def redirect_request(self, *args, **kwargs):  # type: ignore[no-untyped-def]
                     return None
 
-            opener = urllib.request.build_opener(https_handler(), NoRedirect(), urllib.request.HTTPCookieProcessor(self.jar))
+            extra = [https_handler(), NoRedirect()]
+            if self.cookies:
+                extra.append(urllib.request.HTTPCookieProcessor(self.jar))
+            opener = urllib.request.build_opener(*extra)
         return opener.open(req, timeout=30)
 
     def request(
@@ -361,7 +367,8 @@ def mcp_ten_calls(client: Client, url: str, headers: dict[str, str], start_id: i
             raise SystemExit(f"{url} tools/list #{rpc_id} error {payload['error']}")
         if "result" not in payload:
             raise SystemExit(f"{url} tools/list #{rpc_id} missing result {payload}")
-    print("mcp session", url, "10 consecutive calls")
+    kind = "cookie" if client.cookies else "no cookie"
+    print("mcp session", url, "10 consecutive calls", kind)
 
 
 def parse_forms(html: str) -> list[dict]:
@@ -565,18 +572,31 @@ def assert_mcp_tools(client: Client) -> None:
     if payload.get("result", {}).get("isError"):
         raise SystemExit(f"home_status error {payload}")
     mcp_ten_calls(client, autonomy, session_headers, start_id=10)
+    bare = Client(cookies=False)
+    mcp_ten_calls(
+        bare,
+        autonomy,
+        mcp_session(bare, autonomy, autonomy_token),
+        start_id=20,
+    )
 
     dispatcher_path = f"{APP}/mcp"
     dispatcher_token = authorization_code_token(client, "freedriver-dispatcher")
     try:
         headers = mcp_session(client, dispatcher_path, dispatcher_token)
     except SystemExit:
-        device_token = client_credentials_token(
+        dispatcher_token = client_credentials_token(
             "freedriver-openbot",
             secret_file("keycloak-device-freedriver-openbot.secret"),
         )
-        headers = mcp_session(client, dispatcher_path, device_token)
+        headers = mcp_session(client, dispatcher_path, dispatcher_token)
     mcp_ten_calls(client, dispatcher_path, headers)
+    mcp_ten_calls(
+        bare,
+        dispatcher_path,
+        mcp_session(bare, dispatcher_path, dispatcher_token),
+        start_id=40,
+    )
     print("mcp tools ok")
 
 

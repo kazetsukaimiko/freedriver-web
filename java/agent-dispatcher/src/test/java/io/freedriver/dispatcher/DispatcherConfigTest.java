@@ -68,8 +68,11 @@ class DispatcherConfigTest {
         assertTrue(autonomy >= 0 && catchAll > autonomy);
         assertTrue(caddy.substring(autonomy, catchAll).contains("dynamic a autonomy-mcp 8080"));
         assertTrue(caddy.contains("dynamic a agent-dispatcher 8080"));
-        assertTrue(caddy.contains("lb_policy cookie mcp_dispatcher"));
-        assertTrue(caddy.contains("lb_policy cookie mcp_autonomy"));
+        assertTrue(caddy.contains(
+                "lb_policy cookie mcp_dispatcher {\n\t\t\t\tfallback header Authorization {\n\t\t\t\t\tfallback round_robin"));
+        assertTrue(caddy.contains(
+                "lb_policy cookie mcp_autonomy {\n\t\t\t\tfallback header Authorization {\n\t\t\t\t\tfallback round_robin"));
+        assertFalse(caddy.contains("lb_policy header Mcp-Session-Id"));
         assertFalse(caddy.contains("oauth-protected-resource"));
         assertFalse(caddy.contains(".well-known"));
         assertFalse(caddy.contains("@dispatcher path /autonomy/mcp"));

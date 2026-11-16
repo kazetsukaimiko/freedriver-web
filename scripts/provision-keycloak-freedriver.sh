@@ -636,9 +636,10 @@ ensure_openbot_mcp_client() {
     -s protocolMapper=oidc-hardcoded-role-mapper \
     -s 'config."role"=device'
   # The built-in roles client scope maps mcp-user and dashboard, so Keycloak
-  # drops that whole scope for this service account. A client mapper puts
-  # realm_access.roles on the access token; the service account already has
-  # device. Same pattern as freedriver-portal-jobs.
+  # drops that whole scope for this service account. This is the same mapper
+  # as freedriver-portal-jobs: realm_access.roles on the access token only.
+  # The service account already has device. fullScopeAllowed stays on here
+  # until #540; portal-jobs has it off plus a scope mapping.
   ensure_mapper "$uuid" "realm roles" \
     -s protocolMapper=oidc-usermodel-realm-role-mapper \
     -s 'config."claim.name"=realm_access.roles' \

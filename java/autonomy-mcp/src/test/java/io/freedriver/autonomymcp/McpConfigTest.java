@@ -47,7 +47,9 @@ class McpConfigTest {
         String caddy = Files.readString(Path.of("../../Caddyfile"));
         assertTrue(caddy.contains("@autonomy path /autonomy/mcp /autonomy/mcp/* /api/autonomy /api/autonomy/*"));
         assertTrue(caddy.contains("dynamic a autonomy-mcp 8080"));
-        assertTrue(caddy.contains("lb_policy cookie mcp_autonomy"));
+        assertTrue(caddy.contains(
+                "lb_policy cookie mcp_autonomy {\n\t\t\t\tfallback header Authorization {\n\t\t\t\t\tfallback round_robin"));
+        assertFalse(caddy.contains("lb_policy header Mcp-Session-Id"));
         assertFalse(caddy.contains("X-Freedriver-Internal"));
         assertFalse(caddy.contains("X-Freedriver-Subject"));
         assertFalse(caddy.contains("X-Freedriver-Roles"));
