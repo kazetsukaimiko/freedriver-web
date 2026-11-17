@@ -29,6 +29,7 @@
         <jackson.version>2.19.2</jackson.version>
         <jakarta.validation.version>3.1.1</jakarta.validation.version>
         <junit.version>5.13.4</junit.version>
+        <archunit.version>1.4.1</archunit.version>
         <surefire-plugin.version>3.5.6</surefire-plugin.version>
         <jandex-plugin.version>3.6.0</jandex-plugin.version>
         <!-- Versions Keycloak 26.7.5 puts on its runtime (Jackson, JAX-RS) or build (validation) classpath. -->
@@ -52,6 +53,57 @@
             </plugin>
             <plugin>
                 <artifactId>maven-surefire-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <!-- Java layering, row 9 (#560): the Redis, HTTP and Keycloak clients the services use are the
+                     Quarkus ones. LayeringRules.noForeignClients holds the same rule in the code. -->
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>banned-clients</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <message>Use the Quarkus Redis client, a REST client interface (or sms-client, device-daemon) and the Keycloak admin client the Quarkus extension provides.</message>
+                                    <excludes>
+                                        <exclude>redis.clients:jedis</exclude>
+                                        <exclude>io.lettuce:lettuce-core</exclude>
+                                        <exclude>org.redisson</exclude>
+                                        <exclude>com.squareup.okhttp3</exclude>
+                                        <exclude>org.asynchttpclient</exclude>
+                                        <exclude>org.apache.httpcomponents:httpclient:*:*:compile</exclude>
+                                        <exclude>org.apache.httpcomponents:httpclient:*:*:runtime</exclude>
+                                        <exclude>org.apache.httpcomponents.client5:*:*:*:compile</exclude>
+                                        <exclude>org.apache.httpcomponents.client5:*:*:*:runtime</exclude>
+                                        <exclude>io.quarkus:quarkus-keycloak-admin-resteasy-client</exclude>
+                                    </excludes>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>no-plain-keycloak-admin-client</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <message>Declare io.quarkus:quarkus-keycloak-admin-rest-client; it brings the Keycloak admin client the services inject.</message>
+                                    <searchTransitive>false</searchTransitive>
+                                    <excludes>
+                                        <exclude>org.keycloak:keycloak-admin-client</exclude>
+                                        <exclude>org.keycloak:keycloak-admin-client-jakarta</exclude>
+                                    </excludes>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
         <pluginManagement>

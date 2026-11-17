@@ -25,6 +25,7 @@ COPY java/pom.xml java/pom.xml
 COPY java/bom/pom.xml java/bom/pom.xml
 COPY java/hit-window/pom.xml java/hit-window/pom.xml
 COPY java/hit-window-testing/pom.xml java/hit-window-testing/pom.xml
+COPY java/architecture-rules/pom.xml java/architecture-rules/pom.xml
 COPY java/mcp-support/pom.xml java/mcp-support/pom.xml
 COPY java/dashboard-model/pom.xml java/dashboard-model/pom.xml
 COPY java/dashboard-api/pom.xml java/dashboard-api/pom.xml

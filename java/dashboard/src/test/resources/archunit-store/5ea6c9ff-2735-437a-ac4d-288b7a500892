@@ -1,0 +1,6 @@
+Method <io.freedriver.app.api.ChangelogResource.changelog()> has raw return type jakarta.ws.rs.core.Response in (ChangelogResource.java:26)
+Method <io.freedriver.app.api.LoginResource.start()> has raw return type jakarta.ws.rs.core.Response in (LoginResource.java:16)
+Method <io.freedriver.app.api.McpOpsResource.schedule(io.freedriver.dashboard.model.ScheduledSwitchRequest)> has raw return type jakarta.ws.rs.core.Response in (McpOpsResource.java:71)
+Method <io.freedriver.app.api.SignInLinkResource.page()> has raw return type jakarta.ws.rs.core.Response in (SignInLinkResource.java:20)
+Method <io.freedriver.app.invites.InviteResource.create(io.freedriver.app.invites.InviteResource$CreateInvite)> has raw return type jakarta.ws.rs.core.Response in (InviteResource.java:40)
+Method <io.freedriver.app.phones.PhoneRemovalResource.remove(io.freedriver.app.phones.PhoneRemovalResource$RemovePhone)> has raw return type jakarta.ws.rs.core.Response in (PhoneRemovalResource.java:64)
