@@ -315,43 +315,70 @@ if ! grep -q '^FREEDRIVER_AUTONOMY_MCP_CLIENT_SECRET=.\+' "$work/secrets/autonom
 fi
 
 assert_offline_access() {
-  local openbot_uuid grok_uuid api_uuid dcr_uuid
+  local openbot_uuid grok_uuid api_uuid dispatcher_uuid dcr_uuid
   openbot_uuid="$(admin get clients -r freedriver -q clientId=freedriver-openbot --fields id --format csv --noquotes | csv_id)"
   grok_uuid="$(admin get clients -r freedriver -q clientId=freedriver-grok-mcp --fields id --format csv --noquotes | csv_id)"
   api_uuid="$(admin get clients -r freedriver -q clientId=freedriver-api --fields id --format csv --noquotes | csv_id)"
+  dispatcher_uuid="$(admin get clients -r freedriver -q clientId=freedriver-dispatcher --fields id --format csv --noquotes | csv_id)"
   admin get "clients/${openbot_uuid}/default-client-scopes" -r freedriver > "$work/openbot-scopes.json"
   admin get "clients/${grok_uuid}/default-client-scopes" -r freedriver > "$work/grok-scopes.json"
   admin get "clients/${api_uuid}/default-client-scopes" -r freedriver > "$work/api-scopes.json"
+  admin get "clients/${dispatcher_uuid}/default-client-scopes" -r freedriver > "$work/dispatcher-scopes.json"
   admin get default-default-client-scopes -r freedriver > "$work/realm-default-scopes.json"
   admin get "roles/default-roles-freedriver/composites" -r freedriver > "$work/default-role-composites.json"
   admin get "clients/${openbot_uuid}" -r freedriver --fields clientId,attributes > "$work/openbot-attrs.json"
+  admin get "clients/${grok_uuid}" -r freedriver --fields clientId,attributes > "$work/grok-attrs.json"
+  admin get "clients/${dispatcher_uuid}" -r freedriver --fields clientId,attributes > "$work/dispatcher-attrs.json"
+  admin get "clients/${api_uuid}" -r freedriver --fields clientId,attributes > "$work/api-attrs.json"
+  admin get realms/freedriver --fields offlineSessionMaxLifespanEnabled > "$work/realm-offline-max.json"
   python3 - "$work/openbot-scopes.json" "$work/grok-scopes.json" "$work/api-scopes.json" \
-    "$work/realm-default-scopes.json" "$work/default-role-composites.json" "$work/openbot-attrs.json" <<'PY'
+    "$work/realm-default-scopes.json" "$work/default-role-composites.json" "$work/openbot-attrs.json" \
+    "$work/dispatcher-scopes.json" "$work/grok-attrs.json" "$work/dispatcher-attrs.json" \
+    "$work/api-attrs.json" "$work/realm-offline-max.json" <<'PY'
 import json, sys
 
 def names(path):
     data = json.load(open(path, encoding="utf-8"))
     return {item.get("name") for item in data if item.get("name")}
 
+def lifespan(path):
+    return (json.load(open(path, encoding="utf-8")).get("attributes") or {}).get("access.token.lifespan")
+
 openbot, grok, api, realm, roles = (names(p) for p in sys.argv[1:6])
-attrs = (json.load(open(sys.argv[6], encoding="utf-8")).get("attributes") or {})
+dispatcher = names(sys.argv[7])
+openbot_life = lifespan(sys.argv[6])
+grok_life = lifespan(sys.argv[8])
+dispatcher_life = lifespan(sys.argv[9])
+api_life = lifespan(sys.argv[10])
+realm_offline = json.load(open(sys.argv[11], encoding="utf-8"))
 if "offline_access" not in openbot:
     sys.exit("freedriver-openbot default scopes lack offline_access: " + ",".join(sorted(openbot)))
-if "offline_access" in grok:
-    sys.exit("freedriver-grok-mcp must not default offline_access")
+if "offline_access" not in grok:
+    sys.exit("freedriver-grok-mcp default scopes lack offline_access: " + ",".join(sorted(grok)))
+if "offline_access" not in dispatcher:
+    sys.exit("freedriver-dispatcher default scopes lack offline_access: " + ",".join(sorted(dispatcher)))
 if "offline_access" in api:
     sys.exit("freedriver-api must not default offline_access")
 if "offline_access" in realm:
     sys.exit("offline_access must not be a realm default client scope")
 if "offline_access" not in roles:
     sys.exit("default-roles-freedriver must include offline_access: " + ",".join(sorted(roles)))
-if attrs.get("access.token.lifespan"):
-    sys.exit("freedriver-openbot still has access.token.lifespan")
-print("openbot default scopes include offline_access")
-print("grok-mcp and freedriver-api do not default offline_access")
+if openbot_life != "31536000":
+    sys.exit("freedriver-openbot access.token.lifespan is %s" % openbot_life)
+if grok_life != "31536000":
+    sys.exit("freedriver-grok-mcp access.token.lifespan is %s" % grok_life)
+if dispatcher_life != "31536000":
+    sys.exit("freedriver-dispatcher access.token.lifespan is %s" % dispatcher_life)
+if api_life:
+    sys.exit("freedriver-api has access.token.lifespan")
+if realm_offline.get("offlineSessionMaxLifespanEnabled") is not False:
+    sys.exit("offlineSessionMaxLifespanEnabled is %s" % realm_offline.get("offlineSessionMaxLifespanEnabled"))
+print("openbot, grok-mcp, and dispatcher default scopes include offline_access")
+print("freedriver-api does not default offline_access")
 print("realm default-default omits offline_access")
 print("default-roles-freedriver includes offline_access")
-print("openbot has no access.token.lifespan")
+print("openbot, grok-mcp, and dispatcher access.token.lifespan is 31536000")
+print("offlineSessionMaxLifespanEnabled is false")
 PY
 
   admin create clients -r freedriver \
@@ -377,12 +404,17 @@ PY
     bash scripts/provision-keycloak-freedriver.sh >/dev/null
   dcr_uuid="$(admin get clients -r freedriver -q clientId=dcr-offline-proof --fields id --format csv --noquotes | csv_id)"
   admin get "clients/${dcr_uuid}/default-client-scopes" -r freedriver > "$work/dcr-scopes.json"
-  python3 - "$work/dcr-scopes.json" <<'PY'
+  admin get "clients/${dcr_uuid}" -r freedriver --fields clientId,attributes > "$work/dcr-attrs.json"
+  python3 - "$work/dcr-scopes.json" "$work/dcr-attrs.json" <<'PY'
 import json, sys
 names = {item.get("name") for item in json.load(open(sys.argv[1], encoding="utf-8")) if item.get("name")}
+attrs = json.load(open(sys.argv[2], encoding="utf-8")).get("attributes") or {}
 if "offline_access" not in names:
     sys.exit("grok.com DCR client default scopes lack offline_access")
+if attrs.get("access.token.lifespan") != "31536000":
+    sys.exit("grok.com DCR client access.token.lifespan is %s" % attrs.get("access.token.lifespan"))
 print("grok.com DCR client default scopes include offline_access")
+print("grok.com DCR client access.token.lifespan is 31536000")
 PY
 
   admin create users -r freedriver \
@@ -439,40 +471,66 @@ PY
     -X POST "${BASE}/realms/freedriver/protocol/openid-connect/token" \
     -H "Content-Type: application/x-www-form-urlencoded" \
     --data-binary @"$work/dcr-ropc.form" > "$work/dcr-token.status"
+  python3 - "$work/dcr-token.json" "$work/dcr-refresh.form" <<'PY'
+import json, sys
+from pathlib import Path
+from urllib.parse import urlencode
+dcr = json.load(open(sys.argv[1], encoding="utf-8"))
+refresh = dcr.get("refresh_token")
+if not isinstance(refresh, str) or not refresh:
+    sys.exit("dcr token missing refresh_token")
+Path(sys.argv[2]).write_text(urlencode({
+    "grant_type": "refresh_token",
+    "client_id": "dcr-offline-proof",
+    "refresh_token": refresh,
+}), encoding="utf-8")
+PY
+  chmod 600 "$work/dcr-refresh.form"
+  curl -sS --max-time 30 -o "$work/dcr-refresh.json" -w "%{http_code}" \
+    -X POST "${BASE}/realms/freedriver/protocol/openid-connect/token" \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    --data-binary @"$work/dcr-refresh.form" > "$work/dcr-refresh.status"
   python3 - "$work/openbot-token-1.status" "$work/openbot-token-1.json" \
     "$work/openbot-token-2.status" "$work/openbot-token-2.json" \
-    "$work/dcr-token.status" "$work/dcr-token.json" <<'PY'
+    "$work/dcr-token.status" "$work/dcr-token.json" \
+    "$work/dcr-refresh.status" "$work/dcr-refresh.json" <<'PY'
 import json, sys
-s1, p1, s2, p2, dcr_status, dcr_path = sys.argv[1:]
+s1, p1, s2, p2, dcr_status, dcr_path, refresh_status, refresh_path = sys.argv[1:]
 code1 = open(s1, encoding="utf-8").read().strip()
 code2 = open(s2, encoding="utf-8").read().strip()
 dcr_code = open(dcr_status, encoding="utf-8").read().strip()
+refresh_code = open(refresh_status, encoding="utf-8").read().strip()
 openbot1 = json.load(open(p1, encoding="utf-8"))
 openbot2 = json.load(open(p2, encoding="utf-8"))
 dcr = json.load(open(dcr_path, encoding="utf-8"))
+refreshed = json.load(open(refresh_path, encoding="utf-8"))
 if code1 != "200":
     sys.exit("openbot client-credentials HTTP " + code1)
 if code2 != "200":
     sys.exit("openbot client-credentials second HTTP " + code2)
 if dcr_code != "200":
     sys.exit("dcr password grant HTTP " + dcr_code)
+if refresh_code != "200":
+    sys.exit("dcr refresh grant HTTP " + refresh_code)
 openbot_exp = openbot1.get("expires_in")
 dcr_exp = dcr.get("expires_in")
+refresh_access_exp = refreshed.get("expires_in")
 refresh_exp = dcr.get("refresh_expires_in")
-if not isinstance(openbot_exp, int) or openbot_exp <= 0:
-    sys.exit("openbot token missing expires_in")
-if not isinstance(dcr_exp, int) or dcr_exp <= 0:
-    sys.exit("dcr token missing expires_in")
+if openbot_exp != 31536000:
+    sys.exit("openbot expires_in is %s, want 31536000" % openbot_exp)
+if dcr_exp != 31536000:
+    sys.exit("dcr expires_in is %s, want 31536000" % dcr_exp)
+if refresh_access_exp != 31536000:
+    sys.exit("dcr refresh expires_in is %s, want 31536000" % refresh_access_exp)
 if "refresh_token" not in dcr:
     sys.exit("dcr token missing refresh_token")
 if refresh_exp != 0:
     sys.exit("dcr refresh_expires_in is %s, want 0" % refresh_exp)
 print("openbot expires_in", openbot_exp)
 print("dcr expires_in", dcr_exp)
+print("dcr refresh access expires_in", refresh_access_exp)
 print("dcr refresh_expires_in", refresh_exp)
 print("openbot client-credentials calls 2")
-if openbot_exp > 86400:
-    sys.exit("openbot expires_in is still a 1-year override")
 PY
   openbot_sa="$(admin get "clients/${openbot_uuid}/service-account-user" -r freedriver \
     --fields id --format csv --noquotes | csv_id)"
@@ -503,6 +561,7 @@ PY
     "$work/openbot-token-1.json" "$work/openbot-token-2.json" "$work/dcr-token.json" \
     "$work/offline-proof.pass" "$work/openbot-token-1.status" \
     "$work/openbot-token-2.status" "$work/dcr-token.status" \
+    "$work/dcr-refresh.form" "$work/dcr-refresh.json" "$work/dcr-refresh.status" \
     "$work/openbot-sa-offline-sessions.json" "$work/openbot-offline-session-count.json"
 }
 
