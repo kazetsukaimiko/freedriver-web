@@ -37,11 +37,21 @@
 #
 # Sessions (#353): accessCodeLifespanLogin 7200, ssoSessionIdleTimeout 28800,
 # ssoSessionMaxLifespan 86400, accessCodeLifespanUserAction 1800.
+# Offline sessions idle for 400 days (#565) so a one-year token still exchanges
+# after a month without a refresh.
+# ACCESS_CODE_LIFESPAN_LOGIN is how long a sign-in may take (#552). The login theme reads it from the
+# realm and renews a sign-in page of a client with a home address (HOME_URL) after half of it; the
+# dashboard's OIDC state cookie (quarkus.oidc.authentication.state-cookie-age in
+# auth-policy.properties) lives exactly as long, held equal by the dashboard's SignInLifetimeTest.
+# Change the two together.
 #
 # Appliances MCP (#112 / #333) is the public client freedriver-grok-mcp.
 # Authorization code + PKCE S256, no secret, no service account. Enabled with
 # the grok.com connector callback (same URI as freedriver-dispatcher).
-# webOrigins stay empty. offline_access stays optional. 1-year access token.
+# webOrigins stay empty. A one-year token needs both access.token.lifespan
+# and offline_access as a default client scope (#565). Dynamically
+# registered grok.com clients get the same pair in the autonomy-mcp audience
+# loop. offline_access is not a realm default.
 # Anonymous DCR grok.com clients inherit mcp-user and dashboard from the roles
 # client scope so an autonomy token can call tools/list and switch_appliance.
 # Mapper audience-autonomy-mcp on freedriver-grok-mcp and grok.com DCR clients
@@ -87,10 +97,16 @@ GROUP=lonewatt-techops
 REALM=freedriver
 # One exact post-logout redirect for freedriver-api. Not a wildcard.
 POST_LOGOUT_REDIRECT_URI='https://app.freedriver.io/'
+# freedriver-api's home address (its baseUrl), the only client with one. The login theme renews a
+# sign-in page left open to the home address of the client that started it (#552); a client without
+# one gets no renewal.
+HOME_URL='https://app.freedriver.io/'
 ACCESS_CODE_LIFESPAN_LOGIN=7200
 SSO_SESSION_IDLE_TIMEOUT=28800
 SSO_SESSION_MAX_LIFESPAN=86400
 ACCESS_CODE_LIFESPAN_USER_ACTION=1800
+OFFLINE_SESSION_IDLE_TIMEOUT=34560000
+ONE_YEAR_TOKEN_SECONDS=31536000
 PHONE_USER=kaze
 PHONE_GROUP=phone-sign-in
 PHONE_ATTRIBUTE=phone
@@ -175,6 +191,89 @@ kcadm_stdin() {
   fi
 }
 
+offline_access_scope_id() {
+  kcadm get client-scopes -r "$REALM" --fields id,name,protocol > "$work/client-scopes.json"
+  python3 - "$work/client-scopes.json" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+ids = [
+    s["id"]
+    for s in scopes
+    if s.get("name") == "offline_access" and s.get("protocol") == "openid-connect" and s.get("id")
+]
+print(ids[0] if len(ids) == 1 else "")
+PY
+}
+
+scope_list_has_id() {
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+raise SystemExit(0 if any(s.get("id") == wanted for s in scopes) else 1)
+PY
+}
+
+ensure_offline_access_default_scope() {
+  local client_uuid="$1"
+  local client_id="$2"
+  local scope_id
+  scope_id="$(offline_access_scope_id)"
+  if [[ -z "$scope_id" ]]; then
+    echo "Failed to read client scope offline_access." >&2
+    exit 1
+  fi
+  # Built-in clients already list offline_access as optional. The default-scope
+  # PUT is a no-op until that optional assignment is removed.
+  kcadm get "clients/${client_uuid}/optional-client-scopes" -r "$REALM" > "$work/offline-scopes-optional.json"
+  if scope_list_has_id "$work/offline-scopes-optional.json" "$scope_id"; then
+    kcadm delete "clients/${client_uuid}/optional-client-scopes/${scope_id}" -r "$REALM" >/dev/null
+  fi
+  kcadm get "clients/${client_uuid}/default-client-scopes" -r "$REALM" > "$work/offline-scopes-assigned.json"
+  if scope_list_has_id "$work/offline-scopes-assigned.json" "$scope_id"; then
+    echo "Client ${client_id} already has default scope offline_access."
+  else
+    echo '{}' | kcadm_stdin update "clients/${client_uuid}/default-client-scopes/${scope_id}" -r "$REALM" >/dev/null
+  fi
+  kcadm get "clients/${client_uuid}/default-client-scopes" -r "$REALM" > "$work/offline-scopes-assigned.json"
+  if ! scope_list_has_id "$work/offline-scopes-assigned.json" "$scope_id"; then
+    echo "Client ${client_id} default scopes still omit offline_access." >&2
+    exit 1
+  fi
+  echo "Client ${client_id} default scopes include offline_access."
+}
+
+# A one-year token needs both: Keycloak cuts the lifespan to the session's end,
+# and only an offline session has none.
+ensure_one_year_tokens() {
+  local uuid="$1"
+  local client_id="$2"
+  kcadm update "clients/${uuid}" -r "$REALM" \
+    -s 'attributes."access.token.lifespan"='"${ONE_YEAR_TOKEN_SECONDS}" >/dev/null
+  ensure_offline_access_default_scope "$uuid" "$client_id"
+}
+
+refuse_realm_default_offline_access() {
+  local scope_id
+  scope_id="$(offline_access_scope_id)"
+  if [[ -z "$scope_id" ]]; then
+    echo "Failed to read client scope offline_access." >&2
+    exit 1
+  fi
+  kcadm get default-default-client-scopes -r "$REALM" --fields id,name > "$work/realm-default-scopes-offline.json"
+  if python3 - "$work/realm-default-scopes-offline.json" "$scope_id" <<'PY'
+import json, sys
+scopes = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+raise SystemExit(0 if any(s.get("id") == wanted for s in scopes) else 1)
+PY
+  then
+    echo "offline_access is a realm default client scope, so every client would get offline tokens." >&2
+    exit 1
+  fi
+  echo "Realm default client scopes do not include offline_access."
+}
+
 # root:lonewatt-techops mode 640 on the server. The throwaway test is not root.
 own_secret() {
   local file="$1"
@@ -216,8 +315,10 @@ ensure_session_timeouts() {
     -s "accessCodeLifespanLogin=${ACCESS_CODE_LIFESPAN_LOGIN}" \
     -s "ssoSessionIdleTimeout=${SSO_SESSION_IDLE_TIMEOUT}" \
     -s "ssoSessionMaxLifespan=${SSO_SESSION_MAX_LIFESPAN}" \
-    -s "accessCodeLifespanUserAction=${ACCESS_CODE_LIFESPAN_USER_ACTION}" >/dev/null
-  echo "Realm ${REALM} session timeouts: login ${ACCESS_CODE_LIFESPAN_LOGIN}s, idle ${SSO_SESSION_IDLE_TIMEOUT}s, max ${SSO_SESSION_MAX_LIFESPAN}s, user-action ${ACCESS_CODE_LIFESPAN_USER_ACTION}s."
+    -s "accessCodeLifespanUserAction=${ACCESS_CODE_LIFESPAN_USER_ACTION}" \
+    -s "offlineSessionIdleTimeout=${OFFLINE_SESSION_IDLE_TIMEOUT}" \
+    -s "offlineSessionMaxLifespanEnabled=false" >/dev/null
+  echo "Realm ${REALM} session timeouts: login ${ACCESS_CODE_LIFESPAN_LOGIN}s, idle ${SSO_SESSION_IDLE_TIMEOUT}s, max ${SSO_SESSION_MAX_LIFESPAN}s, user-action ${ACCESS_CODE_LIFESPAN_USER_ACTION}s, offline idle ${OFFLINE_SESSION_IDLE_TIMEOUT}s."
 }
 
 ensure_session_timeouts
@@ -242,6 +343,7 @@ else
     -s 'description=Quarkus BFF only. Client secret must never go in the React SPA.' \
     -s 'redirectUris=["https://app.freedriver.io/*","http://localhost:8080/*"]' \
     -s "attributes.\"post.logout.redirect.uris\"=${POST_LOGOUT_REDIRECT_URI}" \
+    -s "baseUrl=${HOME_URL}" \
     -s 'webOrigins=["https://app.freedriver.io","http://localhost:8080"]' >/dev/null
   CLIENT_UUID="$(kcadm get clients -r "$REALM" -q clientId=freedriver-api --fields id --format csv --noquotes | csv_id)"
   CREATED_CLIENT=1
@@ -256,6 +358,7 @@ kcadm update "clients/${CLIENT_UUID}" -r "$REALM" \
   -s 'description=Quarkus BFF only. Client secret must never go in the React SPA.' \
   -s 'redirectUris=["https://app.freedriver.io/*","http://localhost:8080/*"]' \
   -s "attributes.\"post.logout.redirect.uris\"=${POST_LOGOUT_REDIRECT_URI}" \
+  -s "baseUrl=${HOME_URL}" \
   -s 'webOrigins=["https://app.freedriver.io","http://localhost:8080"]' >/dev/null
 
 # offline_access as a default scope would be requested on every login.
@@ -394,11 +497,10 @@ else
   echo "Created public client ${DISPATCHER_CLIENT}."
 fi
 
-# grok.com connector is connect-and-forget. 1-year access token on this public
-# client. Client session idle and max use realm SSO
-# (${SSO_SESSION_IDLE_TIMEOUT}/${SSO_SESSION_MAX_LIFESPAN}); Keycloak 26.7
-# accepts those attributes at the realm SSO ceiling. offline_access stays
-# optional (not default).
+# grok.com connector is connect-and-forget. One-year tokens on this public
+# client (lifespan plus offline_access default). Client session idle and max
+# use realm SSO (${SSO_SESSION_IDLE_TIMEOUT}/${SSO_SESSION_MAX_LIFESPAN});
+# Keycloak 26.7 accepts those attributes at the realm SSO ceiling.
 kcadm update "clients/${DISPATCHER_UUID}" -r "$REALM" \
   -s publicClient=true \
   -s standardFlowEnabled=true \
@@ -408,9 +510,9 @@ kcadm update "clients/${DISPATCHER_UUID}" -r "$REALM" \
   -s "redirectUris=${DISPATCHER_REDIRECT_URIS}" \
   -s "webOrigins=${DISPATCHER_WEB_ORIGINS}" \
   -s 'attributes."pkce.code.challenge.method"=S256' \
-  -s 'attributes."access.token.lifespan"=31536000' \
   -s 'attributes."client.session.idle.timeout"='"${SSO_SESSION_IDLE_TIMEOUT}" \
   -s 'attributes."client.session.max.lifespan"='"${SSO_SESSION_MAX_LIFESPAN}" >/dev/null
+ensure_one_year_tokens "$DISPATCHER_UUID" "$DISPATCHER_CLIENT"
 
 ensure_mapper "$DISPATCHER_UUID" actor-dispatcher \
   -s protocolMapper=oidc-hardcoded-claim-mapper \
@@ -467,22 +569,9 @@ kcadm update "clients/${GROK_MCP_UUID}" -r "$REALM" \
   -s "redirectUris=${GROK_MCP_REDIRECT_URIS}" \
   -s "webOrigins=${GROK_MCP_WEB_ORIGINS}" \
   -s 'attributes."pkce.code.challenge.method"=S256' \
-  -s 'attributes."access.token.lifespan"=31536000' \
   -s 'attributes."client.session.idle.timeout"='"${SSO_SESSION_IDLE_TIMEOUT}" \
   -s 'attributes."client.session.max.lifespan"='"${SSO_SESSION_MAX_LIFESPAN}" >/dev/null
-
-kcadm get "clients/${GROK_MCP_UUID}/default-client-scopes" -r "$REALM" > "$work/grok-mcp-scopes.json"
-if ! python3 - "$work/grok-mcp-scopes.json" <<'PY'
-import json, sys
-scopes = json.load(open(sys.argv[1], encoding="utf-8"))
-names = {s.get("name") for s in scopes}
-sys.exit(0 if "offline_access" not in names else 1)
-PY
-then
-  echo "freedriver-grok-mcp has offline_access as a default client scope, so it requests offline tokens." >&2
-  exit 1
-fi
-echo "freedriver-grok-mcp does not request offline tokens."
+ensure_one_year_tokens "$GROK_MCP_UUID" "$GROK_MCP_CLIENT"
 
 ensure_device_client() {
   local id="$1"
@@ -572,7 +661,8 @@ fi
 # remain for the worker. Realm role device. Existing secret files stay as they
 # are. Throwaway realms skip the host secret file. This runs after
 # ensure_device_client so shizuku and other device ids stay client-credentials.
-# OpenBot is connect-and-forget like grok.com.
+# OpenBot Sign-in uses a one-year token: access.token.lifespan plus
+# offline_access as a default client scope (#565). #540 turns this Sign-in off.
 OPENBOT_MCP_CLIENT=freedriver-openbot
 OPENBOT_MCP_SECRET_FILE="${OPENBOT_MCP_SECRET_FILE:-/opt/freedriver-secrets/keycloak-device-${OPENBOT_MCP_CLIENT}.secret}"
 OPENBOT_MCP_REDIRECT_URI='http://127.0.0.1:28417/mcp-auth'
@@ -615,8 +705,8 @@ ensure_openbot_mcp_client() {
     -s implicitFlowEnabled=false \
     -s directAccessGrantsEnabled=false \
     -s "redirectUris=${OPENBOT_MCP_REDIRECT_URIS}" \
-    -s 'attributes."pkce.code.challenge.method"=S256' \
-    -s 'attributes."access.token.lifespan"=31536000' >/dev/null
+    -s 'attributes."pkce.code.challenge.method"=S256' >/dev/null
+  ensure_one_year_tokens "$uuid" "$id"
   kcadm add-roles -r "$REALM" --uusername "service-account-${id}" --rolename device >/dev/null
   ensure_mapper "$uuid" actor-device \
     -s protocolMapper=oidc-hardcoded-claim-mapper \
@@ -939,6 +1029,7 @@ PY
       echo '{}' | kcadm_stdin update "clients/${client_uuid}/default-client-scopes/${scope_id}" -r "$REALM" >/dev/null
       echo "Client ${client_id} default scopes include autonomy-mcp."
     fi
+    ensure_one_year_tokens "$client_uuid" "$client_id"
   done < <(python3 - "$work/audience-targets.json" <<'PY'
 import json, sys
 targets = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -946,6 +1037,7 @@ for item in targets:
     print(item["id"] + "\t" + item["clientId"])
 PY
 )
+  refuse_realm_default_offline_access
 }
 ensure_autonomy_mcp_audience
 

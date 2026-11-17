@@ -9,6 +9,7 @@ import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.http.HttpRequest;
 import org.keycloak.models.AuthenticationExecutionModel;
+import org.keycloak.models.RealmModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
 import java.io.IOException;
@@ -106,6 +107,9 @@ class PhoneUsernameRouterTest {
         when(context.getAuthenticationSession()).thenReturn(authSession);
         when(context.getHttpRequest()).thenReturn(http);
         when(context.form()).thenAnswer(inv -> newForm());
+        RealmModel realm = mock(RealmModel.class);
+        when(realm.getAccessCodeLifespanLogin()).thenReturn(7200);
+        when(context.getRealm()).thenReturn(realm);
         when(context.getUser()).thenThrow(new AssertionError("no user"));
         when(context.getSession()).thenThrow(new AssertionError("no session"));
         doThrow(new AssertionError("setUser")).when(context).setUser(any());
@@ -218,6 +222,7 @@ class PhoneUsernameRouterTest {
         assertEquals("challenge", outcome);
         assertEquals(PhoneUsernameRouter.TEMPLATE, pages.get(shown));
         assertEquals(SignInAgreement.WORDING, formAttributes.get(SmsOtpAuthenticator.ATTR_AGREEMENT));
+        assertEquals(7200, formAttributes.get(SignInLifetime.ATTR));
         assertTrue(records.isEmpty());
         assertNoUserAndNoSession();
     }

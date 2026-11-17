@@ -747,6 +747,18 @@ fi
 if ! grep -q 'assert_instances_token' scripts/test-invite-service-account.sh; then
   fail "invite throwaway must assert the instances access token can list mqtt-instance"
 fi
+if ! grep -q '^assert_offline_access$' scripts/test-invite-service-account.sh; then
+  fail "invite throwaway must prove offline_access defaults and expires_in"
+fi
+if grep -q 'scope": "openid offline_access"' scripts/test-invite-service-account.sh; then
+  fail "offline_access proof must request scope=openid only"
+fi
+if ! grep -q 'refresh_expires_in is %s, want 0' scripts/test-invite-service-account.sh; then
+  fail "offline_access proof must require refresh_expires_in 0"
+fi
+if ! grep -q 'users/${openbot_sa}/offline-sessions/${openbot_uuid}' scripts/test-invite-service-account.sh; then
+  fail "offline_access proof must count service-account offline sessions"
+fi
 if ! grep -q 'portal-admin-only DCR token roles (none)' scripts/test-autonomy-token-exchange.sh; then
   fail "token-exchange proof must cover a user who holds neither mcp-user nor dashboard"
 fi
@@ -794,10 +806,8 @@ if "-s enabled=false" in block:
     raise SystemExit("freedriver-grok-mcp must stay enabled in provision")
 if 'attributes."access.token.lifespan"=300' in block:
     raise SystemExit("freedriver-grok-mcp access token lifespan must match grok.com connect-and-forget")
-if 'attributes."access.token.lifespan"=31536000' not in block:
-    raise SystemExit("freedriver-grok-mcp access token lifespan must be 31536000")
-if "offline_access" not in block:
-    raise SystemExit("freedriver-grok-mcp must check offline_access is not a default scope")
+if "ensure_one_year_tokens" not in block:
+    raise SystemExit("freedriver-grok-mcp must call ensure_one_year_tokens")
 print("freedriver-grok-mcp is enabled with the grok.com callback")
 PY
 
@@ -810,6 +820,7 @@ for line in (
     "SSO_SESSION_IDLE_TIMEOUT=28800",
     "SSO_SESSION_MAX_LIFESPAN=86400",
     "ACCESS_CODE_LIFESPAN_USER_ACTION=1800",
+    "OFFLINE_SESSION_IDLE_TIMEOUT=34560000",
 ):
     if line not in script:
         raise SystemExit(f"missing {line}")
@@ -834,14 +845,25 @@ for flag in (
     'ssoSessionIdleTimeout=${SSO_SESSION_IDLE_TIMEOUT}',
     'ssoSessionMaxLifespan=${SSO_SESSION_MAX_LIFESPAN}',
     'accessCodeLifespanUserAction=${ACCESS_CODE_LIFESPAN_USER_ACTION}',
+    'offlineSessionIdleTimeout=${OFFLINE_SESSION_IDLE_TIMEOUT}',
+    'offlineSessionMaxLifespanEnabled=false',
 ):
     if flag not in timeouts:
         raise SystemExit(f"session timeouts must set {flag}")
-print("realm session timeouts 7200/28800/86400/1800")
-if script.count("31536000") != 3:
-    raise SystemExit("31536000 is the 1-year access token lifespan for dispatcher, grok-mcp, and OpenBot")
+print("realm session timeouts 7200/28800/86400/1800 and offline idle 400 days")
+if 'ONE_YEAR_TOKEN_SECONDS=31536000' not in script:
+    raise SystemExit("ONE_YEAR_TOKEN_SECONDS must be 31536000")
+if script.count("31536000") != 1:
+    raise SystemExit("31536000 appears once, as ONE_YEAR_TOKEN_SECONDS")
+if script.count("34560000") != 1:
+    raise SystemExit("34560000 appears once, as OFFLINE_SESSION_IDLE_TIMEOUT")
+if "clear_access_token_lifespan" in script:
+    raise SystemExit("clear_access_token_lifespan must be deleted")
+if script.count('attributes."access.token.lifespan"') != 1:
+    raise SystemExit("access.token.lifespan is set only inside ensure_one_year_tokens")
+if "ensure_one_year_tokens() {" not in script:
+    raise SystemExit("provision script must define ensure_one_year_tokens")
 for line in (
-    """-s 'attributes."access.token.lifespan"=31536000'""",
     """-s 'attributes."client.session.idle.timeout"='"${SSO_SESSION_IDLE_TIMEOUT}\"""",
     """-s 'attributes."client.session.max.lifespan"='"${SSO_SESSION_MAX_LIFESPAN}\"""",
 ):
@@ -860,13 +882,21 @@ for line in openbot.splitlines():
             break
     kept.append(line)
 openbot_fn = "\n".join(kept)
-if 'attributes."access.token.lifespan"=31536000' not in openbot_fn:
-    raise SystemExit("ensure_openbot_mcp_client must set a 1-year access token")
+if "ensure_one_year_tokens" not in openbot_fn:
+    raise SystemExit("ensure_openbot_mcp_client must call ensure_one_year_tokens")
 if "oidc-usermodel-realm-role-mapper" not in openbot_fn:
     raise SystemExit("ensure_openbot_mcp_client must map realm roles onto the access token")
-if "OpenBot is connect-and-forget like grok.com" not in script:
-    raise SystemExit("provision script must say OpenBot is connect-and-forget like grok.com")
-print("OpenBot MCP client uses a 1-year access token")
+dispatcher = script.split("DISPATCHER_CLIENT=freedriver-dispatcher", 1)[1].split("GROK_MCP_CLIENT=", 1)[0]
+if "ensure_one_year_tokens" not in dispatcher:
+    raise SystemExit("freedriver-dispatcher must call ensure_one_year_tokens")
+audience = script.split("ensure_autonomy_mcp_audience() {", 1)[1]
+if "ensure_one_year_tokens" not in audience:
+    raise SystemExit("grok.com DCR loop must call ensure_one_year_tokens")
+if '[[ "$client_id" != "freedriver-grok-mcp" ]]' in audience:
+    raise SystemExit("grok.com DCR loop must not skip freedriver-grok-mcp")
+if "refuse_realm_default_offline_access" not in audience:
+    raise SystemExit("provision must refuse offline_access as a realm default scope")
+print("OpenBot, grok-mcp, dispatcher, and grok.com DCR clients keep one-year tokens")
 PY
 
 python3 - <<'PY'

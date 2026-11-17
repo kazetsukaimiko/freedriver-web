@@ -209,6 +209,7 @@ class SmsOtpAuthenticatorTest {
         authenticator.authenticate(context);
         assertEquals(SmsOtpAuthenticator.PHONE_TEMPLATE, page().template());
         assertEquals(SignInAgreement.WORDING, page().attributes().get(SmsOtpAuthenticator.ATTR_AGREEMENT));
+        assertEquals(SignInLifetime.seconds(realm), page().attributes().get(SignInLifetime.ATTR));
         post("phone", "+1 555 555 0100");
         assertEquals(SmsOtpAuthenticator.CODE_TEMPLATE, page().template());
     }
@@ -362,6 +363,19 @@ class SmsOtpAuthenticatorTest {
         assertEquals(PHONE, verifyRequests.getFirst().phone());
         assertEquals("success", outcome);
         verify(context).setUser(user);
+    }
+
+    @Test
+    void phonePageCarriesTheRealmsSignInLifetime() {
+        when(realm.getAccessCodeLifespanLogin()).thenReturn(7200);
+        authenticator.authenticate(context);
+        assertEquals(7200, page().attributes().get(SignInLifetime.ATTR));
+    }
+
+    @Test
+    void anUnsetRealmLifespanIsKeycloaksDefault() {
+        when(realm.getAccessCodeLifespanLogin()).thenReturn(0);
+        assertEquals(SignInLifetime.KEYCLOAK_DEFAULT_SECONDS, SignInLifetime.seconds(realm));
     }
 
     @Test

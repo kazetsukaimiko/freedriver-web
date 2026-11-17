@@ -109,6 +109,20 @@ class SignInRequiredTest {
         assertTrue(redirectUri(location).endsWith("/api/appliances"), location);
     }
 
+    /** The state cookie set with the redirect outlives the sign-in page as long as Keycloak's session (#552). */
+    @Test
+    void the_sign_in_redirect_keeps_its_state_for_the_whole_sign_in_lifetime() throws java.io.IOException {
+        java.util.List<String> cookies = given()
+                .redirects().follow(false)
+                .when().get("/login")
+                .then()
+                .statusCode(302)
+                .extract().headers().getValues("Set-Cookie");
+        String state = cookies.stream().filter(c -> c.startsWith("q_auth")).findFirst().orElse("");
+        long lifetime = io.freedriver.app.security.SignInLifetimeTest.provisionedSeconds();
+        assertTrue(state.contains("Max-Age=" + lifetime), cookies.toString());
+    }
+
     @Test
     void login_signs_in_and_comes_back_to_login() {
         String location = given()
