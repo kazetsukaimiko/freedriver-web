@@ -1,0 +1,57 @@
+name: Writing policy
+
+# Vale warns on the team writing policy in the lines a pull request adds to Markdown files and
+# .env.example comments, and in the pull request description. Warnings only: every step continues
+# on error, so the job reports and passes. "edited" reruns it when the description changes.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: writing-policy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  vale:
+    runs-on: ubuntu-latest
+    if: github.repository == 'kazetsukaimiko/freedriver-web'
+    permissions:
+      contents: read
+    env:
+      VALE_VERSION: "3.27.0"
+      VALE_SHA256: "c80d62f6bce87b81843ac5b512a26e63213927b957adba0a64fc594570da2000"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Vale
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          curl -fsSL -o "$RUNNER_TEMP/vale.tar.gz" \
+            "https://github.com/vale-cli/vale/releases/download/v${VALE_VERSION}/vale_${VALE_VERSION}_Linux_64-bit.tar.gz"
+          echo "${VALE_SHA256}  $RUNNER_TEMP/vale.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/vale"
+          tar -xzf "$RUNNER_TEMP/vale.tar.gz" -C "$RUNNER_TEMP/vale" vale
+          echo "VALE=$RUNNER_TEMP/vale/vale" >> "$GITHUB_ENV"
+
+      - name: Lines the pull request adds
+        continue-on-error: true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 .github/scripts/vale_changed_lines.py files --base "$BASE_SHA" --head "$HEAD_SHA"
+
+      - name: Pull request description
+        continue-on-error: true
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s\n' "$PR_BODY" > "$RUNNER_TEMP/pr-description.md"
+          python3 .github/scripts/vale_changed_lines.py body "$RUNNER_TEMP/pr-description.md"
