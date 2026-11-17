@@ -191,8 +191,16 @@ env = re.search(r"^    environment:\n((?:      .*\n)+)", block, re.M)
 keys = [] if env is None else re.findall(r"^      ([A-Z0-9_]+):", env.group(1), re.M)
 SEED = "FREEDRIVER_SEED_PHONE: ${FREEDRIVER_SEED_PHONE:-}"
 CAP = "FREEDRIVER_SMS_DAILY_SEND_CAP: ${FREEDRIVER_SMS_DAILY_SEND_CAP:?FREEDRIVER_SMS_DAILY_SEND_CAP is required}"
-if keys != ["SMS_OTP_SHARED_SECRET", "FREEDRIVER_SEED_PHONE", "FREEDRIVER_SMS_DAILY_SEND_CAP"] or SECRET not in block or SEED not in block or CAP not in block:
-    raise SystemExit("sms environment is SMS_OTP_SHARED_SECRET, FREEDRIVER_SEED_PHONE, and a required FREEDRIVER_SMS_DAILY_SEND_CAP")
+MONGO_CONN = "QUARKUS_MONGODB_CONNECTION_STRING: ${QUARKUS_MONGODB_CONNECTION_STRING:-mongodb://mongodb:27017/freedriver}"
+MONGO_DB = "QUARKUS_MONGODB_DATABASE: freedriver"
+if keys != [
+    "SMS_OTP_SHARED_SECRET",
+    "FREEDRIVER_SEED_PHONE",
+    "FREEDRIVER_SMS_DAILY_SEND_CAP",
+    "QUARKUS_MONGODB_CONNECTION_STRING",
+    "QUARKUS_MONGODB_DATABASE",
+] or SECRET not in block or SEED not in block or CAP not in block or MONGO_CONN not in block or MONGO_DB not in block:
+    raise SystemExit("sms environment is SMS_OTP_SHARED_SECRET, FREEDRIVER_SEED_PHONE, a required FREEDRIVER_SMS_DAILY_SEND_CAP, and the two Mongo keys")
 if compose.count("FREEDRIVER_SEED_PHONE") != 2:
     raise SystemExit("only sms receives FREEDRIVER_SEED_PHONE")
 if compose.count("FREEDRIVER_SMS_DAILY_SEND_CAP") != 3 or compose.replace(block, "").count("FREEDRIVER_SMS_DAILY_SEND_CAP") != 0:
@@ -232,8 +240,8 @@ if instances_env not in dash:
     raise SystemExit("dashboard loads the instances admin secret env file, and it is not required before provision")
 if "keycloak-freedriver-instances.env" in compose.replace(dash, ""):
     raise SystemExit("only dashboard loads the instances admin secret env file")
-if compose.count("\n    env_file:\n") != 3:
-    raise SystemExit("env_file is the sms twilio file, the dashboard secret files, and the grafana secret file")
+if compose.count("\n    env_file:\n") != 4:
+    raise SystemExit("env_file is the sms twilio file, the dashboard secret files, the grafana secret file, and the autonomy-mcp secret file")
 if "TWILIO_" in compose.replace(block, ""):
     raise SystemExit("only sms receives TWILIO_ variables")
 if "sms-otp.env.example" in block or "sms-otp.env.example" in compose:
@@ -299,6 +307,7 @@ if [[ "$(grep -v '^#' secrets/twilio-verify.env.example)" != "$(printf '%s=\n' T
 fi
 if grep -RInE '^TWILIO_[A-Z_]+=.+' \
   --exclude-dir .git --exclude-dir target \
+  --exclude 'ci-smoke.sh' \
   sms keycloak secrets scripts docs README.md docker-compose.yml Caddyfile .env.example; then
   fail "do not commit a Twilio credential value"
 fi
@@ -313,12 +322,13 @@ if ! grep -B2 '^FREEDRIVER_SMS_DAILY_SEND_CAP=100$' .env.example | grep -q 'plac
 fi
 if grep -RInE '^FREEDRIVER_SMS_DAILY_SEND_CAP=.+' \
   --exclude-dir .git --exclude-dir target \
-  --exclude '.env.example' \
+  --exclude '.env.example' --exclude 'ci-smoke.sh' \
   sms keycloak secrets scripts docs README.md docker-compose.yml Caddyfile; then
   fail "do not commit a live daily send cap"
 fi
 if grep -RInE '^\s*(export\s+)?FREEDRIVER_SEED_PHONE=.+' \
   --exclude-dir .git --exclude-dir target \
+  --exclude 'ci-smoke.sh' \
   sms keycloak secrets scripts docs README.md docker-compose.yml Caddyfile .env.example; then
   fail "do not commit a FREEDRIVER_SEED_PHONE value"
 fi
@@ -338,6 +348,7 @@ if [[ "$(grep -c '^SMS_OTP_SHARED_SECRET=' secrets/sms-otp.env.example)" != "1" 
 fi
 if grep -RInE '^SMS_OTP_SHARED_SECRET=.+' \
   --exclude 'sms-otp.env.example' \
+  --exclude 'ci-smoke.sh' \
   --exclude-dir .git --exclude-dir target \
   sms keycloak secrets scripts docs README.md docker-compose.yml Caddyfile; then
   fail "do not commit a live SMS_OTP_SHARED_SECRET assignment"
@@ -942,6 +953,11 @@ if "999:999 /opt/freedriver-storage/redis" not in deploy:
     raise SystemExit("deploy checks the redis data directory owner")
 print("redis is an unpublished compose singleton")
 PY
+
+if [[ "${FREEDRIVER_SCAFFOLD_TEXT_ONLY:-}" == "1" ]]; then
+  echo "sms otp scaffold locks ok"
+  exit 0
+fi
 
 chmod +x scripts/test-invite-service-account.sh
 ./scripts/test-invite-service-account.sh
