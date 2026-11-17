@@ -24,7 +24,7 @@ import tempfile
 from pathlib import Path
 
 CONFIG = ".vale.ini"
-LINTED = ("*.md", ".env.example", "*/.env.example")
+LINTED = ("*.md", "*.env.example")
 HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 
 
@@ -139,6 +139,7 @@ def self_test() -> int:
     added = added_lines(diff)
     assert added == {"docs/a.md": {4, 5, 12}, "x.java": {1}}, added
     assert linted("docs/a.md") and linted("README.md") and linted(".env.example") and linted("sms/.env.example")
+    assert linted("secrets/sms-otp.env.example") and linted("secrets/keycloak-freedriver-invite.env.example")
     assert not linted("x.java") and not linted("docs/diagram.svg")
 
     alerts = [{"Line": 4, "Message": "Writing policy: ('does not')", "Match": "does not"},
