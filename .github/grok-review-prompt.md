@@ -38,7 +38,7 @@ Instrumentation shape
 
 - Declare policy on the resource method, where @RolesAllowed already lives: a named annotation, with the numbers in config. A path glob answers whether this URL tree exists. AppliancesDisabledFilter is that case, and it runs pre-auth.
 - The rate limit keys the authenticated subject: the OIDC sub when it is present, otherwise the principal name.
-- Per-user command limits use quarkus-bucket4j @RateLimited(bucket=...) plus an IdentityResolver, which keys by subject. @RateLimited sits on the resource method; ApplianceService stays free of it.
+- Per-user command limits use quarkus-bucket4j @RateLimited(bucket=...) plus an IdentityResolver, which keys by subject. @RateLimited sits on the `XxxApi` method; ApplianceService stays free of it.
 - A limiter or identity resolver that cannot decide fails closed.
 
 Exceptions
@@ -49,6 +49,8 @@ Exceptions
 
 REST resource shape (quality bar). Resource shape is `should-fix` or `adjacent`.
 
+- CDI scope annotations and custom binding annotations (for example a rate-limit binding) on the implementing `XxxResource` class are a judgment call: raise them as should-fix or adjacent when they duplicate or contradict the interface.
+- A resource method may return `jakarta.ws.rs.core.Response` only when it carries `@ReturnsResponse` with its reason, and the PR body names the method that needs it. A new `@ReturnsResponse` whose reason is not a redirect or a stream is a finding.
 - A response body says what happened and names the request's type and target, for example `{"sent": {"type": "otp", "phone": "..."}}`. Open every DTO a resource method returns on success (records such as `XxxResponse`). A DTO whose only content is a status or outcome word (`{"status": "sent"}`, `{"ok": true}`, `{"result": "done"}`), or a method that returns an empty success body, is a should-fix finding when this PR adds or spreads it, and an adjacent finding when it is already present. Cite the DTO's file and line and the resource method that returns it, and give the target body.
 
 Scope
