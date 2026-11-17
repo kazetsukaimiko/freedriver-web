@@ -35,6 +35,8 @@
 #
 # Sessions (#353): accessCodeLifespanLogin 7200, ssoSessionIdleTimeout 28800,
 # ssoSessionMaxLifespan 86400, accessCodeLifespanUserAction 1800.
+# Offline sessions idle for 400 days (#565) so a one-year token still exchanges
+# after a month without a refresh.
 # ACCESS_CODE_LIFESPAN_LOGIN is how long a sign-in may take (#552). The login theme reads it from the
 # realm and renews a sign-in page of a client with a home address (HOME_URL) after half of it; the
 # dashboard's OIDC state cookie (quarkus.oidc.authentication.state-cookie-age in
@@ -101,6 +103,7 @@ ACCESS_CODE_LIFESPAN_LOGIN=7200
 SSO_SESSION_IDLE_TIMEOUT=28800
 SSO_SESSION_MAX_LIFESPAN=86400
 ACCESS_CODE_LIFESPAN_USER_ACTION=1800
+OFFLINE_SESSION_IDLE_TIMEOUT=34560000
 ONE_YEAR_TOKEN_SECONDS=31536000
 PHONE_USER=kaze
 PHONE_GROUP=phone-sign-in
@@ -311,8 +314,9 @@ ensure_session_timeouts() {
     -s "ssoSessionIdleTimeout=${SSO_SESSION_IDLE_TIMEOUT}" \
     -s "ssoSessionMaxLifespan=${SSO_SESSION_MAX_LIFESPAN}" \
     -s "accessCodeLifespanUserAction=${ACCESS_CODE_LIFESPAN_USER_ACTION}" \
+    -s "offlineSessionIdleTimeout=${OFFLINE_SESSION_IDLE_TIMEOUT}" \
     -s "offlineSessionMaxLifespanEnabled=false" >/dev/null
-  echo "Realm ${REALM} session timeouts: login ${ACCESS_CODE_LIFESPAN_LOGIN}s, idle ${SSO_SESSION_IDLE_TIMEOUT}s, max ${SSO_SESSION_MAX_LIFESPAN}s, user-action ${ACCESS_CODE_LIFESPAN_USER_ACTION}s."
+  echo "Realm ${REALM} session timeouts: login ${ACCESS_CODE_LIFESPAN_LOGIN}s, idle ${SSO_SESSION_IDLE_TIMEOUT}s, max ${SSO_SESSION_MAX_LIFESPAN}s, user-action ${ACCESS_CODE_LIFESPAN_USER_ACTION}s, offline idle ${OFFLINE_SESSION_IDLE_TIMEOUT}s."
 }
 
 ensure_session_timeouts

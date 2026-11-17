@@ -814,6 +814,7 @@ for line in (
     "SSO_SESSION_IDLE_TIMEOUT=28800",
     "SSO_SESSION_MAX_LIFESPAN=86400",
     "ACCESS_CODE_LIFESPAN_USER_ACTION=1800",
+    "OFFLINE_SESSION_IDLE_TIMEOUT=34560000",
 ):
     if line not in script:
         raise SystemExit(f"missing {line}")
@@ -838,15 +839,18 @@ for flag in (
     'ssoSessionIdleTimeout=${SSO_SESSION_IDLE_TIMEOUT}',
     'ssoSessionMaxLifespan=${SSO_SESSION_MAX_LIFESPAN}',
     'accessCodeLifespanUserAction=${ACCESS_CODE_LIFESPAN_USER_ACTION}',
+    'offlineSessionIdleTimeout=${OFFLINE_SESSION_IDLE_TIMEOUT}',
     'offlineSessionMaxLifespanEnabled=false',
 ):
     if flag not in timeouts:
         raise SystemExit(f"session timeouts must set {flag}")
-print("realm session timeouts 7200/28800/86400/1800")
+print("realm session timeouts 7200/28800/86400/1800 and offline idle 400 days")
 if 'ONE_YEAR_TOKEN_SECONDS=31536000' not in script:
     raise SystemExit("ONE_YEAR_TOKEN_SECONDS must be 31536000")
 if script.count("31536000") != 1:
     raise SystemExit("31536000 appears once, as ONE_YEAR_TOKEN_SECONDS")
+if script.count("34560000") != 1:
+    raise SystemExit("34560000 appears once, as OFFLINE_SESSION_IDLE_TIMEOUT")
 if "clear_access_token_lifespan" in script:
     raise SystemExit("clear_access_token_lifespan must be deleted")
 if script.count('attributes."access.token.lifespan"') != 1:

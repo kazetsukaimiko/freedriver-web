@@ -75,6 +75,11 @@ csv_id() {
   sed '/^id$/d' | tr -d '\r' | awk 'NF { print; exit }'
 }
 
+client_attributes() {   # <client uuid> <out file>
+  admin get "clients/$1" -r freedriver \
+    | python3 -c 'import json,sys; json.dump({"attributes": json.load(sys.stdin).get("attributes") or {}}, sys.stdout)' > "$2"
+}
+
 # Group permission scopes after a repair run are manage-membership only.
 assert_invite_scopes() {
   local admin_client perm_id perm_name
@@ -326,11 +331,13 @@ assert_offline_access() {
   admin get "clients/${dispatcher_uuid}/default-client-scopes" -r freedriver > "$work/dispatcher-scopes.json"
   admin get default-default-client-scopes -r freedriver > "$work/realm-default-scopes.json"
   admin get "roles/default-roles-freedriver/composites" -r freedriver > "$work/default-role-composites.json"
-  admin get "clients/${openbot_uuid}" -r freedriver --fields clientId,attributes > "$work/openbot-attrs.json"
-  admin get "clients/${grok_uuid}" -r freedriver --fields clientId,attributes > "$work/grok-attrs.json"
-  admin get "clients/${dispatcher_uuid}" -r freedriver --fields clientId,attributes > "$work/dispatcher-attrs.json"
-  admin get "clients/${api_uuid}" -r freedriver --fields clientId,attributes > "$work/api-attrs.json"
-  admin get realms/freedriver --fields offlineSessionMaxLifespanEnabled > "$work/realm-offline-max.json"
+  client_attributes "$openbot_uuid" "$work/openbot-attrs.json"
+  client_attributes "$grok_uuid" "$work/grok-attrs.json"
+  client_attributes "$dispatcher_uuid" "$work/dispatcher-attrs.json"
+  client_attributes "$api_uuid" "$work/api-attrs.json"
+  admin get realms/freedriver \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin); json.dump({"offlineSessionMaxLifespanEnabled": d.get("offlineSessionMaxLifespanEnabled"), "offlineSessionIdleTimeout": d.get("offlineSessionIdleTimeout")}, sys.stdout)' \
+    > "$work/realm-offline-max.json"
   python3 - "$work/openbot-scopes.json" "$work/grok-scopes.json" "$work/api-scopes.json" \
     "$work/realm-default-scopes.json" "$work/default-role-composites.json" "$work/openbot-attrs.json" \
     "$work/dispatcher-scopes.json" "$work/grok-attrs.json" "$work/dispatcher-attrs.json" \
@@ -373,12 +380,15 @@ if api_life:
     sys.exit("freedriver-api has access.token.lifespan")
 if realm_offline.get("offlineSessionMaxLifespanEnabled") is not False:
     sys.exit("offlineSessionMaxLifespanEnabled is %s" % realm_offline.get("offlineSessionMaxLifespanEnabled"))
+if realm_offline.get("offlineSessionIdleTimeout") != 34560000:
+    sys.exit("offlineSessionIdleTimeout is %s" % realm_offline.get("offlineSessionIdleTimeout"))
 print("openbot, grok-mcp, and dispatcher default scopes include offline_access")
 print("freedriver-api does not default offline_access")
 print("realm default-default omits offline_access")
 print("default-roles-freedriver includes offline_access")
 print("openbot, grok-mcp, and dispatcher access.token.lifespan is 31536000")
 print("offlineSessionMaxLifespanEnabled is false")
+print("offlineSessionIdleTimeout is 34560000")
 PY
 
   admin create clients -r freedriver \
@@ -404,7 +414,7 @@ PY
     bash scripts/provision-keycloak-freedriver.sh >/dev/null
   dcr_uuid="$(admin get clients -r freedriver -q clientId=dcr-offline-proof --fields id --format csv --noquotes | csv_id)"
   admin get "clients/${dcr_uuid}/default-client-scopes" -r freedriver > "$work/dcr-scopes.json"
-  admin get "clients/${dcr_uuid}" -r freedriver --fields clientId,attributes > "$work/dcr-attrs.json"
+  client_attributes "$dcr_uuid" "$work/dcr-attrs.json"
   python3 - "$work/dcr-scopes.json" "$work/dcr-attrs.json" <<'PY'
 import json, sys
 names = {item.get("name") for item in json.load(open(sys.argv[1], encoding="utf-8")) if item.get("name")}
