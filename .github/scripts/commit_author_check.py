@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Check that each commit in a pull request is authored under its author's identity.
 
-The table .github/commit-authors.json maps a GitHub login to the email its commits are
-authored with. It is read from the pull request's base commit, so a pull request is held
-to the table as merged, and a change to the table takes effect once it is on main.
+The agent account list .github/agent-accounts.json maps each agent login to
+{"commit_email": <email or null>}; the ticket phrase lint (#564) reads the same file. It
+is read from the pull request's base commit, so a pull request is held to the list as
+merged, and a change to the list takes effect once it is on main.
 
-A pull request whose author has no row passes with a note (kazetsukaimiko,
-github-actions[bot], any account without a row). Commits GitHub makes (committer
+A pull request whose author is unlisted, or listed with a null or missing commit_email,
+passes with a note (kazetsukaimiko, github-actions[bot], lonewatt-product,
+lonewatt-security). Commits GitHub makes (committer
 noreply@github.com, such as the "Update branch" merge) and commits authored by
 github-actions[bot] are exempt. Everything else must have the mapped author email.
 
@@ -27,7 +29,7 @@ import urllib.error
 import urllib.request
 
 GITHUB_API = "https://api.github.com"
-TABLE_PATH = ".github/commit-authors.json"
+TABLE_PATH = ".github/agent-accounts.json"
 GITHUB_COMMITTER = "noreply@github.com"
 ACTIONS_BOT = "github-actions[bot]"
 
@@ -43,9 +45,10 @@ def check(pr_author: str, table: dict | None, commits: list[dict]) -> tuple[bool
     """(ok, lines). Fails when a commit's author email differs from the author's row."""
     if table is None:
         return True, [f"{TABLE_PATH} is on the base branch only after this check ships; nothing to check"]
-    expected = table.get(pr_author)
+    entry = table.get(pr_author)
+    expected = entry.get("commit_email") if isinstance(entry, dict) else None
     if not expected:
-        return True, [f"{pr_author} has no row in {TABLE_PATH}; commits are not checked"]
+        return True, [f"{pr_author} has no commit_email in {TABLE_PATH}; commits are not checked"]
     wrong = []
     for c in commits:
         if exempt(c):
@@ -89,8 +92,11 @@ def pr_commits(repo: str, number: int, token: str) -> list[dict]:
 
 
 def self_test() -> int:
-    table = {"kazetsukaiyuni": "kazetsukaiyuni@gmail.com", "lonewatt-architect": "architect@freedriver.io",
-             "lonewatt-techops": "kazetsukaiyuni@gmail.com"}
+    table = {"kazetsukaiyuni": {"commit_email": "kazetsukaiyuni@gmail.com"},
+             "lonewatt-architect": {"commit_email": "architect@freedriver.io"},
+             "lonewatt-techops": {"commit_email": "kazetsukaiyuni@gmail.com"},
+             "lonewatt-security": {"commit_email": None},
+             "lonewatt-product": {}}
 
     def commit(sha, author, committer=None, login=None):
         return {"sha": sha, "author": {"login": login} if login else None,
@@ -103,7 +109,8 @@ def self_test() -> int:
         ("another account's email", "lonewatt-architect", table,
          [commit("c1", "architect@freedriver.io"), commit("c2bad", "kazetsukaiyuni@gmail.com")], False),
         ("author without a row", "kazetsukaimiko", table, [commit("d1", "someone@example.com")], True),
-        ("security without a row", "lonewatt-security", table, [commit("d2", "x@example.com")], True),
+        ("security listed with a null commit_email", "lonewatt-security", table, [commit("d2", "x@example.com")], True),
+        ("product listed with no commit_email field", "lonewatt-product", table, [commit("d3", "y@example.com")], True),
         ("GitHub's update-branch merge", "kazetsukaiyuni", table,
          [commit("e1", "someone@example.com", committer="noreply@github.com")], True),
         ("github-actions[bot] commit", "kazetsukaiyuni", table,
