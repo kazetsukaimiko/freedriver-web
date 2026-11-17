@@ -74,10 +74,10 @@ LAYER_MARKERS = (
 )
 BANNERS = {
     ENGINEERING_MODE: (
-        "> Principled Engineering Review. kaze's approval is the required human review; this comment is informational.\n\n"
+        "> Principled Engineering Review.\n\n"
     ),
     SECURITY_MODE: (
-        "> Security Review. kaze's approval is the required human review.\n\n"
+        "> Security Review.\n\n"
     ),
 }
 DID_NOT_RUN = {
