@@ -1,0 +1,6 @@
+io.freedriver.app.api.ChangelogResource implements no ChangelogApi
+io.freedriver.app.api.SignInLinkResource implements no SignInLinkApi
+io.freedriver.app.invites.InviteResource implements no InviteApi
+io.freedriver.app.phones.PhoneRecordsResource implements no PhoneRecordsApi
+io.freedriver.app.phones.PhoneRemovalResource implements no PhoneRemovalApi
+io.freedriver.app.phones.SignInRecordsResource implements no SignInRecordsApi
