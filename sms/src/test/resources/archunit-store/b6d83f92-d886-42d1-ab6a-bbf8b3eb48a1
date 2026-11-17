@@ -1,0 +1,6 @@
+Class <io.freedriver.sms.otp.CodeRejectedException> does not reside in a package 'io.freedriver.sms.errors' in (CodeRejectedException.java:0)
+Class <io.freedriver.sms.otp.SenderUnavailableException> does not reside in a package 'io.freedriver.sms.errors' in (SenderUnavailableException.java:0)
+Class <io.freedriver.sms.otp.TooManyAttemptsException> does not reside in a package 'io.freedriver.sms.errors' in (TooManyAttemptsException.java:0)
+Class <io.freedriver.sms.security.RateLimitedException> does not reside in a package 'io.freedriver.sms.errors' in (RateLimitedException.java:0)
+Class <io.freedriver.sms.security.UnauthorizedCallerException> does not reside in a package 'io.freedriver.sms.errors' in (UnauthorizedCallerException.java:0)
+Class <io.freedriver.sms.twilio.TwilioRefused> does not reside in a package 'io.freedriver.sms.errors' in (TwilioRefused.java:0)

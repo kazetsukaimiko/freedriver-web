@@ -1,3 +1,12 @@
+# Every product path: lonewatt-architect approves. A later line wins, so the
+# lines below override this default.
+* @lonewatt-architect
+
+# Release files: lonewatt-techops merges the release-please Release pull request.
+/.release-please-manifest.json @lonewatt-techops
+/version.txt @lonewatt-techops
+/java/dashboard/src/main/resources/changelog/CHANGELOG.md @lonewatt-techops
+
 # Default for everything under .github, including new files.
 /.github/ @kazetsukaimiko
 
