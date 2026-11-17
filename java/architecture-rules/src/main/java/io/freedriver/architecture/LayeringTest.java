@@ -4,6 +4,7 @@ import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.library.freeze.FreezingArchRule;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,11 @@ public abstract class LayeringTest {
 
     @BeforeEach
     void onTheRecordedJdk() {
+        if (System.getenv("CI") != null && Runtime.version().feature() != RECORDED_JAVA) {
+            Assertions.fail("CI runs Java " + Runtime.version().feature() + ", and the layering rules' frozen violations "
+                    + "are recorded on Java " + RECORDED_JAVA + ". Re-record every module's store on Java "
+                    + Runtime.version().feature() + " and raise RECORDED_JAVA, or run CI on Java " + RECORDED_JAVA + ".");
+        }
         Assumptions.assumeTrue(Runtime.version().feature() == RECORDED_JAVA,
                 () -> "The layering rules' frozen violations are recorded on Java " + RECORDED_JAVA + "; this is Java "
                         + Runtime.version().feature() + ", so they are skipped. Run them on Java " + RECORDED_JAVA
