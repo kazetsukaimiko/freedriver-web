@@ -200,6 +200,10 @@ def cmd_self_test() -> None:
         die("self-test: convert FORBIDDEN skip")
     if convert_skip_reason([{"type": "INTERNAL", "path": ["markPullRequestReadyForReview"]}]) is not None:
         die("self-test: other GraphQL errors must still fail")
+    if "board_ready(repo, number, token)" not in inspect.getsource(cmd_run):
+        die("self-test: a ready pull request moves its card in the same run")
+    if "run_ready" not in inspect.getsource(board_ready):
+        die("self-test: board_ready uses board_status.run_ready")
     print("self-test OK")
 
 
@@ -300,6 +304,19 @@ def cmd_run() -> None:
         return
     request_reviewer(repo, number, token)
     print(json.dumps({"ready": True, "pr": number, "sha": sha, "reviewer": REVIEWER}))
+    board_ready(repo, number, token)
+
+
+def board_ready(repo: str, number: int, token: str) -> None:
+    """Move the card to In Review in this run (#563): this token's ready event starts no workflow."""
+    board_token = os.environ.get("BOARD_TOKEN", "").strip()
+    if not board_token:
+        print(json.dumps({"board": "no-board-token", "pr": number}))
+        return
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import board_status
+
+    board_status.run_ready(repo, number, token, board_status.Board(board_token))
 
 
 def main() -> None:

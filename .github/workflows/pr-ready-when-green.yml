@@ -27,6 +27,7 @@ jobs:
       - name: Mark draft ready and request kaze
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          BOARD_TOKEN: ${{ secrets.BOARD_TOKEN }}
           REPO: ${{ github.repository }}
           SHA: ${{ github.event.workflow_run.head_sha }}
           RUN_EVENT: ${{ github.event.workflow_run.event }}

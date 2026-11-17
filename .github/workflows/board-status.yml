@@ -1,0 +1,70 @@
+name: Board status
+
+# A card's Status on Project 3 follows its pull request (#563). The card is the issue named in the
+# description's last line, `Refs: #N`. board_status.py holds the rules.
+#
+# pull_request_target runs this file and the script from the base branch with the secret; the
+# pull request's code is never checked out or run. BOARD_TOKEN is a classic token with only the
+# `project` scope. Without it each job notes that and ends green.
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, converted_to_draft, closed]
+  workflow_run:
+    workflows: [Deploy]
+    types: [completed]
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  pull-request:
+    if: github.event_name == 'pull_request_target' && github.repository == 'kazetsukaimiko/freedriver-web'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    concurrency:
+      group: board-status-pr-${{ github.event.pull_request.number }}
+    steps:
+      - name: Checkout the board script from the base branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - name: Move the card named in Refs
+        env:
+          BOARD_TOKEN: ${{ secrets.BOARD_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: python3 .github/scripts/board_status.py event
+
+  release:
+    if: >-
+      github.repository == 'kazetsukaimiko/freedriver-web' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') &&
+      github.event_name != 'pull_request_target'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    concurrency:
+      group: board-status-release
+    steps:
+      - name: Checkout the board script
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - name: Cards whose change is in the production release move to Done
+        env:
+          BOARD_TOKEN: ${{ secrets.BOARD_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: python3 .github/scripts/board_status.py release
