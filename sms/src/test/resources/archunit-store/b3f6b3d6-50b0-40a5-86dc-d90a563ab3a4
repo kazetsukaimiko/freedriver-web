@@ -1,0 +1,4 @@
+Class <io.freedriver.sms.twilio.TwilioBasicAuth> implements interface <jakarta.ws.rs.client.ClientRequestFilter> in (TwilioBasicAuth.java:0)
+Method <io.freedriver.sms.twilio.TwilioBasicAuth.filter(jakarta.ws.rs.client.ClientRequestContext)> calls method <jakarta.ws.rs.client.ClientRequestContext.getHeaders()> in (TwilioBasicAuth.java:21)
+Method <io.freedriver.sms.twilio.TwilioBasicAuth.filter(jakarta.ws.rs.client.ClientRequestContext)> calls method <jakarta.ws.rs.core.MultivaluedMap.putSingle(java.lang.Object, java.lang.Object)> in (TwilioBasicAuth.java:21)
+Method <io.freedriver.sms.twilio.TwilioBasicAuth.filter(jakarta.ws.rs.client.ClientRequestContext)> has parameter of type <jakarta.ws.rs.client.ClientRequestContext> in (TwilioBasicAuth.java:0)

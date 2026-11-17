@@ -1,0 +1,5 @@
+Method <io.freedriver.dispatcher.JobCallers.deviceId(io.quarkus.security.identity.SecurityIdentity)> calls method <io.quarkus.security.identity.SecurityIdentity.getPrincipal()> in (JobCallers.java:31)
+Method <io.freedriver.dispatcher.JobCallers.deviceId(io.quarkus.security.identity.SecurityIdentity)> has parameter of type <io.quarkus.security.identity.SecurityIdentity> in (JobCallers.java:0)
+Method <io.freedriver.dispatcher.JobCallers.subject(io.quarkus.security.identity.SecurityIdentity)> calls method <io.quarkus.security.identity.SecurityIdentity.getPrincipal()> in (JobCallers.java:19)
+Method <io.freedriver.dispatcher.JobCallers.subject(io.quarkus.security.identity.SecurityIdentity)> calls method <io.quarkus.security.identity.SecurityIdentity.isAnonymous()> in (JobCallers.java:20)
+Method <io.freedriver.dispatcher.JobCallers.subject(io.quarkus.security.identity.SecurityIdentity)> has parameter of type <io.quarkus.security.identity.SecurityIdentity> in (JobCallers.java:0)

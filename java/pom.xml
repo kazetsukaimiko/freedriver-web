@@ -16,6 +16,7 @@
         <module>bom</module>
         <module>hit-window</module>
         <module>hit-window-testing</module>
+        <module>architecture-rules</module>
         <module>mcp-support</module>
         <module>dashboard-model</module>
         <module>dashboard-api</module>
