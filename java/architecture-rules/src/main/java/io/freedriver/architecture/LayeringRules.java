@@ -68,7 +68,9 @@ public final class LayeringRules {
                 .should().notHaveRawReturnType(RESPONSE)
                 .because("a resource method returns a typed DTO and throws a domain exception that an "
                         + "ExceptionMapper turns into a status; a redirect or stream that needs Response "
-                        + "carries @" + RETURNS_RESPONSE + " with its reason")
+                        + "carries @" + RETURNS_RESPONSE + "(\"<reason>\"); declare that annotation once in this "
+                        + "module as @Retention(RUNTIME) @Target(METHOD) public @interface " + RETURNS_RESPONSE
+                        + " { String value(); }")
                 .allowEmptyShould(true);
     }
 
