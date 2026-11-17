@@ -1,6 +1,7 @@
 <#import "template.ftl" as layout>
 <#import "field.ftl" as field>
 <#import "buttons.ftl" as buttons>
+<#import "freedriver-renew.ftl" as renewal>
 <@layout.registrationLayout; section>
 <!-- template: freedriver-phone-username.ftl -->
     <#if section = "header">
@@ -14,5 +15,6 @@
             </@buttons.actionGroup>
             <script src="${url.resourcesPath}/js/phone-fragment.js"></script>
         </form>
+        <@renewal.renew/>
     </#if>
 </@layout.registrationLayout>

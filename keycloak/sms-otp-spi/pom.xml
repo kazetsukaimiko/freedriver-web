@@ -21,6 +21,8 @@
         <jackson.annotations.version>2.21</jackson.annotations.version>
         <junit.version>5.13.4</junit.version>
         <mockito.version>5.20.0</mockito.version>
+        <!-- The FreeMarker version Keycloak ${keycloak.version} renders the login theme with. -->
+        <freemarker.version>2.3.35</freemarker.version>
         <!-- Image build sets this from the deploy commit. Not a secret. -->
         <source.commit>unknown</source.commit>
     </properties>
@@ -102,6 +104,12 @@
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
             <version>${mockito.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.freemarker</groupId>
+            <artifactId>freemarker</artifactId>
+            <version>${freemarker.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

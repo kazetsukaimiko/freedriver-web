@@ -35,6 +35,11 @@
 #
 # Sessions (#353): accessCodeLifespanLogin 7200, ssoSessionIdleTimeout 28800,
 # ssoSessionMaxLifespan 86400, accessCodeLifespanUserAction 1800.
+# ACCESS_CODE_LIFESPAN_LOGIN is how long a sign-in may take (#552). The login theme reads it from the
+# realm and renews a sign-in page of a client with a home address (HOME_URL) after half of it; the
+# dashboard's OIDC state cookie (quarkus.oidc.authentication.state-cookie-age in
+# auth-policy.properties) lives exactly as long, held equal by the dashboard's SignInLifetimeTest.
+# Change the two together.
 #
 # Appliances MCP (#112 / #333) is the public client freedriver-grok-mcp.
 # Authorization code + PKCE S256, no secret, no service account. Enabled with
@@ -89,6 +94,10 @@ GROUP=lonewatt-techops
 REALM=freedriver
 # One exact post-logout redirect for freedriver-api. Not a wildcard.
 POST_LOGOUT_REDIRECT_URI='https://app.freedriver.io/'
+# freedriver-api's home address (its baseUrl), the only client with one. The login theme renews a
+# sign-in page left open to the home address of the client that started it (#552); a client without
+# one gets no renewal.
+HOME_URL='https://app.freedriver.io/'
 ACCESS_CODE_LIFESPAN_LOGIN=7200
 SSO_SESSION_IDLE_TIMEOUT=28800
 SSO_SESSION_MAX_LIFESPAN=86400
@@ -343,6 +352,7 @@ else
     -s 'description=Quarkus BFF only. Client secret must never go in the React SPA.' \
     -s 'redirectUris=["https://app.freedriver.io/*","http://localhost:8080/*"]' \
     -s "attributes.\"post.logout.redirect.uris\"=${POST_LOGOUT_REDIRECT_URI}" \
+    -s "baseUrl=${HOME_URL}" \
     -s 'webOrigins=["https://app.freedriver.io","http://localhost:8080"]' >/dev/null
   CLIENT_UUID="$(kcadm get clients -r "$REALM" -q clientId=freedriver-api --fields id --format csv --noquotes | csv_id)"
   CREATED_CLIENT=1
@@ -357,6 +367,7 @@ kcadm update "clients/${CLIENT_UUID}" -r "$REALM" \
   -s 'description=Quarkus BFF only. Client secret must never go in the React SPA.' \
   -s 'redirectUris=["https://app.freedriver.io/*","http://localhost:8080/*"]' \
   -s "attributes.\"post.logout.redirect.uris\"=${POST_LOGOUT_REDIRECT_URI}" \
+  -s "baseUrl=${HOME_URL}" \
   -s 'webOrigins=["https://app.freedriver.io","http://localhost:8080"]' >/dev/null
 
 # offline_access as a default scope would be requested on every login.
