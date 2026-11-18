@@ -138,6 +138,26 @@ public class JobStoreService implements JobStore {
         return move(deviceId, assignmentId, AssignmentRepository.OPEN, to, kept, null);
     }
 
+    /** The same one step as {@link #finish}; when nothing matched, a finished job is the answer. */
+    @Override
+    public AssignmentView finishIfOpen(String deviceId, UUID assignmentId, boolean succeeded, String note) {
+        AssignmentState to = succeeded ? AssignmentState.SUCCEEDED : AssignmentState.FAILED;
+        String kept = note == null || note.isBlank() ? null : note;
+        String id = assignmentId.toString();
+        Assignment moved = assignments.transition(id, deviceId, AssignmentRepository.OPEN, to, kept, null,
+                clock.instant());
+        if (moved != null) {
+            return viewAssignment(moved);
+        }
+        Assignment row = own(deviceId, id);
+        if (row.status != AssignmentState.SUCCEEDED && row.status != AssignmentState.FAILED) {
+            throw conflict("assignment is " + row.status);
+        }
+        LOG.infof("dispatch finish kept assignment=%s device=%s state=%s asked=%s", row.id, row.deviceId,
+                row.status, to);
+        return viewAssignment(row);
+    }
+
     @Override
     public DeviceView heartbeat(String deviceId) {
         Device device = devices.heartbeat(deviceId, clock.instant());

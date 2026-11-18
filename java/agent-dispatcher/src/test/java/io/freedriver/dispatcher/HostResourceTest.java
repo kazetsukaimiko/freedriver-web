@@ -1,5 +1,7 @@
 package io.freedriver.dispatcher;
 
+import io.freedriver.dispatcher.model.AssignmentState;
+import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
 import io.freedriver.dispatcher.model.HostPaths;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
@@ -142,6 +144,45 @@ class HostResourceTest {
                 .post(path(HostPaths.START, any)).then().statusCode(403);
         given().contentType("application/json").body("{\"succeeded\":true}")
                 .post(path(HostPaths.FINISH, any)).then().statusCode(403);
+    }
+
+    @Test
+    @TestSecurity(user = "pc-host-kept", roles = "device")
+    void finish_on_a_finished_job_answers_its_state_and_keeps_the_agents_result() {
+        jobs.register("pc-host-kept", "kept.local", List.of("yuni"));
+        UUID done = jobs.submitNow("grok-host-kept", new SubmitJobRequest(
+                List.of("pc-host-kept"), "yuni", "host-kept-prompt", Channel.TEXT))
+                .assignments().getFirst().assignmentId();
+        jobs.finish("pc-host-kept", done, true, "the agent's result");
+
+        given().contentType("application/json")
+                .body("{\"succeeded\":false,\"note\":\"the turn ended without a result\"}")
+                .post(path(HostPaths.FINISH, done.toString()))
+                .then()
+                .statusCode(200)
+                .body("state", is("SUCCEEDED"))
+                .body("note", is("the agent's result"));
+        AssignmentView kept = jobs.assignment("pc-host-kept", done);
+        assertEquals(AssignmentState.SUCCEEDED, kept.state());
+        assertEquals("the agent's result", kept.note());
+
+        UUID failed = jobs.submitNow("grok-host-kept", new SubmitJobRequest(
+                List.of("pc-host-kept"), "yuni", "host-kept-prompt-2", Channel.TEXT))
+                .assignments().getFirst().assignmentId();
+        given().contentType("application/json")
+                .body("{\"succeeded\":false,\"note\":\"first\"}")
+                .post(path(HostPaths.FINISH, failed.toString()))
+                .then()
+                .statusCode(200)
+                .body("state", is("FAILED"))
+                .body("note", is("first"));
+        given().contentType("application/json")
+                .body("{\"succeeded\":true,\"note\":\"second\"}")
+                .post(path(HostPaths.FINISH, failed.toString()))
+                .then()
+                .statusCode(200)
+                .body("state", is("FAILED"))
+                .body("note", is("first"));
     }
 
     static String path(String route, String assignmentId) {

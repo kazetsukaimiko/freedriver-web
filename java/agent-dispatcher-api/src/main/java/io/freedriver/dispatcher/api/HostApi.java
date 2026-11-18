@@ -53,7 +53,10 @@ public interface HostApi {
     AssignmentView start(@PathParam(HostPaths.ASSIGNMENT_ID) UUID assignmentId,
                          @Valid @NotNull StartRequest body);
 
-    /** Posts the result of one job. */
+    /**
+     * Posts the result of one job. A job already {@code SUCCEEDED} or {@code FAILED} is returned as it
+     * is and does not change: the result posted first stays.
+     */
     @POST
     @Path(HostPaths.FINISH)
     AssignmentView finish(@PathParam(HostPaths.ASSIGNMENT_ID) UUID assignmentId,

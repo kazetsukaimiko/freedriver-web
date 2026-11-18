@@ -8,6 +8,7 @@ import io.freedriver.mcp.McpSessions;
 import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
+import io.freedriver.dispatcher.model.HostPaths;
 import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.OnBusy;
 import io.freedriver.dispatcher.model.ReportedBot;
@@ -181,6 +182,32 @@ class McpResourceTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    @Test
+    @TestSecurity(user = "pc-mcp-late", roles = "device")
+    void finish_job_after_the_host_route_failed_the_job_is_a_tool_error_naming_failed() {
+        jobs.register("pc-mcp-late", "late.local", List.of("yuni"));
+        UUID assignment = jobs.submitNow("grok-mcp-late", new SubmitJobRequest(
+                List.of("pc-mcp-late"), "yuni", "late-prompt", Channel.TEXT))
+                .assignments().getFirst().assignmentId();
+        given().contentType("application/json")
+                .body("{\"succeeded\":false,\"note\":\"the turn ended without a result\"}")
+                .post(HostResourceTest.path(HostPaths.FINISH, assignment.toString()))
+                .then()
+                .statusCode(200)
+                .body("state", is("FAILED"));
+
+        String session = initialize();
+        call(session, """
+                {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"finish_job","arguments":{"assignmentId":"%s","succeeded":true,"note":"late result"}}}
+                """.formatted(assignment))
+                .statusCode(200)
+                .body("result.isError", is(true))
+                .body("result.content[0].text", containsString("FAILED"));
+        AssignmentView unchanged = jobs.assignment("pc-mcp-late", assignment);
+        assertEquals(AssignmentState.FAILED, unchanged.state());
+        assertEquals("the turn ended without a result", unchanged.note());
     }
 
     @Test
