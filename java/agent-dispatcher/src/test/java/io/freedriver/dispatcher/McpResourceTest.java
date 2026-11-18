@@ -197,6 +197,8 @@ class McpResourceTest {
                 .then()
                 .statusCode(200)
                 .body("state", is("FAILED"));
+        AssignmentView failed = jobs.assignment("pc-mcp-late", assignment);
+        assertEquals(AssignmentState.FAILED, failed.state());
 
         String session = initialize();
         call(session, """
@@ -205,9 +207,7 @@ class McpResourceTest {
                 .statusCode(200)
                 .body("result.isError", is(true))
                 .body("result.content[0].text", containsString("FAILED"));
-        AssignmentView unchanged = jobs.assignment("pc-mcp-late", assignment);
-        assertEquals(AssignmentState.FAILED, unchanged.state());
-        assertEquals("the turn ended without a result", unchanged.note());
+        assertEquals(failed, jobs.assignment("pc-mcp-late", assignment));
     }
 
     @Test

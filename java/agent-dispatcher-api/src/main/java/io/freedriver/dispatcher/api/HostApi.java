@@ -54,8 +54,8 @@ public interface HostApi {
                          @Valid @NotNull StartRequest body);
 
     /**
-     * Posts the result of one job. A job already {@code SUCCEEDED} or {@code FAILED} is returned as it
-     * is and does not change: the result posted first stays.
+     * Posts the result of one job. A job already finished ({@code SUCCEEDED}, {@code FAILED} or
+     * {@code EXPIRED}) is returned as stored and does not change: the result posted first stays.
      */
     @POST
     @Path(HostPaths.FINISH)

@@ -150,7 +150,7 @@ public class JobStoreService implements JobStore {
             return viewAssignment(moved);
         }
         Assignment row = own(deviceId, id);
-        if (row.status != AssignmentState.SUCCEEDED && row.status != AssignmentState.FAILED) {
+        if (!row.terminal()) {
             throw conflict("assignment is " + row.status);
         }
         LOG.infof("dispatch finish kept assignment=%s device=%s state=%s asked=%s", row.id, row.deviceId,
