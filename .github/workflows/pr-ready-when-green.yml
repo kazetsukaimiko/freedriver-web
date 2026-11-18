@@ -1,7 +1,8 @@
 name: pr-ready-when-green
 
-# After CI, Commitlint, or Grok review succeeds, mark a main-target draft ready
-# and request kaze. GitHub does not re-enter this workflow via workflow_run.
+# After CI, Commitlint, or Grok review succeeds, mark a main-target draft ready and set
+# the manual-review label in the same run (#558). It requests nobody: GitHub requests the
+# code owners. GitHub does not re-enter this workflow via workflow_run.
 on:
   workflow_run:
     workflows:
@@ -24,7 +25,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Mark draft ready and request kaze
+      - name: Mark draft ready and set manual-review
         env:
           GITHUB_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}

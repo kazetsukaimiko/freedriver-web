@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Mark a draft PR ready and request kaze when the required checks are green.
+"""Mark a draft PR ready when the required checks are green, then set manual-review.
 
 Skip keep-draft, a non-default base, a missing or red required check, a Grok
-request-changes verdict on this head, or a did-not-run Grok review.
+request-changes verdict on this head, or a did-not-run Grok review. It requests
+nobody: GitHub requests the code owners itself when the pull request is ready. It
+then sets the manual-review label in the same run with manual_review_label.py,
+because an event caused by the workflow token starts no workflow (#558).
 """
 
 from __future__ import annotations
@@ -12,12 +15,12 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
 import urllib.error
 import urllib.request
 
 GITHUB_API = "https://api.github.com"
 KEEP_DRAFT = "keep-draft"
-REVIEWER = "kazetsukaimiko"
 REQUIRED_CHECKS = (
     "test",
     "webui",
@@ -200,6 +203,11 @@ def cmd_self_test() -> None:
         die("self-test: convert FORBIDDEN skip")
     if convert_skip_reason([{"type": "INTERNAL", "path": ["markPullRequestReadyForReview"]}]) is not None:
         die("self-test: other GraphQL errors must still fail")
+    run_source = inspect.getsource(cmd_run)
+    if "requested_reviewers" in run_source or "REVIEWER" in globals():
+        die("self-test: pr-ready-when-green requests nobody")
+    if "sync_label(repo, number, token" not in run_source:
+        die("self-test: pr-ready-when-green sets manual-review in the same run")
     print("self-test OK")
 
 
@@ -249,32 +257,6 @@ def convert_ready(node_id: str, token: str) -> str | None:
     return None
 
 
-def request_reviewer(repo: str, number: int, token: str) -> None:
-    url = f"{GITHUB_API}/repos/{repo}/pulls/{number}/requested_reviewers"
-    data = json.dumps({"reviewers": [REVIEWER]}).encode()
-    req = urllib.request.Request(
-        url,
-        data=data,
-        method="POST",
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "User-Agent": "pr-ready-when-green",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "Content-Type": "application/json",
-        },
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            resp.read()
-    except urllib.error.HTTPError as error:
-        detail = error.read().decode("utf-8", errors="replace")
-        if error.code in (422, 403) and REVIEWER in detail:
-            print(json.dumps({"skip": "reviewer", "detail": detail[:200]}))
-            return
-        die(f"HTTP {error.code} from {url}: {detail}")
-
-
 def cmd_run() -> None:
     token = require_env("GITHUB_TOKEN")
     repo = require_env("REPO")
@@ -298,8 +280,11 @@ def cmd_run() -> None:
     if convert_skip:
         print(json.dumps({"skip": convert_skip, "pr": number, "sha": sha}))
         return
-    request_reviewer(repo, number, token)
-    print(json.dumps({"ready": True, "pr": number, "sha": sha, "reviewer": REVIEWER}))
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from manual_review_label import sync_label
+
+    label = sync_label(repo, number, token, settle_tries=5)
+    print(json.dumps({"ready": True, "pr": number, "sha": sha, "manual_review": label["label"]}))
 
 
 def main() -> None:
