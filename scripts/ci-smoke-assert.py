@@ -836,7 +836,7 @@ def assert_mcp_tools(client: Client) -> None:
     if status != 200:
         raise SystemExit(f"tools/list HTTP {status}")
     names = [tool.get("name") for tool in payload.get("result", {}).get("tools", [])]
-    for required in ("home_status", "list_appliances", "switch_appliance"):
+    for required in ("home_status", "list_appliances", "switch_appliances"):
         if required not in names:
             raise SystemExit(f"tools/list missing {required}: {names}")
 
@@ -881,16 +881,19 @@ def assert_mcp_tools(client: Client) -> None:
     before = fixture_command_count()
     payload = call_tool(
         4,
-        "switch_appliance",
-        {"instanceId": instance_id, "applianceName": "hallway", "on": False},
+        "switch_appliances",
+        {
+            "instanceId": instance_id,
+            "appliances": [{"applianceName": "hallway", "on": False}],
+        },
     )
     spoken = mcp_text(payload)
     if "turned off" not in spoken.lower():
-        raise SystemExit(f"switch_appliance not confirmed: {spoken!r}")
+        raise SystemExit(f"switch_appliances not confirmed: {spoken!r}")
     after = fixture_command_count()
     if after - before != 1:
         raise SystemExit(f"fixture-house saw {after - before} commands, want 1")
-    print("switch_appliance confirmed")
+    print("switch_appliances confirmed")
 
     payload = call_tool(5, "home_status", {})
     spoken = mcp_text(payload)
