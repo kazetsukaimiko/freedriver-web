@@ -60,6 +60,9 @@ public final class RoleRules {
     public static final String PROCESS_LOCAL = "io.freedriver.stereotypes.ProcessLocal";
     static final String IF_BUILD_PROFILE = "io.quarkus.arc.profile.IfBuildProfile";
 
+    /** A configuration interface: the only class the unqualified {@code @Port} is for. Matched by name. */
+    static final String CONFIG_MAPPING = "io.smallrye.config.ConfigMapping";
+
     /** java.util types that hold mutable state and whose names end in none of the collection words. */
     private static final Set<String> MUTABLE_BY_NAME = Set.of(
             "java.util.Vector", "java.util.Stack", "java.util.Hashtable", "java.util.Properties",
@@ -84,9 +87,11 @@ public final class RoleRules {
     public static ArchRule everyClassHasOneRole() {
         return classes().that(DescribedPredicate.describe("are declared in a source file", RoleRules::declared))
                 .should(haveOneRole())
-                .because("a class says what it is: put one of @Application, @PrimaryPort, @SecondaryPort, @Port, "
-                        + "@PrimaryAdapter, @SecondaryAdapter or @Adapter (org.jmolecules.architecture.hexagonal) on "
-                        + "the package's package-info.java, and on a class only when its role differs from the package's")
+                .because("a class says what it is: put one of @Application, @PrimaryPort, @SecondaryPort, "
+                        + "@PrimaryAdapter or @SecondaryAdapter (org.jmolecules.architecture.hexagonal) on the "
+                        + "package's package-info.java, and on a class only when its role differs from the package's. "
+                        + "The unqualified @Port is for a @ConfigMapping interface, which both sides read; "
+                        + "the unqualified @Adapter is for no class")
                 .allowEmptyShould(true);
     }
 
@@ -156,6 +161,10 @@ public final class RoleRules {
                 } else if (own.isEmpty() && inPackage.size() > 1) {
                     events.add(SimpleConditionEvent.violated(c, c.getName() + " has no role of its own, and package "
                             + pkg + " carries two: " + names(inPackage)));
+                } else if (unqualified(c).isPresent()) {
+                    events.add(SimpleConditionEvent.violated(c, c.getName() + " has the unqualified "
+                            + names(List.of(unqualified(c).get())) + "; it is for a @ConfigMapping interface only "
+                            + "(@Port) or for no class (@Adapter): give it a primary or secondary role"));
                 } else if (own.size() == 1 && inPackage.size() == 1 && PACKAGE_WIDE.contains(inPackage.get(0))
                         && !own.equals(inPackage)) {
                     events.add(SimpleConditionEvent.violated(c, c.getName() + " carries " + names(own) + " in package "
@@ -164,6 +173,20 @@ public final class RoleRules {
                 }
             }
         };
+    }
+
+    /**
+     * The unqualified role a top-level class has when it may not: {@code @Adapter} on any class, and
+     * {@code @Port} on anything but a {@code @ConfigMapping} interface. Otherwise any class could take
+     * the unqualified port to leave rule 2's direction checks.
+     */
+    private static Optional<String> unqualified(JavaClass c) {
+        Optional<String> role = role(c);
+        if (role.filter(ADAPTER::equals).isPresent()) {
+            return role;
+        }
+        boolean configMapping = c.isInterface() && c.isAnnotatedWith(CONFIG_MAPPING);
+        return role.filter(PORT::equals).filter(r -> !configMapping);
     }
 
     private static ArchCondition<JavaClass> keepNoState() {

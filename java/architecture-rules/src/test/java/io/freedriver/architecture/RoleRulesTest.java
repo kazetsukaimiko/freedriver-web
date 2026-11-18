@@ -52,6 +52,19 @@ class RoleRulesTest {
     }
 
     @Test
+    void the_unqualified_port_is_for_a_config_mapping_interface_and_adapter_for_no_class() {
+        EvaluationResult result = evaluate(RoleRules.everyClassHasOneRole(), "unqualified");
+        assertViolations(result, 3);
+        String fixture = "io.freedriver.architecture.fixtures.unqualified.";
+        assertReports(result, fixture + "PortClass has the unqualified @Port; it is for a @ConfigMapping interface only");
+        assertReports(result, fixture + "PortInterface has the unqualified @Port; it is for a @ConfigMapping interface only");
+        assertReports(result, fixture + "AnyAdapter has the unqualified @Adapter; it is for a @ConfigMapping interface only "
+                + "(@Port) or for no class (@Adapter)");
+        assertFalse(result.getFailureReport().getDetails().stream().anyMatch(l -> l.contains("Settings ")),
+                "the @ConfigMapping interface with @Port passes");
+    }
+
+    @Test
     void roles_from_the_package_and_from_the_class_pass() {
         assertPasses(RoleRules.everyClassHasOneRole(), "hexagon");
         assertPasses(RoleRules.everyClassHasOneRole(), "state");
