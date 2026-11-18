@@ -733,6 +733,36 @@ def apply_fixture_acl(instance_id: str) -> None:
     compose("kill", "-s", "HUP", "mosquitto")
 
 
+def wait_dashboard_mqtt_follows(instance_id: str) -> None:
+    """Both dashboard replicas subscribe to a new house on a 60s refresh."""
+    needle = f"mqtt instance subscription instance={instance_id} outcome=subscribed"
+    ids = replica_ids("dashboard")
+    if len(ids) != 2:
+        raise SystemExit(f"dashboard replica count {len(ids)}, want 2")
+    pending = set(ids)
+    for _ in range(45):
+        still: set[str] = set()
+        for cid in pending:
+            try:
+                raw = subprocess.check_output(
+                    ["docker", "logs", cid],
+                    text=True,
+                    stderr=subprocess.STDOUT,
+                )
+            except subprocess.CalledProcessError as exc:
+                raw = exc.output or ""
+            if needle not in raw:
+                still.add(cid)
+        pending = still
+        if not pending:
+            print("dashboard mqtt subscribed", instance_id)
+            return
+        time.sleep(2)
+    raise SystemExit(
+        f"dashboard replicas missing mqtt subscribe for {instance_id}: {len(pending)} still waiting"
+    )
+
+
 def start_fixture_house(instance_id: str, password: str) -> None:
     set_env_value("FIXTURE_INSTANCE_ID", instance_id)
     set_env_value("FIXTURE_HOUSE_PASSWORD", password)
@@ -1096,6 +1126,7 @@ def main() -> int:
     complete_fixture_profile(instance_id)
     apply_fixture_acl(instance_id)
     start_fixture_house(instance_id, password)
+    wait_dashboard_mqtt_follows(instance_id)
     os.environ["FIXTURE_INSTANCE_ID"] = instance_id
     assert_login_across_replicas(client)
     assert_mcp_tools(client)
