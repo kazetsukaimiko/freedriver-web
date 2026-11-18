@@ -545,6 +545,30 @@ def assert_headers_anonymous(client: Client) -> None:
     raise SystemExit(f"outside headers HTTP {last[0]} url={last[1]} body={last[2]!r}")
 
 
+def assert_management_hidden(client: Client) -> None:
+    """The public app host answers 404 for the management paths (#593)."""
+    for path in ("/q", "/q/metrics", "/q/health"):
+        status, _, body, _ = client.request(f"{APP}{path}", follow=False)
+        if status != 404:
+            raise SystemExit(f"{path} through Caddy HTTP {status}, want 404 body={body[:200]!r}")
+        print("management hidden", path, status)
+
+
+def assert_metrics_inside() -> None:
+    """Prometheus's path still works: dashboard:8080/q/metrics on the compose network has meters (#593)."""
+    container = f"{PROJECT}-caddy-1"
+    text = subprocess.check_output(
+        ["docker", "exec", container, "wget", "-qO-", "http://dashboard:8080/q/metrics"],
+        text=True,
+        stderr=subprocess.STDOUT,
+        timeout=30,
+    )
+    types = [line for line in text.splitlines() if line.startswith("# TYPE ")]
+    if "jvm_memory_used_bytes" not in text or len(types) < 10:
+        raise SystemExit(f"dashboard:8080/q/metrics has {len(types)} meters, no jvm_memory_used_bytes")
+    print("metrics inside", len(types), "meters")
+
+
 def assert_phone_sign_in(client: Client) -> None:
     status, headers, body, url = client.request(f"{APP}/login")
     html = body.decode("utf-8", "replace")
@@ -1062,9 +1086,11 @@ def main() -> int:
     assert_build(client)
     assert_mcp_challenges(client)
     assert_headers_anonymous(client)
+    assert_management_hidden(client)
     assert_replica_counts()
     for name in ("dashboard", "agent-dispatcher", "autonomy-mcp"):
         wait_caddy_dns(name)
+    assert_metrics_inside()
     assert_phone_sign_in(client)
     instance_id, password = provision_fixture_house(client)
     complete_fixture_profile(instance_id)

@@ -53,7 +53,7 @@
 # registered grok.com clients get the same pair in the autonomy-mcp audience
 # loop. offline_access is not a realm default.
 # Anonymous DCR grok.com clients inherit mcp-user and dashboard from the roles
-# client scope so an autonomy token can call tools/list and switch_appliance.
+# client scope so an autonomy token can call tools/list and switch_appliances.
 # Mapper audience-autonomy-mcp on freedriver-grok-mcp and grok.com DCR clients
 # puts access-token aud https://app.freedriver.io/autonomy/mcp. The same mapper
 # lives on client scope autonomy-mcp, a realm default so a later DCR client
