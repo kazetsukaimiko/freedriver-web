@@ -17,9 +17,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Grafana path: Micrometer meters that Prometheus scrapes at {@code /q/metrics}.
- * Blocking-IO interceptors must skip this type ({@link GrafanaMetricsSink}).
+ * It carries no {@code @Timed}: {@link IoTimer#BLOCKING} times the beans that do blocking IO.
  */
-@GrafanaMetricsSink
 @ApplicationScoped
 public class GrafanaMetricsEmitter {
     private final MeterRegistry registry;

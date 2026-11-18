@@ -4,6 +4,7 @@ import io.freedriver.app.appliances.SubscribedHouses;
 import io.freedriver.app.appliances.MqttAcl;
 import io.freedriver.mqtt.MqttConnection;
 import io.freedriver.mqtt.MqttLog;
+import io.micrometer.core.annotation.Timed;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -16,7 +17,7 @@ import java.util.UUID;
  * Micrometer. {@link SubscribedHouses} holds the houses. Uses the same MQTT session as
  * appliance state, after {@code MqttLiveClient} has connected it. Does not publish.
  */
-@BlockingIo
+@Timed(IoTimer.BLOCKING)
 @ApplicationScoped
 public class MetricsMqttForwarder {
     static final int MAX_BYTES = 64 * 1024;
