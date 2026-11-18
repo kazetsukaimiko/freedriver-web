@@ -5,6 +5,7 @@ import io.freedriver.mcp.McpEndpoint;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
+import io.restassured.path.json.JsonPath;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,6 +20,7 @@ import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
@@ -44,6 +46,7 @@ class McpResourceTest {
         DashboardStub.recorded.clear();
         DashboardStub.exchanges.clear();
         DashboardStub.down.set(false);
+        DashboardStub.refusedAppliances.clear();
     }
 
     @Test
@@ -232,22 +235,44 @@ class McpResourceTest {
 
     @Test
     @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
-    void switch_schema_offers_optional_delay_seconds() {
+    void switch_appliances_advertises_a_list_of_entries_and_switch_appliance_is_gone() {
         String session = initialize();
-        given().contentType("application/json")
+        String tools = given().contentType("application/json")
                 .accept("application/json, text/event-stream")
                 .header(McpEndpoint.SESSION_HEADER, session)
                 .body("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}")
                 .post("/autonomy/mcp")
                 .then()
                 .statusCode(200)
-                .body("result.tools.find { it.name == 'switch_appliance' }.inputSchema.properties.delaySeconds.type", is("integer"))
-                .body("result.tools.find { it.name == 'switch_appliance' }.inputSchema.properties.delaySeconds.minimum", is(0))
-                .body("result.tools.find { it.name == 'switch_appliance' }.inputSchema.properties.delaySeconds.maximum", is(86400))
-                .body("result.tools.find { it.name == 'switch_appliance' }.inputSchema.properties.delaySeconds.description", containsString("300"))
-                .body("result.tools.find { it.name == 'switch_appliance' }.inputSchema.required", hasItem("on"))
-                .body("result.tools.find { it.name == 'switch_appliance' }.inputSchema.required", not(hasItem("delaySeconds")))
-                .body("result.tools.every { it.inputSchema.additionalProperties == false }", is(true));
+                .body("result.tools.name", hasItem("switch_appliances"))
+                .body("result.tools.name", not(hasItem("switch_appliance")))
+                .body("result.tools.every { it.inputSchema.additionalProperties == false }", is(true))
+                .extract().asString();
+        JsonPath list = JsonPath.from(tools);
+        String tool = "result.tools.find { it.name == 'switch_appliances' }";
+        Map<String, Object> schema = list.getMap(tool + ".inputSchema");
+        String shown = String.valueOf(schema);
+        assertEquals(java.util.Set.of("instanceId", "appliances"), java.util.Set.copyOf(list.getList(tool + ".inputSchema.required")), shown);
+        assertEquals("array", list.getString(tool + ".inputSchema.properties.appliances.type"), shown);
+        assertEquals(1, list.getInt(tool + ".inputSchema.properties.appliances.minItems"), shown);
+        assertEquals(16, list.getInt(tool + ".inputSchema.properties.appliances.maxItems"), shown);
+        String item = tool + ".inputSchema.properties.appliances.items";
+        assertEquals("object", list.getString(item + ".type"), shown);
+        assertEquals(false, list.getBoolean(item + ".additionalProperties"), shown);
+        assertEquals(java.util.Set.of("applianceName", "on", "delaySeconds"),
+                list.getMap(item + ".properties").keySet(), shown);
+        assertEquals("string", list.getString(item + ".properties.applianceName.type"), shown);
+        assertEquals(1, list.getInt(item + ".properties.applianceName.minLength"), shown);
+        assertEquals(64, list.getInt(item + ".properties.applianceName.maxLength"), shown);
+        assertEquals("boolean", list.getString(item + ".properties.on.type"), shown);
+        assertEquals("integer", list.getString(item + ".properties.delaySeconds.type"), shown);
+        assertEquals(0, list.getInt(item + ".properties.delaySeconds.minimum"), shown);
+        assertEquals(86400, list.getInt(item + ".properties.delaySeconds.maximum"), shown);
+        assertTrue(list.getList(item + ".required").containsAll(List.of("applianceName", "on")), shown);
+        assertFalse(list.getList(item + ".required").contains("delaySeconds"), shown);
+        assertTrue(list.getString(tool + ".description").contains("`delaySeconds` 300"), shown);
+        assertTrue(list.getString("result.tools.find { it.name == 'list_appliances' }.description")
+                .contains("switch_appliances"));
     }
 
     @Test
@@ -291,87 +316,251 @@ class McpResourceTest {
     }
 
     /**
-     * Pinned answers. Before the MCP library every case here was -32602 "invalid params". The library
-     * keeps -32602 and names the argument or the constraint. A Bean Validation refusal (the
-     * {@code switchAppliance.} messages) also writes a {@code denied} audit line; a value the library
-     * cannot convert, or a missing argument, is refused by the library before the tool bean and is not audited.
+     * Pinned answers. Every case is -32602 naming the argument or the constraint. A Bean Validation
+     * refusal (the {@code switchAppliances.} messages) also writes a {@code denied} audit line; a value
+     * the library cannot convert, or a missing argument, is refused by the library before the tool bean
+     * and is not audited.
      */
     @Test
     @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
     void a_bad_argument_is_invalid_params_and_switches_nothing() {
         String session = initialize();
         String[][] cases = {
-            {baseSwitch() + ",\"delaySeconds\":-1", "switchAppliance.delaySeconds: must be greater than or equal to 0"},
-            {baseSwitch() + ",\"delaySeconds\":1.5", "Invalid argument [delaySeconds] - unable to convert value"},
-            {baseSwitch() + ",\"delaySeconds\":86401", "switchAppliance.delaySeconds: must be less than or equal to 86400"},
-            {baseSwitch() + ",\"delaySeconds\":\"300\"", "Invalid argument [delaySeconds] - unable to convert value"},
-            {SWITCH_TARGET + ",\"applianceName\":\"fridge\",\"on\":\"true\"", "Invalid argument [on] - unable to convert value"},
-            {SWITCH_TARGET + ",\"applianceName\":\"fridge\",\"on\":1", "Invalid argument [on] - unable to convert value"},
-            {SWITCH_TARGET + ",\"applianceName\":5,\"on\":false", "Invalid argument [applianceName] - unable to convert value"},
-            {SWITCH_TARGET + ",\"applianceName\":\" \",\"on\":false", "switchAppliance.applianceName: must not be blank"},
-            {SWITCH_TARGET + ",\"applianceName\":\"" + "x".repeat(65) + "\",\"on\":false",
-                "switchAppliance.applianceName: size must be between 0 and 64"},
-            {"\"instanceId\":\"abc\",\"applianceName\":\"fridge\",\"on\":false", "Invalid argument [instanceId] - unable to convert value"},
-            {SWITCH_TARGET + ",\"applianceName\":\"fridge\"", "Missing required argument: on"}
+            {entries("{\"applianceName\":\"fridge\",\"on\":false,\"delaySeconds\":-1}"),
+                "switchAppliances.appliances[0].delaySeconds: must be greater than or equal to 0"},
+            {entries("{\"applianceName\":\"fridge\",\"on\":false,\"delaySeconds\":1.5}"),
+                "Invalid argument [appliances] - unable to convert value"},
+            {entries("{\"applianceName\":\"fridge\",\"on\":false,\"delaySeconds\":86401}"),
+                "switchAppliances.appliances[0].delaySeconds: must be less than or equal to 86400"},
+            {entries("{\"applianceName\":\"fridge\",\"on\":false,\"delaySeconds\":\"300\"}"),
+                "Invalid argument [appliances] - unable to convert value"},
+            {entries("{\"applianceName\":\"fridge\",\"on\":\"true\"}"),
+                "Invalid argument [appliances] - unable to convert value"},
+            {entries("{\"applianceName\":\"fridge\",\"on\":1}"),
+                "Invalid argument [appliances] - unable to convert value"},
+            {entries("{\"applianceName\":5,\"on\":false}"),
+                "Invalid argument [appliances] - unable to convert value"},
+            {entries("{\"applianceName\":\" \",\"on\":false}"),
+                "switchAppliances.appliances[0].applianceName: must not be blank"},
+            {entries("{\"applianceName\":\"" + "x".repeat(65) + "\",\"on\":false}"),
+                "switchAppliances.appliances[0].applianceName: size must be between 0 and 64"},
+            {entries("{\"applianceName\":\"fridge\"}"),
+                "switchAppliances.appliances[0].on: must not be null"},
+            {entries("{\"on\":false}"),
+                "switchAppliances.appliances[0].applianceName: must not be blank"},
+            {entries("null"),
+                "switchAppliances.appliances[0].<list element>: must not be null"},
+            {entries(),
+                "switchAppliances.appliances: must not be empty"},
+            {entries(java.util.Collections.nCopies(17, "{\"applianceName\":\"fridge\",\"on\":false}").toArray(String[]::new)),
+                "switchAppliances.appliances: size must be between 0 and 16"},
+            {SWITCH_TARGET + ",\"appliances\":{\"applianceName\":\"fridge\",\"on\":false}",
+                "Invalid argument [appliances] - unable to convert value"},
+            {"\"instanceId\":\"abc\",\"appliances\":[{\"applianceName\":\"fridge\",\"on\":false}]",
+                "Invalid argument [instanceId] - unable to convert value"},
+            {SWITCH_TARGET,
+                "Missing required argument: appliances"}
         };
         AuditLines audit = AuditLines.open();
+        List<String> answers = new java.util.ArrayList<>();
         for (String[] pin : cases) {
-            given().contentType("application/json")
+            String answer = given().contentType("application/json")
                     .accept("application/json, text/event-stream")
                     .header(McpEndpoint.SESSION_HEADER, session)
                     .body(switchArguments(pin[0]))
                     .post("/autonomy/mcp")
                     .then()
                     .statusCode(200)
-                    .body("error.code", is(-32602))
-                    .body("error.message", is(pin[1]));
+                    .extract().asString();
+            answers.add(JsonPath.from(answer).getInt("error.code") + " " + JsonPath.from(answer).getString("error.message"));
         }
+        List<String> pinned = java.util.Arrays.stream(cases).map(pin -> "-32602 " + pin[1]).toList();
+        assertEquals(pinned, answers, String.join("\n", answers));
         assertEquals(0, posts());
         audit.close();
-        long constraintRefusals = java.util.Arrays.stream(cases).filter(pin -> pin[1].startsWith("switchAppliance.")).count();
+        long constraintRefusals = java.util.Arrays.stream(cases).filter(pin -> pin[1].startsWith("switchAppliances.")).count();
         assertEquals(constraintRefusals, audit.lines().stream()
-                .filter(line -> line.contains("tool=switch_appliance") && line.endsWith("result=denied")).count(),
+                .filter(line -> line.contains("tool=switch_appliances") && line.endsWith("result=denied")).count(),
                 audit.lines()::toString);
     }
 
-    /** Pinned: an argument the tool does not declare is refused before the tool runs, as before the MCP library. */
+    /** An argument the tool does not declare, or an entry field the entry does not declare, is refused before the tool runs. */
     @Test
     @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
     void an_unknown_argument_is_refused_and_nothing_switches() {
         String session = initialize();
         try (AuditLines audit = AuditLines.open()) {
-            given().contentType("application/json")
-                    .accept("application/json, text/event-stream")
-                    .header(McpEndpoint.SESSION_HEADER, session)
-                    .body(switchArguments(baseSwitch() + ",\"duration\":300"))
-                    .post("/autonomy/mcp")
-                    .then()
-                    .statusCode(200)
-                    .body("error.code", is(-32602))
-                    .body("error.message", is("invalid params"));
+            for (String arguments : new String[] {
+                baseSwitch() + ",\"duration\":300",
+                entries(entry("porch", true, null), "{\"applianceName\":\"fridge\",\"on\":false,\"duration\":300}")}) {
+                given().contentType("application/json")
+                        .accept("application/json, text/event-stream")
+                        .header(McpEndpoint.SESSION_HEADER, session)
+                        .body(switchArguments(arguments))
+                        .post("/autonomy/mcp")
+                        .then()
+                        .statusCode(200)
+                        .body("error.code", is(-32602))
+                        .body("error.message", is("invalid params"));
+            }
             assertEquals(0, posts());
-            assertTrue(audit.lines().stream().anyMatch(line -> line.contains("sub=mcp-switch")
-                    && line.contains("tool=switch_appliance")
+            assertEquals(2, audit.lines().stream().filter(line -> line.contains("sub=mcp-switch")
+                    && line.contains("tool=switch_appliances")
                     && line.contains("instance=11111111-1111-1111-1111-111111111111")
-                    && line.contains("appliance=fridge")
-                    && line.endsWith("result=denied")), audit.lines()::toString);
+                    && line.endsWith("result=denied")).count(), audit.lines()::toString);
         }
     }
 
+    @Test
     @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
-    void an_unknown_argument_is_ignored_and_the_switch_runs_now() {
+    void several_appliances_in_one_call_each_reach_the_dashboard_in_order() {
+        String session = initialize();
+        try (AuditLines audit = AuditLines.open()) {
+            given().contentType("application/json")
+                    .accept("application/json, text/event-stream")
+                    .header(McpEndpoint.SESSION_HEADER, session)
+                    .body(switches(entry("fridge", true, null), entry("porch light", false, null), entry("lamp", true, 300)))
+                    .post("/autonomy/mcp")
+                    .then()
+                    .statusCode(200)
+                    .body("result.isError", is(false))
+                    .body("result.content[0].text",
+                            is("Fridge turned on. Porch light turned off. Lamp will turn on in 5 minutes."));
+            List<DashboardStub.Recorded> posted = DashboardStub.recorded.stream()
+                    .filter(r -> "POST".equals(r.method())).toList();
+            assertEquals(3, posted.size(), posted::toString);
+            assertEquals("/api/appliances/11111111-1111-1111-1111-111111111111/fridge", posted.get(0).path());
+            assertTrue(posted.get(0).body().contains("\"on\":true"), posted.get(0)::toString);
+            assertEquals("/api/appliances/11111111-1111-1111-1111-111111111111/porch light", posted.get(1).path());
+            assertTrue(posted.get(1).body().contains("\"on\":false"), posted.get(1)::toString);
+            assertEquals("/api/mcp/scheduled-switches", posted.get(2).path());
+            assertTrue(posted.get(2).body().contains("\"on\":true") && posted.get(2).body().contains("lamp"),
+                    posted.get(2)::toString);
+            assertTrue(onlyAsCaller("mcp-switch"));
+            assertEquals(List.of("appliance=fridge result=allowed", "appliance=porch light result=allowed",
+                    "appliance=lamp result=scheduled"), switchAudit(audit));
+        }
+    }
+
+    @Test
+    @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
+    void a_refused_entry_is_reported_with_the_others_outcomes() {
+        DashboardStub.refusedAppliances.put("porch", 429);
+        String session = initialize();
+        try (AuditLines audit = AuditLines.open()) {
+            given().contentType("application/json")
+                    .accept("application/json, text/event-stream")
+                    .header(McpEndpoint.SESSION_HEADER, session)
+                    .body(switches(entry("fridge", true, null), entry("porch", true, null), entry("lamp", false, null)))
+                    .post("/autonomy/mcp")
+                    .then()
+                    .statusCode(200)
+                    .body("result.isError", is(false))
+                    .body("result.content[0].text",
+                            is("Fridge turned on. Porch: too many requests. Try again in a minute. Lamp turned off."));
+            assertEquals(3, posts());
+            assertEquals(List.of("appliance=fridge result=allowed", "appliance=porch result=rate-limited",
+                    "appliance=lamp result=allowed"), switchAudit(audit));
+        }
+    }
+
+    @Test
+    @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
+    void every_entry_refused_is_a_tool_error() {
+        DashboardStub.refusedAppliances.put("porch", 403);
+        DashboardStub.refusedAppliances.put("lamp", 409);
         String session = initialize();
         given().contentType("application/json")
                 .accept("application/json, text/event-stream")
                 .header(McpEndpoint.SESSION_HEADER, session)
-                .body(switchArguments(baseSwitch() + ",\"duration\":300"))
+                .body(switches(entry("porch", true, null), entry("lamp", true, null)))
+                .post("/autonomy/mcp")
+                .then()
+                .statusCode(200)
+                .body("result.isError", is(true))
+                .body("result.content[0].text", is("Porch: that was refused. Lamp: that house has gone quiet."));
+    }
+
+    /** The test profile allows 8 hits per minute. */
+    @Test
+    @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
+    void a_list_longer_than_the_allowance_left_is_refused_whole() {
+        String session = initialize();
+        String six = switches(entry("a", true, null), entry("b", true, null), entry("c", true, null),
+                entry("d", true, null), entry("e", true, null), entry("f", true, null));
+        given().contentType("application/json")
+                .accept("application/json, text/event-stream")
+                .header(McpEndpoint.SESSION_HEADER, session)
+                .body(six)
+                .post("/autonomy/mcp")
+                .then()
+                .statusCode(200)
+                .body("result.isError", is(false));
+        assertEquals(6, posts());
+        try (AuditLines audit = AuditLines.open()) {
+            given().contentType("application/json")
+                    .accept("application/json, text/event-stream")
+                    .header(McpEndpoint.SESSION_HEADER, session)
+                    .body(switches(entry("g", true, null), entry("h", true, null), entry("i", true, null)))
+                    .post("/autonomy/mcp")
+                    .then()
+                    .statusCode(200)
+                    .body("result.isError", is(true))
+                    .body("result.content[0].text", is("Too many requests. Try again in a minute."));
+            assertEquals(6, posts(), "the refused call reached the dashboard");
+            assertEquals(List.of("appliance=g result=rate-limited", "appliance=h result=rate-limited",
+                    "appliance=i result=rate-limited"), switchAudit(audit));
+        }
+        given().contentType("application/json")
+                .accept("application/json, text/event-stream")
+                .header(McpEndpoint.SESSION_HEADER, session)
+                .body(switches(entry("g", true, null), entry("h", true, null)))
                 .post("/autonomy/mcp")
                 .then()
                 .statusCode(200)
                 .body("result.isError", is(false))
-                .body("result.content[0].text", is("Fridge turned off."));
-        assertEquals(1, posts());
-        assertTrue(DashboardStub.recorded.stream().noneMatch(r -> r.path().equals("/api/mcp/scheduled-switches")));
+                .body("result.content[0].text", is("G turned on. H turned on."));
+        assertEquals(8, posts());
+    }
+
+    @Test
+    @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
+    void the_same_appliance_and_delay_twice_is_refused_whole() {
+        String session = initialize();
+        try (AuditLines audit = AuditLines.open()) {
+            given().contentType("application/json")
+                    .accept("application/json, text/event-stream")
+                    .header(McpEndpoint.SESSION_HEADER, session)
+                    .body(switches(entry("porch", true, null), entry("fridge", true, null), entry("fridge", false, 0)))
+                    .post("/autonomy/mcp")
+                    .then()
+                    .statusCode(200)
+                    .body("result.isError", is(true))
+                    .body("result.content[0].text", is("Fridge is listed twice with the same delay. "
+                            + "List each appliance once per delay; nothing was switched."));
+            assertEquals(0, posts());
+            assertEquals(List.of("appliance=porch result=denied", "appliance=fridge result=denied",
+                    "appliance=fridge result=denied"), switchAudit(audit));
+        }
+    }
+
+    @Test
+    @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
+    void the_same_appliance_with_different_delays_switches_and_schedules() {
+        String session = initialize();
+        given().contentType("application/json")
+                .accept("application/json, text/event-stream")
+                .header(McpEndpoint.SESSION_HEADER, session)
+                .body(switches(entry("fridge", true, null), entry("fridge", false, 300)))
+                .post("/autonomy/mcp")
+                .then()
+                .statusCode(200)
+                .body("result.isError", is(false))
+                .body("result.content[0].text", is("Fridge turned on. Fridge will turn off in 5 minutes."));
+        assertEquals(2, posts());
+        assertTrue(DashboardStub.recorded.stream().anyMatch(r -> r.path().endsWith("/fridge") && r.body().contains("\"on\":true")));
+        assertTrue(DashboardStub.recorded.stream().anyMatch(r -> "/api/mcp/scheduled-switches".equals(r.path())
+                && r.body().contains("\"on\":false")));
     }
 
     @Test
@@ -436,17 +625,20 @@ class McpResourceTest {
     void dashboard_down_is_spoken_refusal_for_every_tool() {
         DashboardStub.down.set(true);
         String session = initialize();
-        for (String body : new String[] {call("list_appliances"), call("home_status"), call("debug"), switchBody("fridge", false)}) {
-            given().contentType("application/json")
+        Map<String, String> answers = Map.of(
+                call("list_appliances"), "The house could not be reached.",
+                call("home_status"), "The house could not be reached.",
+                call("debug"), "The house could not be reached.",
+                switchBody("fridge", false), "Fridge: the house could not be reached.");
+        answers.forEach((body, text) -> given().contentType("application/json")
                 .accept("application/json, text/event-stream")
-                    .header(McpEndpoint.SESSION_HEADER, session)
-                    .body(body)
-                    .post("/autonomy/mcp")
-                    .then()
-                    .statusCode(200)
-                    .body("result.isError", is(true))
-                    .body("result.content[0].text", is("The house could not be reached."));
-        }
+                .header(McpEndpoint.SESSION_HEADER, session)
+                .body(body)
+                .post("/autonomy/mcp")
+                .then()
+                .statusCode(200)
+                .body("result.isError", is(true))
+                .body("result.content[0].text", is(text)));
     }
 
     @Test
@@ -487,22 +679,41 @@ class McpResourceTest {
     }
 
     private static String switchBody(String appliance, boolean on, Integer delaySeconds) {
+        return switchArguments(SWITCH_TARGET + ",\"appliances\":[" + entry(appliance, on, delaySeconds) + "]");
+    }
+
+    private static String entry(String appliance, boolean on, Integer delaySeconds) {
         String delay = delaySeconds == null ? "" : ",\"delaySeconds\":" + delaySeconds;
-        return "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{"
-                + "\"name\":\"switch_appliance\",\"arguments\":{"
-                + "\"instanceId\":\"11111111-1111-1111-1111-111111111111\","
-                + "\"applianceName\":\"" + appliance + "\",\"on\":" + on + delay + "}}}";
+        return "{\"applianceName\":\"" + appliance + "\",\"on\":" + on + delay + "}";
+    }
+
+    /** A switch_appliances call with these entries, in order. */
+    private static String switches(String... entries) {
+        return switchArguments(SWITCH_TARGET + ",\"appliances\":[" + String.join(",", entries) + "]");
     }
 
     private static final String SWITCH_TARGET = "\"instanceId\":\"11111111-1111-1111-1111-111111111111\"";
 
     private static String baseSwitch() {
-        return SWITCH_TARGET + ",\"applianceName\":\"fridge\",\"on\":false";
+        return SWITCH_TARGET + ",\"appliances\":[" + entry("fridge", false, null) + "]";
     }
 
     private static String switchArguments(String arguments) {
         return "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{"
-                + "\"name\":\"switch_appliance\",\"arguments\":{" + arguments + "}}}";
+                + "\"name\":\"switch_appliances\",\"arguments\":{" + arguments + "}}}";
+    }
+
+    /** A switch_appliances argument list for this house with these entries, in order. */
+    private static String entries(String... entries) {
+        return SWITCH_TARGET + ",\"appliances\":[" + String.join(",", entries) + "]";
+    }
+
+    /** The appliance and result of each switch_appliances audit line, in order. */
+    private static List<String> switchAudit(AuditLines audit) {
+        return audit.lines().stream()
+                .filter(line -> line.contains("tool=switch_appliances"))
+                .map(line -> line.substring(line.indexOf("appliance=")))
+                .toList();
     }
 
     private static long posts() {
