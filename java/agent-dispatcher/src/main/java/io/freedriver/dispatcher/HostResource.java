@@ -52,6 +52,6 @@ public class HostResource implements HostApi {
 
     @Override
     public AssignmentView finish(UUID assignmentId, FinishRequest body) {
-        return jobs.finish(JobCallers.deviceId(identity), assignmentId, body.succeeded(), body.note());
+        return jobs.finishIfOpen(JobCallers.deviceId(identity), assignmentId, body.succeeded(), body.note());
     }
 }
