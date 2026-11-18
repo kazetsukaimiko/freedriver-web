@@ -166,6 +166,7 @@ provision_env=(
   AUTONOMY_MCP_ENV_FILE="$work/secrets/autonomy-mcp.env"
   PORTAL_JOBS_ENV_FILE="$work/secrets/portal-jobs.env"
   SECRETS_ENV="$work/secrets.env"
+  FREEDRIVER_GRANT_SCOPES_ENFORCED=1
 )
 if [[ "$USE_DOCKER" -eq 0 ]]; then
   provision_env+=(

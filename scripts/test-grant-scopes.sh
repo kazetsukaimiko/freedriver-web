@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Throwaway Keycloak proof for #527: grant scopes on a scratch realm.
-# A token carries exactly the grants it was given and the roles those grants
-# need. Exchange cannot add dashboard or appliances.write. Prints claims only.
+# First provision has no switch so a registered client still carries dashboard.
+# FREEDRIVER_GRANT_SCOPES_ENFORCED=1 then narrows. A token carries exactly the
+# grants it was given and the roles those grants need. Exchange cannot add
+# dashboard or appliances.write. Prints claims only.
 # Secrets stay in the work directory.
 # Prefers docker. Without docker, starts Keycloak 26.7.5 from the release tarball.
 set -euo pipefail
@@ -192,6 +194,10 @@ if ! grep -q 'Created client scope appliances.read' "$work/provision-1.log"; the
   echo "first provision must create grant scopes" >&2
   exit 1
 fi
+if ! grep -q 'Client scope roles includes mcp-user and dashboard' "$work/provision-1.log"; then
+  echo "first provision without the switch must keep dashboard on the roles scope" >&2
+  exit 1
+fi
 
 python3 - "$GROK_REDIRECT" "$work/dcr-body.json" <<'PY'
 import json, sys
@@ -229,17 +235,6 @@ PY
 )"
 rm -f "$work/dcr.json" "$work/dcr-body.json"
 echo "DCR client registered"
-
-env "${provision_env[@]}" bash scripts/provision-keycloak-freedriver.sh | tee "$work/provision-2.log"
-if grep -q 'Created role mcp-debug' "$work/provision-2.log"; then
-  echo "second provision must not create role mcp-debug again" >&2
-  exit 1
-fi
-if grep -q 'Created client scope appliances.read' "$work/provision-2.log"; then
-  echo "second provision must not create grant scopes again" >&2
-  exit 1
-fi
-echo "second provision changed nothing"
 
 dcr_uuid="$(admin get clients -r freedriver -q "clientId=${DCR_CLIENT_ID}" --fields id --format csv --noquotes | csv_id)"
 # Scratch-only: ROPC mints a DCR-azp user token without grok.com auth-code.
@@ -416,6 +411,35 @@ admin create users -r freedriver \
   -s email=grant-read@freedriver.invalid \
   -s 'requiredActions=[]' >/dev/null
 admin add-roles -r freedriver --uusername grant-read --rolename mcp-user >/dev/null
+
+ropc grant-full "openid" "$work/row-unenforced.json"
+python3 - "$work/row-unenforced.json" <<'PY'
+import json, sys
+c = json.load(open(sys.argv[1], encoding="utf-8"))
+scope, roles = set(c.get("scope") or []), set(c.get("roles") or [])
+if scope & {"appliances.read", "appliances.write", "mcp.debug", "phones.admin"}:
+    raise SystemExit("unenforced no-grant scope: " + ",".join(sorted(scope)))
+if "mcp-user" not in roles or "dashboard" not in roles:
+    raise SystemExit("unenforced no-grant roles: " + ",".join(sorted(roles)))
+print("row unenforced no-grant: scope has no grant; roles mcp-user, dashboard")
+PY
+assert_row "unenforced-no-grant" "$work/row-unenforced.json"
+
+provision_env+=(FREEDRIVER_GRANT_SCOPES_ENFORCED=1)
+env "${provision_env[@]}" bash scripts/provision-keycloak-freedriver.sh | tee "$work/provision-2.log"
+if grep -q 'Created role mcp-debug' "$work/provision-2.log"; then
+  echo "second provision must not create role mcp-debug again" >&2
+  exit 1
+fi
+if grep -q 'Created client scope appliances.read' "$work/provision-2.log"; then
+  echo "second provision must not create grant scopes again" >&2
+  exit 1
+fi
+if ! grep -q 'Client scope roles maps mcp-user only' "$work/provision-2.log"; then
+  echo "second provision with the switch must map the roles scope to mcp-user only" >&2
+  exit 1
+fi
+echo "second provision changed nothing"
 
 ropc grant-full "openid" "$work/row-none.json"
 python3 - "$work/row-none.json" <<'PY'
