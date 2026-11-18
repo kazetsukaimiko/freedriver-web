@@ -33,7 +33,7 @@ The dashboard stores a delayed switch in the Mongo collection `scheduled-switche
 
 Rate limit is 30 calls per 60 seconds per subject per tool; each `switch_appliances` entry counts as one call. Each switch also takes the dashboard command limiter. Spoken replies name appliances and omit instance ids.
 
-`GET /api/autonomy/oauth-protected-resource` is the only unauthenticated autonomy response. It is OAuth protected-resource metadata. `/autonomy/mcp` requires a bearer. A session id names the bearer subject that opened it, and a different subject presenting it receives 403. That binding is the Redis key `freedriver:mcp:autonomy:` plus the session id, and the key expires 24 hours after it is stored, so another autonomy-mcp process accepts the same id.
+`GET /api/autonomy/oauth-protected-resource` is the only unauthenticated autonomy response. It is OAuth protected-resource metadata. `/autonomy/mcp` requires a bearer. A session id names the bearer subject that opened it, and a different subject presenting it receives 403. That binding is the Redis key `freedriver:mcp:autonomy:` plus the session id, and the key expires 24 hours after it is stored. The binding is shared; the session is not. Another autonomy-mcp process accepts the binding but answers 404 for a session it did not open, which is why a client holding a session is pinned (#547).
 
 The metadata document, the bearer challenge, the metadata permit policy, the audit line, and the session-to-subject binding are `java/mcp-support`, the library both MCP servers use. Each service sets `freedriver.mcp.resource`, `freedriver.mcp.authorization-servers`, `freedriver.mcp.metadata-path`, `freedriver.mcp.paths`, `freedriver.mcp.roles`, and `freedriver.mcp.session-prefix`.
 
