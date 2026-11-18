@@ -1,9 +1,10 @@
 package io.freedriver.app.instances;
 
-import io.freedriver.app.metrics.BlockingIo;
+import io.freedriver.app.metrics.IoTimer;
 import io.freedriver.mqtt.MqttBrokers;
 import io.freedriver.mqtt.MqttLog;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
+import io.micrometer.core.annotation.Timed;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
@@ -29,7 +30,7 @@ import java.util.function.Supplier;
  * The create {@code Location} id joins {@code mqtt-instance} and deletes a user that stops short.
  * That id is not stored. Reset replaces the credential and does not read the previous password.
  */
-@BlockingIo
+@Timed(IoTimer.BLOCKING)
 @ApplicationScoped
 public class KeycloakInstanceIdentity implements InstanceIdentity {
 

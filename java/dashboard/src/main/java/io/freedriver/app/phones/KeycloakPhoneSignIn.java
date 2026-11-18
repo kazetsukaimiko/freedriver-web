@@ -1,7 +1,8 @@
 package io.freedriver.app.phones;
 
 import io.freedriver.app.invites.InviteUpstreamException;
-import io.freedriver.app.metrics.BlockingIo;
+import io.freedriver.app.metrics.IoTimer;
+import io.micrometer.core.annotation.Timed;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
@@ -21,7 +22,7 @@ import java.util.regex.Pattern;
  * That account cannot grant {@code portal-admin}. This class sends only the phone.
  * The invite-account resource grants {@code dashboard} itself.
  */
-@BlockingIo
+@Timed(IoTimer.BLOCKING)
 @ApplicationScoped
 public class KeycloakPhoneSignIn implements PhoneSignInDirectory {
 
