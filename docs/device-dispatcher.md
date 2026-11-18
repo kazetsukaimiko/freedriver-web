@@ -36,7 +36,7 @@ A host program uses `HostApi` (`java/agent-dispatcher-api`), JSON in and out, ro
 | `POST /jobs/{assignmentId}/start` | `StartRequest`: `deliveryRef`, 1 to 128 printable ASCII characters, no space | `AssignmentView` |
 | `POST /jobs/{assignmentId}/finish` | `FinishRequest`: `succeeded`; `note`, at most 2,000 characters, optional | `AssignmentView` |
 
-Refusals: 400 for a bad body, 403 for another device's assignment, 404 for an unknown one, 409 for a state the call does not start from. Anonymous is 401, and a token whose client id and role do not pair is 403.
+Refusals: 400 for a bad body, 403 for another device's assignment, 404 for an unknown one, 409 for a state the call does not start from, except finish: a finish on an assignment already `SUCCEEDED`, `FAILED` or `EXPIRED` answers 200 with the stored assignment and changes nothing, so the connector's backstop cannot replace the agent's result. Anonymous is 401, and a token whose client id and role do not pair is 403.
 
 `take`, for the caller's device, in this order:
 
