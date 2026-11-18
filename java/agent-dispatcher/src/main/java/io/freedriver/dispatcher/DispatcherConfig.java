@@ -4,12 +4,14 @@ import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 import jakarta.validation.constraints.NotBlank;
 import org.hibernate.validator.constraints.time.DurationMin;
+import org.jmolecules.architecture.hexagonal.Port;
 
 import java.net.URI;
 import java.time.Duration;
 import java.util.Optional;
 
 /** Settings of the dispatcher under {@code freedriver.dispatcher}. */
+@Port
 @ConfigMapping(prefix = "freedriver.dispatcher")
 public interface DispatcherConfig {
 

@@ -29,6 +29,16 @@
             <artifactId>agent-dispatcher-api</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- Every class's architecture role (#608) and @ProcessLocal for state kept in process memory. -->
+        <dependency>
+            <groupId>org.jmolecules</groupId>
+            <artifactId>jmolecules-hexagonal-architecture</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.freedriver</groupId>
+            <artifactId>stereotypes</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-rest</artifactId>

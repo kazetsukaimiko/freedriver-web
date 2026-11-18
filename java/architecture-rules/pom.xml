@@ -9,7 +9,7 @@
     </parent>
     <artifactId>architecture-rules</artifactId>
     <name>freedriver-web-architecture-rules</name>
-    <description>The Java layering rules as ArchUnit rules, and the test each service module runs them from. Services depend on it with test scope.</description>
+    <description>The Java layering rules and the architecture-role rules as ArchUnit rules, and the tests each service module runs them from. Services depend on it with test scope.</description>
 
     <dependencies>
         <dependency>
@@ -18,9 +18,31 @@
             <version>${archunit.version}</version>
         </dependency>
         <dependency>
+            <groupId>org.jmolecules.integrations</groupId>
+            <artifactId>jmolecules-archunit</artifactId>
+            <version>${jmolecules-archunit.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jmolecules</groupId>
+            <artifactId>jmolecules-hexagonal-architecture</artifactId>
+            <version>${jmolecules.version}</version>
+        </dependency>
+        <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
             <version>${junit.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.freedriver</groupId>
+            <artifactId>stereotypes</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>

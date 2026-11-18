@@ -16,6 +16,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.bson.Document;
 import org.jboss.logging.Logger;
+import org.jmolecules.architecture.hexagonal.Application;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -38,6 +39,7 @@ import java.util.function.BooleanSupplier;
  * A host holds a job it took for {@code hostLease}; a queued job no host takes within
  * {@code takeWithin} expires.
  */
+@Application
 @ApplicationScoped
 public class JobStoreService implements JobStore {
 

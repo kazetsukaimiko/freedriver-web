@@ -2,12 +2,14 @@ package io.freedriver.dispatcher;
 
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import org.bson.codecs.pojo.annotations.BsonId;
+import org.jmolecules.architecture.hexagonal.SecondaryPort;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
 /** One host and the agents it serves, in {@code agent-devices}. */
+@SecondaryPort
 @MongoEntity(collection = Device.COLLECTION)
 public class Device {
 
