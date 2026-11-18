@@ -20,6 +20,12 @@ app.freedriver.io {
 	handle @dispatcherAdmin {
 		respond 404
 	}
+	# Management paths (/q/metrics, /q/health and the rest of /q) are read on the compose network:
+	# Prometheus scrapes dashboard:8080 by name and the health checks run inside each container.
+	@management path /q /q/*
+	handle @management {
+		respond 404
+	}
 	@dispatcher path /mcp /mcp/* /dispatch/mcp /dispatch/mcp/* /api/dispatcher /api/dispatcher/*
 	handle @dispatcher {
 		reverse_proxy {
