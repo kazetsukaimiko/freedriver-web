@@ -55,7 +55,8 @@
 # assignment, and the allowed-scopes policy always run (#527). Narrowing
 # (roles scope to mcp-user, exchange client to mcp-user, and
 # downscope-assertion-grant-enforcer) waits for FREEDRIVER_GRANT_SCOPES_ENFORCED=1.
-# Unset, the two mappings stay mcp-user and dashboard, as they are today.
+# Unset, the two mappings stay mcp-user and dashboard, as they are today,
+# so an autonomy token can call tools/list and switch_appliances.
 # #532 turns the switch on for the live realm. dashboard, mcp-debug, and later
 # portal-admin then reach a token through grant scopes the user ticks.
 # Mapper audience-autonomy-mcp on freedriver-grok-mcp and grok.com DCR clients

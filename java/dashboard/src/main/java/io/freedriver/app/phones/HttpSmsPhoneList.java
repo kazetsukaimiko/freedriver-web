@@ -1,12 +1,13 @@
 package io.freedriver.app.phones;
 
 import io.freedriver.app.invites.InviteUpstreamException;
-import io.freedriver.app.metrics.BlockingIo;
+import io.freedriver.app.metrics.IoTimer;
 import io.freedriver.sms.api.SmsPhonesApi;
 import io.freedriver.sms.model.AttachUser;
 import io.freedriver.sms.model.ListedPhone;
 import io.freedriver.sms.model.RemovePhone;
 import io.freedriver.sms.model.WhitelistPhone;
+import io.micrometer.core.annotation.Timed;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.ConstraintViolationException;
@@ -18,7 +19,7 @@ import java.util.Optional;
 import java.util.function.Supplier;
 
 /** Calls the sms service through the sms phone-list REST client. The shared secret never goes to the browser. */
-@BlockingIo
+@Timed(IoTimer.BLOCKING)
 @ApplicationScoped
 public class HttpSmsPhoneList implements SmsPhoneList {
 

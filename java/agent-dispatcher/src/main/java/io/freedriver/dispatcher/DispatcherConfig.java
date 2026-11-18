@@ -5,6 +5,7 @@ import io.smallrye.config.WithDefault;
 import jakarta.validation.constraints.NotBlank;
 import org.hibernate.validator.constraints.time.DurationMin;
 
+import java.net.URI;
 import java.time.Duration;
 import java.util.Optional;
 
@@ -34,6 +35,14 @@ public interface DispatcherConfig {
 
     /** {@code FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET}. Unset or blank skips the OpenBot ping. */
     Optional<String> openbotWebhookSecret();
+
+    /**
+     * {@code FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_URL}: the whole address the OpenBot ping posts to,
+     * path included. Unset, empty or white space leaves {@link OpenBotJobPing#WEBHOOK} in use. Any
+     * other value is {@code https} with a host and without user-info, or start-up fails. A stopgap
+     * that freedriver-web#540 removes with the relay path.
+     */
+    Optional<@HttpsWebhookAddress URI> openbotWebhookUrl();
 
     interface Client {
 

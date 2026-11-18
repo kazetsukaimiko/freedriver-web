@@ -102,6 +102,36 @@ class JobStoreReplicaTest {
         }
     }
 
+    /**
+     * The connector's finish (host route) races the agent's finish_job on one assignment. Whoever
+     * wins, the stored row is the winner's, the host call answers exactly that stored row, and the
+     * agent's call either is the winner or is refused with the state the host stored (#590).
+     */
+    @Test
+    void the_host_finish_races_finish_job_and_answers_the_stored_winner() throws Exception {
+        first.register("pc-a", "a.local", List.of("yuni"));
+        for (int round = 0; round < ROUNDS; round++) {
+            UUID assignment = queued(first).assignmentId();
+
+            List<Object> outcomes = race(
+                    () -> first.finish("pc-a", assignment, true, "the agent's result"),
+                    () -> second.finishIfOpen("pc-a", assignment, false, "the turn ended without a result"));
+
+            AssignmentView stored = second.assignment("pc-a", assignment);
+            assertEquals(stored, outcomes.get(1), "the host call answers the stored row");
+            Object agent = outcomes.get(0);
+            if (agent instanceof AssignmentView won) {
+                assertEquals(stored, won);
+                assertEquals("the agent's result", stored.note());
+            } else {
+                assertTrue(agent instanceof DispatcherException, String.valueOf(agent));
+                assertEquals("assignment is FAILED", ((DispatcherException) agent).getMessage());
+                assertEquals(AssignmentState.FAILED, stored.state());
+                assertEquals("the turn ended without a result", stored.note());
+            }
+        }
+    }
+
     @Test
     void two_replicas_race_take_jobs_and_each_job_is_returned_once() throws Exception {
         first.register("pc-a", "a.local", List.of("yuni"));

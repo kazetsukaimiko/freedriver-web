@@ -4,6 +4,7 @@ import io.freedriver.app.appliances.SubscribedHouses;
 import io.freedriver.app.appliances.MqttAcl;
 import io.freedriver.mqtt.MqttConnection;
 import io.freedriver.mqtt.MqttLog;
+import io.micrometer.core.annotation.Timed;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -16,7 +17,7 @@ import java.util.UUID;
  * Micrometer. {@link SubscribedHouses} holds the houses. Uses the same MQTT session as
  * appliance state, after {@code MqttLiveClient} has connected it. Does not publish.
  */
-@BlockingIo
+@Timed(IoTimer.BLOCKING)
 @ApplicationScoped
 public class MetricsMqttForwarder {
     static final int MAX_BYTES = 64 * 1024;
@@ -24,19 +25,23 @@ public class MetricsMqttForwarder {
     private final SubscribedHouses subscriptions;
     private final MqttConnection connection;
     private final GrafanaMetricsEmitter emitter;
+    private final MqttHandlerTimer handlers;
 
     @Inject
     public MetricsMqttForwarder(
-            SubscribedHouses subscriptions, MqttConnection connection, GrafanaMetricsEmitter emitter) {
+            SubscribedHouses subscriptions, MqttConnection connection, GrafanaMetricsEmitter emitter,
+            MqttHandlerTimer handlers) {
         this.subscriptions = subscriptions;
         this.connection = connection;
         this.emitter = emitter;
+        this.handlers = handlers;
     }
 
     /** Subscribes to one house's metrics. A failure is logged; the house's appliance state still flows. */
     public void follow(UUID instanceId) {
         try {
-            connection.subscribe(MetricsTopics.metricsTopic(instanceId), MetricsTopics.QOS, this::onBrokerMessage);
+            connection.subscribe(MetricsTopics.metricsTopic(instanceId), MetricsTopics.QOS,
+                    handlers.timed(MetricsMqttForwarder.class, this::onBrokerMessage));
         } catch (RuntimeException e) {
             MqttLog.metricsRejected(MetricsTopics.metricsTopic(instanceId), "subscribe-failed");
         }
