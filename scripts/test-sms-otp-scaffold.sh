@@ -696,7 +696,10 @@ if "uuid.fullmatch(entry)" not in invite_test:
 print("phone role allow-list and invite permission scope")
 PY
 
-if grep -RIn 'offline_access' java/dashboard keycloak/sms-otp-spi/src/main/resources/theme >/dev/null; then
+# Java and .properties can request a scope. A changelog line that names
+# offline_access (release 1.7.0, #543) cannot.
+if grep -RIn --include='*.java' --include='*.properties' 'offline_access' java/dashboard >/dev/null \
+  || grep -RIn 'offline_access' keycloak/sms-otp-spi/src/main/resources/theme >/dev/null; then
   fail "the app must not request offline_access"
 fi
 # The self-service invite page is gone (#521): no @invite block, no /invite route in Caddy.
