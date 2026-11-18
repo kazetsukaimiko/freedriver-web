@@ -606,8 +606,8 @@ jobs:
       - name: Keycloak provision scaffold text checks
         run: |
           set -euo pipefail
-          chmod +x scripts/test-sms-otp-scaffold.sh scripts/ci-keycloak-test-paths.py
-          python3 scripts/ci-keycloak-test-paths.py --self-test
+          chmod +x scripts/test-sms-otp-scaffold.sh scripts/ci-smoke-paths.py
+          python3 scripts/ci-smoke-paths.py --self-test keycloak
           FREEDRIVER_SCAFFOLD_TEXT_ONLY=1 ./scripts/test-sms-otp-scaffold.sh
 
   keycloak-provision:
@@ -628,8 +628,8 @@ jobs:
           SMOKE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           set -euo pipefail
-          python3 scripts/ci-keycloak-test-paths.py --self-test
-          run="$(python3 scripts/ci-keycloak-test-paths.py)"
+          python3 scripts/ci-smoke-paths.py --self-test keycloak
+          run="$(python3 scripts/ci-smoke-paths.py keycloak)"
           echo "run=${run}" >> "$GITHUB_OUTPUT"
           echo "keycloak-provision run=${run}"
 
@@ -661,8 +661,8 @@ jobs:
           SMOKE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           set -euo pipefail
-          python3 scripts/ci-smoke-paths.py --self-test
-          run="$(python3 scripts/ci-smoke-paths.py)"
+          python3 scripts/ci-smoke-paths.py --self-test smoke
+          run="$(python3 scripts/ci-smoke-paths.py smoke)"
           echo "run=${run}" >> "$GITHUB_OUTPUT"
           echo "smoke run=${run}"
 
