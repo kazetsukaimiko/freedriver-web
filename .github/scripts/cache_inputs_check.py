@@ -7,9 +7,12 @@ part of the module's key, so each such file is listed as a per-module input in t
 pom: a property whose name starts with `maven.build.cache.input` (the `.glob` property aside),
 with a path relative to the module directory. A directory input covers every file under it.
 
-This script scans each Java module's src/test for string literals that start with `../`,
+This script scans the src/test of each module in the reactor (the `<module>` entries of the root
+pom, followed into each aggregator pom) for string literals that start with `../`,
 resolves each against the module directory, and fails naming the file when no input of that
-module covers it. A path built in code from such a root (`root.resolve("x")` after
+module covers it. A bare `".."` names a directory, not a file, and is not a read by itself:
+sms-client's tests use `here.resolve("..").resolve(module)` to reach the compiled classes of
+sms-model and sms-api, which are its reactor dependencies and so already in its key. A path built in code from such a root (`root.resolve("x")` after
 `Path.of("../..")`) is followed when the root and the `resolve` argument are string literals
 in the same file. It sees only the reads it can find in the source text.
 
@@ -27,7 +30,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 INPUT_PREFIX = "maven.build.cache.input"
-OUTSIDE_LITERAL = re.compile(r'"(\.\./[^"\s]*|\.\.)"')
+OUTSIDE_LITERAL = re.compile(r'"(\.\./[^"\s]*)"')
 ROOT_VARIABLE = re.compile(r'Path\s+(\w+)\s*=\s*Path\.of\("(\.\.(?:/\.\.)*)"\)')
 RESOLVE = r'\b{var}\.resolve\("([^"]+)"\)'
 
@@ -45,6 +48,24 @@ def module_inputs(pom: Path) -> list[Path]:
         if name.startswith(INPUT_PREFIX) and name != INPUT_PREFIX + ".glob" and prop.text:
             out.append(Path(os.path.normpath(pom.parent / prop.text.strip())))
     return out
+
+
+def reactor_poms(repo: Path) -> list[Path]:
+    """Every pom in the reactor: the root pom and the modules it lists, followed recursively."""
+    found, todo = [], [repo / "pom.xml"]
+    while todo:
+        pom = todo.pop()
+        if pom in found or not pom.is_file():
+            continue
+        found.append(pom)
+        for modules in ET.parse(pom).getroot().iter():
+            if modules.tag.split("}")[-1] != "modules":
+                continue
+            for module in modules:
+                if module.tag.split("}")[-1] == "module" and module.text:
+                    path = Path(os.path.normpath(pom.parent / module.text.strip()))
+                    todo.append(path if path.name == "pom.xml" else path / "pom.xml")
+    return sorted(found)
 
 
 def outside_reads(module: Path) -> dict[Path, list[str]]:
@@ -81,7 +102,7 @@ def _inside(path: Path, directory: Path) -> bool:
 def gaps(repo: Path) -> list[str]:
     """One line per outside read that no per-module input covers."""
     found = []
-    for pom in sorted(repo.glob("java/*/pom.xml")):
+    for pom in reactor_poms(repo):
         module = pom.parent
         inputs = module_inputs(pom)
         for path, where in sorted(outside_reads(module).items()):
@@ -97,6 +118,17 @@ def self_test() -> int:
     with tempfile.TemporaryDirectory() as d:
         repo = Path(d)
         (repo / "Caddyfile").write_text("x")
+        ns = 'xmlns="http://maven.apache.org/POM/4.0.0"'
+        (repo / "pom.xml").write_text(f"<project {ns}><modules><module>java</module>"
+                                      "<module>sms</module></modules></project>")
+        (repo / "java").mkdir()
+        (repo / "java" / "pom.xml").write_text(f"<project {ns}><modules><module>svc</module></modules></project>")
+        (repo / "sms" / "src" / "test" / "java").mkdir(parents=True)
+        (repo / "sms" / "pom.xml").write_text(f"<project {ns}></project>")
+        (repo / "java" / "unlisted" / "src" / "test" / "java").mkdir(parents=True)
+        (repo / "java" / "unlisted" / "pom.xml").write_text(f"<project {ns}></project>")
+        (repo / "java" / "unlisted" / "src" / "test" / "java" / "UTest.java").write_text(
+            'class UTest { String s = "../../Caddyfile"; }\n')
         (repo / "other" / "src" / "main").mkdir(parents=True)
         module = repo / "java" / "svc"
         tests = module / "src" / "test" / "java"
@@ -133,6 +165,18 @@ def self_test() -> int:
         (tests / "BTest.java").write_text('class BTest { String s = "../not-a-read-target"; }\n')
         checks.append(("a new outside literal is a gap naming the file",
                        any("../not-a-read-target" in l for l in gaps(repo))))
+        (tests / "BTest.java").write_text(
+            'class BTest { Path c = here.resolve("..").resolve(m).resolve("target/classes"); }\n')
+        pom("../../Caddyfile", "../../other/src/main")
+        checks.append(("a bare .. is not a read", gaps(repo) == []))
+        (tests / "BTest.java").unlink()
+        checks.append(("a module that is not in the reactor is not scanned", gaps(repo) == []))
+        (repo / "sms" / "src" / "test" / "java" / "STest.java").write_text(
+            'class STest { String c = read(Path.of("../docker-compose.yml")); }\n')
+        lines = gaps(repo)
+        checks.append(("a module outside java/ is scanned", len(lines) == 1
+                       and lines[0].startswith("sms: a test reads ../docker-compose.yml")
+                       and "to sms/pom.xml" in lines[0]))
     failed = [name for name, ok in checks if not ok]
     for name in failed:
         print(f"FAIL: {name}")
