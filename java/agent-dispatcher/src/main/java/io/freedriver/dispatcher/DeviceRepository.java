@@ -42,6 +42,11 @@ public class DeviceRepository implements PanacheMongoRepositoryBase<Device, Stri
                 new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER));
     }
 
+    /** Sets the time of the last take on the existing row. No upsert: an unknown device stays unknown. */
+    void took(String deviceId, Instant now) {
+        mongoCollection().updateOne(eq("_id", deviceId), Updates.set("lastTake", Date.from(now)));
+    }
+
     /** Devices with that hostname that serve that agent. Index {@code {hostname}}. */
     List<Device> find(String hostname, String agentName) {
         return mongoCollection().find(and(eq("hostname", hostname), eq("agents", agentName))).into(new ArrayList<>());

@@ -32,6 +32,15 @@ public interface DispatcherConfig {
     @WithDefault("10m")
     Duration takeWithin();
 
+    /**
+     * A host whose last report is this old counts as silent: its agents are {@code UNKNOWN} while it
+     * still takes jobs and {@code OFFLINE} when its last take is this old too. It is longer than the
+     * longest take wait (50 seconds), so a host inside one long take is not silent.
+     */
+    @DurationMin(seconds = 50, inclusive = false)
+    @WithDefault("10m")
+    Duration hostSilentAfter();
+
     /** {@code FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET}. Unset or blank skips the OpenBot ping. */
     Optional<String> openbotWebhookSecret();
 

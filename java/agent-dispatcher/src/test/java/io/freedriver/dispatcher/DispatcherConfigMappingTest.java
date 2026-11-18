@@ -50,6 +50,17 @@ class DispatcherConfigMappingTest {
         assertEquals(Duration.ofSeconds(1), mapping(Map.of("take-within", "1s")).takeWithin());
     }
 
+    @Test
+    void the_host_silence_window_defaults_to_ten_minutes_and_must_be_longer_than_fifty_seconds() {
+        assertEquals(Duration.ofMinutes(10), mapping(Map.of()).hostSilentAfter());
+
+        ConfigValidationException refused = assertThrows(ConfigValidationException.class,
+                () -> mapping(Map.of("host-silent-after", "50s")));
+        assertTrue(refused.getMessage().contains("host-silent-after"), refused.getMessage());
+
+        assertEquals(Duration.ofSeconds(51), mapping(Map.of("host-silent-after", "51s")).hostSilentAfter());
+    }
+
     private static DispatcherConfig mapping(Map<String, String> values) {
         Map<String, String> properties = new LinkedHashMap<>();
         properties.put("freedriver.dispatcher.client.dispatcher", "freedriver-dispatcher");

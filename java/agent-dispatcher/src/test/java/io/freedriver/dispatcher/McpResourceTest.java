@@ -20,6 +20,7 @@ import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -30,6 +31,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.empty;
@@ -335,7 +337,13 @@ class McpResourceTest {
                 .body("result.tools.find { it.name == 'list_jobs' }.inputSchema.properties.state.pattern",
                         is("queued|in-progress|done"))
                 .body("result.tools.find { it.name == 'list_jobs' }.inputSchema.required", empty())
-                .body("result.tools.every { it.inputSchema.additionalProperties == false }", is(true));
+                .body("result.tools.every { it.inputSchema.additionalProperties == false }", is(true))
+                .body("result.tools.find { it.name == 'list_agents' }.description", allOf(
+                        containsString("UNKNOWN means the host is taking jobs and its state has not been reported "
+                                + "since reportedAt, so a job reaches the agent."),
+                        containsString("OFFLINE means neither a report nor a take since seenAt, so a job is stored "
+                                + "and expires after the dispatcher's take-within time, 10 minutes by default, "
+                                + "unless the host returns; say so before sending one.")));
         String toolsJson = listed.extract().asString();
         assertFalse(toolsJson.contains("allowlist"));
         assertFalse(toolsJson.contains("\"shell\""));
@@ -358,7 +366,11 @@ class McpResourceTest {
             }
         }
         assertTrue(agent != null);
-        assertEquals(Set.of("type", "name", "server", "state", "activity"), fieldNames(agent));
+        assertEquals(Set.of("type", "name", "server", "state", "activity", "reportedAt", "seenAt"), fieldNames(agent));
+        assertTrue(agent.path("reportedAt").isTextual(), agent::toString);
+        Instant reportedAt = Instant.parse(agent.path("reportedAt").asText());
+        assertTrue(agent.path("reportedAt").asText().endsWith("Z"), agent::toString);
+        assertEquals(reportedAt, Instant.parse(agent.path("seenAt").asText()));
         assertEquals("bot", agent.path("type").asText());
         assertEquals("yuni", agent.path("name").asText());
         assertEquals("grok.local", agent.path("server").asText());
