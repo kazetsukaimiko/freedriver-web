@@ -25,19 +25,23 @@ public class MetricsMqttForwarder {
     private final SubscribedHouses subscriptions;
     private final MqttConnection connection;
     private final GrafanaMetricsEmitter emitter;
+    private final MqttHandlerTimer handlers;
 
     @Inject
     public MetricsMqttForwarder(
-            SubscribedHouses subscriptions, MqttConnection connection, GrafanaMetricsEmitter emitter) {
+            SubscribedHouses subscriptions, MqttConnection connection, GrafanaMetricsEmitter emitter,
+            MqttHandlerTimer handlers) {
         this.subscriptions = subscriptions;
         this.connection = connection;
         this.emitter = emitter;
+        this.handlers = handlers;
     }
 
     /** Subscribes to one house's metrics. A failure is logged; the house's appliance state still flows. */
     public void follow(UUID instanceId) {
         try {
-            connection.subscribe(MetricsTopics.metricsTopic(instanceId), MetricsTopics.QOS, this::onBrokerMessage);
+            connection.subscribe(MetricsTopics.metricsTopic(instanceId), MetricsTopics.QOS,
+                    handlers.timed(MetricsMqttForwarder.class, this::onBrokerMessage));
         } catch (RuntimeException e) {
             MqttLog.metricsRejected(MetricsTopics.metricsTopic(instanceId), "subscribe-failed");
         }
