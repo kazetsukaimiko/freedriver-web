@@ -1,0 +1,18 @@
+# Team writing policy: prose states what something is and does. A sentence that lists
+# what something is not or does not do gets a warning on the line that adds it.
+extends: existence
+message: "Writing policy: state what it is or does, in place of what it is not or does not do ('%s')."
+level: warning
+ignorecase: true
+tokens:
+  - does not
+  - doesn't
+  - is not
+  - isn't
+  - are not
+  - aren't
+  - has no
+  - have no
+  - there is no
+  - there are no
+  - no new
