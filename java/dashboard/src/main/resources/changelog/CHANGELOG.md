@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.7.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.6.0...v1.7.0) (2026-11-18)
+
+
+### Features
+
+* **keycloak:** a sign-in page left open renews itself instead of timing out ([#554](https://github.com/kazetsukaimiko/freedriver-web/issues/554)) ([f7b01c4](https://github.com/kazetsukaimiko/freedriver-web/commit/f7b01c4b59fa28b749ef8abc67f23799f089b6e8))
+* **keycloak:** default offline_access on OpenBot MCP sign-in ([#543](https://github.com/kazetsukaimiko/freedriver-web/issues/543)) ([0c05358](https://github.com/kazetsukaimiko/freedriver-web/commit/0c05358470be588e1773fa7d71bdbedefd73239e)), closes [#534](https://github.com/kazetsukaimiko/freedriver-web/issues/534)
+
+
+### Bug Fixes
+
+* **dashboard:** log invite failures without a stack trace ([bb6549e](https://github.com/kazetsukaimiko/freedriver-web/commit/bb6549ecfae389302c627c79bb6505b36a188e94))
+* **keycloak:** keep one-year tokens for OpenBot and grok.com ([#568](https://github.com/kazetsukaimiko/freedriver-web/issues/568)) ([f88c153](https://github.com/kazetsukaimiko/freedriver-web/commit/f88c153dc9e6aafaf67f91b6992a20c8ed953414)), closes [#565](https://github.com/kazetsukaimiko/freedriver-web/issues/565)
+
 ## [1.6.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.5.2...v1.6.0) (2026-11-16)
 
 
