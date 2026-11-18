@@ -14,7 +14,6 @@ import org.jmolecules.architecture.hexagonal.SecondaryPort;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
@@ -37,9 +36,9 @@ import static com.mongodb.client.model.Filters.or;
 public class AssignmentRepository implements PanacheMongoRepositoryBase<Assignment, String> {
 
     static final Set<AssignmentState> TERMINAL =
-            EnumSet.of(AssignmentState.SUCCEEDED, AssignmentState.FAILED, AssignmentState.EXPIRED);
+            Set.of(AssignmentState.SUCCEEDED, AssignmentState.FAILED, AssignmentState.EXPIRED);
     static final Set<AssignmentState> OPEN =
-            EnumSet.of(AssignmentState.QUEUED, AssignmentState.CLAIMED, AssignmentState.RUNNING);
+            Set.of(AssignmentState.QUEUED, AssignmentState.CLAIMED, AssignmentState.RUNNING);
 
     /**
      * Moves the assignment from one of {@code from} to {@code to}. {@code note} and

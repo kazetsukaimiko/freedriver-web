@@ -63,6 +63,12 @@ public final class RoleRules {
     /** A configuration interface: the only class the unqualified {@code @Port} is for. Matched by name. */
     static final String CONFIG_MAPPING = "io.smallrye.config.ConfigMapping";
 
+    /** CDI scopes: a class with one is a bean the container keeps. Matched by name. */
+    static final Set<String> CDI_SCOPES = Set.of(
+            "jakarta.enterprise.context.ApplicationScoped", "jakarta.enterprise.context.RequestScoped",
+            "jakarta.enterprise.context.SessionScoped", "jakarta.enterprise.context.Dependent",
+            "jakarta.inject.Singleton");
+
     /** java.util types that hold mutable state and whose names end in none of the collection words. */
     private static final Set<String> MUTABLE_BY_NAME = Set.of(
             "java.util.Vector", "java.util.Stack", "java.util.Hashtable", "java.util.Properties",
@@ -105,7 +111,10 @@ public final class RoleRules {
     }
 
     /**
-     * Rule 3: an application or adapter class keeps no state in process memory. Every field is
+     * Rule 3: a class whose instances the container keeps (a CDI scope: {@code @ApplicationScoped},
+     * {@code @Singleton}, {@code @RequestScoped}, {@code @SessionScoped}, {@code @Dependent}), and every
+     * {@code @Application} or adapter class, keeps no state in process memory, whatever its role: a
+     * repository bean is judged like the core. A Panache entity is no bean and is not judged. Every field is
      * final, and no field's type is a mutable collection or map, an atomic, a lock, an executor or
      * a {@code CompletableFuture}, unless the field or its class carries {@code @ProcessLocal}.
      *
@@ -116,8 +125,8 @@ public final class RoleRules {
      */
     public static ArchRule noStateInProcessMemory() {
         return classes().that(DescribedPredicate.describe(
-                        "are declared in a source file and are @Application or an adapter",
-                        c -> declared(c) && role(c).filter(STATELESS::contains).isPresent()))
+                        "are declared in a source file and are a CDI bean, @Application or an adapter",
+                        c -> declared(c) && (role(c).filter(STATELESS::contains).isPresent() || scoped(c))))
                 .should(keepNoState())
                 .because("state in one replica's memory breaks under a second replica or a restart: keep it in "
                         + "Mongo or Redis, or declare it with @ProcessLocal(\"<why one process is enough>\") "
@@ -187,6 +196,12 @@ public final class RoleRules {
         }
         boolean configMapping = c.isInterface() && c.isAnnotatedWith(CONFIG_MAPPING);
         return role.filter(PORT::equals).filter(r -> !configMapping);
+    }
+
+    /** The class, or the top-level class it is nested in, carries a CDI scope. */
+    static boolean scoped(JavaClass c) {
+        JavaClass top = topLevel(c);
+        return CDI_SCOPES.stream().anyMatch(top::isAnnotatedWith);
     }
 
     private static ArchCondition<JavaClass> keepNoState() {

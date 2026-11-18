@@ -91,6 +91,14 @@ class RoleRulesTest {
     }
 
     @Test
+    void a_scoped_bean_with_a_port_role_is_judged_and_an_entity_is_not() {
+        EvaluationResult result = evaluate(RoleRules.noStateInProcessMemory(), "beanstate");
+        assertViolations(result, 1);
+        assertReports(result, "Field <io.freedriver.architecture.fixtures.beanstate.CachingRepository.indexed> holds a "
+                + "java.util.concurrent.ConcurrentHashMap");
+    }
+
+    @Test
     void the_same_field_with_process_local_passes() {
         EvaluationResult result = evaluate(RoleRules.noStateInProcessMemory(), "state");
         assertFalse(result.getFailureReport().toString().contains("Declares"),
