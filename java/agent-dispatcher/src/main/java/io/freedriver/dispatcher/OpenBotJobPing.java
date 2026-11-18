@@ -39,7 +39,7 @@ class OpenBotJobPing implements JobPing {
 
     @Inject
     OpenBotJobPing(DispatcherConfig config) {
-        this(config.openbotWebhookSecret().orElse(""), WEBHOOK, Clock.systemUTC());
+        this(config.openbotWebhookSecret().orElse(""), config.openbotWebhookUrl().orElse(WEBHOOK), Clock.systemUTC());
     }
 
     OpenBotJobPing(String secret, URI url, Clock clock) {
@@ -100,6 +100,11 @@ class OpenBotJobPing implements JobPing {
             }
         }
         return webhook.get();
+    }
+
+    /** The address this ping posts to. */
+    URI url() {
+        return url;
     }
 
     static byte[] bodyBytes(String hostname, Instant occurredAt) {

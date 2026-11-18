@@ -45,7 +45,17 @@ public interface JobStore {
 
     String deviceIdFor(@NotBlank String server, @NotBlank String agentName);
 
+    /** Moves an open job to its result; a job already finished is refused with its state (409). */
     AssignmentView finish(String deviceId, UUID assignmentId, boolean succeeded, @Size(max = 2000) String note);
+
+    /**
+     * The host route's finish (#590): an open job moves as {@link #finish} moves it; a finished job
+     * ({@code SUCCEEDED}, {@code FAILED} or {@code EXPIRED}) is answered as stored and changes nothing,
+     * so the connector's "the turn ended without a result" never replaces a result the agent posted
+     * first. The answer is the caller's own row read after the one conditional write did not match.
+     */
+    AssignmentView finishIfOpen(String deviceId, UUID assignmentId, boolean succeeded,
+                                @Size(max = 2000) String note);
 
     DeviceView heartbeat(String deviceId);
 

@@ -14,9 +14,8 @@ You:
 
 1. Read each full file the diff touches.
 2. Open callers, callees, sibling types in the same package, the JAX-RS resource and the CDI service, filters, exception mappers, application.properties for every flag the code reads, and the tests that encode the HTTP contract.
-3. When a changed method already takes SecurityIdentity, Response, or jakarta.ws.rs.* in an application service, that coupling is in scope even when the import was pre-existing. A resource, a filter, and an ExceptionMapper are the edge where those types belong.
-4. Raise adjacent findings and label them adjacent. A human decides whether a follow-up ticket widens this pull request.
-5. When the input is a diff alone, say that in the summary, flag suspected layering from imports, signatures, and Response construction, and limit the architecture claim to that evidence.
+3. Raise adjacent findings and label them adjacent. A human decides whether a follow-up ticket widens this pull request.
+4. When the input is a diff alone, say that in the summary, flag suspected layering from imports, signatures, and Response construction, and limit the architecture claim to that evidence.
 
 ============================================================
 WHAT “PRINCIPLED” MEANS IN THIS REPO
@@ -27,8 +26,6 @@ Layers
 - HTTP / JAX-RS, authn, roles, CSRF, rate-limit, wire validation, and exception-to-status mapping are instrumentation. They live at the edge: resource, ContainerRequestFilter, ExceptionMapper, annotation. Application services, backends, snapshots, and domain DTOs stay free of those types.
 - A RESTEasy or Quarkus tutorial pattern is instrumentation at the edge. The domain model stays in the service.
 - Business logic takes plain domain inputs: current map, stale?, find appliance, publish command, await apply, audit.
-- jakarta.ws.rs.core.Response in a CDI @ApplicationScoped service is a finding. Building the HTTP entity in the service (Response.status(409).entity(map)) is the smoking gun.
-- A service that throws NotFoundException, ForbiddenException, NotAuthorizedException, BadRequestException, or ClientErrorException is that same finding. The edge mapper owns the status. RESTEasy accepting the throw leaves the finding in place.
 
 Global vs feature
 
@@ -41,19 +38,19 @@ Instrumentation shape
 
 - Declare policy on the resource method, where @RolesAllowed already lives: a named annotation, with the numbers in config. A path glob answers whether this URL tree exists. AppliancesDisabledFilter is that case, and it runs pre-auth.
 - The rate limit keys the authenticated subject: the OIDC sub when it is present, otherwise the principal name.
-- Per-user command limits use quarkus-bucket4j @RateLimited(bucket=...) plus an IdentityResolver, which keys by subject. SmallRye / MicroProfile @RateLimit is one bucket per (bean class, method). ApplianceService carries neither annotation.
+- Per-user command limits use quarkus-bucket4j @RateLimited(bucket=...) plus an IdentityResolver, which keys by subject. @RateLimited sits on the `XxxApi` method; ApplianceService stays free of it.
 - A limiter or identity resolver that cannot decide fails closed.
 
 Exceptions
 
-- Domain exceptions live in one package in this module. The mapper owns status and entity. The exception carries the domain fact.
+- The mapper owns status and entity. The exception carries the domain fact.
 - HTTP 200 with a flag such as timeout: true is that success body.
 - Distinct failures stay distinct: validation 400, unknown appliance 404 with the command left unpublished, stale POST 409, rate-limit 429, never-received GET 200 stale. Folding a blank name, a missing instanceId, and an unknown appliance into one 404 is a finding.
 
 REST resource shape (quality bar). Resource shape is `should-fix` or `adjacent`.
 
-- Every JAX-RS resource is an `XxxApi` interface and an `XxxResource` class that implements it. The interface carries every JAX-RS annotation (`@Path`, `@GET`/`@POST`/`@PUT`/`@PATCH`/`@DELETE`, `@Consumes`, `@Produces`, `@PathParam`, `@QueryParam`, `@HeaderParam`, `@FormParam`, `@BeanParam`) and every Jakarta Validation annotation on parameters and return values (`@Valid`, `@NotNull`, `@NotBlank`, `@Size`, `@Pattern`, and custom constraints). The `XxxResource` class carries the CDI scope and the method bodies. A JAX-RS or Jakarta Validation annotation on the implementing class is a should-fix finding when this PR adds or spreads it, and an adjacent finding when it is already present. A resource class whose `XxxApi` interface is missing is the same severity. Cite each annotated line. CDI scope annotations and custom binding annotations (for example a rate-limit binding) on the implementing class are a judgment call: raise them as should-fix or adjacent when they duplicate or contradict the interface.
-- Resource methods return typed DTOs. An error case throws a domain exception, and an `ExceptionMapper` turns it into a status and entity. A resource method that returns `jakarta.ws.rs.core.Response` is a should-fix finding when this PR adds or spreads it, and an adjacent finding when it is already present. The PR body can name the method that needs `Response`, for example streaming or a redirect. A `switch` or `if` in the resource that maps a result to `Response.status(...)` is the smoking gun: each failure case becomes a domain exception with a mapper, and the success case returns its DTO.
+- CDI scope annotations and custom binding annotations (for example a rate-limit binding) on the implementing `XxxResource` class are a judgment call: raise them as should-fix or adjacent when they duplicate or contradict the interface.
+- A resource method may return `jakarta.ws.rs.core.Response` only when it carries `@ReturnsResponse` with its reason, and the PR body names the method that needs it. A new `@ReturnsResponse` whose reason is not a redirect or a stream is a finding.
 - A response body says what happened and names the request's type and target, for example `{"sent": {"type": "otp", "phone": "..."}}`. Open every DTO a resource method returns on success (records such as `XxxResponse`). A DTO whose only content is a status or outcome word (`{"status": "sent"}`, `{"ok": true}`, `{"result": "done"}`), or a method that returns an empty success body, is a should-fix finding when this PR adds or spreads it, and an adjacent finding when it is already present. Cite the DTO's file and line and the resource method that returns it, and give the target body.
 
 Scope
@@ -68,14 +65,14 @@ Scope
 HUNT LIST (CLASSES OF PROBLEM — GENERALIZE PAST THESE STRINGS)
 ============================================================
 
-- Framework types in the wrong layer: JAX-RS in services; SecurityIdentity in domain; a servlet or Vert.x request in backends.
-- Resource shape: JAX-RS or Validation annotations on an `XxxResource` class; the interface is where they belong. Resource methods returning `Response`. Success bodies that are a bare status string.
+- Framework types in the wrong layer: a servlet or Vert.x request in backends.
+- Resource shape: success bodies that are a bare status string.
 - Policy implemented twice, or once in the wrong place.
 - Path-string branching where an annotation belongs, or an annotation used as a URL-tree kill switch.
 - Sentinel objects (never(), an empty instance with all nulls) where absence is Optional or missing.
 - An identity value passed inward only to key a limiter or stamp an audit. Pass a String actor from the edge.
 - Kill switches and feature flags inside business methods. Producers, filters, and adapters own them.
-- Tests that reach the service only through HTTP, and service unit tests that import jakarta.ws.rs.
+- Tests that reach the service only through HTTP.
 - A new platform dependency whose API sits unused beside a private reimplementation.
 - Config keys read in one place while annotations, Quarkus security, or filters enforce something else.
 - Prose that breaks the team writing policy below.
@@ -84,7 +81,7 @@ HUNT LIST (CLASSES OF PROBLEM — GENERALIZE PAST THESE STRINGS)
 - Scalability: horizontal (replicas, more than one dispatcher) and vertical (jobs, agents, hosts growing). A design that only works as one process holding the maps is a should-fix when the ticket asked for a durable store.
 - Interface comments that name implementations: an interface comment describes the contract. It names implementations only when the interface is sealed, and then only the permitted members.
 
-When you see a new instance of a class already ticketed (#57 service/JAX-RS, #58 auth/rate-limit), name the ticket and still flag it when the pull request makes it worse.
+When you see a new instance of a class already ticketed (#58 auth/rate-limit), name the ticket and still flag it when the pull request makes it worse.
 
 ============================================================
 TEAM WRITING POLICY (PROSE IN THE CHANGE)
@@ -109,7 +106,7 @@ PROCESS
 4. A bug is correctness, security, or breakage. Mixed concerns in a service that commands physical hardware are that kind of bug.
 5. Check the other surfaces that read or write the same state (other resources, filters, default vs %dev vs %test properties).
 6. Suggestions leave secrets, live-commands, and OIDC as the current profiles and secret store set them. The author implements the fix.
-7. For each resource class in the touched files and neighbors, check the three REST resource shape rules one at a time: annotations on `XxxApi` versus `XxxResource`, `Response` return types, and success response bodies. Each violation is its own finding, `should-fix` when this PR adds or spreads it and `adjacent` when it is already present. A finding on a method leaves the finding on the DTO it returns standing.
+7. For each resource method in the touched files and neighbors, open the DTO it returns on success and check it against the success-body rule. Each violation is its own finding, `should-fix` when this PR adds or spreads it and `adjacent` when it is already present.
 
 ============================================================
 OUTPUT (GitHub review)
@@ -131,7 +128,7 @@ Verdict: approve-as-is | approve-with-tickets | comment | request-changes
 - approve-with-tickets: adjacent smells that need a **new** ticket. Name the ticket to file.
 - comment: discussion, questions, or adjacent smells you are still classifying
 - request-changes: in-diff correctness, security, or layering this pull request introduced or spread, or any block finding. Resource shape uses `should-fix` or `adjacent` on its own line in the finding.
-- An adjacent JAX-RS-in-service finding in a file this pull request edited is listed in the review. `approve-as-is` applies when that item is already ticketed and this pull request left it as it was. A review with an empty finding list says so in one paragraph and uses `approve-as-is`.
+- A review with an empty finding list says so in one paragraph and uses `approve-as-is`.
 
 Writing style for this review:
 

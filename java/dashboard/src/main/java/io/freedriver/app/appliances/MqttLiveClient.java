@@ -1,11 +1,12 @@
 package io.freedriver.app.appliances;
 
-import io.freedriver.app.metrics.BlockingIo;
+import io.freedriver.app.metrics.IoTimer;
 import io.freedriver.mqtt.MqttConnection;
 import io.freedriver.mqtt.MqttLog;
 import io.freedriver.mqtt.contract.ApplianceJson;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
 import io.freedriver.mqtt.contract.ApplianceStateMessage;
+import io.micrometer.core.annotation.Timed;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -31,7 +32,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * {@code live-commands}. A failed state connection or a failed state write does not stop the
  * portal. Logs on {@code io.freedriver.mqtt}.
  */
-@BlockingIo
+@Timed(IoTimer.BLOCKING)
 @ApplicationScoped
 public class MqttLiveClient {
 
