@@ -40,6 +40,8 @@ class DispatcherConfigTest {
         assertTrue(properties.contains(
                 "freedriver.dispatcher.openbot-webhook-secret=${FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET:}"));
         assertFalse(properties.contains("openbot-webhook-secret=test"));
+        assertTrue(properties.contains(
+                "\nfreedriver.dispatcher.openbot-webhook-url=${FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_URL:}\n"));
         assertTrue(properties.contains("quarkus.mongodb.server-selection-timeout=2S"));
         assertTrue(properties.contains("quarkus.http.auth.permission.authenticated.paths=/*"));
         assertTrue(properties.contains("quarkus.http.auth.permission.public.paths=/q/*"));
@@ -85,6 +87,8 @@ class DispatcherConfigTest {
         assertTrue(compose.contains("QUARKUS_OIDC_CREDENTIALS_SECRET: ${FREEDRIVER_DISPATCHER_OIDC_SECRET:-}"));
         assertTrue(compose.contains(
                 "FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET: ${FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET:-}"));
+        assertTrue(compose.contains(
+                "FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_URL: ${FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_URL:-}"));
         assertTrue(compose.contains(
                 "QUARKUS_MONGODB_CONNECTION_STRING: ${QUARKUS_MONGODB_CONNECTION_STRING:-mongodb://mongodb:27017/freedriver}"));
         assertTrue(compose.contains("replicas: ${DASHBOARD_REPLICAS:-1}"));

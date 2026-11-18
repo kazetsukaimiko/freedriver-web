@@ -1,13 +1,17 @@
 package io.freedriver.dispatcher;
 
+import io.freedriver.dispatcher.model.AssignmentState;
+import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
 import io.freedriver.dispatcher.model.HostPaths;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
+import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -142,6 +146,51 @@ class HostResourceTest {
                 .post(path(HostPaths.START, any)).then().statusCode(403);
         given().contentType("application/json").body("{\"succeeded\":true}")
                 .post(path(HostPaths.FINISH, any)).then().statusCode(403);
+    }
+
+    @Test
+    @TestSecurity(user = "pc-host-kept", roles = "device")
+    void finish_on_a_finished_job_answers_the_stored_job_and_changes_nothing() {
+        jobs.register("pc-host-kept", "kept.local", List.of("yuni"));
+        UUID done = jobs.submitNow("grok-host-kept", new SubmitJobRequest(
+                List.of("pc-host-kept"), "yuni", "host-kept-prompt", Channel.TEXT))
+                .assignments().getFirst().assignmentId();
+        jobs.take("pc-host-kept", List.of(), Duration.ZERO);
+        jobs.start("pc-host-kept", done, "openbot:task-kept");
+        jobs.finish("pc-host-kept", done, true, "the agent's result");
+        AssignmentView agents = jobs.assignment("pc-host-kept", done);
+        assertEquals(AssignmentState.SUCCEEDED, agents.state());
+        assertEquals("openbot:task-kept", agents.deliveryRef());
+
+        assertEquals(agents, hostFinish(done, false, "the turn ended without a result"));
+        assertEquals(agents, jobs.assignment("pc-host-kept", done));
+
+        UUID failed = jobs.submitNow("grok-host-kept", new SubmitJobRequest(
+                List.of("pc-host-kept"), "yuni", "host-kept-prompt-2", Channel.TEXT))
+                .assignments().getFirst().assignmentId();
+        AssignmentView first = hostFinish(failed, false, "first");
+        assertEquals(AssignmentState.FAILED, first.state());
+        assertEquals(first, hostFinish(failed, true, "second"));
+        assertEquals(first, jobs.assignment("pc-host-kept", failed));
+
+        UUID expired = jobs.submitNow("grok-host-kept", new SubmitJobRequest(
+                List.of("pc-host-kept"), "yuni", "host-kept-prompt-3", Channel.TEXT))
+                .assignments().getFirst().assignmentId();
+        jobs.update("pc-host-kept", expired, new UpdateAssignmentRequest(AssignmentState.EXPIRED, null, null));
+        AssignmentView lapsed = jobs.assignment("pc-host-kept", expired);
+        assertEquals(AssignmentState.EXPIRED, lapsed.state());
+        assertEquals(lapsed, hostFinish(expired, true, "too late"));
+        assertEquals(lapsed, jobs.assignment("pc-host-kept", expired));
+    }
+
+    private static AssignmentView hostFinish(UUID assignment, boolean succeeded, String note) {
+        return given().contentType("application/json")
+                .body("{\"succeeded\":" + succeeded + ",\"note\":\"" + note + "\"}")
+                .post(path(HostPaths.FINISH, assignment.toString()))
+                .then()
+                .statusCode(200)
+                .extract()
+                .as(AssignmentView.class);
     }
 
     static String path(String route, String assignmentId) {
