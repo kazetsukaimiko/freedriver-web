@@ -35,6 +35,7 @@ COPY java/dashboard-api/src java/dashboard-api/src
 COPY java/mcp-support/src java/mcp-support/src
 COPY java/autonomy-mcp/src java/autonomy-mcp/src
 COPY java/architecture-rules/src java/architecture-rules/src
+COPY java/stereotypes/src java/stereotypes/src
 
 ARG BUILD_NUMBER=1.0.0-SNAPSHOT
 RUN set -eu; \

@@ -30,6 +30,7 @@ COPY sms/pom.xml sms/pom.xml
 COPY java/hit-window/src java/hit-window/src
 COPY java/hit-window-testing/src java/hit-window-testing/src
 COPY java/architecture-rules/src java/architecture-rules/src
+COPY java/stereotypes/src java/stereotypes/src
 COPY sms-model/src sms-model/src
 COPY sms-api/src sms-api/src
 COPY sms-client/src sms-client/src
