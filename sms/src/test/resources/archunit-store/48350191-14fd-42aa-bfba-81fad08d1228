@@ -1,0 +1,2 @@
+io.freedriver.sms.http.PhoneListResource implements no PhoneListApi
+io.freedriver.sms.http.SignInRecordsResource implements no SignInRecordsApi

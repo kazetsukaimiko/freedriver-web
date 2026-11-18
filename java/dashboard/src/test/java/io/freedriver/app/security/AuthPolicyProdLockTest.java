@@ -239,7 +239,16 @@ class AuthPolicyProdLockTest {
         }
         String owners = Files.readString(Path.of("../../.github/CODEOWNERS"));
         assertEquals(
-                "# Default for everything under .github, including new files.\n"
+                "# Every product path: lonewatt-architect approves. A later line wins, so the\n"
+                        + "# lines below override this default.\n"
+                        + "* @lonewatt-architect\n"
+                        + "\n"
+                        + "# Release files: lonewatt-techops merges the release-please Release pull request.\n"
+                        + "/.release-please-manifest.json @lonewatt-techops\n"
+                        + "/version.txt @lonewatt-techops\n"
+                        + "/java/dashboard/src/main/resources/changelog/CHANGELOG.md @lonewatt-techops\n"
+                        + "\n"
+                        + "# Default for everything under .github, including new files.\n"
                         + "/.github/ @kazetsukaimiko\n"
                         + "\n"
                         + "# CI plumbing. A later line wins, so these override the default.\n"

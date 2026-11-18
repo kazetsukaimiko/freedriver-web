@@ -1,0 +1,7 @@
+Method <io.freedriver.app.phones.PhoneRemovalBlankSecretTest.configured_secret_still_calls_keycloak_before_the_http_client()> calls method <jakarta.ws.rs.core.Response.close()> in (PhoneRemovalBlankSecretTest.java:64)
+Method <io.freedriver.app.phones.PhoneRemovalBlankSecretTest.configured_secret_still_calls_keycloak_before_the_http_client()> calls method <jakarta.ws.rs.core.Response.close()> in (PhoneRemovalBlankSecretTest.java:64)
+Method <io.freedriver.app.phones.PhoneRemovalBlankSecretTest.configured_secret_still_calls_keycloak_before_the_http_client()> calls method <jakarta.ws.rs.core.Response.getStatus()> in (PhoneRemovalBlankSecretTest.java:62)
+Method <io.freedriver.app.phones.PhoneRemovalOrderTest.keycloak_removal_runs_before_the_sms_row_is_deleted()> calls method <jakarta.ws.rs.core.Response.close()> in (PhoneRemovalOrderTest.java:22)
+Method <io.freedriver.app.schedule.ScheduledSwitchRulesTest.a_day_is_the_longest_wait_and_the_subject_is_required()> references class object <jakarta.ws.rs.BadRequestException> in (ScheduledSwitchRulesTest.java:21)
+Method <io.freedriver.app.schedule.ScheduledSwitchRulesTest.a_day_is_the_longest_wait_and_the_subject_is_required()> references class object <jakarta.ws.rs.BadRequestException> in (ScheduledSwitchRulesTest.java:23)
+Method <io.freedriver.app.schedule.ScheduledSwitchRulesTest.a_day_is_the_longest_wait_and_the_subject_is_required()> references class object <jakarta.ws.rs.BadRequestException> in (ScheduledSwitchRulesTest.java:25)
