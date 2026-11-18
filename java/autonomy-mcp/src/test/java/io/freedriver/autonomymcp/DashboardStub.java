@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -25,6 +26,8 @@ public final class DashboardStub implements QuarkusTestResourceLifecycleManager 
     static final List<Map<String, List<String>>> exchanges = new CopyOnWriteArrayList<>();
     static final String TOKEN_PATH = "/realms/test/protocol/openid-connect/token";
     static final AtomicBoolean down = new AtomicBoolean(false);
+    /** Appliance name to the status the stub dashboard answers a command for it with. */
+    static final Map<String, Integer> refusedAppliances = new ConcurrentHashMap<>();
     /** Keycloak refuses the exchange with 400 invalid_request. */
     static final AtomicBoolean refuseExchange = new AtomicBoolean(false);
 
@@ -79,6 +82,9 @@ public final class DashboardStub implements QuarkusTestResourceLifecycleManager 
                 body = "{\"instances\":[{\"instanceId\":\"11111111-1111-1111-1111-111111111111\","
                         + "\"instanceName\":\"home\",\"lastUpdated\":\"2026-11-01T00:00:00Z\","
                         + "\"stale\":false,\"timeout\":false,\"appliances\":[{\"applianceName\":\"fridge\",\"on\":true}]}]}";
+            } else if (path.startsWith("/api/appliances/") && refusedAppliances.containsKey(lastSegment(path))) {
+                status = refusedAppliances.get(lastSegment(path));
+                body = "{}";
             } else if (path.startsWith("/api/appliances/")) {
                 body = "{\"instanceId\":\"11111111-1111-1111-1111-111111111111\",\"instanceName\":\"home\","
                         + "\"lastUpdated\":\"2026-11-01T00:00:00Z\",\"stale\":false,\"timeout\":false,"
@@ -118,6 +124,10 @@ public final class DashboardStub implements QuarkusTestResourceLifecycleManager 
     /** The token the stub Keycloak returns for this subject token. */
     static String exchanged(String subjectToken) {
         return "exchanged-" + subjectToken;
+    }
+
+    private static String lastSegment(String path) {
+        return path.substring(path.lastIndexOf('/') + 1);
     }
 
     private static Map<String, List<String>> form(String body) {
