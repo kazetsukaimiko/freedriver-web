@@ -371,6 +371,43 @@ def mcp_ten_calls(client: Client, url: str, headers: dict[str, str], start_id: i
     print("mcp session", url, "10 consecutive calls", kind)
 
 
+STATELESS_VERSION = "2026-07-28"
+
+
+def mcp_stateless_calls(client: Client, url: str, token: str, start_id: int) -> None:
+    """The form every OpenBot agent uses (#547): no cookie, no initialize and no session; each
+    tools/list carries MCP-Protocol-Version 2026-07-28, Mcp-Method and params._meta. Every answer
+    is 200 with the tool list and without an Mcp-Session-Id."""
+    headers = mcp_headers(token)
+    headers["MCP-Protocol-Version"] = STATELESS_VERSION
+    headers["Mcp-Method"] = "tools/list"
+    for offset in range(10):
+        rpc_id = start_id + offset
+        status, resp_headers, payload = mcp_post(
+            client,
+            url,
+            headers,
+            {
+                "jsonrpc": "2.0",
+                "id": rpc_id,
+                "method": "tools/list",
+                "params": {
+                    "_meta": {
+                        "io.modelcontextprotocol/protocolVersion": STATELESS_VERSION,
+                        "io.modelcontextprotocol/clientCapabilities": {},
+                    }
+                },
+            },
+        )
+        if status != 200:
+            raise SystemExit(f"{url} stateless tools/list #{rpc_id} HTTP {status} body={payload}")
+        if resp_headers.get("mcp-session-id"):
+            raise SystemExit(f"{url} stateless tools/list #{rpc_id} answered with an Mcp-Session-Id")
+        if payload.get("error") or not (payload.get("result") or {}).get("tools"):
+            raise SystemExit(f"{url} stateless tools/list #{rpc_id} without a tool list {payload}")
+    print("mcp stateless", url, "10 consecutive calls, no session")
+
+
 def parse_forms(html: str) -> list[dict]:
     parser = FormParser()
     parser.feed(html)
@@ -621,6 +658,9 @@ def assert_mcp_tools(client: Client) -> None:
         mcp_session(bare, dispatcher_path, dispatcher_token),
         start_id=40,
     )
+    stateless = Client(cookies=False)
+    mcp_stateless_calls(stateless, autonomy, autonomy_token, start_id=60)
+    mcp_stateless_calls(stateless, f"{APP}/dispatch/mcp", dispatcher_token, start_id=80)
     print("mcp tools ok")
 
 
