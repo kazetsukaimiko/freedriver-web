@@ -16,9 +16,25 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Read the pull request's label events for the frozen-violation check (#585).
+      pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      # A pull request cannot freeze a new layering violation (#585): the ArchUnit stores may
+      # only shrink, unless kazetsukaimiko added the freeze-new-violation label.
+      - name: Frozen layering violations only shrink
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 .github/scripts/archunit_store_check.py --self-test
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            python3 .github/scripts/archunit_store_check.py "$BASE_SHA"
+          fi
 
       - name: Set up Java
         uses: actions/setup-java@v5

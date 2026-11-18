@@ -120,7 +120,7 @@ class McpBearerTest {
                 .then()
                 .statusCode(200)
                 .body("result.tools.name", hasItem("list_appliances"))
-                .body("result.tools.name", hasItem("switch_appliance"));
+                .body("result.tools.name", hasItem("switch_appliances"));
     }
 
     @Test
@@ -142,9 +142,9 @@ class McpBearerTest {
 
     private static String switchBody() {
         return "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{"
-                + "\"name\":\"switch_appliance\",\"arguments\":{"
+                + "\"name\":\"switch_appliances\",\"arguments\":{"
                 + "\"instanceId\":\"11111111-1111-1111-1111-111111111111\","
-                + "\"applianceName\":\"fridge\",\"on\":false}}}";
+                + "\"appliances\":[{\"applianceName\":\"fridge\",\"on\":false}]}}}";
     }
 
     static String token(

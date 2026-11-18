@@ -59,6 +59,18 @@ final class Spoken {
         };
     }
 
+    /** The dashboard's refusal of one entry, naming the appliance: "Porch light: too many requests. Try again in a minute." */
+    static String refused(String applianceName, int status) {
+        String reason = refusal(status);
+        return label(applianceName) + ": " + Character.toLowerCase(reason.charAt(0)) + reason.substring(1);
+    }
+
+    /** The answer when one appliance is listed twice with the same delay; the call switches nothing. */
+    static String listedTwice(String applianceName) {
+        return label(applianceName) + " is listed twice with the same delay. List each appliance once per delay; "
+                + "nothing was switched.";
+    }
+
     static String label(String applianceName) {
         if (applianceName == null || applianceName.isBlank()) {
             return "Appliance";
