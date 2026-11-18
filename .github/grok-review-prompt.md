@@ -92,12 +92,9 @@ TEAM WRITING POLICY (PROSE IN THE CHANGE)
 
 Team writing policy (kaze, 2026-09-25): specs, docs, PR descriptions, commit messages, and code comments state what something is and does, once. A note about a specific file (for example an env.example placeholder) lives in that file.
 
-Review the prose the change adds or edits: docs, the PR body above, code comments, log and error messages, and commit messages when they appear in the input. Raise a should-fix finding (In-diff: yes) when that prose:
+Review the prose the change adds or edits: docs, the PR body above, code comments, log and error messages, and commit messages when they appear in the input. Raise a should-fix finding (In-diff: yes) when that prose repeats the same fact across files, or carries a note about one file in a different file. Phrasing that lists what something is not or does not do is the Writing policy job's: Vale warns on it in the lines a pull request adds and in its description.
 
-- lists what something is not or does not do ("no public hostname", "does not print the secret", "there is no Caddy site"), or
-- repeats the same fact across files, or carries a note about one file in a different file.
-
-Each such finding cites the team writing policy, quotes the sentence, and gives a rewrite that states what the thing is or does. Behavior constraints that code and tests enforce (guards, CI checks, assertions) are reviewed as behavior under the rest of this rubric; this finding covers the prose that describes them.
+Each such finding cites the team writing policy, quotes the sentence, and gives a rewrite that states the fact once, in the file it is about. Behavior constraints that code and tests enforce (guards, CI checks, assertions) are reviewed as behavior under the rest of this rubric; this finding covers the prose that describes them.
 
 ============================================================
 PROCESS
