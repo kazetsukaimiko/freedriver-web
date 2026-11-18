@@ -22,6 +22,8 @@ const scopes = [
   'dispatcher',
   'docs',
   'keycloak',
+  // The appliance MCP server and the library both MCP servers share: java/autonomy-mcp, java/mcp-support.
+  'mcp',
   'mosquitto',
   'mqtt',
   'observability',

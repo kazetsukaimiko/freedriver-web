@@ -33,6 +33,8 @@ check pass "ci(ci): enforce conventional commits" $'Check the pull request title
 
 check pass "feat(dashboard)!: change the switch" $'Ids move.\n\nBREAKING CHANGE: the switch id changed\nRefs: #151'
 
+check pass "feat(mcp): switch several appliances in one MCP call" $'One call, several entries.\n\nRefs: #598'
+
 check fail "ci: missing scope" $'Refs: #151'
 check fail "style(ci): not a type" $'Refs: #151'
 check fail "ci(nope): unknown scope" $'Refs: #151'
