@@ -2,7 +2,6 @@ package io.freedriver.keycloak.registration;
 
 import org.keycloak.OAuth2Constants;
 
-import java.util.List;
 import java.util.Set;
 
 /**
@@ -42,14 +41,10 @@ public final class DispatchReceivePolicy {
 
     public static final Set<String> OPTIONAL_SCOPES = Set.of(OFFLINE_ACCESS);
 
-    /** Fixed order. The first one present is the refusal. */
-    public static final List<String> REFUSED_GRANT_TYPES = List.of(
-            OAuth2Constants.PASSWORD,
-            OAuth2Constants.IMPLICIT,
-            OAuth2Constants.CLIENT_CREDENTIALS,
-            OAuth2Constants.DEVICE_CODE_GRANT_TYPE,
-            OAuth2Constants.CIBA_GRANT_TYPE,
-            OAuth2Constants.TOKEN_EXCHANGE_GRANT_TYPE);
+    /** An absent grant list passes. Any other grant type is refused. */
+    public static final Set<String> ALLOWED_GRANT_TYPES = Set.of(
+            OAuth2Constants.AUTHORIZATION_CODE,
+            OAuth2Constants.REFRESH_TOKEN);
 
     private DispatchReceivePolicy() {
     }

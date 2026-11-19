@@ -6,35 +6,36 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
 import java.util.Optional;
-import java.util.Set;
 
 /**
  * Before-hooks refuse and after-hooks pin. A fetch URL is refused on every host.
  * rootUrl and adminUrl use an http or https scheme and no user-info; they are refused
  * when the URI does not parse, the host does not resolve, or any resolved address is
- * loopback, link-local, site-local, or any-local. Their path, query, and fragment stay.
- * A client that does not name dispatch_receive stops after those URL checks.
+ * loopback, link-local, site-local, any-local, multicast, IPv6 unique-local ({@code fc00::/7}),
+ * shared address space ({@code 100.64.0.0/10}), or {@code 0.0.0.0/8}. Their path, query,
+ * and fragment stay. A client that is not dispatch_receive stops after those URL checks.
  *
  * <p>When several refusals apply, the first in this order is the one returned: the four
- * fetch fields, rootUrl, adminUrl, a missing realm scope, a refused grant type, the four
- * grant booleans, the three grant attributes, consent, PKCE, a protocol mapper,
- * access.token.lifespan, then a scope outside basic, dispatch_receive, and offline_access.
+ * fetch fields, rootUrl, adminUrl, a missing realm scope, a grant outside
+ * {@code authorization_code} and {@code refresh_token}, the four grant booleans, the three
+ * grant attributes, consent, PKCE, a protocol mapper, access.token.lifespan, then a scope
+ * outside basic, dispatch_receive, and offline_access.
  */
 public final class DispatchReceiveRules {
 
     private DispatchReceiveRules() {
     }
 
+    /**
+     * The one predicate for this policy and for {@code OneYearTokens}: the request names
+     * {@code dispatch_receive}, or the stored client holds it as a default or optional scope.
+     */
     public static boolean isDispatchReceive(DispatchReceiveRequest request) {
         return names(request.oidcScope())
                 || request.defaultClientScopes().contains(DispatchReceivePolicy.SCOPE)
                 || request.optionalClientScopes().contains(DispatchReceivePolicy.SCOPE)
-                || request.storedDefaultScopes().contains(DispatchReceivePolicy.SCOPE);
-    }
-
-    /** OneYearTokens skips a stored client that holds the scope on either list. */
-    public static boolean storedHoldsScope(Set<String> defaultScopes, Set<String> optionalScopes) {
-        return holds(defaultScopes) || holds(optionalScopes);
+                || request.storedDefaultScopes().contains(DispatchReceivePolicy.SCOPE)
+                || request.storedOptionalScopes().contains(DispatchReceivePolicy.SCOPE);
     }
 
     public static Optional<DispatchReceivePin> pin(DispatchReceiveRequest request) {
@@ -71,8 +72,8 @@ public final class DispatchReceiveRules {
         if (!request.realmHasBasic() || !request.realmHasDispatchReceive()) {
             return Optional.of("realm lacks basic or dispatch_receive");
         }
-        for (String grant : DispatchReceivePolicy.REFUSED_GRANT_TYPES) {
-            if (request.grantTypes().contains(grant)) {
+        for (String grant : request.grantTypes()) {
+            if (!DispatchReceivePolicy.ALLOWED_GRANT_TYPES.contains(grant)) {
                 return Optional.of("grant is refused");
             }
         }
@@ -176,10 +177,42 @@ public final class DispatchReceiveRules {
     }
 
     private static boolean local(InetAddress address) {
-        return address.isLoopbackAddress()
+        if (address.isLoopbackAddress()
                 || address.isLinkLocalAddress()
                 || address.isSiteLocalAddress()
-                || address.isAnyLocalAddress();
+                || address.isAnyLocalAddress()
+                || address.isMulticastAddress()) {
+            return true;
+        }
+        byte[] v4 = ipv4(address);
+        if (v4 != null) {
+            int first = v4[0] & 0xff;
+            int second = v4[1] & 0xff;
+            return first == 0 || (first == 100 && (second & 0xc0) == 0x40);
+        }
+        byte[] raw = address.getAddress();
+        return raw.length == 16 && (raw[0] & 0xfe) == 0xfc;
+    }
+
+    /** IPv4, or the IPv4 embedded in an IPv4-mapped IPv6 address. */
+    private static byte[] ipv4(InetAddress address) {
+        byte[] raw = address.getAddress();
+        if (raw.length == 4) {
+            return raw;
+        }
+        if (raw.length == 16 && mappedV4(raw)) {
+            return new byte[] {raw[12], raw[13], raw[14], raw[15]};
+        }
+        return null;
+    }
+
+    private static boolean mappedV4(byte[] raw) {
+        for (int i = 0; i < 10; i++) {
+            if (raw[i] != 0) {
+                return false;
+            }
+        }
+        return raw[10] == (byte) 0xff && raw[11] == (byte) 0xff;
     }
 
     private static boolean disallowedScope(DispatchReceiveRequest request) {
@@ -215,10 +248,6 @@ public final class DispatchReceiveRules {
             }
         }
         return false;
-    }
-
-    private static boolean holds(Set<String> scopes) {
-        return scopes != null && scopes.contains(DispatchReceivePolicy.SCOPE);
     }
 
     private static boolean present(String value) {

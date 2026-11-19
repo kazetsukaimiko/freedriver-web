@@ -65,17 +65,27 @@ class DispatchReceiveRulesTest {
     }
 
     @Test
-    void storedOptionalScopeDoesNotSelectTheClient() {
+    void storedOptionalScopeSelectsTheClient() {
         DispatchReceiveRequest storedOptional = DispatchReceiveRequest.builder()
+                .storedOptionalScopes(Set.of(DispatchReceivePolicy.SCOPE))
                 .grantTypes(Set.of(OAuth2Constants.PASSWORD))
                 .build();
 
-        assertFalse(DispatchReceiveRules.isDispatchReceive(storedOptional));
-        assertEquals(Optional.empty(), check(FetchUrls.none(), null, null, storedOptional));
-        assertTrue(DispatchReceiveRules.storedHoldsScope(Set.of(), Set.of("dispatch_receive")));
-        assertTrue(DispatchReceiveRules.storedHoldsScope(Set.of("dispatch_receive"), Set.of()));
-        assertFalse(DispatchReceiveRules.storedHoldsScope(Set.of("roles"), Set.of("profile")));
-        assertFalse(DispatchReceiveRules.storedHoldsScope(null, null));
+        assertTrue(DispatchReceiveRules.isDispatchReceive(storedOptional));
+        assertEquals("grant is refused", refusal(storedOptional));
+        assertTrue(DispatchReceiveRules.pin(storedOptional).isPresent());
+    }
+
+    @Test
+    void grantTypesAreAnAllowList() {
+        assertEquals(
+                Set.of(OAuth2Constants.AUTHORIZATION_CODE, OAuth2Constants.REFRESH_TOKEN),
+                DispatchReceivePolicy.ALLOWED_GRANT_TYPES);
+        assertEquals(Optional.empty(), check(FetchUrls.none(), null, null, openBot().grantTypes(Set.of()).build()));
+        assertEquals(Optional.empty(), check(
+                FetchUrls.none(), null, null, openBot().grantTypes(Set.of(OAuth2Constants.AUTHORIZATION_CODE)).build()));
+        assertEquals("grant is refused", refusal(openBot().grantTypes(Set.of(OAuth2Constants.JWT_AUTHORIZATION_GRANT)).build()));
+        assertEquals("grant is refused", refusal(openBot().grantTypes(Set.of("authorization_code", "device_code")).build()));
     }
 
     @Test
@@ -245,7 +255,48 @@ class DispatchReceiveRulesTest {
         assertEquals("standard.token.exchange.enabled", DispatchReceivePolicy.TOKEN_EXCHANGE_GRANT);
         assertEquals("pkce.code.challenge.method", DispatchReceivePolicy.PKCE_CHALLENGE_METHOD);
         assertEquals("client.offline.session.idle.timeout", DispatchReceivePolicy.OFFLINE_SESSION_IDLE_TIMEOUT);
-        assertEquals(OAuth2Constants.DEVICE_CODE_GRANT_TYPE, DispatchReceivePolicy.REFUSED_GRANT_TYPES.get(3));
+        assertEquals(
+                Set.of(OAuth2Constants.AUTHORIZATION_CODE, OAuth2Constants.REFRESH_TOKEN),
+                DispatchReceivePolicy.ALLOWED_GRANT_TYPES);
+    }
+
+    @Test
+    void rangesInetAddressMissesAreRefused() throws Exception {
+        assertFalse(InetAddress.getByName("fc00::1").isSiteLocalAddress());
+        assertFalse(InetAddress.getByName("100.64.0.1").isSiteLocalAddress());
+        assertFalse(InetAddress.getByName("0.1.2.3").isAnyLocalAddress());
+        assertTrue(InetAddress.getByName("224.0.0.1").isMulticastAddress());
+        assertTrue(InetAddress.getByName("ff02::1").isMulticastAddress());
+
+        refuseResolved("fc00::1");
+        refuseResolved("fdff::1");
+        refuseResolved("100.64.0.1");
+        refuseResolved("100.127.255.254");
+        refuseResolved("0.1.2.3");
+        refuseResolved("0.255.255.255");
+        refuseResolved("224.0.0.1");
+        refuseResolved("ff02::1");
+        refuseResolved("::ffff:100.64.0.1");
+
+        allowResolved("100.63.255.255");
+        allowResolved("100.128.0.1");
+        allowResolved("1.1.1.1");
+        allowResolved("2001:db8::1");
+    }
+
+    private static void refuseResolved(String literal) throws Exception {
+        assertEquals("adminUrl is refused", resolved(literal).orElseThrow(), literal);
+    }
+
+    private static void allowResolved(String literal) throws Exception {
+        assertEquals(Optional.empty(), resolved(literal), literal);
+    }
+
+    private static Optional<String> resolved(String literal) throws Exception {
+        InetAddress address = InetAddress.getByName(literal);
+        HostResolver resolver = host -> new InetAddress[] {address};
+        return DispatchReceiveRules.before(
+                FetchUrls.none(), null, "https://registered.example/", resolver, DispatchReceiveRequest.openBot());
     }
 
     private static DispatchReceiveRequest.Builder openBot() {

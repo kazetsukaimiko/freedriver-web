@@ -4,15 +4,19 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
- * What the registration policy reads off a client representation and the stored client.
- * {@code publicClient} and {@code token_endpoint_auth_method} are absent: they are not a
- * refusal and the pin leaves them as registered.
+ * The only value {@link DispatchReceiveRules} reads. Production code builds it in one
+ * method, {@code mapped(ClientRepresentation, ClientModel)}, which the implementation
+ * adds and tests with a real {@code ClientRepresentation}, attributes included.
+ * The stored client is null on beforeRegister. Tests are the other caller.
+ * {@code publicClient} and the token endpoint auth method stay off this record, so the
+ * pin leaves them as registered.
  */
 public record DispatchReceiveRequest(
         String oidcScope,
         Set<String> defaultClientScopes,
         Set<String> optionalClientScopes,
         Set<String> storedDefaultScopes,
+        Set<String> storedOptionalScopes,
         Set<String> grantTypes,
         boolean directAccessGrantsEnabled,
         boolean implicitFlowEnabled,
@@ -33,6 +37,7 @@ public record DispatchReceiveRequest(
         defaultClientScopes = names(defaultClientScopes);
         optionalClientScopes = names(optionalClientScopes);
         storedDefaultScopes = names(storedDefaultScopes);
+        storedOptionalScopes = names(storedOptionalScopes);
         grantTypes = names(grantTypes);
         pkceCodeChallengeMethod = blank(pkceCodeChallengeMethod) ? null : pkceCodeChallengeMethod;
     }
@@ -71,6 +76,7 @@ public record DispatchReceiveRequest(
         private Set<String> defaultClientScopes = Set.of();
         private Set<String> optionalClientScopes = Set.of();
         private Set<String> storedDefaultScopes = Set.of();
+        private Set<String> storedOptionalScopes = Set.of();
         private Set<String> grantTypes = Set.of();
         private boolean directAccessGrantsEnabled;
         private boolean implicitFlowEnabled;
@@ -103,6 +109,11 @@ public record DispatchReceiveRequest(
 
         public Builder storedDefaultScopes(Set<String> storedDefaultScopes) {
             this.storedDefaultScopes = storedDefaultScopes;
+            return this;
+        }
+
+        public Builder storedOptionalScopes(Set<String> storedOptionalScopes) {
+            this.storedOptionalScopes = storedOptionalScopes;
             return this;
         }
 
@@ -182,6 +193,7 @@ public record DispatchReceiveRequest(
                     defaultClientScopes,
                     optionalClientScopes,
                     storedDefaultScopes,
+                    storedOptionalScopes,
                     grantTypes,
                     directAccessGrantsEnabled,
                     implicitFlowEnabled,
