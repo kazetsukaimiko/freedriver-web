@@ -1,5 +1,6 @@
 package io.freedriver.keycloak.sms;
 
+import io.freedriver.sms.validation.UsPhoneNumbers;
 import org.keycloak.models.GroupModel;
 import org.keycloak.models.UserModel;
 
@@ -17,7 +18,6 @@ final class PhoneSignInPolicy {
     static final String PHONE_ATTRIBUTE = "phone";
     static final String GROUP = "phone-sign-in";
 
-    private static final Pattern PHONE = Pattern.compile("^\\+[1-9][0-9]{7,14}$");
     private static final Pattern SEPARATORS = Pattern.compile("[\\s().-]");
 
     private PhoneSignInPolicy() {}
@@ -28,7 +28,7 @@ final class PhoneSignInPolicy {
     }
 
     static boolean validPhone(String normalized) {
-        return PHONE.matcher(normalized).matches();
+        return UsPhoneNumbers.isCanonical(normalized);
     }
 
     static boolean allows(UserModel user, String verifiedPhone) {

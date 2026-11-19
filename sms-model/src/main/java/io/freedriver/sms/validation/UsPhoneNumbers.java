@@ -1,14 +1,13 @@
-package io.freedriver.keycloak.sms;
+package io.freedriver.sms.validation;
 
 import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
- * Whole-entry US shapes for the phone-or-username router. Not
- * {@link PhoneSignInPolicy#normalizePhone}, which only strips separators.
+ * The one definition of a US phone number: the stored form, and the typed shapes that become it.
  * A longer string that contains one of these shapes is not a phone.
  */
-final class UsPhoneNumbers {
+public final class UsPhoneNumbers {
 
     /**
      * Ten-digit national number, or the same number with a leading US country
@@ -25,18 +24,25 @@ final class UsPhoneNumbers {
                     + "|\\+1 [0-9]{3} [0-9]{3} [0-9]{4}"
                     + "|\\+1[0-9]{10}");
 
-    private static final Pattern CANONICAL = Pattern.compile("\\+1[0-9]{10}");
+    /** Compiled from {@link UsPhoneNumber#REGEX}, so the stored form has one pattern string. */
+    private static final Pattern CANONICAL = Pattern.compile(UsPhoneNumber.REGEX);
 
-    private UsPhoneNumbers() {}
+    private UsPhoneNumbers() {
+    }
 
-    /** {@code +1} and the ten digits, or empty when {@code raw} is not one of the shapes. */
-    static Optional<String> canonical(String raw) {
-        if (raw == null || !SHAPE.matcher(raw).matches()) {
+    /** True for {@code +1} and ten digits, the form {@link UsPhoneNumber} validates. */
+    public static boolean isCanonical(String value) {
+        return value != null && CANONICAL.matcher(value).matches();
+    }
+
+    /** The stored form for one of the eight typed shapes; empty for anything else. */
+    public static Optional<String> canonical(String typed) {
+        if (typed == null || !SHAPE.matcher(typed).matches()) {
             return Optional.empty();
         }
         StringBuilder digits = new StringBuilder(11);
-        for (int i = 0; i < raw.length(); i++) {
-            char c = raw.charAt(i);
+        for (int i = 0; i < typed.length(); i++) {
+            char c = typed.charAt(i);
             if (c >= '0' && c <= '9') {
                 digits.append(c);
             }

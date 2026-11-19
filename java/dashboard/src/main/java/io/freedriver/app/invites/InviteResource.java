@@ -1,8 +1,8 @@
 package io.freedriver.app.invites;
 
 import io.freedriver.app.api.LoginLinks;
-import io.freedriver.app.phones.UsPhones;
 import io.freedriver.dashboard.api.RateLimited;
+import io.freedriver.sms.validation.UsPhoneNumbers;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -38,7 +38,7 @@ public class InviteResource {
     @RateLimited("invites")
     public Response create(CreateInvite request) {
         String raw = request == null || request.phone() == null ? null : request.phone().strip();
-        String phone = UsPhones.canonical(raw).orElse(null);
+        String phone = UsPhoneNumbers.canonical(raw).orElse(null);
         if (phone == null) {
             return Response.status(400).entity(Map.of("reason", "phone")).build();
         }
