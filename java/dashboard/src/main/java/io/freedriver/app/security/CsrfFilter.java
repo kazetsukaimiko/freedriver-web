@@ -124,6 +124,7 @@ public class CsrfFilter implements ContainerRequestFilter, ContainerResponseFilt
                 || "api/invites".equals(path)
                 || "api/instances".equals(path)
                 || "api/phones/remove".equals(path)
+                || "api/mcp/scheduled-switches".equals(path)
                 || (path.startsWith("api/instances/") && path.endsWith("/open"));
     }
 

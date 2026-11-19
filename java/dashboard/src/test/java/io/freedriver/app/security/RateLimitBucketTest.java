@@ -4,6 +4,7 @@ import io.freedriver.app.instances.InstancesApi;
 import io.freedriver.app.invites.InviteResource;
 import io.freedriver.app.phones.PhoneRemovalResource;
 import io.freedriver.dashboard.api.AppliancesApi;
+import io.freedriver.dashboard.api.McpOpsApi;
 import io.freedriver.dashboard.api.RateLimitBucket;
 import io.freedriver.dashboard.api.RateLimited;
 import org.junit.jupiter.api.Test;
@@ -19,13 +20,15 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class RateLimitBucketTest {
 
     @Test
-    void keys_are_the_four_stored_segments() {
+    void keys_are_the_stored_segments() {
         assertEquals(EnumSet.of(
                 RateLimitBucket.APPLIANCES_COMMANDS,
+                RateLimitBucket.APPLIANCES_SCHEDULES,
                 RateLimitBucket.INSTANCES,
                 RateLimitBucket.INVITES,
                 RateLimitBucket.PHONES), EnumSet.allOf(RateLimitBucket.class));
         assertEquals("appliances.commands", RateLimitBucket.APPLIANCES_COMMANDS.key());
+        assertEquals("appliances.schedules", RateLimitBucket.APPLIANCES_SCHEDULES.key());
         assertEquals("instances", RateLimitBucket.INSTANCES.key());
         assertEquals("invites", RateLimitBucket.INVITES.key());
         assertEquals("phones", RateLimitBucket.PHONES.key());
@@ -39,6 +42,7 @@ class RateLimitBucketTest {
     void production_routes_keep_their_buckets() throws Exception {
         Map<Class<?>, Map<String, RateLimitBucket>> routes = Map.of(
                 AppliancesApi.class, Map.of("command", RateLimitBucket.APPLIANCES_COMMANDS),
+                McpOpsApi.class, Map.of("schedule", RateLimitBucket.APPLIANCES_SCHEDULES),
                 InstancesApi.class, Map.of(
                         "create", RateLimitBucket.INSTANCES,
                         "open", RateLimitBucket.INSTANCES),
