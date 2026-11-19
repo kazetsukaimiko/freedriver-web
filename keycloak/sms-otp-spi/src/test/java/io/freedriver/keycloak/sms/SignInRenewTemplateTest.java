@@ -14,22 +14,19 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The sign-in renewal (#552) as Keycloak renders it: freedriver-renew.ftl with the realm's login lifespan
  * and the client of the sign-in. A client with a home address (its baseUrl) gets the refresh and the
- * script, both pointing at that address; a client without one gets neither. The provision script gives
- * freedriver-api, and only freedriver-api, a home address.
+ * script, both pointing at that address; a client without one gets neither.
  */
 class SignInRenewTemplateTest {
 
-    private static final Path THEME = themeDir();
+    /** Surefire's working directory is this module. */
+    private static final Path THEME = Path.of("src/main/resources/theme/freedriver/login");
 
     /** The client bean Keycloak puts in the template; only its home address matters here. */
     public static final class Client {
@@ -81,26 +78,6 @@ class SignInRenewTemplateTest {
         }
     }
 
-    @Test
-    void theProvisionScriptGivesFreedriverApiAloneAHomeAddress() throws IOException {
-        String script = Files.readString(repo().resolve("scripts/provision-keycloak-freedriver.sh"));
-        Matcher home = Pattern.compile("(?m)^HOME_URL='([^']+)'$").matcher(script);
-        assertTrue(home.find(), "HOME_URL in the provision script");
-        assertEquals("https://app.freedriver.io/", home.group(1));
-        Matcher set = Pattern.compile("baseUrl=").matcher(script);
-        int uses = 0;
-        while (set.find()) {
-            uses++;
-        }
-        assertEquals(2, uses, "baseUrl is set twice: when freedriver-api is created and when it is updated");
-        int api = script.indexOf("-s clientId=freedriver-api");
-        int update = script.indexOf("kcadm update \"clients/${CLIENT_UUID}\"");
-        int next = script.indexOf("default-client-scopes", update);
-        assertTrue(api > 0 && update > api && next > update, "freedriver-api's create and update blocks");
-        assertTrue(script.substring(api, update).contains("-s \"baseUrl=${HOME_URL}\""), "set on create");
-        assertTrue(script.substring(update, next).contains("-s \"baseUrl=${HOME_URL}\""), "set on update");
-    }
-
     private static String render(int lifetimeSeconds, Client client) throws IOException, TemplateException {
         // Keycloak's DefaultFreeMarkerProvider: 2.3.32 rules and HTML output.
         Configuration cfg = new Configuration(Configuration.VERSION_2_3_32);
@@ -117,18 +94,5 @@ class SignInRenewTemplateTest {
         StringWriter out = new StringWriter();
         page.process(model, out);
         return out.toString();
-    }
-
-    private static Path repo() {
-        for (Path p = Path.of("").toAbsolutePath(); p != null; p = p.getParent()) {
-            if (Files.isDirectory(p.resolve("keycloak/themes/freedriver/login")) && Files.isDirectory(p.resolve("scripts"))) {
-                return p;
-            }
-        }
-        throw new AssertionError("repository root not found");
-    }
-
-    private static Path themeDir() {
-        return repo().resolve("keycloak/themes/freedriver/login");
     }
 }

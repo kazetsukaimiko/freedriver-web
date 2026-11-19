@@ -316,6 +316,9 @@ jobs:
       - name: Release stamp is semver
         run: ./scripts/test-semver-stamp.sh
 
+      - name: Keycloak provision gives freedriver-api its home address
+        run: python3 scripts/check-provision-home-url.py --self-test && python3 scripts/check-provision-home-url.py
+
       - name: Keycloak SMS OTP SPI tests
         run: |
           set -euo pipefail
