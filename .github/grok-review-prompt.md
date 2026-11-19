@@ -38,8 +38,8 @@ Instrumentation shape
 
 - Declare policy on the resource method, where @RolesAllowed already lives: a named annotation, with the numbers in config. A path glob answers whether this URL tree exists. AppliancesDisabledFilter is that case, and it runs pre-auth.
 - The rate limit keys the authenticated subject: the OIDC sub when it is present, otherwise the principal name.
-- Per-user command limits use quarkus-bucket4j @RateLimited(bucket=...) plus an IdentityResolver, which keys by subject. @RateLimited sits on the `XxxApi` method; ApplianceService stays free of it.
-- A limiter or identity resolver that cannot decide fails closed.
+- Each limited route names one RateLimitBucket through @RateLimited, a dashboard HTTP-edge binding. Routes may share a bucket (instance create and open both name INSTANCES), and routes that share a bucket share one window per caller. RateLimitedFeature reads the annotation on the resource method, then the matching interface method, then the resource class. CallerRateLimiter keys each window as bucket.key() + ":" + caller. The allowance comes from AppliancesConfig.rateLimit(). The annotation stays off ApplianceService.
+- RateLimitedFilter keys a caller as RateLimitedFilter.callerKey does — a null or anonymous identity has no key; otherwise a non-blank OIDC subject is the key; otherwise the principal name, and a null principal or a blank name has no key. A caller with no key, and a spent window, both throw io.freedriver.app.security.RateLimitedException, which the dashboard's io.freedriver.app.api.ErrorMappers.rateLimited maps to HTTP 429 with no entity. Authentication answers before RateLimitedFilter (registered at Priorities.AUTHORIZATION + 100). With sign-in on, a portal request with no session that sends X-Requested-With: JavaScript gets 499 (quarkus.oidc.authentication.java-script-auto-redirect is false), a browser opening the same API path gets a 302 redirect to the sign-in (authorization) endpoint, and a missing or rejected bearer gets 401; with sign-in off, the authenticated policy answers 401. The filter's empty 429 applies only to a request that reaches it.
 
 Exceptions
 
