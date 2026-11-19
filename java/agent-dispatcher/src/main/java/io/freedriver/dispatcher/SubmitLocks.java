@@ -6,6 +6,7 @@ import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.Updates;
 import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
+import org.jmolecules.architecture.hexagonal.SecondaryPort;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -19,6 +20,7 @@ import static com.mongodb.client.model.Filters.lte;
  * {@code agent-locks}: one in-flight submit wait per dispatcher subject. A TTL index on
  * {@code expiresAt} removes stale rows.
  */
+@SecondaryPort
 @ApplicationScoped
 public class SubmitLocks implements PanacheMongoRepositoryBase<SubmitLock, String> {
 

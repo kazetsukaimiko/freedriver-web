@@ -17,6 +17,7 @@ COPY java/bom/pom.xml java/bom/pom.xml
 COPY java/hit-window/pom.xml java/hit-window/pom.xml
 COPY java/hit-window-testing/pom.xml java/hit-window-testing/pom.xml
 COPY java/architecture-rules/pom.xml java/architecture-rules/pom.xml
+COPY java/stereotypes/pom.xml java/stereotypes/pom.xml
 COPY java/mcp-support/pom.xml java/mcp-support/pom.xml
 COPY java/dashboard-model/pom.xml java/dashboard-model/pom.xml
 COPY java/dashboard-api/pom.xml java/dashboard-api/pom.xml
@@ -34,6 +35,7 @@ COPY java/dashboard-api/src java/dashboard-api/src
 COPY java/mcp-support/src java/mcp-support/src
 COPY java/autonomy-mcp/src java/autonomy-mcp/src
 COPY java/architecture-rules/src java/architecture-rules/src
+COPY java/stereotypes/src java/stereotypes/src
 
 ARG BUILD_NUMBER=1.0.0-SNAPSHOT
 RUN set -eu; \
