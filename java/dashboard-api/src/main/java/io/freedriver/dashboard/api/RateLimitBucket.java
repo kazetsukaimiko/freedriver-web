@@ -6,6 +6,7 @@ package io.freedriver.dashboard.api;
  */
 public enum RateLimitBucket {
     APPLIANCES_COMMANDS("appliances.commands"),
+    APPLIANCES_SCHEDULES("appliances.schedules"),
     INSTANCES("instances"),
     INVITES("invites"),
     PHONES("phones");
