@@ -38,5 +38,6 @@ public interface McpOpsApi {
     @Path("/scheduled-switches")
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({"dashboard", "portal-admin"})
+    @RateLimited(RateLimitBucket.APPLIANCES_SCHEDULES)
     Response schedule(@Valid @NotNull ScheduledSwitchRequest body);
 }
