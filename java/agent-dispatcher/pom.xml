@@ -10,6 +10,17 @@
     <artifactId>agent-dispatcher</artifactId>
     <packaging>quarkus</packaging>
     <name>freedriver-web-agent-dispatcher</name>
+    <properties>
+        <!-- Files this module's tests read outside the module (#582). Each enters this module's
+             build-cache key, so a change to one reruns these tests; .github/scripts/cache_inputs_check.py
+             fails when a test reads an outside path that is missing here. -->
+        <maven.build.cache.input.outside1>../../Caddyfile</maven.build.cache.input.outside1>
+        <maven.build.cache.input.outside2>../../docker-compose.yml</maven.build.cache.input.outside2>
+        <maven.build.cache.input.outside3>../../observability/prometheus/prometheus.yml</maven.build.cache.input.outside3>
+        <maven.build.cache.input.outside4>../dashboard/src/main/docker/Dockerfile.compose</maven.build.cache.input.outside4>
+        <maven.build.cache.input.outside5>../agent-dispatcher/src/main/docker/Dockerfile.compose</maven.build.cache.input.outside5>
+        <maven.build.cache.input.outside6>../autonomy-mcp/src/main/docker/Dockerfile.compose</maven.build.cache.input.outside6>
+    </properties>
 
     <dependencyManagement>
         <dependencies>

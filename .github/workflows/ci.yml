@@ -264,6 +264,11 @@ jobs:
       - name: Grafana dashboards file-provision
         run: python3 observability/grafana/provisioning/dashboards/test_dashboards.py
 
+      - name: Tests that read outside their module are in its cache key
+        run: |
+          python3 .github/scripts/cache_inputs_check.py --self-test
+          python3 .github/scripts/cache_inputs_check.py
+
       - name: Draft PRs become ready when checks pass
         run: |
           python3 .github/scripts/pr_ready_when_green.py --self-test
