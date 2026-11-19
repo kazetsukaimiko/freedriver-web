@@ -1,5 +1,6 @@
 package io.freedriver.app.instances;
 
+import io.freedriver.dashboard.api.RateLimitBucket;
 import io.freedriver.dashboard.api.RateLimited;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
 import org.junit.jupiter.api.Test;
@@ -94,8 +95,8 @@ class HouseProvisionTest {
         Method create = InstancesApi.class.getMethod("create", CreateInstance.class);
         Method open = InstancesApi.class.getMethod("open", String.class);
         Method list = InstancesApi.class.getMethod("list");
-        assertEquals("instances", create.getAnnotation(RateLimited.class).value());
-        assertEquals("instances", open.getAnnotation(RateLimited.class).value());
+        assertEquals(RateLimitBucket.INSTANCES, create.getAnnotation(RateLimited.class).value());
+        assertEquals(RateLimitBucket.INSTANCES, open.getAnnotation(RateLimited.class).value());
         assertNull(list.getAnnotation(RateLimited.class));
     }
 

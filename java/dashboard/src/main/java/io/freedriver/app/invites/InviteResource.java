@@ -2,6 +2,7 @@ package io.freedriver.app.invites;
 
 import io.freedriver.app.api.LoginLinks;
 import io.freedriver.app.phones.UsPhones;
+import io.freedriver.dashboard.api.RateLimitBucket;
 import io.freedriver.dashboard.api.RateLimited;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
@@ -35,7 +36,7 @@ public class InviteResource {
 
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
-    @RateLimited("invites")
+    @RateLimited(RateLimitBucket.INVITES)
     public Response create(CreateInvite request) {
         String raw = request == null || request.phone() == null ? null : request.phone().strip();
         String phone = UsPhones.canonical(raw).orElse(null);

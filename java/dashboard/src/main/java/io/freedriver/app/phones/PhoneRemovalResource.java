@@ -1,6 +1,7 @@
 package io.freedriver.app.phones;
 
 import io.freedriver.app.api.LoginLinks;
+import io.freedriver.dashboard.api.RateLimitBucket;
 import io.freedriver.dashboard.api.RateLimited;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
@@ -59,7 +60,7 @@ public class PhoneRemovalResource {
     @POST
     @Path("remove")
     @Consumes(MediaType.APPLICATION_JSON)
-    @RateLimited("phones")
+    @RateLimited(RateLimitBucket.PHONES)
     public Response remove(RemovePhone request) {
         String phone = request == null ? null : request.phone();
         if (phone == null || !PHONE.matcher(phone).matches()) {
