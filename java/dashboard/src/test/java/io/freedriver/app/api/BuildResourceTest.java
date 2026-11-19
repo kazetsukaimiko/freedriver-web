@@ -1,11 +1,13 @@
 package io.freedriver.app.api;
 
+import io.freedriver.dashboard.api.RateLimitBucket;
 import io.quarkus.redis.datasource.RedisDataSource;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -19,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class BuildResourceTest {
 
     private static final String PREFIX = "freedriver:rate:dashboard:";
-    private static final List<String> BUCKETS = List.of("appliances.commands", "instances", "invites", "phones");
+    private static final List<String> BUCKETS = Arrays.stream(RateLimitBucket.values()).map(RateLimitBucket::key).toList();
 
     @Inject
     RedisDataSource redis;
