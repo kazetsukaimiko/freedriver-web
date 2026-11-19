@@ -536,6 +536,16 @@ class SmsOtpAuthenticatorTest {
     }
 
     @Test
+    void nonUsE164StaysOnThePhoneForm() {
+        authenticator.authenticate(context);
+        post("phone", "+447700900123");
+        assertPage(SmsOtpAuthenticator.PHONE_TEMPLATE, SmsOtpAuthenticator.MSG_PHONE_INVALID);
+        assertTrue(sends.isEmpty());
+        assertEquals(false, page().attributes().get(SmsOtpAuthenticator.ATTR_PASSWORD_ALLOWED));
+        assertNull(notes.get(SmsOtpAuthenticator.NOTE_PASSWORD_FALLBACK));
+    }
+
+    @Test
     void smsUnavailableStaysOnThePhoneForm() {
         sendStatus = 503;
         sendError = "stub";
