@@ -1,5 +1,6 @@
 package io.freedriver.keycloak.sms;
 
+import io.freedriver.sms.validation.UsPhoneNumbers;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.Constants;
 import org.keycloak.models.GroupModel;
@@ -35,7 +36,7 @@ final class InviteAccounts {
     }
 
     static Created create(KeycloakSession session, RealmModel realm, String phone, SecureRandom random) {
-        if (phone == null || !phone.matches("\\+1[0-9]{10}")) {
+        if (phone == null || !UsPhoneNumbers.isCanonical(phone)) {
             throw new InviteAccountException(400);
         }
         List<UserModel> found = session.users()
