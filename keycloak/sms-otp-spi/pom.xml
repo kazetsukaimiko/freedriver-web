@@ -25,9 +25,6 @@
         <freemarker.version>2.3.35</freemarker.version>
         <!-- Image build sets this from the deploy commit. Not a secret. -->
         <source.commit>unknown</source.commit>
-        <!-- Tests read these outside this module. Paths are relative to this directory, as java/dashboard/pom.xml does. -->
-        <maven.build.cache.input.outside1>../themes/freedriver/login</maven.build.cache.input.outside1>
-        <maven.build.cache.input.outside2>../../scripts/provision-keycloak-freedriver.sh</maven.build.cache.input.outside2>
     </properties>
 
     <dependencies>

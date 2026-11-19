@@ -12,7 +12,6 @@
     <modules>
         <module>mqtt-contract</module>
         <module>mqtt</module>
-        <module>mqtt-paho</module>
         <module>java</module>
         <module>sms-model</module>
         <module>sms-api</module>
