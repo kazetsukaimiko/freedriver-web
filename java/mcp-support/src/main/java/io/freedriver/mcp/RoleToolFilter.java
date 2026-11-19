@@ -6,6 +6,7 @@ import io.quarkiverse.mcp.server.ToolFilter;
 import io.quarkiverse.mcp.server.ToolManager;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.annotation.security.RolesAllowed;
+import jakarta.enterprise.inject.Vetoed;
 
 import java.lang.reflect.Method;
 
@@ -17,7 +18,12 @@ import java.lang.reflect.Method;
  * passes, so the method annotation remains the authorization check.
  *
  * <p>The filter reads the identity of the current request. It does not notify {@code tools/list_changed}.
+ *
+ * <p>{@code @Vetoed} holds this class out of bean discovery. quarkus-mcp-server assigns
+ * {@code @Singleton} to every {@code ToolFilter}, so an unscoped implementation is already a bean
+ * in both servers. The build replaces {@code @Vetoed} with {@code @ApplicationScoped}.
  */
+@Vetoed
 public class RoleToolFilter implements ToolFilter {
 
     private final SecurityIdentity identity;

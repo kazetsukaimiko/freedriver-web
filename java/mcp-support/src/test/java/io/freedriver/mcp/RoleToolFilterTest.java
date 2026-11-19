@@ -110,6 +110,8 @@ class RoleToolFilterTest {
         for (String token : FORBIDDEN_SOURCE) {
             assertFalse(body.contains(token), token);
         }
+        assertTrue(body.contains("@Vetoed"),
+                "@Vetoed holds the filter out of both servers until the build");
     }
 
     private static SecurityIdentity identity(String role) {
