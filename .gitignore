@@ -8,8 +8,6 @@ mqtt-contract/target/
 mqtt-contract/.flattened-pom.xml
 mqtt/target/
 mqtt/.flattened-pom.xml
-mqtt-paho/target/
-mqtt-paho/.flattened-pom.xml
 app/target/
 sms/target/
 sms-model/target/

@@ -20,7 +20,6 @@ COPY .mvn .mvn
 COPY pom.xml pom.xml
 COPY mqtt-contract/pom.xml mqtt-contract/pom.xml
 COPY mqtt/pom.xml mqtt/pom.xml
-COPY mqtt-paho/pom.xml mqtt-paho/pom.xml
 COPY java/pom.xml java/pom.xml
 COPY java/bom/pom.xml java/bom/pom.xml
 COPY java/hit-window/pom.xml java/hit-window/pom.xml
