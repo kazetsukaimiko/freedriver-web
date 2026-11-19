@@ -12,7 +12,7 @@ import io.freedriver.app.instances.InstanceNotFoundException;
 import io.freedriver.app.instances.InvalidLabelException;
 import io.freedriver.app.invites.InviteUpstreamException;
 import io.freedriver.app.jobs.DispatcherUnavailable;
-import io.freedriver.app.schedule.PendingCapException;
+import io.freedriver.app.errors.PendingCapException;
 import io.freedriver.app.security.RateLimitedException;
 import io.freedriver.dashboard.model.InstanceView;
 import io.quarkus.security.ForbiddenException;

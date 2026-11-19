@@ -6,7 +6,7 @@ import io.freedriver.dashboard.api.McpOpsApi;
 import io.freedriver.dashboard.model.ApplianceMapResponse;
 import io.freedriver.dashboard.model.HomeStatusResponse;
 import io.freedriver.dashboard.model.InstanceView;
-import io.freedriver.app.schedule.PendingCapException;
+import io.freedriver.app.errors.PendingCapException;
 import io.freedriver.app.schedule.ScheduledSwitch;
 import io.freedriver.app.schedule.ScheduledSwitchRules;
 import io.freedriver.app.schedule.ScheduledSwitchRepository;
