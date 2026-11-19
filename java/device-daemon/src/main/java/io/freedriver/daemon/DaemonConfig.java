@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 final class DaemonConfig {
@@ -17,9 +18,11 @@ final class DaemonConfig {
     static final Duration DEFAULT_SESSION_TIMEOUT = Duration.ofMinutes(10);
     static final Duration DEFAULT_WATCH = Duration.ofSeconds(1);
 
-    private static final Set<String> KEYS = Set.of(
-            "deviceId", "hostname", "agents", "secretFile", "allow", "grok", "sessionTimeout", "workDir",
-            "mode", "router");
+    private static final Set<String> GROK_KEYS = Set.of(
+            "deviceId", "hostname", "agents", "secretFile", "allow", "grok", "sessionTimeout", "workDir", "mode");
+    private static final Set<String> OPENBOT_KEYS = Set.of(
+            "deviceId", "hostname", "agents", "secretFile", "mode", "automationDir");
+    private static final Set<String> OPENBOT_REFUSED = Set.of("router", "sessionTimeout", "workDir", "grok", "allow");
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private final String deviceId;
@@ -45,6 +48,10 @@ final class DaemonConfig {
     }
 
     static DaemonConfig parse(String json) {
+        return parse(json, System.getenv(), System.getProperty("user.home"));
+    }
+
+    static DaemonConfig parse(String json, Map<String, String> env, String home) {
         JsonNode node;
         try {
             node = JSON.readTree(json);
@@ -54,10 +61,15 @@ final class DaemonConfig {
         if (node == null || !node.isObject()) {
             throw new IllegalArgumentException("config is not json");
         }
+        WorkerMode mode = mode(node);
+        Set<String> keys = mode == WorkerMode.OPENBOT ? OPENBOT_KEYS : GROK_KEYS;
         Iterator<String> names = node.fieldNames();
         while (names.hasNext()) {
             String key = names.next();
-            if (!KEYS.contains(key)) {
+            if (mode == WorkerMode.OPENBOT && OPENBOT_REFUSED.contains(key)) {
+                throw new IllegalArgumentException(key + " is not an openbot mode setting");
+            }
+            if (!keys.contains(key)) {
                 throw new IllegalArgumentException("unknown config key " + key);
             }
         }
@@ -65,14 +77,8 @@ final class DaemonConfig {
         if (deviceId.startsWith("-") || !deviceId.matches("[A-Za-z0-9._-]{1,64}")) {
             throw new IllegalArgumentException("device id is not safe");
         }
-        WorkerMode mode = mode(node);
-        if (mode == WorkerMode.OPENBOT) {
-            if (!OpenBotWorker.DEVICE_ID.equals(deviceId)) {
-                throw new IllegalArgumentException("openbot device id is freedriver-openbot");
-            }
-            if (node.has("grok") || node.has("allow")) {
-                throw new IllegalArgumentException("grok settings belong to the device daemon");
-            }
+        if (mode == WorkerMode.OPENBOT && !OpenBotWorker.DEVICE_ID.equals(deviceId)) {
+            throw new IllegalArgumentException("openbot device id is freedriver-openbot, not " + deviceId);
         }
         String hostname = text(node, "hostname");
         if (hostname.length() > 253) {
@@ -85,18 +91,51 @@ final class DaemonConfig {
         if (!node.hasNonNull("secretFile")) {
             throw new IllegalArgumentException("secretFile is required");
         }
-        String secretPath = text(node, "secretFile");
+        Path secretFile = Path.of(text(node, "secretFile"));
+        if (mode == WorkerMode.OPENBOT) {
+            checkConnectorAgents(agents);
+            Path automationDir = node.has("automationDir")
+                    ? Path.of(text(node, "automationDir"))
+                    : defaultAutomationDir(env, home);
+            return new DaemonConfig(deviceId, secretFile, DaemonSettings.openBot(hostname, agents, automationDir));
+        }
         List<String> allow = node.has("allow") ? GrokCommand.sanitize(strings(node.get("allow"), "allow")) : List.of();
-        String grok = node.has("grok") ? text(node, "grok") : (mode == WorkerMode.OPENBOT ? null : "grok");
-        List<String> router = node.has("router") ? strings(node.get("router"), "router") : List.of();
+        String grok = node.has("grok") ? text(node, "grok") : "grok";
         Duration timeout = node.has("sessionTimeout")
                 ? duration(text(node, "sessionTimeout"))
                 : DEFAULT_SESSION_TIMEOUT;
         Path workDir = node.has("workDir") ? Path.of(text(node, "workDir")) : null;
         return new DaemonConfig(
                 deviceId,
-                Path.of(secretPath),
-                new DaemonSettings(hostname, agents, allow, grok, timeout, DEFAULT_WATCH, workDir, mode, router));
+                secretFile,
+                new DaemonSettings(hostname, agents, allow, grok, timeout, DEFAULT_WATCH, workDir));
+    }
+
+    /** At most 32 names, each at most 64 characters, no two equal without regard to case. */
+    static void checkConnectorAgents(List<String> agents) {
+        if (agents.size() > OpenBotWorker.MAX_BOTS) {
+            throw new IllegalArgumentException("agents has more than " + OpenBotWorker.MAX_BOTS + " names");
+        }
+        for (int i = 0; i < agents.size(); i++) {
+            String agent = agents.get(i);
+            if (agent.length() > OpenBotWorker.MAX_NAME) {
+                throw new IllegalArgumentException("agents has a name longer than " + OpenBotWorker.MAX_NAME + " characters");
+            }
+            for (int j = 0; j < i; j++) {
+                if (agents.get(j).equalsIgnoreCase(agent)) {
+                    throw new IllegalArgumentException("agents names " + agent + " twice, without regard to case");
+                }
+            }
+        }
+    }
+
+    /** {@code $XDG_CONFIG_HOME/OpenBot/automation}, else {@code ~/.config/OpenBot/automation}. */
+    static Path defaultAutomationDir(Map<String, String> env, String home) {
+        String xdg = env == null ? null : env.get("XDG_CONFIG_HOME");
+        if (xdg != null && !xdg.isBlank() && Path.of(xdg).isAbsolute()) {
+            return Path.of(xdg, "OpenBot", "automation");
+        }
+        return Path.of(home, ".config", "OpenBot", "automation");
     }
 
     WorkerMode mode() {

@@ -13,7 +13,7 @@ record DaemonSettings(
         Duration watchInterval,
         Path workDir,
         WorkerMode mode,
-        List<String> router) {
+        Path automationDir) {
 
     DaemonSettings(
             String hostname,
@@ -23,7 +23,14 @@ record DaemonSettings(
             Duration sessionTimeout,
             Duration watchInterval,
             Path workDir) {
-        this(hostname, agents, allow, grokBinary, sessionTimeout, watchInterval, workDir, WorkerMode.GROK, List.of());
+        this(hostname, agents, allow, grokBinary, sessionTimeout, watchInterval, workDir, WorkerMode.GROK, null);
+    }
+
+    /** OpenBot mode: the connector reads the Local scripts API from {@code automationDir}. */
+    static DaemonSettings openBot(String hostname, List<String> agents, Path automationDir) {
+        return new DaemonSettings(
+                hostname, agents, List.of(), null, DaemonConfig.DEFAULT_SESSION_TIMEOUT, DaemonConfig.DEFAULT_WATCH,
+                null, WorkerMode.OPENBOT, automationDir);
     }
 
     DaemonSettings {
@@ -36,12 +43,11 @@ record DaemonSettings(
         agents = List.copyOf(agents);
         allow = allow == null ? List.of() : List.copyOf(allow);
         mode = mode == null ? WorkerMode.GROK : mode;
-        router = router == null ? List.of() : List.copyOf(router);
         if (mode == WorkerMode.GROK && (grokBinary == null || grokBinary.isBlank())) {
             throw new IllegalArgumentException("grok binary is required");
         }
-        if (mode == WorkerMode.OPENBOT && router.isEmpty()) {
-            throw new IllegalArgumentException("router is required");
+        if (mode == WorkerMode.OPENBOT && automationDir == null) {
+            throw new IllegalArgumentException("automationDir is required");
         }
         if (sessionTimeout == null || sessionTimeout.isZero() || sessionTimeout.isNegative()) {
             throw new IllegalArgumentException("session timeout must be positive");

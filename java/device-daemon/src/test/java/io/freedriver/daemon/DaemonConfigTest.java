@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -35,40 +36,94 @@ class DaemonConfigTest {
         assertEquals(OpenBotWorker.DEVICE_ID, config.deviceId());
         assertEquals(WorkerMode.OPENBOT, config.mode());
         assertEquals(List.of("techops", "yuni"), config.settings().agents());
-        assertEquals(List.of("openbot-route"), config.settings().router());
-        assertEquals(Duration.ofMinutes(1), config.settings().sessionTimeout());
+        assertEquals(Path.of("/home/pc/.config/OpenBot/automation"), config.settings().automationDir());
         assertNull(config.settings().grokBinary());
         assertTrue(config.settings().allow().isEmpty());
         assertTrue(config.secretFile().toString().endsWith("openbot.secret"));
     }
 
     @Test
+    void openbot_accepts_its_six_keys() {
+        DaemonConfig config = DaemonConfig.parse("""
+                {"deviceId":"freedriver-openbot","hostname":"luna","agents":["Tech Ops","yuni"],"secretFile":"/tmp/openbot.secret","mode":"openbot","automationDir":"/tmp/automation"}
+                """);
+        assertEquals(List.of("Tech Ops", "yuni"), config.settings().agents());
+        assertEquals(Path.of("/tmp/automation"), config.settings().automationDir());
+    }
+
+    @Test
     void openbot_rejects_another_device_id() {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> DaemonConfig.parse("""
-                {"deviceId":"shizuku","hostname":"luna","agents":["techops"],"secretFile":"/tmp/openbot.secret","mode":"openbot","router":["openbot-route"]}
+                {"deviceId":"shizuku","hostname":"luna","agents":["techops"],"secretFile":"/tmp/openbot.secret","mode":"openbot"}
                 """));
-        assertEquals("openbot device id is freedriver-openbot", error.getMessage());
+        assertEquals("openbot device id is freedriver-openbot, not shizuku", error.getMessage());
     }
 
     @Test
-    void openbot_rejects_grok_settings() {
-        IllegalArgumentException grok = assertThrows(IllegalArgumentException.class, () -> DaemonConfig.parse("""
-                {"deviceId":"freedriver-openbot","hostname":"luna","agents":["techops"],"secretFile":"/tmp/openbot.secret","mode":"openbot","router":["openbot-route"],"grok":"grok"}
-                """));
-        assertEquals("grok settings belong to the device daemon", grok.getMessage());
-
-        IllegalArgumentException allow = assertThrows(IllegalArgumentException.class, () -> DaemonConfig.parse("""
-                {"deviceId":"freedriver-openbot","hostname":"luna","agents":["techops"],"secretFile":"/tmp/openbot.secret","mode":"openbot","router":["openbot-route"],"allow":[]}
-                """));
-        assertEquals("grok settings belong to the device daemon", allow.getMessage());
+    void openbot_refuses_the_settings_of_the_old_router_and_of_grok() {
+        for (String key : List.of(
+                "\"router\":[\"openbot-route\"]",
+                "\"sessionTimeout\":\"PT1M\"",
+                "\"workDir\":\"/tmp\"",
+                "\"grok\":\"grok\"",
+                "\"allow\":[]")) {
+            IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> DaemonConfig.parse(
+                    "{\"deviceId\":\"freedriver-openbot\",\"hostname\":\"luna\",\"agents\":[\"techops\"],"
+                            + "\"secretFile\":\"/tmp/openbot.secret\",\"mode\":\"openbot\"," + key + "}"));
+            String name = key.substring(1, key.indexOf('"', 1));
+            assertEquals(name + " is not an openbot mode setting", error.getMessage());
+        }
     }
 
     @Test
-    void openbot_requires_router() {
+    void grok_mode_refuses_the_openbot_settings() {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> DaemonConfig.parse("""
-                {"deviceId":"freedriver-openbot","hostname":"luna","agents":["techops"],"secretFile":"/tmp/openbot.secret","mode":"openbot"}
+                {"deviceId":"pc","hostname":"luna","agents":["yuni"],"secretFile":"/tmp/device.secret","automationDir":"/tmp"}
                 """));
-        assertEquals("router is required", error.getMessage());
+        assertEquals("unknown config key automationDir", error.getMessage());
+        IllegalArgumentException router = assertThrows(IllegalArgumentException.class, () -> DaemonConfig.parse("""
+                {"deviceId":"pc","hostname":"luna","agents":["yuni"],"secretFile":"/tmp/device.secret","router":["x"]}
+                """));
+        assertEquals("unknown config key router", router.getMessage());
+    }
+
+    @Test
+    void automation_dir_defaults_to_the_xdg_config_home_then_the_home_folder() {
+        String json = """
+                {"deviceId":"freedriver-openbot","hostname":"luna","agents":["techops"],"secretFile":"/tmp/openbot.secret","mode":"openbot"}
+                """;
+        assertEquals(Path.of("/xdg/OpenBot/automation"),
+                DaemonConfig.parse(json, Map.of("XDG_CONFIG_HOME", "/xdg"), "/home/pc").settings().automationDir());
+        assertEquals(Path.of("/home/pc/.config/OpenBot/automation"),
+                DaemonConfig.parse(json, Map.of(), "/home/pc").settings().automationDir());
+        assertEquals(Path.of("/home/pc/.config/OpenBot/automation"),
+                DaemonConfig.parse(json, Map.of("XDG_CONFIG_HOME", ""), "/home/pc").settings().automationDir());
+    }
+
+    @Test
+    void the_agents_setting_is_checked_at_start() {
+        StringBuilder many = new StringBuilder();
+        for (int i = 0; i < 33; i++) {
+            many.append(i == 0 ? "" : ",").append("\"agent").append(i).append("\"");
+        }
+        IllegalArgumentException tooMany = assertThrows(IllegalArgumentException.class, () -> DaemonConfig.parse(
+                openBot(many.toString())));
+        assertEquals("agents has more than 32 names", tooMany.getMessage());
+
+        IllegalArgumentException tooLong = assertThrows(IllegalArgumentException.class, () -> DaemonConfig.parse(
+                openBot("\"" + "a".repeat(65) + "\"")));
+        assertEquals("agents has a name longer than 64 characters", tooLong.getMessage());
+
+        IllegalArgumentException twice = assertThrows(IllegalArgumentException.class, () -> DaemonConfig.parse(
+                openBot("\"Tech Ops\",\"tech ops\"")));
+        assertEquals("agents names tech ops twice, without regard to case", twice.getMessage());
+
+        assertEquals(64, DaemonConfig.parse(openBot("\"" + "a".repeat(64) + "\"")).settings().agents().get(0).length());
+    }
+
+    private static String openBot(String agents) {
+        return "{\"deviceId\":\"freedriver-openbot\",\"hostname\":\"luna\",\"agents\":[" + agents + "],"
+                + "\"secretFile\":\"/tmp/openbot.secret\",\"mode\":\"openbot\"}";
     }
 
     @Test

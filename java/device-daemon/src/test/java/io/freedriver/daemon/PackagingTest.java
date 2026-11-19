@@ -29,6 +29,21 @@ class PackagingTest {
         assertFalse(unit.contains("client_secret"));
         assertFalse(unit.contains("EnvironmentFile"));
         assertTrue(unit.contains("--config"));
+        String connector = Files.readString(root.resolve("java/device-daemon/freedriver-openbot-connector.service"));
+        assertFalse(connector.contains("client_secret"));
+        assertFalse(connector.contains("EnvironmentFile"));
+        assertFalse(connector.contains("Environment="));
+        assertFalse(connector.contains("--secret"));
+        assertFalse(connector.contains("--token"));
+        assertFalse(connector.contains("--base-url"));
+        String exec = connector.lines().filter(line -> line.startsWith("ExecStart=")).findFirst().orElseThrow();
+        assertTrue(exec.endsWith("--config %h/.config/freedriver/openbot-dispatcher-worker.json"));
+        assertFalse(compose.contains("openbot-connector"));
+        assertFalse(caddy.contains("openbot-connector"));
+        assertFalse(deploy.contains("openbot-connector"));
+        for (String file : java.util.List.of("docker-compose.ci.yml", "docker-compose.ghcr.yml")) {
+            assertFalse(Files.readString(root.resolve(file)).contains("device-daemon"));
+        }
         assertFalse(dashboard.contains("device-daemon/src"));
         assertFalse(dispatcher.contains("device-daemon/src"));
         assertTrue(dashboard.contains("device-daemon/pom.xml"));
@@ -50,6 +65,8 @@ class PackagingTest {
         assertTrue(example.contains("openbot.secret"));
         assertFalse(example.contains("client_secret"));
         assertFalse(example.contains("webhook"));
+        assertFalse(example.contains("router"));
+        assertTrue(example.contains("automationDir"));
         assertTrue(docs.contains("https://app.freedriver.io/dispatch/mcp"));
         assertTrue(docs.contains("freedriver-openbot"));
         try (var files = Files.list(root.resolve(".github/workflows"))) {
