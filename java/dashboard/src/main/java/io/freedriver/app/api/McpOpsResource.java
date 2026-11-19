@@ -72,7 +72,6 @@ public class McpOpsResource implements McpOpsApi {
     }
 
     @Override
-    @ReturnsResponse("an accepted store is an empty 202")
     public Response schedule(ScheduledSwitchRequest body) {
         String subject = OidcSubjects.subject(identity);
         Instant now = Instant.now();
