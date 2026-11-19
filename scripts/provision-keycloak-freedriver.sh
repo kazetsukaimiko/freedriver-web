@@ -23,11 +23,9 @@
 # The realm admin creates users. Realm-management roles remain on the realm admin.
 #
 # The instances admin client (#319) is freedriver-instances. Its service account
-# holds realm-management manage-users. Full Scope is off, so that client role
-# reaches the client-credentials token through a realm-management scope mapping.
-# The script writes that secret once to the dashboard env file. It creates the
-# top-level group mqtt-instance with no topic attributes. Topic attributes belong
-# on the house user, which the dashboard creates.
+# holds realm-management manage-users. The script writes that secret once to the
+# dashboard env file. It creates the top-level group mqtt-instance with no topic
+# attributes. Topic attributes belong on the house user, which the dashboard creates.
 #
 # Grafana (#349, #350) is the confidential client freedriver-grafana. Redirect URI is
 # https://grafana.freedriver.io/login/generic_oauth only. Realm roles
@@ -1403,7 +1401,7 @@ PY
 
 # House group and the instances admin client (#319). No topic attribute on the group.
 ensure_instances_admin() {
-  local client_uuid sa_user secret tmp group_id has_role rm_uuid has_scope
+  local client_uuid sa_user secret tmp group_id has_role
   kcadm get groups -r "$REALM" -q search=mqtt-instance -q exact=true > "$work/mqtt-groups.json"
   group_id="$(python3 - "$work/mqtt-groups.json" <<'PY'
 import json, sys
@@ -1490,33 +1488,6 @@ PY
   if [[ "$has_role" != "yes" ]]; then
     kcadm add-roles -r "$REALM" --uid "$sa_user" --cclientid realm-management --rolename manage-users >/dev/null
     echo "Granted manage-users to the instances service account."
-  fi
-  # fullScopeAllowed is off, so the realm-management role reaches the token through
-  # this client scope mapping. House list is GET /admin/realms/.../groups.
-  rm_uuid="$(kcadm get clients -r "$REALM" -q clientId=realm-management --fields id --format csv --noquotes | csv_id)"
-  kcadm get "clients/${rm_uuid}/roles/manage-users" -r "$REALM" --fields id,name \
-    > "$work/instances-manage-users-role.json"
-  kcadm get "clients/${client_uuid}/scope-mappings/clients/${rm_uuid}" -r "$REALM" --fields id,name \
-    > "$work/instances-rm-scope.json"
-  has_scope="$(python3 - "$work/instances-manage-users-role.json" \
-    "$work/instances-rm-scope.json" "$work/instances-rm-scope-add.json" <<'PY'
-import json, sys
-role = json.load(open(sys.argv[1], encoding="utf-8"))
-have = {item.get("name") for item in json.load(open(sys.argv[2], encoding="utf-8"))}
-if not role.get("id") or role.get("name") != "manage-users":
-    raise SystemExit("realm-management manage-users role id is missing")
-if role.get("name") in have:
-    json.dump([], open(sys.argv[3], "w", encoding="utf-8"))
-    print("ok")
-else:
-    json.dump([{"id": role["id"], "name": role["name"]}], open(sys.argv[3], "w", encoding="utf-8"))
-    print("add")
-PY
-)"
-  if [[ "$has_scope" == add ]]; then
-    kcadm_stdin create "clients/${client_uuid}/scope-mappings/clients/${rm_uuid}" -r "$REALM" -f - \
-      < "$work/instances-rm-scope-add.json" >/dev/null
-    echo "Mapped manage-users into the instances token."
   fi
   if [[ -e "$INSTANCES_ENV_FILE" ]]; then
     echo "Instances client env file already exists; not rotating or rewriting it."

@@ -1,15 +1,6 @@
 --- a/src/oauth.c
 +++ b/src/oauth.c
-@@ -10,7 +10,8 @@
- #include <string.h>
- #include <stdint.h>
- #include <stddef.h>
-+#include <stdlib.h>
- 
- #include "oauth.h"
- 
- #include "base64.h"
-@@ -86,44 +87,61 @@
+@@ -86,44 +86,59 @@
  
      if (curl_handle)
      {
@@ -73,8 +64,6 @@
 +                curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
 +                curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, HTTP_USERAGENT);
 +                curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, req_body);
-+                if (getenv("SSL_CERT_FILE") && getenv("SSL_CERT_FILE")[0] != '\0')
-+                    curl_easy_setopt(curl_handle, CURLOPT_CAINFO, getenv("SSL_CERT_FILE"));
 +
 +                res = curl_easy_perform(curl_handle);
 +                curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &http_status);
@@ -103,7 +92,7 @@
          curl_easy_cleanup(curl_handle);
      }
  
-@@ -148,47 +166,58 @@
+@@ -148,47 +163,56 @@
  
      if (curl_handle)
      {
@@ -167,8 +156,6 @@
 +                curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
 +                curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, HTTP_USERAGENT);
 +                curl_easy_setopt(curl_handle, CURLOPT_POSTFIELDS, req_body);
-+                if (getenv("SSL_CERT_FILE") && getenv("SSL_CERT_FILE")[0] != '\0')
-+                    curl_easy_setopt(curl_handle, CURLOPT_CAINFO, getenv("SSL_CERT_FILE"));
 +
 +                res = curl_easy_perform(curl_handle);
 +                curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &http_status);

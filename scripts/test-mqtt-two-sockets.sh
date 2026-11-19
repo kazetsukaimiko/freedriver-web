@@ -108,8 +108,6 @@ for needle in (
     "curl_easy_escape",
     "client_secret=%s",
     "Content-Type: application/x-www-form-urlencoded",
-    "CURLOPT_CAINFO",
-    "SSL_CERT_FILE",
 ):
     if needle not in ropc_patch:
         raise SystemExit(f"ropc-form-body.patch missing {needle}")
