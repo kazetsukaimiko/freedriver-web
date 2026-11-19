@@ -1,6 +1,7 @@
 package io.freedriver.app.security;
 
 import io.freedriver.app.appliances.TestAppliancesConfig;
+import io.freedriver.dashboard.api.RateLimitBucket;
 import io.freedriver.dashboard.api.RateLimited;
 import io.freedriver.ratelimit.MemoryHitWindow;
 import io.quarkus.security.runtime.QuarkusPrincipal;
@@ -18,31 +19,18 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RateLimitedFeatureTest {
 
     @Test
-    void a_blank_or_unknown_bucket_throws_and_registers_nothing() throws Exception {
-        for (String name : List.of("blank", "whitespace", "unknown", "colon", "command")) {
-            RateLimitedFeature feature = feature();
-            Registrations registrations = new Registrations();
-            IllegalStateException thrown = assertThrows(IllegalStateException.class,
-                    () -> feature.configure(route(Routes.class, name), registrations.context()), name);
-            assertTrue(thrown.getMessage().contains("names no bucket"), thrown.getMessage());
-            assertTrue(registrations.components.isEmpty(), name);
-        }
-    }
-
-    @Test
     void each_bucket_registers_one_filter_carrying_that_bucket() throws Exception {
         RateLimitedFeature feature = feature();
-        Map<String, String> routes = Map.of(
-                "commands", "appliances.commands",
-                "instances", "instances",
-                "invites", "invites",
-                "phones", "phones");
+        Map<String, RateLimitBucket> routes = Map.of(
+                "commands", RateLimitBucket.APPLIANCES_COMMANDS,
+                "instances", RateLimitBucket.INSTANCES,
+                "invites", RateLimitBucket.INVITES,
+                "phones", RateLimitBucket.PHONES);
         for (var route : routes.entrySet()) {
             Registrations registrations = new Registrations();
             feature.configure(route(Routes.class, route.getKey()), registrations.context());
@@ -71,11 +59,11 @@ class RateLimitedFeatureTest {
         RateLimitedFeature feature = feature();
         Registrations fromInterface = new Registrations();
         feature.configure(route(Implementation.class, "fromInterface"), fromInterface.context());
-        assertEquals("instances", ((RateLimitedFilter) fromInterface.components.getFirst()).bucket());
+        assertEquals(RateLimitBucket.INSTANCES, ((RateLimitedFilter) fromInterface.components.getFirst()).bucket());
 
         Registrations fromClass = new Registrations();
         feature.configure(route(ClassBound.class, "anything"), fromClass.context());
-        assertEquals("phones", ((RateLimitedFilter) fromClass.components.getFirst()).bucket());
+        assertEquals(RateLimitBucket.PHONES, ((RateLimitedFilter) fromClass.components.getFirst()).bucket());
     }
 
     @Test
@@ -127,43 +115,23 @@ class RateLimitedFeatureTest {
     }
 
     public static class Routes {
-        @RateLimited("")
-        public void blank() {
-        }
-
-        @RateLimited("  ")
-        public void whitespace() {
-        }
-
-        @RateLimited("invite")
-        public void unknown() {
-        }
-
-        @RateLimited("invites:ada")
-        public void colon() {
-        }
-
-        @RateLimited("command")
-        public void command() {
-        }
-
-        @RateLimited("appliances.commands")
+        @RateLimited(RateLimitBucket.APPLIANCES_COMMANDS)
         public void commands() {
         }
 
-        @RateLimited("instances")
+        @RateLimited(RateLimitBucket.INSTANCES)
         public void instances() {
         }
 
-        @RateLimited("instances")
+        @RateLimited(RateLimitBucket.INSTANCES)
         public void instancesOpen() {
         }
 
-        @RateLimited("invites")
+        @RateLimited(RateLimitBucket.INVITES)
         public void invites() {
         }
 
-        @RateLimited("phones")
+        @RateLimited(RateLimitBucket.PHONES)
         public void phones() {
         }
 
@@ -172,7 +140,7 @@ class RateLimitedFeatureTest {
     }
 
     public interface Contract {
-        @RateLimited("instances")
+        @RateLimited(RateLimitBucket.INSTANCES)
         void fromInterface();
     }
 
@@ -182,7 +150,7 @@ class RateLimitedFeatureTest {
         }
     }
 
-    @RateLimited("phones")
+    @RateLimited(RateLimitBucket.PHONES)
     public static class ClassBound {
         public void anything() {
         }

@@ -2,6 +2,7 @@ package io.freedriver.app.security;
 
 import io.freedriver.app.api.ErrorMappers;
 import io.freedriver.app.appliances.TestAppliancesConfig;
+import io.freedriver.dashboard.api.RateLimitBucket;
 import io.freedriver.ratelimit.MemoryHitWindow;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.security.runtime.QuarkusPrincipal;
@@ -89,7 +90,7 @@ class RateLimitedFilterTest {
                 .addRole("portal-admin")
                 .build();
         assertFalse(blank.isAnonymous());
-        RateLimitedFilter filter = new RateLimitedFilter("invites", limiter(hits), blank);
+        RateLimitedFilter filter = new RateLimitedFilter(RateLimitBucket.INVITES, limiter(hits), blank);
 
         RateLimitedException refused = assertThrows(RateLimitedException.class, () -> filter.filter(null));
 
@@ -107,8 +108,8 @@ class RateLimitedFilterTest {
                 .setPrincipal(new QuarkusPrincipal("ada"))
                 .addRole("portal-admin")
                 .build();
-        RateLimitedFilter invites = new RateLimitedFilter("invites", limiter(hits), ada);
-        RateLimitedFilter phones = new RateLimitedFilter("phones", limiter(hits), ada);
+        RateLimitedFilter invites = new RateLimitedFilter(RateLimitBucket.INVITES, limiter(hits), ada);
+        RateLimitedFilter phones = new RateLimitedFilter(RateLimitBucket.PHONES, limiter(hits), ada);
 
         invites.filter(null);
         invites.filter(null);

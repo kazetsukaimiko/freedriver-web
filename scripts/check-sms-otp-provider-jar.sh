@@ -39,8 +39,11 @@ need io/freedriver/sms/model/OtpSendRequest.class
 need io/freedriver/sms/api/SmsApi.class
 need io/freedriver/sms/client/SmsClient.class
 need io/freedriver/keycloak/sms/SmsOtpAuthenticator.class
+need io/freedriver/keycloak/registration/OneYearTokens.class
+need io/freedriver/keycloak/registration/OneYearTokensFactory.class
 need META-INF/services/org.keycloak.authentication.AuthenticatorFactory
 need META-INF/services/org.keycloak.services.resource.RealmResourceProviderFactory
+need META-INF/services/org.keycloak.services.clientregistration.policy.ClientRegistrationPolicyFactory
 need META-INF/beans.xml
 need META-INF/jandex.idx
 need META-INF/keycloak-themes.json
@@ -69,8 +72,9 @@ major io.freedriver.sms.client.SmsClient
 major io.freedriver.sms.api.SmsApi
 major io.freedriver.sms.model.OtpSendRequest
 major io.freedriver.keycloak.sms.SmsOtpAuthenticator
+major io.freedriver.keycloak.registration.OneYearTokens
 
-for entry in $(grep '^io/freedriver/keycloak/sms/.*\.class$' "$list"); do
+for entry in $(grep -E '^io/freedriver/keycloak/(sms|registration)/.*\.class$' "$list"); do
   class_name=$(printf '%s' "$entry" | sed 's#/#.#g; s#\.class$##')
   if javap -verbose -classpath "$jar_path" "$class_name" | grep -E -q 'jakarta/validation/(Validator|Validation)|org/hibernate/validator/'; then
     echo "$class_name references a Validator" >&2
