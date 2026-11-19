@@ -1,5 +1,6 @@
 package io.freedriver.dispatcher;
 
+import io.freedriver.dispatcher.store.Assignment;
 import io.freedriver.dispatcher.store.AssignmentRepository;
 import io.freedriver.dispatcher.jobs.JobStore;
 

@@ -1,6 +1,11 @@
 package io.freedriver.dispatcher;
 
 import io.freedriver.dispatcher.jobs.JobStore;
+import io.freedriver.dispatcher.jobs.service.TakePastTheWindow;
+import io.freedriver.dispatcher.store.Assignment;
+import io.freedriver.dispatcher.store.AssignmentRepository;
+import io.freedriver.dispatcher.store.DeviceRepository;
+import io.freedriver.dispatcher.store.SubmitLocks;
 
 import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
@@ -15,7 +20,6 @@ import io.restassured.response.Response;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
-import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -248,9 +252,7 @@ class HostResourceTest {
                 List.of(deviceId), "yuni", "host-untaken-prompt", Channel.TEXT))
                 .assignments().getFirst().assignmentId();
         // createdAt is the CDI clock. Take's cutoff is that same clock shifted past take-within.
-        new JobStoreService(assignments, devices, locks,
-                Clock.offset(Clock.systemUTC(), JobStoreService.DEFAULT_TAKE_WITHIN.plusSeconds(1)), null)
-                .take(deviceId, List.of(), Duration.ZERO);
+        TakePastTheWindow.take(assignments, devices, locks, deviceId);
         Assignment row = assignments.findById(expired.toString());
         assertEquals(AssignmentState.EXPIRED, row.status);
         assertEquals("no host took it", row.note);
