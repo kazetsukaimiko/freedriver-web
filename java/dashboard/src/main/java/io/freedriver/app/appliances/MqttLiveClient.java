@@ -1,6 +1,7 @@
 package io.freedriver.app.appliances;
 
 import io.freedriver.app.metrics.IoTimer;
+import io.freedriver.app.metrics.MqttHandlerTimer;
 import io.freedriver.mqtt.MqttConnection;
 import io.freedriver.mqtt.MqttLog;
 import io.freedriver.mqtt.contract.ApplianceJson;
@@ -43,6 +44,7 @@ public class MqttLiveClient {
     private final SubscribedHouses subscriptions;
     private final Instance<MqttConnection> connections;
     private final Event<ApplianceStateRouted> states;
+    private final MqttHandlerTimer handlers;
     private final ConcurrentHashMap<UUID, Traffic> traffic = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Pending> pending = new ConcurrentHashMap<>();
     private MqttConnection connection;
@@ -53,11 +55,13 @@ public class MqttLiveClient {
             AppliancesConfig appliances,
             SubscribedHouses subscriptions,
             Instance<MqttConnection> connections,
-            Event<ApplianceStateRouted> states) {
+            Event<ApplianceStateRouted> states,
+            MqttHandlerTimer handlers) {
         this.appliances = appliances;
         this.subscriptions = subscriptions;
         this.connections = connections;
         this.states = states;
+        this.handlers = handlers;
     }
 
     void start(@Observes StartupEvent event) {
@@ -72,7 +76,8 @@ public class MqttLiveClient {
      */
     synchronized void follow(UUID instanceId) {
         connect();
-        connection.subscribe(ApplianceSchemas.appliancesTopic(instanceId), ApplianceSchemas.QOS, this::onBrokerMessage);
+        connection.subscribe(ApplianceSchemas.appliancesTopic(instanceId), ApplianceSchemas.QOS,
+                handlers.timed(MqttLiveClient.class, this::onBrokerMessage));
     }
 
     /** Stops one house's appliance state. The session stays open for the other houses. */
