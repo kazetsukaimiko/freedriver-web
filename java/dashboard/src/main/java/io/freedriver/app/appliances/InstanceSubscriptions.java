@@ -4,7 +4,7 @@ import io.freedriver.app.instances.HouseCreated;
 import io.freedriver.app.instances.InstanceIdentity;
 import io.freedriver.app.instances.InstanceSummary;
 import io.freedriver.app.metrics.MetricsMqttForwarder;
-import io.freedriver.mqtt.MqttLog;
+import io.freedriver.app.mqttlog.HouseMqttLog;
 import io.quarkus.runtime.StartupEvent;
 import io.quarkus.scheduler.Scheduled;
 import io.quarkus.scheduler.ScheduledExecution;
@@ -72,7 +72,7 @@ public class InstanceSubscriptions {
         try {
             apply(false);
         } catch (RuntimeException e) {
-            MqttLog.instancesRefreshFailed();
+            HouseMqttLog.instancesRefreshFailed();
         }
     }
 
@@ -88,7 +88,7 @@ public class InstanceSubscriptions {
             }
             listed = true;
         } catch (RuntimeException e) {
-            MqttLog.instancesRefreshFailed();
+            HouseMqttLog.instancesRefreshFailed();
             listed = false;
         }
         for (UUID id : wanted) {
@@ -101,7 +101,7 @@ public class InstanceSubscriptions {
                 state.follow(id);
             } catch (RuntimeException e) {
                 subscribed.remove(id);
-                MqttLog.instanceSubscription(id, "failed");
+                HouseMqttLog.instanceSubscription(id, "failed");
                 if (failOnConnect) {
                     throw e;
                 }
@@ -109,7 +109,7 @@ public class InstanceSubscriptions {
                 break;
             }
             metrics.follow(id);
-            MqttLog.instanceSubscription(id, "subscribed");
+            HouseMqttLog.instanceSubscription(id, "subscribed");
         }
         if (!listed) {
             return;
@@ -125,7 +125,7 @@ public class InstanceSubscriptions {
             } catch (RuntimeException e) {
                 // Delivery for the topic already stopped; the broker unsubscribe is best effort.
             }
-            MqttLog.instanceSubscription(id, "unsubscribed");
+            HouseMqttLog.instanceSubscription(id, "unsubscribed");
         }
     }
 
