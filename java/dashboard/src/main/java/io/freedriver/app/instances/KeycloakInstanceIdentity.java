@@ -2,7 +2,7 @@ package io.freedriver.app.instances;
 
 import io.freedriver.app.metrics.IoTimer;
 import io.freedriver.mqtt.MqttBrokers;
-import io.freedriver.mqtt.MqttLog;
+import io.freedriver.app.mqttlog.HouseMqttLog;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
 import io.micrometer.core.annotation.Timed;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -61,7 +61,7 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
     public KeycloakUserResult create(KeycloakUser user) {
         UUID id = requireHouse(user);
         if (!configured) {
-            MqttLog.house(id, "refused");
+            HouseMqttLog.house(id, "refused");
             throw new BrokerRefusedException();
         }
         InstanceUsers users = users();
@@ -69,7 +69,7 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
         try {
             locationId = users.create(representation(user));
         } catch (BrokerRefusedException refused) {
-            MqttLog.house(id, "refused");
+            HouseMqttLog.house(id, "refused");
             throw refused;
         }
         try {
@@ -83,10 +83,10 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
             users.join(locationId, groupId);
         } catch (RuntimeException ex) {
             users.deleteQuietly(locationId);
-            MqttLog.house(id, "refused");
+            HouseMqttLog.house(id, "refused");
             throw ex instanceof BrokerRefusedException refused ? refused : new BrokerRefusedException();
         }
-        MqttLog.house(id, "created");
+        HouseMqttLog.house(id, "created");
         return new KeycloakUserResult(user.username());
     }
 
@@ -97,7 +97,7 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
             throw new InstanceNotFoundException(reset == null ? null : reset.instanceId());
         }
         if (!configured) {
-            MqttLog.house(id, "refused");
+            HouseMqttLog.house(id, "refused");
             throw new BrokerRefusedException();
         }
         InstanceUsers users = users();
@@ -105,7 +105,7 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
         try {
             locationId = memberId(users, id.toString());
         } catch (BrokerRefusedException ex) {
-            MqttLog.house(id, "refused");
+            HouseMqttLog.house(id, "refused");
             throw ex;
         }
         if (locationId == null) {
@@ -118,10 +118,10 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
         try {
             users.resetPassword(locationId, password);
         } catch (BrokerRefusedException ex) {
-            MqttLog.house(id, "refused");
+            HouseMqttLog.house(id, "refused");
             throw ex;
         }
-        MqttLog.house(id, "reset");
+        HouseMqttLog.house(id, "reset");
     }
 
     @Override

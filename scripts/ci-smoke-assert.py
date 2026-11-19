@@ -556,9 +556,14 @@ def assert_metrics_inside() -> None:
 def assert_phone_sign_in(client: Client) -> None:
     status, headers, body, url = client.request(f"{APP}/login")
     html = body.decode("utf-8", "replace")
-    if "freedriver-phone-username" not in html and "username" not in html:
-        raise SystemExit(f"login page missing phone form HTTP {status} url={url}")
-    form = find_form(parse_forms(html), "freedriver-phone-username", "username")
+    forms = parse_forms(html)
+    matches = [form for form in forms if form.get("id") == "freedriver-phone-username-form"]
+    if len(matches) != 1:
+        raise SystemExit(
+            f"login form id must be exactly freedriver-phone-username-form "
+            f"HTTP {status} url={url} ids={[form.get('id') for form in forms]}"
+        )
+    form = matches[0]
     status, _, body, url = post_form(client, form, {"username": PHONE, "continue": "1"})
     html = body.decode("utf-8", "replace")
     if status >= 400:
