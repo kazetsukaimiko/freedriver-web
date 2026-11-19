@@ -10,6 +10,18 @@ fail() {
   exit 1
 }
 
+# Literal, seed, profile, and outside-file checks for the stored US form.
+# The rest of this script locks older provision text that has drifted from compose,
+# so CI runs this slice on its own.
+run_stored_us_phone() {
+  awk '/^# stored-us-phone:begin$/{p=1; next} /^# stored-us-phone:end$/{exit} p' "${BASH_SOURCE[0]}" | python3
+}
+
+if [[ "${1:-}" == "--stored-us-phone" ]]; then
+  run_stored_us_phone
+  exit
+fi
+
 if grep -q 'sms.freedriver.io' Caddyfile; then
   fail "do not add a Caddy site for sms"
 fi
@@ -942,5 +954,168 @@ PY
 
 chmod +x scripts/test-invite-service-account.sh
 ./scripts/test-invite-service-account.sh
+
+: <<'STORED_US_PHONE'
+# stored-us-phone:begin
+import importlib.util
+import json, re, subprocess
+from pathlib import Path
+
+def java_string(source, marker):
+    chunk = source.split(marker, 1)[1].split(";", 1)[0]
+    parts = re.findall(r'"((?:\\.|[^"\\])*)"', chunk)
+    return "".join(bytes(p, "utf-8").decode("unicode_escape") for p in parts)
+
+regex = java_string(
+    Path("sms-model/src/main/java/io/freedriver/sms/validation/UsPhoneNumber.java").read_text(),
+    "REGEX =",
+)
+message = "Enter a US number as +1 and ten digits, for example +15555550100."
+spec = importlib.util.spec_from_file_location("sms_otp_flow", "scripts/check-sms-otp-flow.py")
+flow = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(flow)
+shell = Path("scripts/provision-keycloak-sms-otp.sh").read_text()
+if flow.PHONE_CREATE_PATTERN != regex or flow.PHONE_CREATE_MESSAGE != message:
+    raise SystemExit("phone create payload must carry UsPhoneNumber.REGEX and the admin sentence")
+if regex in shell or "+[1-9][0-9]{7,14}" in shell or "Use international form" in shell:
+    raise SystemExit("provision script keeps a second phone pattern")
+if not re.fullmatch(regex, "+15555550100") or re.fullmatch(regex, "+447700900123"):
+    raise SystemExit("stored form must accept +15555550100 and refuse +447700900123")
+
+def run_attr(body):
+    path = Path("/tmp/freedriver-phone-profile.json")
+    path.write_text(body)
+    before = path.read_bytes()
+    result = subprocess.run(
+        ["python3", "scripts/check-sms-otp-flow.py", "--apply-phone-attribute", str(path)],
+        capture_output=True, text=True)
+    return result.returncode, before, path.read_bytes()
+
+code, before, after = run_attr("{")
+if code == 0 or after != before:
+    raise SystemExit("malformed profile JSON must fail and leave the file unchanged")
+
+admin = json.dumps({
+    "attributes": [{
+        "name": "phone",
+        "permissions": {"view": ["admin"], "edit": ["admin"]},
+        "validations": {"pattern": {"pattern": "keep-me", "error-message": "keep-message"}},
+    }]
+})
+code, before, after = run_attr(admin)
+if code != 3 or after != before:
+    raise SystemExit("admin-only phone attribute must exit 3 and leave the file unchanged")
+
+repair = json.dumps({
+    "attributes": [{
+        "name": "phone",
+        "permissions": {"view": ["admin"], "edit": ["user"]},
+        "validations": {"pattern": {"pattern": "keep-me", "error-message": "keep-message"}},
+    }]
+})
+code, before, after = run_attr(repair)
+if code != 0:
+    raise SystemExit("permission repair must exit 0")
+repaired = json.loads(after)
+attr = repaired["attributes"][0]
+if attr["permissions"] != {"view": ["admin"], "edit": ["admin"]}:
+    raise SystemExit("permission repair must set admin-only")
+if attr["validations"]["pattern"]["pattern"] != "keep-me" or attr["validations"]["pattern"]["error-message"] != "keep-message":
+    raise SystemExit("permission repair must keep the pattern and message")
+
+code, before, after = run_attr(json.dumps({"attributes": []}))
+if code != 0:
+    raise SystemExit("a missing phone attribute must be created")
+created = json.loads(after)["attributes"][0]["validations"]["pattern"]
+if created["pattern"] != regex or created["error-message"] != message:
+    raise SystemExit("create payload pattern or message drifted from the stored form")
+
+def branch(body):
+    work = Path("/tmp/freedriver-phone-branch")
+    work.mkdir(exist_ok=True)
+    profile = work / "profile.json"
+    log = work / "log"
+    profile.write_text(body)
+    before = profile.read_bytes()
+    result = subprocess.run(
+        ["bash", "scripts/provision-keycloak-sms-otp.sh", "--phone-profile-fixture", str(profile), str(log)],
+        capture_output=True, text=True)
+    written = log.read_text() if log.exists() else ""
+    return result.returncode, before, profile.read_bytes(), written
+
+code, before, after, written = branch("[]")
+if code == 0 or written.strip() or after != before:
+    raise SystemExit("a status other than 0 and 3 must write nothing and not continue")
+
+code, before, after, written = branch(admin)
+if code != 0 or written != "continued\n" or after != before:
+    raise SystemExit("the admin-only branch continues without a profile PUT")
+
+seed = Path("scripts/provision-keycloak-freedriver.sh").read_text()
+seed_pattern = regex.replace("[0-9]{10}$", "[2-9][0-9]{9}$")
+if seed_pattern not in seed:
+    raise SystemExit("seed check must be UsPhoneNumber.REGEX with the 2-9 tail")
+window = seed.split(seed_pattern, 1)[0].splitlines()[-8:]
+if not any("2-9 rule is intentional" in line for line in window):
+    raise SystemExit("seed check must say the 2-9 rule is intentional")
+if re.fullmatch(seed_pattern, "+10000000000"):
+    raise SystemExit("seed check must refuse +10000000000")
+
+theme = Path("keycloak/themes/freedriver/login")
+shared = (theme / "resources/js/us-phone.js").read_text()
+strings = re.findall(r'"((?:\\.|[^"\\])*)"', shared)
+if len(strings) != 1:
+    raise SystemExit("us-phone.js defines one pattern string")
+literal = bytes(strings[0], "utf-8").decode("unicode_escape")
+if literal != regex:
+    raise SystemExit("us-phone.js pattern must equal UsPhoneNumber.REGEX")
+if "location.hash" in shared or "sessionStorage" in shared or "function" in shared:
+    raise SystemExit("us-phone.js only defines the pattern")
+for name in ("phone-fragment.js", "sign-in-renew.js"):
+    caller = (theme / "resources/js" / name).read_text()
+    if "[0-9]{10}" in caller or "/^" in caller:
+        raise SystemExit(f"{name} keeps its own pattern")
+    if "freedriverStoredUsPhone" not in caller:
+        raise SystemExit(f"{name} must use the shared pattern")
+for name in ("freedriver-phone-username.ftl", "freedriver-renew.ftl"):
+    page = (theme / name).read_text()
+    if "${url.resourcesPath}/js/us-phone.js" not in page:
+        raise SystemExit(f"{name} must load us-phone.js from the resources path")
+router = (theme / "freedriver-phone-username.ftl").read_text()
+if router.index("us-phone.js") > router.index("phone-fragment.js"):
+    raise SystemExit("the router page must load us-phone.js before phone-fragment.js")
+if router.count("us-phone.js") != 1:
+    raise SystemExit("the router page loads us-phone.js once")
+
+module = Path("keycloak/sms-otp-spi").resolve()
+repo = Path(".").resolve()
+outside = []
+for java in (module / "src/test").rglob("*.java"):
+    for raw in re.findall(r'"((?:\\.|[^"\\])*)"', java.read_text()):
+        lit = bytes(raw, "utf-8").decode("unicode_escape")
+        if "/" not in lit and ".." not in lit:
+            continue
+        for base in (module, repo):
+            resolved = (base / lit).resolve()
+            if not resolved.exists():
+                continue
+            try:
+                resolved.relative_to(module)
+            except ValueError:
+                outside.append(resolved)
+pom = (module / "pom.xml").read_text()
+props = re.findall(r"<maven\.build\.cache\.input\.outside\d+>([^<]+)</", pom)
+if "../themes/freedriver/login" not in [item.strip() for item in props]:
+    raise SystemExit("the theme root must be one maven.build.cache.input.outsideN directory")
+covered = [(module / item.strip()).resolve() for item in props]
+def is_covered(path):
+    return any(path == root or root in path.parents for root in covered)
+missing = sorted({str(path) for path in outside if not is_covered(path)})
+if missing:
+    raise SystemExit("sms-otp-spi tests read outside the module with no cache input: " + ", ".join(missing))
+print("stored US phone checks match UsPhoneNumber.REGEX")
+# stored-us-phone:end
+STORED_US_PHONE
+run_stored_us_phone
 
 echo "sms otp scaffold locks ok"

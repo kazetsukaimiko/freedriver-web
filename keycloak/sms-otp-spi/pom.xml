@@ -25,6 +25,9 @@
         <freemarker.version>2.3.35</freemarker.version>
         <!-- Image build sets this from the deploy commit. Not a secret. -->
         <source.commit>unknown</source.commit>
+        <!-- Theme tests read the login theme and the seed provision script from outside this module. -->
+        <maven.build.cache.input.outside1>../themes/freedriver/login</maven.build.cache.input.outside1>
+        <maven.build.cache.input.outside2>../../scripts/provision-keycloak-freedriver.sh</maven.build.cache.input.outside2>
     </properties>
 
     <dependencies>

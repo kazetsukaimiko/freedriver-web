@@ -11,7 +11,7 @@
 (function (root) {
   "use strict";
   var PHONE_KEY = "freedriver.login.phone";
-  var RESTORABLE = /^\+1[0-9]{10}$/;
+  var RESTORABLE = new RegExp(freedriverStoredUsPhone);
 
   function stale(openedAt, now, afterMs) {
     return now - openedAt >= afterMs;
