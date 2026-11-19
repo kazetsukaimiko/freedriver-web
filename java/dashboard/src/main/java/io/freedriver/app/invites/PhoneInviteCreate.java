@@ -3,11 +3,10 @@ package io.freedriver.app.invites;
 import io.freedriver.app.phones.PhoneAlreadyExists;
 import io.freedriver.app.phones.PhoneSignInDirectory;
 import io.freedriver.app.phones.SmsPhoneList;
+import io.freedriver.sms.validation.UsPhoneNumbers;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
-
-import java.util.regex.Pattern;
 
 /**
  * Invite create for a phone number. The number is listed, then the Keycloak user is created.
@@ -17,7 +16,6 @@ import java.util.regex.Pattern;
 public class PhoneInviteCreate {
 
     private static final Logger LOG = Logger.getLogger(PhoneInviteCreate.class);
-    private static final Pattern PHONE = Pattern.compile("^\\+1[0-9]{10}$");
 
     private final SmsPhoneList sms;
     private final PhoneSignInDirectory keycloak;
@@ -29,7 +27,7 @@ public class PhoneInviteCreate {
     }
 
     public Result create(String phone, String name) {
-        if (phone == null || !PHONE.matcher(phone).matches()) {
+        if (phone == null || !UsPhoneNumbers.isCanonical(phone)) {
             return new Result.Rejected(400);
         }
         String label = name == null ? "" : name.strip();
