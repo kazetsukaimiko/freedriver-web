@@ -1,7 +1,7 @@
 {
   "deviceId": "freedriver-openbot",
   "hostname": "luna",
-  "agents": ["techops", "yuni"],
+  "agents": ["PM", "Coder", "Architect", "TechOps", "Security", "Dispatcher", "Sysadmin"],
   "secretFile": "/home/pc/.config/freedriver/openbot.secret",
   "mode": "openbot",
   "automationDir": "/home/pc/.config/OpenBot/automation"
