@@ -426,7 +426,7 @@ print("browser flow binds with or without a real secret")
 PY
 
 # Phone sign-in pages come from the freedriver login theme through context.form().
-THEME=keycloak/themes/freedriver/login
+THEME=keycloak/sms-otp-spi/src/main/resources/theme/freedriver/login
 grep -qx 'parent=keycloak.v2' "$THEME/theme.properties"
 for template in freedriver-sms-phone.ftl freedriver-sms-code.ftl; do
   grep -q "\"$template\"" keycloak/sms-otp-spi/src/main/java/io/freedriver/keycloak/sms/SmsOtpAuthenticator.java
@@ -441,7 +441,10 @@ test -s "$THEME/resources/js/webauthnRegister.js" || fail "theme must ship stock
 if grep -RIn 'passkeysConditionalAuth' "$THEME" >/dev/null; then
   fail "theme must not ship Enable Passkeys conditional UI"
 fi
-grep -q 'keycloak/themes/freedriver /opt/keycloak/themes/freedriver' keycloak/Dockerfile
+if grep -q '/themes/freedriver' keycloak/Dockerfile; then
+  fail "Dockerfile copies the login theme; it ships in the provider jar"
+fi
+python3 scripts/check-provision-home-url.py
 if grep -q 'SMS_OTP_SHARED_SECRET' keycloak/Dockerfile; then
   fail "Dockerfile must not mention SMS_OTP_SHARED_SECRET"
 fi
@@ -566,7 +569,7 @@ sms_text = java_string(sms, "String TEXT =")
 if not spi_text or spi_text != sms_text:
     raise SystemExit("sign-in agreement wording drifted between the SPI and sms")
 
-phone = Path("keycloak/themes/freedriver/login/freedriver-sms-phone.ftl").read_text()
+phone = Path("keycloak/sms-otp-spi/src/main/resources/theme/freedriver/login/freedriver-sms-phone.ftl").read_text()
 if "By tapping Send code" in phone:
     raise SystemExit("agreement wording must not be copied into the theme")
 if "${freedriverSmsAgreement}" not in phone or 'id="freedriver-sms-agreement"' not in phone:
@@ -574,7 +577,7 @@ if "${freedriverSmsAgreement}" not in phone or 'id="freedriver-sms-agreement"' n
 if not (phone.index('name="phone"') < phone.index('id="freedriver-sms-agreement"') < phone.index('id="freedriver-sms-send"')):
     raise SystemExit("agreement wording sits directly above the Send code button")
 
-router = Path("keycloak/themes/freedriver/login/freedriver-phone-username.ftl").read_text()
+router = Path("keycloak/sms-otp-spi/src/main/resources/theme/freedriver/login/freedriver-phone-username.ftl").read_text()
 if "By tapping Send code" in router:
     raise SystemExit("agreement wording must not be copied into the theme")
 if "${freedriverSmsAgreement}" not in router or 'id="freedriver-sms-agreement"' not in router:
@@ -583,7 +586,7 @@ if "freedriverSmsSend" in router or 'name="send"' in router:
     raise SystemExit("router page has a separate Send code button")
 if not (router.index('name="username"') < router.index('id="freedriver-sms-agreement"') < router.index("freedriverPhoneUsernameContinue")):
     raise SystemExit("agreement wording sits above Continue")
-fragment = Path("keycloak/themes/freedriver/login/resources/js/phone-fragment.js").read_text()
+fragment = Path("keycloak/sms-otp-spi/src/main/resources/theme/freedriver/login/resources/js/phone-fragment.js").read_text()
 if "phone-fragment.js" not in router:
     raise SystemExit("router page does not load the fragment script")
 if "location.hash" not in fragment or "sessionStorage" not in fragment or "freedriver.login.phone" not in fragment:
@@ -591,13 +594,13 @@ if "location.hash" not in fragment or "sessionStorage" not in fragment or "freed
 if "location.search" in fragment or "URLSearchParams" in fragment:
     raise SystemExit("fragment script reads the query")
 
-code = Path("keycloak/themes/freedriver/login/freedriver-sms-code.ftl").read_text()
+code = Path("keycloak/sms-otp-spi/src/main/resources/theme/freedriver/login/freedriver-sms-code.ftl").read_text()
 if "disabled" in code.lower():
     raise SystemExit("verify stays enabled")
 if "freedriverSmsCode" not in code or "loginButton" not in code:
     raise SystemExit("the code page can keep the typed code and still submits Verify")
 
-messages = Path("keycloak/themes/freedriver/login/messages/messages_en.properties").read_text().splitlines()
+messages = Path("keycloak/sms-otp-spi/src/main/resources/theme/freedriver/login/messages/messages_en.properties").read_text().splitlines()
 expected = [
     "freedriverSmsSend=Send code",
     "freedriverSmsWrongCode=That code didn''t work. Try again or send a new code.",
@@ -694,7 +697,7 @@ if "uuid.fullmatch(entry)" not in invite_test:
 print("phone role allow-list and invite permission scope")
 PY
 
-if grep -RIn 'offline_access' java/dashboard keycloak/themes >/dev/null; then
+if grep -RIn 'offline_access' java/dashboard keycloak/sms-otp-spi/src/main/resources/theme >/dev/null; then
   fail "the app must not request offline_access"
 fi
 # The self-service invite page is gone (#521): no @invite block, no /invite route in Caddy.
@@ -1061,7 +1064,7 @@ if not any("2-9 rule is intentional" in line for line in window):
 if re.fullmatch(seed_pattern, "+10000000000"):
     raise SystemExit("seed check must refuse +10000000000")
 
-theme = Path("keycloak/themes/freedriver/login")
+theme = Path("keycloak/sms-otp-spi/src/main/resources/theme/freedriver/login")
 shared = (theme / "resources/js/us-phone.js").read_text()
 strings = re.findall(r'"((?:\\.|[^"\\])*)"', shared)
 if len(strings) != 1:
@@ -1103,10 +1106,15 @@ for java in (module / "src/test").rglob("*.java"):
                 resolved.relative_to(module)
             except ValueError:
                 outside.append(resolved)
+theme_root = theme.resolve()
+try:
+    theme_root.relative_to(module)
+except ValueError:
+    raise SystemExit("the login theme root must be inside sms-otp-spi")
 pom = (module / "pom.xml").read_text()
 props = re.findall(r"<maven\.build\.cache\.input\.outside\d+>([^<]+)</", pom)
-if "../themes/freedriver/login" not in [item.strip() for item in props]:
-    raise SystemExit("the theme root must be one maven.build.cache.input.outsideN directory")
+if any(item.strip() == "../themes/freedriver/login" for item in props):
+    raise SystemExit("the in-module theme root is not an outside cache input")
 covered = [(module / item.strip()).resolve() for item in props]
 def is_covered(path):
     return any(path == root or root in path.parents for root in covered)

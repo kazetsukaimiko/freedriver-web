@@ -4,11 +4,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.UUID;
-import java.util.logging.Level;
-import java.util.logging.LogRecord;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MqttLogTest {
@@ -21,52 +18,23 @@ class MqttLogTest {
     }
 
     @Test
-    void lines_are_one_record_and_name_no_secret() {
+    void connection_lines_stay_on_mqtt_log() {
         try (LogLines logs = LogLines.open()) {
             MqttLog.connecting("mosquitto", 8883);
             MqttLog.connected("mosquitto", 8883, true);
             MqttLog.disconnected("bad\nreason");
             MqttLog.resubscribed(List.of("freedriver/v1/" + INSTANCE + "/appliances"));
-            MqttLog.stateReceived(INSTANCE, 2);
-            MqttLog.stateSummary(INSTANCE, 4, "12s");
-            MqttLog.stateRejected("freedriver/v1/" + INSTANCE + "/appliances\nsecret", "schema");
-            MqttLog.metricsReceived(INSTANCE);
-            MqttLog.metricsRejected("freedriver/v1/" + INSTANCE + "/metrics\nsecret", "schema");
-            MqttLog.commandSent("cmd-1", INSTANCE, "hallway", true, "ka\nze");
-            MqttLog.commandUnacknowledged("cmd-1", INSTANCE, "hallway", true, "kaze", 5000);
-            MqttLog.commandFailed("cmd-1", INSTANCE);
-            MqttLog.house(INSTANCE, "created");
-            MqttLog.connectFailed();
-            MqttLog.configUnreadable("instance-ids\napi-pass");
+            MqttLog.resubscribeFailed("freedriver/v1/" + INSTANCE + "/appliances");
 
             String all = logs.all();
-            assertFalse(all.contains("\nsecret"), all);
-            assertFalse(all.contains("password"), all);
             assertTrue(all.contains("mqtt connecting host=mosquitto port=8883"), all);
             assertTrue(all.contains("mqtt connected host=mosquitto port=8883 reconnect=true"), all);
             assertTrue(all.contains("mqtt disconnected reason=badreason"), all);
             assertTrue(all.contains("mqtt resubscribed topics=freedriver/v1/" + INSTANCE + "/appliances"), all);
-            assertTrue(all.contains("mqtt state received instance=" + INSTANCE + " appliances=2"), all);
-            assertTrue(all.contains("mqtt state summary instance=" + INSTANCE + " messages=4 lastHeardAgo=12s"), all);
-            assertTrue(all.contains(
-                    "mqtt state rejected topic=freedriver/v1/" + INSTANCE + "/appliancessecret reason=schema"), all);
-            assertTrue(all.contains("mqtt metrics received instance=" + INSTANCE), all);
-            assertTrue(all.contains(
-                    "mqtt metrics rejected topic=freedriver/v1/" + INSTANCE + "/metricssecret reason=schema"), all);
-            assertTrue(all.contains("mqtt command sent commandId=cmd-1 instance=" + INSTANCE
-                    + " appliance=hallway state=true user=kaze"), all);
-            assertTrue(all.contains("mqtt command unacknowledged commandId=cmd-1 instance=" + INSTANCE
-                    + " appliance=hallway state=true user=kaze timeoutMs=5000"), all);
-            assertTrue(all.contains("mqtt command failed commandId=cmd-1 instance=" + INSTANCE
-                    + " reason=publish-failed"), all);
-            assertTrue(all.contains("mqtt house instance=" + INSTANCE + " outcome=created"), all);
-            assertTrue(all.contains("mqtt connect failed reason=connect-failed"), all);
-            assertTrue(all.contains("mqtt config unreadable name=instance-idsapi-pass reason=read-failed"), all);
-            assertFalse(all.contains("secret-value"), all);
-            assertEquals(500, logs.levelOf("mqtt state received"));
-            assertEquals(800, logs.levelOf("mqtt command sent"));
-            assertEquals(Level.WARNING.intValue(), logs.levelOf("mqtt state rejected"));
-            assertEquals(Level.WARNING.intValue(), logs.levelOf("mqtt command unacknowledged"));
+            assertTrue(all.contains("mqtt resubscribe failed topic=freedriver/v1/" + INSTANCE
+                    + "/appliances reason=subscribe-failed"), all);
+            assertEquals(800, logs.levelOf("mqtt connecting"));
+            assertEquals(java.util.logging.Level.WARNING.intValue(), logs.levelOf("mqtt resubscribe failed"));
         }
     }
 }

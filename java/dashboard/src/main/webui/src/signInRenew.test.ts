@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-// The Keycloak login theme's sign-in renewal (#552), keycloak/themes/freedriver/login/resources/js/sign-in-renew.js,
+// The Keycloak login theme's sign-in renewal (#552),
+// keycloak/sms-otp-spi/src/main/resources/theme/freedriver/login/resources/js/sign-in-renew.js,
 // and the number it keeps for phone-fragment.js on the fresh page. Both use us-phone.js.
 // They live in the theme; this suite runs them because the web UI suite is the repository's JavaScript test runner.
 /// <reference types="node" />
@@ -7,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 // Vitest runs from java/dashboard/src/main/webui, locally and in CI.
-const themeJs = `${process.cwd()}/../../../../../keycloak/themes/freedriver/login/resources/js`
+const themeJs = `${process.cwd()}/../../../../../keycloak/sms-otp-spi/src/main/resources/theme/freedriver/login/resources/js`
 const usPhoneSource = readFileSync(`${themeJs}/us-phone.js`, 'utf8')
 new Function(usPhoneSource)()
 const renewSource = readFileSync(`${themeJs}/sign-in-renew.js`, 'utf8')
