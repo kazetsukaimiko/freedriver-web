@@ -2,8 +2,8 @@ package io.freedriver.app.appliances;
 
 import io.freedriver.app.metrics.IoTimer;
 import io.freedriver.app.metrics.MqttHandlerTimer;
+import io.freedriver.app.mqttlog.HouseMqttLog;
 import io.freedriver.mqtt.MqttConnection;
-import io.freedriver.mqtt.MqttLog;
 import io.freedriver.mqtt.contract.ApplianceJson;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
 import io.freedriver.mqtt.contract.ApplianceStateMessage;
@@ -96,7 +96,7 @@ public class MqttLiveClient {
             opened.connect();
             connection = opened;
         } catch (RuntimeException e) {
-            MqttLog.connectFailed();
+            HouseMqttLog.connectFailed();
             stop();
             throw e;
         }
@@ -139,17 +139,17 @@ public class MqttLiveClient {
                     ApplianceSchemas.RETAIN);
         } catch (RuntimeException e) {
             pending.remove(commandId, tracked);
-            MqttLog.commandFailed(commandId, instanceId);
+            HouseMqttLog.commandFailed(commandId, instanceId);
             return;
         }
-        MqttLog.commandSent(commandId, instanceId, appliance, state, user);
+        HouseMqttLog.commandSent(commandId, instanceId, appliance, state, user);
         ScheduledExecutorService exec = scheduler;
         if (exec == null) {
             return;
         }
         exec.schedule(() -> {
             if (pending.remove(commandId, tracked)) {
-                MqttLog.commandUnacknowledged(commandId, instanceId, appliance, state, user, timeoutMs);
+                HouseMqttLog.commandUnacknowledged(commandId, instanceId, appliance, state, user, timeoutMs);
             }
         }, timeoutMs, TimeUnit.MILLISECONDS);
     }
@@ -157,11 +157,11 @@ public class MqttLiveClient {
     void onBrokerMessage(String topic, byte[] payload) {
         UUID instanceId = MqttAcl.instanceIdFrom(topic, "appliances");
         if (instanceId == null || !subscriptions.contains(instanceId)) {
-            MqttLog.stateRejected(topic, "unknown-instance");
+            HouseMqttLog.stateRejected(topic, "unknown-instance");
             return;
         }
         if (payload != null && payload.length > MAX_STATE_BYTES) {
-            MqttLog.stateRejected(topic, "size");
+            HouseMqttLog.stateRejected(topic, "size");
             return;
         }
         final ApplianceStateMessage state;
@@ -169,11 +169,11 @@ public class MqttLiveClient {
             String json = payload == null ? "" : new String(payload, StandardCharsets.UTF_8);
             state = ApplianceJson.readState(json);
         } catch (RuntimeException e) {
-            MqttLog.stateRejected(topic, "schema");
+            HouseMqttLog.stateRejected(topic, "schema");
             return;
         }
         traffic.computeIfAbsent(instanceId, id -> new Traffic()).mark();
-        MqttLog.stateReceived(instanceId, state.appliances().size());
+        HouseMqttLog.stateReceived(instanceId, state.appliances().size());
         if (state.appliedCommandId() != null) {
             pending.remove(state.appliedCommandId());
         }
@@ -181,7 +181,7 @@ public class MqttLiveClient {
             states.fire(new ApplianceStateRouted(instanceId, state));
         } catch (RuntimeException e) {
             // A failed store must not end the MQTT callback thread; the next message is handled.
-            MqttLog.stateRejected(topic, "store-failed");
+            HouseMqttLog.stateRejected(topic, "store-failed");
         }
     }
 
@@ -199,7 +199,7 @@ public class MqttLiveClient {
             Traffic heard = traffic.get(instanceId);
             long messages = heard == null ? 0 : heard.messages.get();
             long last = heard == null ? -1 : heard.lastHeardEpochMs.get();
-            MqttLog.stateSummary(instanceId, messages, lastHeardAgo(now, last));
+            HouseMqttLog.stateSummary(instanceId, messages, lastHeardAgo(now, last));
         }
     }
 

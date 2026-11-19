@@ -13,6 +13,7 @@ import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.OnBusy;
 import io.freedriver.dispatcher.model.ReportedBot;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
+import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import io.restassured.response.ValidatableResponse;
@@ -210,6 +211,33 @@ class McpResourceTest {
                 .body("result.isError", is(true))
                 .body("result.content[0].text", containsString("FAILED"));
         assertEquals(failed, jobs.assignment("pc-mcp-late", assignment));
+    }
+
+    @Test
+    @TestSecurity(user = "pc-mcp-expired", roles = "device")
+    void finish_job_on_an_expired_assignment_is_a_tool_error_naming_expired() {
+        jobs.register("pc-mcp-expired", "expired.local", List.of("yuni"));
+        UUID assignment = jobs.submitNow("grok-mcp-expired", new SubmitJobRequest(
+                List.of("pc-mcp-expired"), "yuni", "expired-prompt", Channel.TEXT))
+                .assignments().getFirst().assignmentId();
+        jobs.update("pc-mcp-expired", assignment,
+                new UpdateAssignmentRequest(AssignmentState.EXPIRED, null, "stored-expired-note"));
+        Assignment before = assignments.findById(assignment.toString());
+        assertEquals(AssignmentState.EXPIRED, before.status);
+        assertEquals("stored-expired-note", before.note);
+
+        String session = initialize();
+        call(session, """
+                {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"finish_job","arguments":{"assignmentId":"%s","succeeded":true,"note":"a different note"}}}
+                """.formatted(assignment))
+                .statusCode(200)
+                .body("result.isError", is(true))
+                .body("result.content[0].text", containsString("EXPIRED"));
+        Assignment after = assignments.findById(assignment.toString());
+        assertEquals(before.status, after.status);
+        assertEquals(before.note, after.note);
+        assertEquals(before.updatedAt, after.updatedAt);
+        assertEquals(before.heldUntil, after.heldUntil);
     }
 
     @Test

@@ -3,11 +3,11 @@ package io.freedriver.mqtt;
 import org.jboss.logging.Logger;
 
 import java.util.List;
-import java.util.UUID;
 
 /**
- * App MQTT logs. The logger name is {@code io.freedriver.mqtt}.
+ * Connection logs for an MQTT session. The logger name is {@code io.freedriver.mqtt}.
  * Lines never include a password, a payload, or an exception message.
+ * Appliance and house lines are {@code HouseMqttLog} in the dashboard.
  */
 public final class MqttLog {
 
@@ -16,14 +16,6 @@ public final class MqttLog {
     private static final Logger LOG = Logger.getLogger(NAME);
 
     private MqttLog() {
-    }
-
-    public static void connectFailed() {
-        warn("mqtt connect failed reason=connect-failed");
-    }
-
-    public static void configUnreadable(String name) {
-        warn("mqtt config unreadable name=" + oneLine(name, "-") + " reason=read-failed");
     }
 
     public static void connecting(String host, int port) {
@@ -55,68 +47,6 @@ public final class MqttLog {
         warn("mqtt resubscribe failed topic=" + oneLine(topic, "-") + " reason=subscribe-failed");
     }
 
-    public static void stateReceived(UUID instanceId, int applianceCount) {
-        debug("mqtt state received instance=" + instanceId + " appliances=" + applianceCount);
-    }
-
-    public static void stateSummary(UUID instanceId, long messages, String lastHeardAgo) {
-        info("mqtt state summary instance=" + instanceId
-                + " messages=" + messages
-                + " lastHeardAgo=" + oneLine(lastHeardAgo, "never"));
-    }
-
-    public static void stateRejected(String topic, String reason) {
-        warn("mqtt state rejected topic=" + oneLine(topic, "-") + " reason=" + oneLine(reason, "rejected"));
-    }
-
-    /** Keeping a house's topics subscribed. {@code outcome} is {@code subscribed}, {@code unsubscribed}, or {@code failed}. */
-    public static void instanceSubscription(UUID instanceId, String outcome) {
-        info("mqtt instance subscription instance=" + instanceId + " outcome=" + oneLine(outcome, "-"));
-    }
-
-    /** The house list could not be read; the subscribed houses stay as they were. */
-    public static void instancesRefreshFailed() {
-        warn("mqtt instances refresh failed reason=list-failed");
-    }
-
-    public static void metricsReceived(UUID instanceId) {
-        debug("mqtt metrics received instance=" + instanceId);
-    }
-
-    public static void metricsRejected(String topic, String reason) {
-        warn("mqtt metrics rejected topic=" + oneLine(topic, "-") + " reason=" + oneLine(reason, "rejected"));
-    }
-
-    public static void commandSent(
-            String commandId, UUID instanceId, String appliance, boolean state, String user) {
-        info("mqtt command sent commandId=" + oneLine(commandId, "-")
-                + " instance=" + instanceId
-                + " appliance=" + oneLine(appliance, "-")
-                + " state=" + state
-                + " user=" + oneLine(user, "unknown"));
-    }
-
-    public static void commandUnacknowledged(
-            String commandId, UUID instanceId, String appliance, boolean state, String user, long timeoutMs) {
-        warn("mqtt command unacknowledged commandId=" + oneLine(commandId, "-")
-                + " instance=" + instanceId
-                + " appliance=" + oneLine(appliance, "-")
-                + " state=" + state
-                + " user=" + oneLine(user, "unknown")
-                + " timeoutMs=" + timeoutMs);
-    }
-
-    public static void commandFailed(String commandId, UUID instanceId) {
-        warn("mqtt command failed commandId=" + oneLine(commandId, "-")
-                + " instance=" + instanceId
-                + " reason=publish-failed");
-    }
-
-    /** House provision. {@code outcome} is {@code created}, {@code reset}, or {@code refused}. No password. */
-    public static void house(UUID instanceId, String outcome) {
-        info("mqtt house instance=" + instanceId + " outcome=" + oneLine(outcome, "-"));
-    }
-
     private static void info(String message) {
         LOG.info(message);
     }
@@ -125,12 +55,11 @@ public final class MqttLog {
         LOG.warn(message);
     }
 
-    private static void debug(String message) {
-        LOG.debug(message);
-    }
-
-    /** One log line. Control characters cannot forge a second record. */
-    private static String oneLine(String value, String fallback) {
+    /**
+     * One log line. Control characters cannot forge a second record.
+     * The dashboard's house lines use this same cleaner.
+     */
+    public static String oneLine(String value, String fallback) {
         if (value == null || value.isBlank()) {
             return fallback;
         }

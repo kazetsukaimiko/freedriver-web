@@ -31,7 +31,7 @@ public interface AppliancesApi {
     @Path("/{instanceId}/{applianceName}")
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed({"dashboard", "portal-admin"})
-    @RateLimited("appliances.commands")
+    @RateLimited(RateLimitBucket.APPLIANCES_COMMANDS)
     InstanceView command(
             @PathParam("instanceId") UUID instanceId,
             @PathParam("applianceName") @NotBlank @Size(max = ApplianceSchemas.NAME_MAX) String applianceName,

@@ -8,12 +8,17 @@ import io.freedriver.dispatcher.model.SubmitJobRequest;
 import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
+import io.restassured.common.mapper.TypeRef;
+import io.restassured.response.Response;
 import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
@@ -21,6 +26,9 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /** The host API through HTTP: a device reports, takes, starts and finishes one job. */
 @QuarkusTest
@@ -31,6 +39,15 @@ class HostResourceTest {
 
     @Inject
     JobStore jobs;
+
+    @Inject
+    AssignmentRepository assignments;
+
+    @Inject
+    DeviceRepository devices;
+
+    @Inject
+    SubmitLocks locks;
 
     @Test
     @TestSecurity(user = "pc-host-api", roles = "device")
@@ -131,6 +148,28 @@ class HostResourceTest {
                 .post(path(HostPaths.FINISH, theirs)).then().statusCode(403);
         given().contentType("application/json").body("{\"deliveryRef\":\"ref\"}")
                 .post(path(HostPaths.START, UUID.randomUUID().toString())).then().statusCode(404);
+        assertFinishError(UUID.randomUUID().toString(), 404, "assignment not found");
+
+        String succeededPrompt = "prompt-succeeded-violet-quartz";
+        String succeededNote = "note-succeeded-violet-quartz";
+        UUID succeeded = ownedFinished(true, succeededPrompt, succeededNote);
+        assertFinishError(succeeded.toString(), 403, "assignment belongs to another device",
+                succeededPrompt, succeededNote);
+
+        String failedPrompt = "prompt-failed-amber-lattice";
+        String failedNote = "note-failed-amber-lattice";
+        UUID failed = ownedFinished(false, failedPrompt, failedNote);
+        assertFinishError(failed.toString(), 403, "assignment belongs to another device",
+                failedPrompt, failedNote);
+
+        String expiredPrompt = "prompt-expired-cobalt-harbor";
+        String expiredNote = "note-expired-cobalt-harbor";
+        UUID expired = jobs.submitNow("grok-host-other", new SubmitJobRequest(
+                List.of("pc-host-owner"), "yuni", expiredPrompt, Channel.TEXT))
+                .assignments().getFirst().assignmentId();
+        jobs.update("pc-host-owner", expired, new UpdateAssignmentRequest(AssignmentState.EXPIRED, null, expiredNote));
+        assertFinishError(expired.toString(), 403, "assignment belongs to another device",
+                expiredPrompt, expiredNote);
     }
 
     @Test
@@ -160,18 +199,19 @@ class HostResourceTest {
         jobs.finish("pc-host-kept", done, true, "the agent's result");
         AssignmentView agents = jobs.assignment("pc-host-kept", done);
         assertEquals(AssignmentState.SUCCEEDED, agents.state());
+        assertEquals("the agent's result", agents.note());
         assertEquals("openbot:task-kept", agents.deliveryRef());
 
-        assertEquals(agents, hostFinish(done, false, "the turn ended without a result"));
-        assertEquals(agents, jobs.assignment("pc-host-kept", done));
+        finishAgainLeavesTheStoredRow(agents, false, "the turn ended without a result");
+        finishAgainLeavesTheStoredRow(agents, true, "a later finish that claims success");
 
         UUID failed = jobs.submitNow("grok-host-kept", new SubmitJobRequest(
                 List.of("pc-host-kept"), "yuni", "host-kept-prompt-2", Channel.TEXT))
                 .assignments().getFirst().assignmentId();
         AssignmentView first = hostFinish(failed, false, "first");
         assertEquals(AssignmentState.FAILED, first.state());
-        assertEquals(first, hostFinish(failed, true, "second"));
-        assertEquals(first, jobs.assignment("pc-host-kept", failed));
+        assertEquals("first", first.note());
+        finishAgainLeavesTheStoredRow(first, true, "second");
 
         UUID expired = jobs.submitNow("grok-host-kept", new SubmitJobRequest(
                 List.of("pc-host-kept"), "yuni", "host-kept-prompt-3", Channel.TEXT))
@@ -179,8 +219,86 @@ class HostResourceTest {
         jobs.update("pc-host-kept", expired, new UpdateAssignmentRequest(AssignmentState.EXPIRED, null, null));
         AssignmentView lapsed = jobs.assignment("pc-host-kept", expired);
         assertEquals(AssignmentState.EXPIRED, lapsed.state());
-        assertEquals(lapsed, hostFinish(expired, true, "too late"));
-        assertEquals(lapsed, jobs.assignment("pc-host-kept", expired));
+        assertNull(lapsed.note());
+        finishAgainLeavesTheStoredRow(lapsed, true, "too late");
+    }
+
+    @Test
+    @TestSecurity(user = "pc-host-deadline", roles = "device")
+    void finish_on_a_job_expired_at_submit_answers_the_stored_job_and_changes_nothing() {
+        jobs.register("pc-host-deadline", "deadline.local", List.of("yuni"));
+        UUID expired = jobs.submit("grok-host-deadline", new SubmitJobRequest(
+                List.of("pc-host-deadline"), "yuni", "host-deadline-prompt", Channel.TEXT),
+                Duration.ofMillis(40))
+                .assignments().getFirst().assignmentId();
+        AssignmentView stored = jobs.assignment("pc-host-deadline", expired);
+        assertEquals(AssignmentState.EXPIRED, stored.state());
+        assertNull(stored.note());
+        finishAgainLeavesTheStoredRow(stored, false, "a finish after the deadline");
+    }
+
+    @Test
+    @TestSecurity(user = "pc-host-untaken", roles = "device")
+    void finish_on_a_job_no_host_took_answers_the_stored_job_and_changes_nothing() {
+        String deviceId = "pc-host-untaken";
+        jobs.register(deviceId, "untaken.local", List.of("yuni"));
+        UUID expired = jobs.submitNow("grok-host-untaken", new SubmitJobRequest(
+                List.of(deviceId), "yuni", "host-untaken-prompt", Channel.TEXT))
+                .assignments().getFirst().assignmentId();
+        // createdAt is the CDI clock. Take's cutoff is that same clock shifted past take-within.
+        new JobStoreService(assignments, devices, locks,
+                Clock.offset(Clock.systemUTC(), JobStoreService.DEFAULT_TAKE_WITHIN.plusSeconds(1)), null)
+                .take(deviceId, List.of(), Duration.ZERO);
+        Assignment row = assignments.findById(expired.toString());
+        assertEquals(AssignmentState.EXPIRED, row.status);
+        assertEquals("no host took it", row.note);
+        AssignmentView stored = jobs.assignment(deviceId, expired);
+        assertEquals(AssignmentState.EXPIRED, stored.state());
+        assertEquals("no host took it", stored.note());
+        finishAgainLeavesTheStoredRow(stored, false, "the turn ended without a result");
+    }
+
+    /** Replay finish, compare the view, and require the stored row's status, note, updatedAt and heldUntil to match. */
+    private void finishAgainLeavesTheStoredRow(AssignmentView stored, boolean succeeded, String note) {
+        assertNotEquals(stored.note(), note);
+        String id = stored.assignmentId().toString();
+        Assignment before = assignments.findById(id);
+        AssignmentView answered = hostFinish(stored.assignmentId(), succeeded, note);
+        assertEquals(stored, answered);
+        assertEquals(stored, jobs.assignment(stored.deviceId(), stored.assignmentId()));
+        Assignment after = assignments.findById(id);
+        assertEquals(before.status, after.status);
+        assertEquals(before.note, after.note);
+        assertEquals(before.updatedAt, after.updatedAt);
+        assertEquals(before.heldUntil, after.heldUntil);
+    }
+
+    private UUID ownedFinished(boolean succeeded, String prompt, String note) {
+        UUID assignment = jobs.submitNow("grok-host-other", new SubmitJobRequest(
+                List.of("pc-host-owner"), "yuni", prompt, Channel.TEXT))
+                .assignments().getFirst().assignmentId();
+        AssignmentView finished = jobs.finish("pc-host-owner", assignment, succeeded, note);
+        assertEquals(succeeded ? AssignmentState.SUCCEEDED : AssignmentState.FAILED, finished.state());
+        assertEquals(note, finished.note());
+        assertEquals(prompt, finished.prompt());
+        return assignment;
+    }
+
+    private static void assertFinishError(String assignmentId, int status, String message, String... absent) {
+        Response response = given().contentType("application/json")
+                .body("{\"succeeded\":true,\"note\":\"replay-note\"}")
+                .post(path(HostPaths.FINISH, assignmentId))
+                .then()
+                .statusCode(status)
+                .extract()
+                .response();
+        String raw = response.asString();
+        Map<String, Object> body = response.as(new TypeRef<>() { });
+        assertEquals(Set.of("message"), body.keySet());
+        assertEquals(message, body.get("message"));
+        for (String secret : absent) {
+            assertFalse(raw.contains(secret), raw);
+        }
     }
 
     private static AssignmentView hostFinish(UUID assignment, boolean succeeded, String note) {

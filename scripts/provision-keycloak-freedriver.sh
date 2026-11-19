@@ -816,6 +816,85 @@ PY
 }
 ensure_dcr_trusted_hosts
 
+# Anonymous registration of the grok.com callback gets the one-year settings
+# at registration. The client loop above stays the repair for clients that
+# already exist. A server without this provider stops here.
+ensure_dcr_one_year_tokens() {
+  local provider_id=freedriver-one-year-tokens
+  local grok_redirect='https://grok.com/connectors-oauth-exchange-code/'
+  local action comp_id
+  if ! kcadm get client-registration-policy/providers -r "$REALM" > "$work/dcr-provider-types.json"; then
+    echo "The Keycloak server is missing the client registration provider ${provider_id}." >&2
+    exit 1
+  fi
+  if ! python3 - "$work/dcr-provider-types.json" "$provider_id" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+wanted = sys.argv[2]
+if isinstance(data, dict):
+    data = data.get("providers") or data.get("results") or list(data.values())
+ids = []
+for item in data:
+    if isinstance(item, dict) and item.get("id"):
+        ids.append(item["id"])
+    elif isinstance(item, str):
+        ids.append(item)
+raise SystemExit(0 if wanted in ids else 1)
+PY
+  then
+    echo "The Keycloak server is missing the client registration provider ${provider_id}." >&2
+    exit 1
+  fi
+  kcadm get "realms/${REALM}" --fields id > "$work/realm-id.json"
+  kcadm get components -r "$REALM" \
+    -q type=org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy \
+    > "$work/dcr-policies.json"
+  action="$(python3 - "$work/realm-id.json" "$work/dcr-policies.json" "$work/dcr-one-year.json" \
+    "$provider_id" "$ONE_YEAR_TOKEN_SECONDS" "$grok_redirect" <<'PY'
+import json, sys
+realm = json.load(open(sys.argv[1], encoding="utf-8"))
+policies = json.load(open(sys.argv[2], encoding="utf-8"))
+provider_id, lifespan, redirect = sys.argv[4], sys.argv[5], sys.argv[6]
+realm_id = realm.get("id") or ""
+comp = next(
+    (
+        c
+        for c in policies
+        if c.get("providerId") == provider_id and c.get("subType") == "anonymous"
+    ),
+    None,
+)
+body = {
+    "name": "One-year tokens",
+    "providerId": provider_id,
+    "providerType": "org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy",
+    "subType": "anonymous",
+    "parentId": realm_id,
+    "config": {
+        "access-token-lifespan": [lifespan],
+        "redirect-uri": [redirect],
+    },
+}
+if comp and comp.get("id"):
+    body["id"] = comp["id"]
+    json.dump(body, open(sys.argv[3], "w", encoding="utf-8"))
+    print("update " + comp["id"])
+else:
+    json.dump(body, open(sys.argv[3], "w", encoding="utf-8"))
+    print("create")
+PY
+)"
+  if [[ "$action" == create ]]; then
+    kcadm_stdin create components -r "$REALM" -f - < "$work/dcr-one-year.json" >/dev/null
+    echo "Created anonymous DCR policy ${provider_id}."
+  else
+    comp_id="${action#update }"
+    kcadm_stdin update "components/${comp_id}" -r "$REALM" -f - < "$work/dcr-one-year.json" >/dev/null
+    echo "Anonymous DCR policy ${provider_id} sets a one-year token for the grok.com callback."
+  fi
+}
+ensure_dcr_one_year_tokens
+
 # Anonymous DCR clients keep Full Scope Disabled. Map mcp-user and dashboard onto
 # the built-in roles client scope so those clients inherit the two autonomy roles
 # when the signed-in user holds them. grafana-admin stays off that mapping.

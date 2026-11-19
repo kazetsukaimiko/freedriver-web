@@ -155,7 +155,6 @@ PRODUCT_PATHS=(
   java/
   mqtt-contract/
   mqtt/
-  mqtt-paho/
   sms-model/
   sms-api/
   sms-client/
