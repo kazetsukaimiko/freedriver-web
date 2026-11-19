@@ -1,5 +1,6 @@
 package io.freedriver.app.api;
 
+import io.freedriver.sms.validation.UsPhoneNumber;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
@@ -44,6 +45,11 @@ class SignInLinkTest {
 
     @Test
     void pageKeepsTheFragmentInMemoryAndDoesNotReadTheQuery() {
+        String check = "/" + UsPhoneNumber.REGEX + "/.test(phone)";
+        int first = SignInLink.PAGE.indexOf(check);
+        int second = SignInLink.PAGE.indexOf(check, first + check.length());
+        assertTrue(first >= 0);
+        assertTrue(second > first);
         assertTrue(SignInLink.PAGE.contains("location.hash"));
         assertTrue(SignInLink.PAGE.contains("sessionStorage"));
         assertTrue(SignInLink.PAGE.contains(SignInLink.PHONE_KEY));

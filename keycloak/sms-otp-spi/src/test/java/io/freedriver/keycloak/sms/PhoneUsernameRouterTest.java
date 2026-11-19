@@ -270,6 +270,11 @@ class PhoneUsernameRouterTest {
     }
 
     @Test
+    void aNonUsE164StaysAUsername() {
+        assertUsername(router, "+447700900123");
+    }
+
+    @Test
     void nonPhoneUsernameIsNotLookedUpOrRewritten() {
         assertUsername(router, "house.user");
         assertUsername(router, "ada");
