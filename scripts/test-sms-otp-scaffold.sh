@@ -45,6 +45,16 @@ if '"trusted-hosts": ["*"]' in dcr_fn or '"trusted-hosts": []' in dcr_fn:
 if "ensure_dcr_trusted_hosts\n" not in script.split("ensure_dcr_trusted_hosts() {", 1)[1]:
     raise SystemExit("ensure_dcr_trusted_hosts must run")
 print("anonymous DCR Trusted Hosts are grok.com and x.ai")
+one_year = script.split("ensure_dcr_one_year_tokens() {", 1)
+if len(one_year) != 2:
+    raise SystemExit("provision script must define ensure_dcr_one_year_tokens")
+if "freedriver-one-year-tokens" not in one_year[1].split("ensure_dcr_one_year_tokens\n", 1)[0]:
+    raise SystemExit("one-year policy must name provider freedriver-one-year-tokens")
+if "missing the client registration provider" not in one_year[1]:
+    raise SystemExit("provision must stop when freedriver-one-year-tokens is missing")
+if "ensure_dcr_one_year_tokens\n" not in one_year[1]:
+    raise SystemExit("ensure_dcr_one_year_tokens must run")
+print("anonymous DCR one-year policy is freedriver-one-year-tokens")
 PY
 
 python3 - <<'PY'
