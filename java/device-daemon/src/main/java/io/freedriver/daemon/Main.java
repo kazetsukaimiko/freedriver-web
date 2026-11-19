@@ -3,8 +3,6 @@ package io.freedriver.daemon;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
 
 public final class Main {
 
@@ -37,8 +35,15 @@ public final class Main {
             System.exit(2);
             return;
         }
+        if (config.mode() == WorkerMode.OPENBOT) {
+            connect(config, material);
+            return;
+        }
         HttpsDeviceClient http = HttpsDeviceClient.create(config.deviceId(), material);
-        DeviceWorker worker = worker(config, material, http);
+        DeviceWorker worker = new DeviceDaemon(
+                http,
+                new ProcessGrokLauncher(http::forbidden),
+                config.settings());
         try {
             worker.registerOnce();
         } catch (RuntimeException failed) {
@@ -66,6 +71,23 @@ public final class Main {
         }
     }
 
+    /**
+     * OpenBot mode: the dispatch connector. A dispatcher that is down and an OpenBot that is not
+     * running are retries, so the process stays up from the start.
+     */
+    private static void connect(DaemonConfig config, SecretFile.Material material) {
+        ScriptsAgentHost openBot = ScriptsAgentHost.create(config.settings().automationDir());
+        HttpsHostJobs host = HttpsHostJobs.create(config.deviceId(), material, openBot::forbidden);
+        OpenBotWorker connector = OpenBotWorker.create(host, openBot, config.settings(), host::forbidden);
+        Runtime.getRuntime().addShutdownHook(new Thread(connector::close, "connector-stop"));
+        connector.start();
+        try {
+            connector.join();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     static Path configPath(String[] args) {
         if (args != null) {
             for (String arg : args) {
@@ -79,33 +101,6 @@ public final class Main {
             throw new IllegalArgumentException("usage: device-daemon --config <file>");
         }
         return Path.of(args[1]);
-    }
-
-    private static List<String> forbidden(SecretFile.Material material, HttpsDeviceClient http) {
-        List<String> values = new ArrayList<>();
-        values.add(material.secret());
-        values.add(material.raw());
-        String token = http.currentToken();
-        if (token != null) {
-            values.add(token);
-        }
-        return values;
-    }
-
-    private static DeviceWorker worker(DaemonConfig config, SecretFile.Material material, HttpsDeviceClient http) {
-        if (config.mode() == WorkerMode.OPENBOT) {
-            return new OpenBotWorker(
-                    http,
-                    new ProcessAgentRouter(
-                            config.settings().router(),
-                            config.settings().workDir(),
-                            () -> forbidden(material, http)),
-                    config.settings());
-        }
-        return new DeviceDaemon(
-                http,
-                new ProcessGrokLauncher(() -> forbidden(material, http)),
-                config.settings());
     }
 
     private static void beat(DeviceWorker worker) {
