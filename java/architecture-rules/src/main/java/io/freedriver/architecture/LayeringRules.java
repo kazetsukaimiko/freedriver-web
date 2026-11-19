@@ -10,6 +10,7 @@ import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 
+import java.util.Optional;
 import java.util.function.Predicate;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
@@ -128,7 +129,43 @@ public final class LayeringRules {
                         + "Quarkus extension injects");
     }
 
+    /**
+     * The JAX-RS edge: one {@code @PrimaryAdapter} or {@code @SecondaryAdapter}, or, when the class
+     * has no hexagonal role, the name, annotation and REST-client checks.
+     */
     static boolean jaxRsEdge(JavaClass c) {
+        return edge(c, true);
+    }
+
+    /**
+     * The security edge: one {@code @PrimaryAdapter}, or, when the class has no hexagonal role, the
+     * name, annotation and identity-type checks. A {@code @SecondaryAdapter} is outside it.
+     */
+    static boolean securityEdge(JavaClass c) {
+        return edge(c, false);
+    }
+
+    /**
+     * A single adapter role selects the edge. Any other single role, and a class whose role is
+     * empty because of a conflict, is not the edge. Only a class with no role at all keeps the
+     * name fallback.
+     */
+    private static boolean edge(JavaClass c, boolean jaxRs) {
+        Optional<String> found = RoleRules.role(c);
+        if (found.isPresent()) {
+            String role = found.get();
+            if (RoleRules.PRIMARY_ADAPTER.equals(role)) {
+                return true;
+            }
+            return jaxRs && RoleRules.SECONDARY_ADAPTER.equals(role);
+        }
+        if (!RoleRules.hasNoRole(c)) {
+            return false;
+        }
+        return jaxRs ? jaxRsByName(c) : securityByName(c);
+    }
+
+    private static boolean jaxRsByName(JavaClass c) {
         String n = c.getSimpleName();
         return n.endsWith("Resource") || n.endsWith("Api") || n.endsWith("Filter")
                 || n.endsWith("Mapper") || n.endsWith("Mappers")
@@ -136,7 +173,7 @@ public final class LayeringRules {
                 || c.isAnnotatedWith("jakarta.ws.rs.ext.Provider");
     }
 
-    static boolean securityEdge(JavaClass c) {
+    private static boolean securityByName(JavaClass c) {
         String n = c.getSimpleName();
         return n.endsWith("Resource") || n.endsWith("Filter") || n.endsWith("Feature") || n.endsWith("Tools")
                 || c.isAnnotatedWith("jakarta.ws.rs.ext.Provider")

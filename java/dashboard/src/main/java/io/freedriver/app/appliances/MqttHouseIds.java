@@ -1,6 +1,6 @@
 package io.freedriver.app.appliances;
 
-import io.freedriver.mqtt.MqttLog;
+import io.freedriver.app.mqttlog.HouseMqttLog;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -30,7 +30,7 @@ final class MqttHouseIds {
         try {
             return Files.readString(path).strip();
         } catch (IOException e) {
-            MqttLog.configUnreadable("api-pass");
+            HouseMqttLog.configUnreadable("api-pass");
             return "";
         }
     }

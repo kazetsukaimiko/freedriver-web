@@ -31,12 +31,23 @@ cleanup() {
 }
 trap cleanup EXIT
 
+echo "building the SMS OTP provider jar"
+./mvnw -B -C -pl sms-client -am package -DskipTests
+./mvnw -B -C -pl sms-client -am install -DskipTests
+./mvnw -B -f keycloak/sms-otp-spi/pom.xml -DskipTests package
+PROVIDER_JAR="$ROOT/keycloak/sms-otp-spi/target/freedriver-sms-otp-spi-1.0.0-SNAPSHOT.jar"
+if [[ ! -s "$PROVIDER_JAR" ]]; then
+  echo "missing provider jar $PROVIDER_JAR" >&2
+  exit 1
+fi
+
 docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 docker run -d --name "$CONTAINER" --memory=2g --memory-swap=2g \
   -p "127.0.0.1:${PORT}:8080" \
   -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
   -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
   -e JAVA_OPTS_APPEND="-Xms256m -Xmx768m" \
+  -v "${PROVIDER_JAR}:/opt/keycloak/providers/freedriver-sms-otp.jar:ro" \
   "$IMAGE" start-dev >/dev/null
 
 echo "waiting for throwaway Keycloak"
@@ -575,6 +586,144 @@ PY
     "$work/openbot-sa-offline-sessions.json" "$work/openbot-offline-session-count.json"
 }
 
+# A client grok.com registers after provision has both settings with no
+# second provision. A trusted-host redirect that is not that callback has neither.
+assert_registration_one_year() {
+  local grok_redirect='https://grok.com/connectors-oauth-exchange-code/'
+  local other_redirect='https://x.ai/not-the-grok-callback'
+  python3 - "$grok_redirect" "$work/reg-grok.json" <<'PY'
+import json, sys
+json.dump({
+    "client_name": "reg-one-year",
+    "redirect_uris": [sys.argv[1]],
+    "token_endpoint_auth_method": "none",
+    "grant_types": ["authorization_code", "refresh_token"],
+    "response_types": ["code"],
+}, open(sys.argv[2], "w", encoding="utf-8"))
+PY
+  python3 - "$other_redirect" "$work/reg-other.json" <<'PY'
+import json, sys
+json.dump({
+    "client_name": "reg-other-redirect",
+    "redirect_uris": [sys.argv[1]],
+    "token_endpoint_auth_method": "none",
+    "grant_types": ["authorization_code", "refresh_token"],
+    "response_types": ["code"],
+}, open(sys.argv[2], "w", encoding="utf-8"))
+PY
+  grok_status="$(curl -sS --max-time 30 -o "$work/reg-grok-out.json" -w '%{http_code}' \
+    -H 'Content-Type: application/json' \
+    --data-binary @"$work/reg-grok.json" \
+    "${BASE}/realms/freedriver/clients-registrations/openid-connect")"
+  if [[ "$grok_status" != 201 ]]; then
+    echo "grok.com registration HTTP ${grok_status}" >&2
+    cat "$work/reg-grok-out.json" >&2
+    exit 1
+  fi
+  other_status="$(curl -sS --max-time 30 -o "$work/reg-other-out.json" -w '%{http_code}' \
+    -H 'Content-Type: application/json' \
+    --data-binary @"$work/reg-other.json" \
+    "${BASE}/realms/freedriver/clients-registrations/openid-connect")"
+  if [[ "$other_status" != 201 ]]; then
+    echo "other redirect registration HTTP ${other_status}" >&2
+    cat "$work/reg-other-out.json" >&2
+    exit 1
+  fi
+  grok_client_id="$(python3 - "$work/reg-grok-out.json" <<'PY'
+import json, sys
+client_id = json.load(open(sys.argv[1], encoding="utf-8")).get("client_id")
+if not client_id:
+    raise SystemExit("grok.com registration missing client_id")
+print(client_id)
+PY
+)"
+  other_client_id="$(python3 - "$work/reg-other-out.json" <<'PY'
+import json, sys
+client_id = json.load(open(sys.argv[1], encoding="utf-8")).get("client_id")
+if not client_id:
+    raise SystemExit("other registration missing client_id")
+print(client_id)
+PY
+)"
+  grok_uuid="$(admin get clients -r freedriver -q "clientId=${grok_client_id}" --fields id --format csv --noquotes | csv_id)"
+  other_uuid="$(admin get clients -r freedriver -q "clientId=${other_client_id}" --fields id --format csv --noquotes | csv_id)"
+  admin get "clients/${grok_uuid}/default-client-scopes" -r freedriver > "$work/reg-grok-scopes.json"
+  admin get "clients/${other_uuid}/default-client-scopes" -r freedriver > "$work/reg-other-scopes.json"
+  client_attributes "$grok_uuid" "$work/reg-grok-attrs.json"
+  client_attributes "$other_uuid" "$work/reg-other-attrs.json"
+  python3 - "$work/reg-grok-scopes.json" "$work/reg-grok-attrs.json" \
+    "$work/reg-other-scopes.json" "$work/reg-other-attrs.json" <<'PY'
+import json, sys
+def names(path):
+    return {item.get("name") for item in json.load(open(path, encoding="utf-8")) if item.get("name")}
+def lifespan(path):
+    return (json.load(open(path, encoding="utf-8")).get("attributes") or {}).get("access.token.lifespan")
+grok_names, grok_life, other_names, other_life = names(sys.argv[1]), lifespan(sys.argv[2]), names(sys.argv[3]), lifespan(sys.argv[4])
+if "offline_access" not in grok_names:
+    sys.exit("registered grok.com client default scopes lack offline_access")
+if grok_life != "31536000":
+    sys.exit("registered grok.com client access.token.lifespan is %s" % grok_life)
+if "offline_access" in other_names:
+    sys.exit("other redirect default scopes include offline_access")
+if other_life is not None:
+    sys.exit("other redirect access.token.lifespan is %s" % other_life)
+print("registered grok.com client has one-year tokens")
+print("registered other redirect has neither one-year setting")
+PY
+
+  admin update "clients/${grok_uuid}" -r freedriver \
+    -s directAccessGrantsEnabled=true \
+    -s consentRequired=false >/dev/null
+  admin create users -r freedriver \
+    -s username=reg-one-year \
+    -s enabled=true \
+    -s email=reg-one-year@freedriver.invalid \
+    -s emailVerified=true \
+    -s firstName=Reg \
+    -s lastName=Year >/dev/null
+  openssl rand -hex 16 > "$work/reg-one-year.pass"
+  chmod 600 "$work/reg-one-year.pass"
+  REG_PASS="$(cat "$work/reg-one-year.pass")"
+  export REG_PASS
+  docker exec -e REG_PASS "$CONTAINER" \
+    sh -c '/opt/keycloak/bin/kcadm.sh set-password --config /tmp/kcadm-admin.config -r freedriver --username reg-one-year --new-password "$REG_PASS"' \
+    >/dev/null
+  python3 - "$work/reg-one-year.pass" "$grok_client_id" "$work/reg-ropc.form" <<'PY'
+import sys
+from pathlib import Path
+from urllib.parse import urlencode
+password = Path(sys.argv[1]).read_text(encoding="utf-8").strip()
+Path(sys.argv[3]).write_text(urlencode({
+    "grant_type": "password",
+    "client_id": sys.argv[2],
+    "username": "reg-one-year",
+    "password": password,
+    "scope": "openid",
+}), encoding="utf-8")
+PY
+  chmod 600 "$work/reg-ropc.form"
+  curl -sS --max-time 30 -o "$work/reg-token.json" -w "%{http_code}" \
+    -X POST "${BASE}/realms/freedriver/protocol/openid-connect/token" \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    --data-binary @"$work/reg-ropc.form" > "$work/reg-token.status"
+  python3 - "$work/reg-token.status" "$work/reg-token.json" <<'PY'
+import json, sys
+code = open(sys.argv[1], encoding="utf-8").read().strip()
+body = json.load(open(sys.argv[2], encoding="utf-8"))
+if code != "200":
+    sys.exit("registered client password grant HTTP %s %s" % (code, body.get("error") or body))
+expires = body.get("expires_in")
+if expires != 31536000:
+    sys.exit("registered client expires_in is %s, want 31536000" % expires)
+print("registered client expires_in", expires)
+PY
+  unset REG_PASS
+  rm -f "$work/reg-grok.json" "$work/reg-other.json" "$work/reg-grok-out.json" \
+    "$work/reg-other-out.json" "$work/reg-grok-scopes.json" "$work/reg-other-scopes.json" \
+    "$work/reg-grok-attrs.json" "$work/reg-other-attrs.json" "$work/reg-one-year.pass" \
+    "$work/reg-ropc.form" "$work/reg-token.json" "$work/reg-token.status"
+}
+
 assert_portal_jobs_token() {
   local jobs_uuid mapper_count
   jobs_uuid="$(admin get clients -r freedriver -q clientId=freedriver-portal-jobs --fields id --format csv --noquotes | csv_id)"
@@ -625,6 +774,7 @@ PY
 
 assert_portal_jobs_token
 assert_offline_access
+assert_registration_one_year
 if grep -q 'FREEDRIVER_AUTONOMY_MCP_CLIENT_SECRET' "$work/secrets/api.secret" "$work/secrets.env" "$work/secrets/invite.env" "$work/secrets/instances.env" "$work/secrets/grafana.env" "$work/secrets/mqtt.env"; then
   echo "autonomy MCP secret leaked into another file" >&2
   exit 1

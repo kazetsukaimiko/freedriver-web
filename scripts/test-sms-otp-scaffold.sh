@@ -45,6 +45,16 @@ if '"trusted-hosts": ["*"]' in dcr_fn or '"trusted-hosts": []' in dcr_fn:
 if "ensure_dcr_trusted_hosts\n" not in script.split("ensure_dcr_trusted_hosts() {", 1)[1]:
     raise SystemExit("ensure_dcr_trusted_hosts must run")
 print("anonymous DCR Trusted Hosts are grok.com and x.ai")
+one_year = script.split("ensure_dcr_one_year_tokens() {", 1)
+if len(one_year) != 2:
+    raise SystemExit("provision script must define ensure_dcr_one_year_tokens")
+if "freedriver-one-year-tokens" not in one_year[1].split("ensure_dcr_one_year_tokens\n", 1)[0]:
+    raise SystemExit("one-year policy must name provider freedriver-one-year-tokens")
+if "missing the client registration provider" not in one_year[1]:
+    raise SystemExit("provision must stop when freedriver-one-year-tokens is missing")
+if "ensure_dcr_one_year_tokens\n" not in one_year[1]:
+    raise SystemExit("ensure_dcr_one_year_tokens must run")
+print("anonymous DCR one-year policy is freedriver-one-year-tokens")
 PY
 
 python3 - <<'PY'
@@ -404,7 +414,7 @@ print("browser flow binds with or without a real secret")
 PY
 
 # Phone sign-in pages come from the freedriver login theme through context.form().
-THEME=keycloak/themes/freedriver/login
+THEME=keycloak/sms-otp-spi/src/main/resources/theme/freedriver/login
 grep -qx 'parent=keycloak.v2' "$THEME/theme.properties"
 for template in freedriver-sms-phone.ftl freedriver-sms-code.ftl; do
   grep -q "\"$template\"" keycloak/sms-otp-spi/src/main/java/io/freedriver/keycloak/sms/SmsOtpAuthenticator.java
@@ -419,7 +429,10 @@ test -s "$THEME/resources/js/webauthnRegister.js" || fail "theme must ship stock
 if grep -RIn 'passkeysConditionalAuth' "$THEME" >/dev/null; then
   fail "theme must not ship Enable Passkeys conditional UI"
 fi
-grep -q 'keycloak/themes/freedriver /opt/keycloak/themes/freedriver' keycloak/Dockerfile
+if grep -q '/themes/freedriver' keycloak/Dockerfile; then
+  fail "Dockerfile copies the login theme; it ships in the provider jar"
+fi
+python3 scripts/check-provision-home-url.py
 if grep -q 'SMS_OTP_SHARED_SECRET' keycloak/Dockerfile; then
   fail "Dockerfile must not mention SMS_OTP_SHARED_SECRET"
 fi
@@ -544,7 +557,7 @@ sms_text = java_string(sms, "String TEXT =")
 if not spi_text or spi_text != sms_text:
     raise SystemExit("sign-in agreement wording drifted between the SPI and sms")
 
-phone = Path("keycloak/themes/freedriver/login/freedriver-sms-phone.ftl").read_text()
+phone = Path("keycloak/sms-otp-spi/src/main/resources/theme/freedriver/login/freedriver-sms-phone.ftl").read_text()
 if "By tapping Send code" in phone:
     raise SystemExit("agreement wording must not be copied into the theme")
 if "${freedriverSmsAgreement}" not in phone or 'id="freedriver-sms-agreement"' not in phone:
@@ -552,7 +565,7 @@ if "${freedriverSmsAgreement}" not in phone or 'id="freedriver-sms-agreement"' n
 if not (phone.index('name="phone"') < phone.index('id="freedriver-sms-agreement"') < phone.index('id="freedriver-sms-send"')):
     raise SystemExit("agreement wording sits directly above the Send code button")
 
-router = Path("keycloak/themes/freedriver/login/freedriver-phone-username.ftl").read_text()
+router = Path("keycloak/sms-otp-spi/src/main/resources/theme/freedriver/login/freedriver-phone-username.ftl").read_text()
 if "By tapping Send code" in router:
     raise SystemExit("agreement wording must not be copied into the theme")
 if "${freedriverSmsAgreement}" not in router or 'id="freedriver-sms-agreement"' not in router:
@@ -561,7 +574,7 @@ if "freedriverSmsSend" in router or 'name="send"' in router:
     raise SystemExit("router page has a separate Send code button")
 if not (router.index('name="username"') < router.index('id="freedriver-sms-agreement"') < router.index("freedriverPhoneUsernameContinue")):
     raise SystemExit("agreement wording sits above Continue")
-fragment = Path("keycloak/themes/freedriver/login/resources/js/phone-fragment.js").read_text()
+fragment = Path("keycloak/sms-otp-spi/src/main/resources/theme/freedriver/login/resources/js/phone-fragment.js").read_text()
 if "phone-fragment.js" not in router:
     raise SystemExit("router page does not load the fragment script")
 if "location.hash" not in fragment or "sessionStorage" not in fragment or "freedriver.login.phone" not in fragment:
@@ -569,13 +582,13 @@ if "location.hash" not in fragment or "sessionStorage" not in fragment or "freed
 if "location.search" in fragment or "URLSearchParams" in fragment:
     raise SystemExit("fragment script reads the query")
 
-code = Path("keycloak/themes/freedriver/login/freedriver-sms-code.ftl").read_text()
+code = Path("keycloak/sms-otp-spi/src/main/resources/theme/freedriver/login/freedriver-sms-code.ftl").read_text()
 if "disabled" in code.lower():
     raise SystemExit("verify stays enabled")
 if "freedriverSmsCode" not in code or "loginButton" not in code:
     raise SystemExit("the code page can keep the typed code and still submits Verify")
 
-messages = Path("keycloak/themes/freedriver/login/messages/messages_en.properties").read_text().splitlines()
+messages = Path("keycloak/sms-otp-spi/src/main/resources/theme/freedriver/login/messages/messages_en.properties").read_text().splitlines()
 expected = [
     "freedriverSmsSend=Send code",
     "freedriverSmsWrongCode=That code didn''t work. Try again or send a new code.",
@@ -672,7 +685,7 @@ if "uuid.fullmatch(entry)" not in invite_test:
 print("phone role allow-list and invite permission scope")
 PY
 
-if grep -RIn 'offline_access' java/dashboard keycloak/themes >/dev/null; then
+if grep -RIn 'offline_access' java/dashboard keycloak/sms-otp-spi/src/main/resources/theme >/dev/null; then
   fail "the app must not request offline_access"
 fi
 # The self-service invite page is gone (#521): no @invite block, no /invite route in Caddy.
