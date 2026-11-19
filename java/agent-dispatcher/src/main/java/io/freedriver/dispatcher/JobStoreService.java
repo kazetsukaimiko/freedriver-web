@@ -16,6 +16,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.bson.Document;
 import org.jboss.logging.Logger;
+import org.jmolecules.architecture.hexagonal.Application;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -39,6 +40,7 @@ import java.util.function.BooleanSupplier;
  * {@code takeWithin} expires. A host silent for {@code hostSilentAfter} shows its agents as
  * {@code UNKNOWN} or {@code OFFLINE} in {@link #listAgents}.
  */
+@Application
 @ApplicationScoped
 public class JobStoreService implements JobStore {
 

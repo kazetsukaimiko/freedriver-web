@@ -2,6 +2,7 @@ package io.freedriver.dispatcher;
 
 import jakarta.ws.rs.client.ClientRequestContext;
 import jakarta.ws.rs.client.ClientRequestFilter;
+import org.jmolecules.architecture.hexagonal.SecondaryAdapter;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -13,6 +14,7 @@ import java.util.Locale;
  * Signs a webhook request: HmacSHA256 over {@code timestamp.deliveryId.body}. The filter runs
  * before the entity is written, so the entity must already be the {@code byte[]} that is sent.
  */
+@SecondaryAdapter
 final class OpenBotSignature implements ClientRequestFilter {
 
     private final String secret;

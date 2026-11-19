@@ -6,10 +6,12 @@ import io.freedriver.dispatcher.model.OnBusy;
 import io.quarkus.mongodb.panache.common.MongoEntity;
 import org.bson.codecs.pojo.annotations.BsonId;
 import org.bson.codecs.pojo.annotations.BsonProperty;
+import org.jmolecules.architecture.hexagonal.SecondaryPort;
 
 import java.time.Instant;
 
 /** One device's share of a job, in {@code agent-jobs}. Field names are the stored names. */
+@SecondaryPort
 @MongoEntity(collection = Assignment.COLLECTION)
 public class Assignment {
 

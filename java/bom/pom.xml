@@ -36,6 +36,11 @@
                 <artifactId>jakarta.validation-api</artifactId>
                 <version>${jakarta.validation.version}</version>
             </dependency>
+            <dependency>
+                <groupId>org.jmolecules</groupId>
+                <artifactId>jmolecules-hexagonal-architecture</artifactId>
+                <version>${jmolecules.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 </project>

@@ -100,6 +100,13 @@ class PhoneSignInPolicyTest {
     }
 
     @Test
+    void deniesAStoredNonUsNumber() {
+        assertFalse(PhoneSignInPolicy.validPhone("+447700900123"));
+        when(user.getFirstAttribute("phone")).thenReturn("+44 7700 900123");
+        assertFalse(PhoneSignInPolicy.allows(user, "+447700900123"));
+    }
+
+    @Test
     void deniesMissingOrMalformedPhoneAttribute() {
         when(user.getFirstAttribute("phone")).thenReturn(null);
         assertFalse(PhoneSignInPolicy.allows(user, PHONE));

@@ -1,5 +1,6 @@
 package io.freedriver.sms.phones;
 
+import io.freedriver.sms.validation.UsPhoneNumbers;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -32,7 +33,7 @@ public class SignInTimes {
 
     /** Records this sign-in. A later sign-in replaces the time. */
     public Instant record(String phone) {
-        if (phone == null || !phone.matches("\\+1[0-9]{10}")) {
+        if (phone == null || !UsPhoneNumbers.isCanonical(phone)) {
             throw new IllegalArgumentException("phone");
         }
         Instant when = clock.instant();
