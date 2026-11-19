@@ -66,15 +66,50 @@ for line in parts[1].splitlines():
 fn = "\n".join(kept)
 if "client-scopes/" not in fn or "scope-mappings/realm" not in fn:
     raise SystemExit("DCR autonomy roles must map onto the roles client scope")
-if "mcp-user" not in fn or "dashboard" not in fn:
-    raise SystemExit("DCR autonomy roles must include mcp-user and dashboard")
+if "mcp-user" not in fn:
+    raise SystemExit("DCR autonomy roles must include mcp-user")
+if "dashboard" in fn and "maps mcp-user only" not in fn:
+    raise SystemExit("DCR roles client scope must not map dashboard")
 if "grafana-admin" in fn:
     raise SystemExit("DCR autonomy roles must not map grafana-admin")
 if "fullScopeAllowed=true" in fn:
     raise SystemExit("DCR autonomy roles must leave Full Scope Disabled")
 if "ensure_dcr_autonomy_role_scope\n" not in parts[1]:
     raise SystemExit("ensure_dcr_autonomy_role_scope must run")
-print("anonymous DCR roles client scope includes mcp-user and dashboard")
+print("anonymous DCR roles client scope includes mcp-user only")
+PY
+
+python3 - <<'PY'
+from pathlib import Path
+script = Path("scripts/provision-keycloak-freedriver.sh").read_text()
+parts = script.split("ensure_grant_scopes() {", 1)
+if len(parts) != 2:
+    raise SystemExit("provision script must define ensure_grant_scopes")
+depth = 1
+kept = []
+for line in parts[1].splitlines():
+    if line.strip() == "{":
+        depth += 1
+    elif line.strip() == "}":
+        depth -= 1
+        if depth == 0:
+            break
+    kept.append(line)
+fn = "\n".join(kept)
+for name in ("appliances.read", "appliances.write", "mcp.debug"):
+    if name not in fn:
+        raise SystemExit(f"grant scopes must include {name}")
+if "phones.admin" in fn:
+    raise SystemExit("phones.admin belongs on #531")
+if "freedriver.grant" not in fn:
+    raise SystemExit("grant scopes must set freedriver.grant")
+if "default-optional-client-scopes" not in fn:
+    raise SystemExit("grant scopes must be realm default optional")
+if "allowed-client-scopes" not in fn:
+    raise SystemExit("grant scopes must update the anonymous DCR allowed-client-scopes policy")
+if "ensure_grant_scopes\n" not in parts[1]:
+    raise SystemExit("ensure_grant_scopes must run")
+print("grant scopes appliances.read, appliances.write, mcp.debug are optional")
 PY
 
 python3 - <<'PY'
@@ -138,6 +173,12 @@ if "standard.token.exchange.enabled" not in fn:
     raise SystemExit("token exchange client must enable standard.token.exchange.enabled")
 if "included.client.audience" not in fn or "freedriver-api" not in fn:
     raise SystemExit("token exchange client must map audience freedriver-api")
+if '"include.in.token.scope": "false"' not in fn:
+    raise SystemExit("audience-freedriver-api client scope must stay out of the token scope string")
+if "clients/${client_uuid}/default-client-scopes/${scope_id}" not in fn:
+    raise SystemExit("audience-freedriver-api must be a default scope of the exchange client")
+if "default-default-client-scopes" in fn:
+    raise SystemExit("audience-freedriver-api must not be a realm default")
 if "audience-autonomy-mcp-client" not in fn:
     raise SystemExit("DCR tokens must list freedriver-autonomy-mcp in aud")
 if "FREEDRIVER_AUTONOMY_MCP_CLIENT_SECRET" not in fn:
@@ -152,8 +193,14 @@ if "fullScopeAllowed=false" not in fn:
     raise SystemExit("token exchange client must set fullScopeAllowed=false")
 if "scope-mappings/realm" not in fn:
     raise SystemExit("token exchange client must map realm roles onto the client")
-if "mcp-user" not in fn or "dashboard" not in fn:
-    raise SystemExit("token exchange client must map mcp-user and dashboard")
+if "mcp-user" not in fn:
+    raise SystemExit("token exchange client must map mcp-user")
+if "maps mcp-user only" not in fn:
+    raise SystemExit("token exchange client must map mcp-user only")
+if "downscope-assertion-grant-enforcer" not in fn:
+    raise SystemExit("token exchange client must bind downscope-assertion-grant-enforcer")
+if "appliances.read" not in fn or "appliances.write" not in fn or "mcp.debug" not in fn:
+    raise SystemExit("token exchange client must add grant scopes as optional")
 if "grafana-admin" in fn:
     raise SystemExit("token exchange client must not map grafana-admin")
 if "ensure_autonomy_mcp_token_exchange\n" not in parts[1]:

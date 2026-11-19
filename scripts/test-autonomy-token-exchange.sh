@@ -166,6 +166,7 @@ provision_env=(
   AUTONOMY_MCP_ENV_FILE="$work/secrets/autonomy-mcp.env"
   PORTAL_JOBS_ENV_FILE="$work/secrets/portal-jobs.env"
   SECRETS_ENV="$work/secrets.env"
+  FREEDRIVER_GRANT_SCOPES_ENFORCED=1
 )
 if [[ "$USE_DOCKER" -eq 0 ]]; then
   provision_env+=(
@@ -349,8 +350,10 @@ if "https://app.freedriver.io/autonomy/mcp" not in aud:
 if claims.get("azp") != sys.argv[2]:
     raise SystemExit("DCR token azp is " + str(claims.get("azp")))
 roles = set(claims.get("roles") or [])
-if "dashboard" not in roles or "mcp-user" not in roles:
+if "mcp-user" not in roles:
     raise SystemExit("DCR token roles are " + ",".join(sorted(roles)))
+if "dashboard" in roles:
+    raise SystemExit("DCR token without a grant must not carry dashboard: " + ",".join(sorted(roles)))
 if "portal-admin" in roles:
     raise SystemExit("DCR token must not carry portal-admin: " + ",".join(sorted(roles)))
 print("DCR subject token aud", ",".join(aud))
