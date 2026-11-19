@@ -1,6 +1,7 @@
 package io.freedriver.app.phones;
 
 import io.freedriver.app.api.LoginLinks;
+import io.freedriver.dashboard.api.RateLimitBucket;
 import io.freedriver.dashboard.api.RateLimited;
 import io.freedriver.sms.validation.UsPhoneNumbers;
 import jakarta.annotation.security.RolesAllowed;
@@ -57,7 +58,7 @@ public class PhoneRemovalResource {
     @POST
     @Path("remove")
     @Consumes(MediaType.APPLICATION_JSON)
-    @RateLimited("phones")
+    @RateLimited(RateLimitBucket.PHONES)
     public Response remove(RemovePhone request) {
         String phone = request == null ? null : request.phone();
         if (phone == null || !UsPhoneNumbers.isCanonical(phone)) {
