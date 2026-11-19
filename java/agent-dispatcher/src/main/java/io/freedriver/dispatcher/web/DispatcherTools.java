@@ -72,7 +72,8 @@ public class DispatcherTools {
     @ToolGuardrails(input = DeclaredToolArguments.class)
     @Tool(
             name = "openbot_send_prompt",
-            description = "Freedriver dispatch: queue a prompt for a named agent on one server from list_agents, such as Project Manager. "
+            description = "Freedriver dispatch: queue a prompt for a named agent on one server. "
+                    + "Use the server and agent name list_agents returns, such as Coder. "
                     + "Returns the job id as soon as the job is stored. It does not wait for OpenBot. "
                     + "on_busy is supersede or queue. Omit it or pass null for supersede. "
                     + "The value is stored on the job and returned with queued jobs. "
