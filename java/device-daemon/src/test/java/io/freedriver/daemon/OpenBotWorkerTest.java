@@ -263,8 +263,12 @@ class OpenBotWorkerTest {
         assertTrue(blocked.await(5, TimeUnit.SECONDS));
         waitFor(() -> agents.sends.stream().anyMatch(s -> s.agentId.equals("agent-b")));
         agents.status.put("d-" + b, "running");
-        worker.watchOnce();
-        waitFor(() -> host.starts.contains(b + "=d-" + b));
+        // The fake records a send before the worker's send task ends; a pass skips a job whose task
+        // still runs, so passes repeat until one sees it, as the worker's own loop does.
+        waitFor(() -> {
+            worker.watchOnce();
+            return host.starts.contains(b + "=d-" + b);
+        });
         assertTrue(agents.sends.stream().noneMatch(s -> s.agentId.equals("agent-a")));
 
         release.countDown();
