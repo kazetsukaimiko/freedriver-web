@@ -1,5 +1,8 @@
 package io.freedriver.dispatcher;
 
+import org.jmolecules.architecture.hexagonal.PrimaryPort;
+
+@PrimaryPort
 public final class DispatcherException extends RuntimeException {
 
     public enum Kind {

@@ -1,11 +1,13 @@
 package io.freedriver.dispatcher;
 
+import io.freedriver.stereotypes.ProcessLocal;
 import io.quarkus.rest.client.reactive.QuarkusRestClientBuilder;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
+import org.jmolecules.architecture.hexagonal.SecondaryAdapter;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -20,6 +22,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * Signed POST to the OpenBot dispatch-jobs routine. The body is the event type,
  * the time, and the hostname. An unset secret skips the POST.
  */
+@SecondaryAdapter
 @ApplicationScoped
 class OpenBotJobPing implements JobPing {
 
@@ -35,6 +38,8 @@ class OpenBotJobPing implements JobPing {
     private final String secret;
     private final URI url;
     private final Clock clock;
+    @ProcessLocal("The webhook's REST client, built on first use; each replica builds and keeps its own, and a"
+            + " replica that restarts builds it again. It holds no job or caller state.")
     private final AtomicReference<OpenBotWebhook> webhook = new AtomicReference<>();
 
     @Inject

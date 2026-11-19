@@ -9,11 +9,11 @@ import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.bson.Document;
 import org.bson.conversions.Bson;
+import org.jmolecules.architecture.hexagonal.SecondaryPort;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
@@ -31,13 +31,14 @@ import static com.mongodb.client.model.Filters.or;
  * {@code agent-jobs}. A state change is one {@code findOneAndUpdate} filtered on the id, the device,
  * and the allowed current states, so two processes cannot both make it.
  */
+@SecondaryPort
 @ApplicationScoped
 public class AssignmentRepository implements PanacheMongoRepositoryBase<Assignment, String> {
 
     static final Set<AssignmentState> TERMINAL =
-            EnumSet.of(AssignmentState.SUCCEEDED, AssignmentState.FAILED, AssignmentState.EXPIRED);
+            Set.of(AssignmentState.SUCCEEDED, AssignmentState.FAILED, AssignmentState.EXPIRED);
     static final Set<AssignmentState> OPEN =
-            EnumSet.of(AssignmentState.QUEUED, AssignmentState.CLAIMED, AssignmentState.RUNNING);
+            Set.of(AssignmentState.QUEUED, AssignmentState.CLAIMED, AssignmentState.RUNNING);
 
     /**
      * Moves the assignment from one of {@code from} to {@code to}. {@code note} and

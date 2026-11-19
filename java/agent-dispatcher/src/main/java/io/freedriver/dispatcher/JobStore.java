@@ -18,6 +18,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import org.jmolecules.architecture.hexagonal.PrimaryPort;
 
 import java.time.Duration;
 import java.util.List;
@@ -27,6 +28,7 @@ import java.util.UUID;
  * Dispatch queue. The production bean reads and writes Mongo.
  * There is no in-memory job map beside that database.
  */
+@PrimaryPort
 public interface JobStore {
 
     /** 1 to 128 printable ASCII characters, no space. */

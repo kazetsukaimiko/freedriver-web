@@ -6,11 +6,13 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
+import org.jmolecules.architecture.hexagonal.SecondaryAdapter;
 
 /**
  * The OpenBot dispatch-jobs routine webhook. Client only. The body is the serialized JSON bytes;
  * {@link OpenBotSignature} signs exactly those bytes, and they are sent unchanged.
  */
+@SecondaryAdapter
 @RegisterRestClient(configKey = "openbot-webhook")
 public interface OpenBotWebhook {
 

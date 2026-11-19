@@ -4,6 +4,7 @@ import jakarta.validation.Constraint;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 import jakarta.validation.Payload;
+import org.jmolecules.architecture.hexagonal.SecondaryPort;
 
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
@@ -16,6 +17,7 @@ import java.net.URI;
  * A configured webhook address: scheme {@code https}, a host, and an authority free of user-info.
  * It sits on the type inside an {@code Optional}, so an absent value passes.
  */
+@SecondaryPort
 @Documented
 @Constraint(validatedBy = HttpsWebhookAddress.Rule.class)
 @Target(ElementType.TYPE_USE)
