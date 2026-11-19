@@ -44,7 +44,8 @@ class UsPhoneNumbersTest {
     private record Example(String raw, String stored) {
     }
 
-    private record Shapes(List<Example> dashboard, List<Example> router, List<String> nonMatches) {
+    private record Shapes(
+            List<Example> dashboard, List<Example> router, List<String> nonMatches, List<String> alternatives) {
     }
 
     @Test
@@ -57,7 +58,7 @@ class UsPhoneNumbersTest {
             assertTrue(UsPhoneNumbers.canonical(raw).isEmpty(), raw);
         }
 
-        List<Pattern> alternatives = shapeAlternatives();
+        List<Pattern> alternatives = shapeAlternatives(shapes.alternatives());
         assertOneToOne(shapes.dashboard(), alternatives);
         assertOneToOne(shapes.router(), alternatives);
 
@@ -111,12 +112,14 @@ class UsPhoneNumbersTest {
         assertEquals(alternatives.size(), matched.size());
     }
 
-    private static List<Pattern> shapeAlternatives() throws ReflectiveOperationException {
+    private static List<Pattern> shapeAlternatives(List<String> expected) throws ReflectiveOperationException {
         Field field = UsPhoneNumbers.class.getDeclaredField("SHAPE");
         field.setAccessible(true);
         Pattern shape = (Pattern) field.get(null);
+        List<String> texts = topLevel(shape.pattern());
+        assertEquals(expected, texts);
         List<Pattern> alternatives = new ArrayList<>();
-        for (String alternative : topLevel(shape.pattern())) {
+        for (String alternative : texts) {
             alternatives.add(Pattern.compile(alternative));
         }
         return alternatives;
