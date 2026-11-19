@@ -10,6 +10,7 @@ import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 
+import java.util.Optional;
 import java.util.function.Predicate;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
@@ -35,9 +36,11 @@ public final class LayeringRules {
     public static ArchRule jaxRsStaysAtTheEdge() {
         return noClasses().that(not(enclosedBy(LayeringRules::jaxRsEdge, "the JAX-RS edge")))
                 .should().dependOnClassesThat().resideInAPackage("jakarta.ws.rs..")
-                .because("JAX-RS belongs at the edge: a *Resource, *Api, *Filter, *Mapper(s), @Provider or "
-                        + "REST client interface. Throw a domain exception and map it to a status in the "
-                        + "module's ErrorMappers, or move the HTTP type into an edge class");
+                .because("JAX-RS belongs at the edge: a class whose role, its own or its package's as "
+                        + "RoleRules.role resolves it, is one @PrimaryAdapter or one @SecondaryAdapter, or, "
+                        + "for a class with no hexagonal role, a *Resource, *Api, *Filter, *Mapper(s), "
+                        + "@Provider or REST client interface. Throw a domain exception and map it to a "
+                        + "status in the module's ErrorMappers, or move the HTTP type into an edge class");
     }
 
     /** Row 2a: every XxxResource implements XxxApi. */
@@ -78,9 +81,11 @@ public final class LayeringRules {
     public static ArchRule securityIdentityStaysAtTheEdge() {
         return noClasses().that(not(enclosedBy(LayeringRules::securityEdge, "the security edge")))
                 .should().dependOnClassesThat().haveFullyQualifiedName(SECURITY_IDENTITY)
-                .because("the identity is read at the edge (a *Resource, *Filter, *Feature, MCP *Tools "
-                        + "class, identity augmentor, authentication mechanism, tenant resolver or tool "
-                        + "filter); pass the service the subject or roles it needs as plain values");
+                .because("the identity is read at the edge: one @PrimaryAdapter, on the class or its package "
+                        + "as RoleRules.role resolves it, or, for a class with no hexagonal role, a *Resource, "
+                        + "*Filter, *Feature, MCP *Tools class, identity augmentor, authentication mechanism, "
+                        + "tenant resolver or tool filter; a @SecondaryAdapter is outside that edge; pass the "
+                        + "service the subject or roles it needs as plain values");
     }
 
     /** Row 5: service unit tests do not import JAX-RS. Run against the test classes. */
@@ -128,7 +133,43 @@ public final class LayeringRules {
                         + "Quarkus extension injects");
     }
 
+    /**
+     * The JAX-RS edge: one {@code @PrimaryAdapter} or {@code @SecondaryAdapter}, or, when the class
+     * has no hexagonal role, the name, annotation and REST-client checks.
+     */
     static boolean jaxRsEdge(JavaClass c) {
+        return edge(c, true);
+    }
+
+    /**
+     * The security edge: one {@code @PrimaryAdapter}, or, when the class has no hexagonal role, the
+     * name, annotation and identity-type checks. A {@code @SecondaryAdapter} is outside it.
+     */
+    static boolean securityEdge(JavaClass c) {
+        return edge(c, false);
+    }
+
+    /**
+     * A single adapter role selects the edge. Any other single role, and a class whose role is
+     * empty because of a conflict, is not the edge. Only a class with no role at all keeps the
+     * name fallback.
+     */
+    private static boolean edge(JavaClass c, boolean jaxRs) {
+        Optional<String> found = RoleRules.role(c);
+        if (found.isPresent()) {
+            String role = found.get();
+            if (RoleRules.PRIMARY_ADAPTER.equals(role)) {
+                return true;
+            }
+            return jaxRs && RoleRules.SECONDARY_ADAPTER.equals(role);
+        }
+        if (!RoleRules.hasNoRole(c)) {
+            return false;
+        }
+        return jaxRs ? jaxRsByName(c) : securityByName(c);
+    }
+
+    private static boolean jaxRsByName(JavaClass c) {
         String n = c.getSimpleName();
         return n.endsWith("Resource") || n.endsWith("Api") || n.endsWith("Filter")
                 || n.endsWith("Mapper") || n.endsWith("Mappers")
@@ -136,7 +177,7 @@ public final class LayeringRules {
                 || c.isAnnotatedWith("jakarta.ws.rs.ext.Provider");
     }
 
-    static boolean securityEdge(JavaClass c) {
+    private static boolean securityByName(JavaClass c) {
         String n = c.getSimpleName();
         return n.endsWith("Resource") || n.endsWith("Filter") || n.endsWith("Feature") || n.endsWith("Tools")
                 || c.isAnnotatedWith("jakarta.ws.rs.ext.Provider")

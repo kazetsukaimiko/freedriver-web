@@ -31,7 +31,7 @@ Paths under `java/dashboard/src/main/java/io/freedriver/app/instances/`:
 
 | Path | Role |
 | --- | --- |
-| `InstancesApi.java` | JAX-RS interface. Path `/api/instances`. `@RolesAllowed("portal-admin")` on each method. `@Valid` and `@Size(max = ApplianceSchemas.NAME_MAX)` on `CreateInstance.label`. `@RateLimited("instances")` on create and on open. |
+| `InstancesApi.java` | JAX-RS interface. Path `/api/instances`. `@RolesAllowed("portal-admin")` on each method. `@Valid` and `@Size(max = ApplianceSchemas.NAME_MAX)` on `CreateInstance.label`. `@RateLimited(RateLimitBucket.INSTANCES)` on create and on open. The limiter key is `instances:<caller>`. |
 | `InstancesResource.java` | `@ApplicationScoped` implementation of that interface. Returns `InstanceList` and `ProvisionedInstance`. Throws the domain exceptions below. |
 | `HouseProvision.java` | Plain service. Mints the id and the password and calls the Keycloak user stage. Returns `ProvisionedInstance` or throws a domain exception. |
 | `InvalidLabelException.java` | Label failed the contract. |
@@ -109,7 +109,7 @@ This flow does not write that collection. Create does not insert a Mongo documen
 
 `InstancesResource` and `HouseProvision` are the stage. `InstancesApi` is the edge.
 
-The create handoff reaches `HouseProvision` after `@RolesAllowed`, `CsrfFilter`, and `@RateLimited("instances")`. `HouseProvision` trims `label`, mints `id` and `password`, and builds `KeycloakUser`. It calls `InstanceIdentity`. It does not call `HouseRepository.save`.
+The create handoff reaches `HouseProvision` after `@RolesAllowed`, `CsrfFilter`, and `@RateLimited(RateLimitBucket.INSTANCES)`. The limiter key is `instances:<caller>`. `HouseProvision` trims `label`, mints `id` and `password`, and builds `KeycloakUser`. It calls `InstanceIdentity`. It does not call `HouseRepository.save`.
 
 `InvalidLabelException`, `BrokerRefusedException`, and `InstanceNotFoundException` leave the resource as those types. `InstanceFailureMapper` writes `InstanceFailure`. The resource returns `ProvisionedInstance` on success. Create is HTTP 201. Open and list are HTTP 200. `instanceId` on the success body is the Keycloak username.
 

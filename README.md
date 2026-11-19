@@ -58,7 +58,7 @@ The product app lives in `java/dashboard/`: Quarkus 3.38 (Java 23) with Quinoa s
 
 Requires Java 23. Quinoa can install Node for the UI build. Open http://localhost:8080 for the dashboard (`GET /api/hello` and `GET /api/build` are public). Production is `https://app.freedriver.io` via Caddy → the Compose `dashboard` service.
 
-`mqtt-contract/`, `mqtt/`, and `mqtt-paho/` are reactor siblings (`io.freedriver:freedriver-mqtt-contract`, `freedriver-mqtt`, `freedriver-mqtt-paho`). The app builds the contract from this reactor ([docs/mqtt-contract-consume.md](docs/mqtt-contract-consume.md)).
+`mqtt-contract/` and `mqtt/` are reactor siblings (`io.freedriver:freedriver-mqtt-contract`, `freedriver-mqtt`). `freedriver-mqtt` holds the session interface and its Eclipse Paho client. The app builds the contract from this reactor ([docs/mqtt-contract-consume.md](docs/mqtt-contract-consume.md)).
 
 ## SMS OTP scaffold
 
@@ -82,7 +82,7 @@ Merging the Release pull request starts **Deploy**. Running the **Deploy** workf
 
 Pull requests run the `prod-image` check: the full dashboard image from `java/dashboard/src/main/docker/Dockerfile.compose` with `--build-arg BUILD_NUMBER=ci`, the cert-sync image, and `docker compose config` against a dummy env file.
 
-The image build compiles `mqtt-contract`, `mqtt`, and `mqtt-paho` from this repo (no GitHub Packages pin). Do not commit a PAT or pass a token as a Docker ARG/ENV.
+The image build compiles `mqtt-contract` and `mqtt` from this repo (no GitHub Packages pin). Do not commit a PAT or pass a token as a Docker ARG/ENV.
 
 ### Build number
 

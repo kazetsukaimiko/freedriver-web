@@ -6,9 +6,22 @@ export const ENTER_PHONE = 'Enter a 10-digit US phone number.'
 export const ALREADY_LISTED = 'That number is already on the list.'
 export const INVITE_FAILED = 'The number could not be added.'
 
-/** Whole-entry US shapes from the phone-or-username router (#155). */
-const SHAPE =
-  /^(?:[0-9]{10}|[0-9]{3}-[0-9]{3}-[0-9]{4}|\([0-9]{3}\) [0-9]{3}-[0-9]{4}|[0-9]{3}\.[0-9]{3}\.[0-9]{4}|[0-9]{3} [0-9]{3} [0-9]{4}|1-[0-9]{3}-[0-9]{3}-[0-9]{4}|\+1 [0-9]{3} [0-9]{3} [0-9]{4}|\+1[0-9]{10})$/
+/**
+ * The eight alternative bodies of UsPhoneNumbers.SHAPE, in that order.
+ * sms-model's us-phone-shapes.json alternatives list is the same text.
+ */
+export const PHONE_SHAPES: readonly string[] = [
+  '[0-9]{10}',
+  '[0-9]{3}-[0-9]{3}-[0-9]{4}',
+  '\\([0-9]{3}\\) [0-9]{3}-[0-9]{4}',
+  '[0-9]{3}\\.[0-9]{3}\\.[0-9]{4}',
+  '[0-9]{3} [0-9]{3} [0-9]{4}',
+  '1-[0-9]{3}-[0-9]{3}-[0-9]{4}',
+  '\\+1 [0-9]{3} [0-9]{3} [0-9]{4}',
+  '\\+1[0-9]{10}',
+]
+
+const SHAPE = new RegExp(`^(?:${PHONE_SHAPES.join('|')})$`)
 
 /** `+1` and ten digits, or null when `raw` is not one of the shapes. */
 export function canonicalPhone(raw: string): string | null {

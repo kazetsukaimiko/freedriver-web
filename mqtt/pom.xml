@@ -10,7 +10,7 @@
 
     <artifactId>freedriver-mqtt</artifactId>
     <name>Freedriver MQTT</name>
-    <description>MQTT session interface and docker-network MQTTS broker rules.</description>
+    <description>MQTT session interface, its Eclipse Paho client, and docker-network MQTTS broker rules.</description>
     <packaging>jar</packaging>
 
     <dependencies>
@@ -18,6 +18,11 @@
             <groupId>org.jboss.logging</groupId>
             <artifactId>jboss-logging</artifactId>
             <version>3.6.3.Final</version>
+        </dependency>
+        <dependency>
+            <groupId>org.eclipse.paho</groupId>
+            <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
+            <version>1.2.5</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
