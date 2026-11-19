@@ -1,6 +1,6 @@
 package io.freedriver.app.instances;
 
-import io.freedriver.mqtt.MqttLog;
+import io.freedriver.app.mqttlog.HouseMqttLog;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
@@ -47,7 +47,7 @@ public class HouseProvision {
                 return createOne(id, label);
             } catch (UsernameTakenException taken) {
                 if (attempt == 1) {
-                    MqttLog.house(id, "refused");
+                    HouseMqttLog.house(id, "refused");
                     throw new BrokerRefusedException();
                 }
             }
@@ -88,7 +88,7 @@ public class HouseProvision {
                 ApplianceSchemas.commandsTopic(id),
                 InstanceIdentity.GROUP));
         if (result == null || !username.equals(result.username())) {
-            MqttLog.house(id, "refused");
+            HouseMqttLog.house(id, "refused");
             throw new BrokerRefusedException();
         }
         created.accept(new HouseCreated(id));
