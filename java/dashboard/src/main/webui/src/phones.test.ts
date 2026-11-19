@@ -1,33 +1,26 @@
+/// <reference types="node" />
+import { readFileSync } from 'node:fs'
 import { expect, it } from 'vitest'
 import { canonicalPhone } from './phones'
 
-/** The eight shapes UsPhoneNumbersTest holds for 5555550123 and for 1234567890. */
-const SHAPES: Array<[string, string]> = [
-  ['5555550123', '+15555550123'],
-  ['555-555-0123', '+15555550123'],
-  ['(555) 555-0123', '+15555550123'],
-  ['555.555.0123', '+15555550123'],
-  ['555 555 0123', '+15555550123'],
-  ['1-555-555-0123', '+15555550123'],
-  ['+1 555 555 0123', '+15555550123'],
-  ['+15555550123', '+15555550123'],
-  ['1234567890', '+11234567890'],
-  ['123-456-7890', '+11234567890'],
-  ['(123) 456-7890', '+11234567890'],
-  ['123.456.7890', '+11234567890'],
-  ['123 456 7890', '+11234567890'],
-  ['1-123-456-7890', '+11234567890'],
-  ['+1 123 456 7890', '+11234567890'],
-  ['+11234567890', '+11234567890'],
-]
+// Vitest runs from java/dashboard/src/main/webui, locally and in CI.
+const fixturePath = `${process.cwd()}/../../../../../sms-model/src/test/resources/us-phone-shapes.json`
 
-it('maps the eight typed shapes to +1 and ten digits', () => {
-  for (const [raw, canonical] of SHAPES) {
-    expect(canonicalPhone(raw), raw).toBe(canonical)
+type Pair = { raw: string; stored: string }
+type Fixture = { dashboard: Pair[]; router: Pair[]; nonMatches: string[] }
+
+const fixture = JSON.parse(readFileSync(fixturePath, 'utf8')) as Fixture
+
+it('maps each shared example to the stored form', () => {
+  expect(fixture.dashboard, 'dashboard').toHaveLength(8)
+  expect(fixture.router, 'router').toHaveLength(8)
+  expect(fixture.nonMatches, 'nonMatches').toHaveLength(2)
+  for (const group of [fixture.dashboard, fixture.router]) {
+    for (const { raw, stored } of group) {
+      expect(canonicalPhone(raw), raw).toBe(stored)
+    }
   }
-})
-
-it('returns null for eleven digits and for a shape inside a longer string', () => {
-  expect(canonicalPhone('55555501234')).toBeNull()
-  expect(canonicalPhone('call 5555550123')).toBeNull()
+  for (const raw of fixture.nonMatches) {
+    expect(canonicalPhone(raw), raw).toBeNull()
+  }
 })
