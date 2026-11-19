@@ -8,7 +8,7 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
 /** Collects {@link MqttLog} lines while open. */
-final class LogLines extends Handler implements AutoCloseable {
+public final class LogLines extends Handler implements AutoCloseable {
 
     private final Logger logger;
     private final Level previous;
@@ -22,7 +22,7 @@ final class LogLines extends Handler implements AutoCloseable {
         logger.addHandler(this);
     }
 
-    static LogLines open() {
+    public static LogLines open() {
         return new LogLines();
     }
 
@@ -33,7 +33,7 @@ final class LogLines extends Handler implements AutoCloseable {
         }
     }
 
-    String all() {
+    public String all() {
         StringBuilder out = new StringBuilder();
         for (LogRecord record : records) {
             if (out.length() > 0) {
