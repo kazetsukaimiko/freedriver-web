@@ -21,6 +21,12 @@ The device id is the token subject. When the access token carries `device_id`, t
 {"deviceIds":["pc-luna"],"agentName":"yuni","prompt":"say hello","channel":"TEXT"}
 ```
 
+That sample is the headless Grok PC submit. The device registers `yuni`. An OpenBot job, which assumes the connector has reported Coder:
+
+```json
+{"deviceIds":["freedriver-openbot"],"agentName":"Coder","prompt":"say hello","channel":"TEXT"}
+```
+
 `channel` is `TEXT` or `SPEECH`. One assignment is queued per device. `agentName` must be one that device registered, or the call fails immediately and nothing is queued. The call stays open until every assignment is `succeeded`, `failed`, or `expired`, or 75 seconds pass. At that deadline, non-terminal assignments for the job move to `expired`, and a later claim is rejected. When the assignment is queued, and `FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_SECRET` is set, the service POSTs a signed webhook to the OpenBot `dispatch-jobs` routine. The JSON body is the event type, the time, and the hostname. It does not include the prompt or the secret. An unset secret skips that POST, and the job still queues. The wait stays 75 seconds. A second submit for the same dispatcher subject is rejected while one submit is still in flight.
 
 Assignment states: `queued` → `claimed` → `running` → `succeeded` | `failed`. `expired` is set at the submit deadline, and a device may also set it from any non-terminal state. `running` records `grokSessionId` when the device sends one. The Grok daemon sends a session id. OpenBot posts the result with the MCP tool `finish_job`. `failed` is also allowed from `claimed` when the device refuses the assignment before work starts. `succeeded` is only from `running`. A device only sees and updates its own assignments. `AssignmentView` carries `channel` and `prompt` for the owning device's assignment. A read by any other device is forbidden. The host reads queued work from `report_host`.
@@ -59,7 +65,7 @@ Dispatcher side. `HttpsHostJobs` sends only to the four `HostPaths` routes under
 
 OpenBot side. `ScriptsAgentHost` reads `url` and `token` from the automation folder, follows no symlink for either file, and reads both again after a refused connection or a 401, because OpenBot writes new ones at each start and deletes them when it quits. The `url` is accepted only with scheme `http` or `https`, no user-info, query or fragment, and a host whose every address is loopback. Its JDK client follows no redirect and sends only the Local scripts token. It calls `GET /v1/agents`, `POST /v1/agents/{id}/messages`, and `GET /v1/agents/{id}/deliveries/{deliveryId}`.
 
-Roster. At start and every 30 seconds the connector reports each configured agent that OpenBot lists under the same name without regard to case, spelled as OpenBot spells it. Two OpenBot agents with one such name are both left out. A bot is `busy` while the connector holds a job for it, else `idle`, and its activity is empty. With no configured agent listed, the connector skips that report.
+Roster. The agents that take dispatch jobs are PM, Coder, Architect, TechOps, Security, Dispatcher, and Sysadmin. `openbot-dispatcher-worker.json.example` lists those seven. At start and every 30 seconds the connector reports each configured agent that OpenBot lists under the same name without regard to case, spelled as OpenBot spells it. OpenBot is the source of each name's spelling. A change of case only in OpenBot needs nothing else, because the connector matches its configured names ignoring case. Any other rename has to be made in the installed connector's agents setting too (`%h/.config/freedriver/openbot-dispatcher-worker.json`), and `freedriver-openbot-connector.service` restarted, because the connector reads that file once at start. Until then that agent leaves the roster: a new job for it is refused at enqueue with unknown agent, and a job already queued under the old name fails with agent is not listed by OpenBot. Two OpenBot agents with one such name are both left out. A bot is `busy` while the connector holds a job for it, else `idle`, and its activity is empty. With no configured agent listed, the connector skips that report. The live `list_agents` stays whatever `report_host` wrote last until #539 turns the heartbeat and dispatch-jobs routines off.
 
 A job, step by step:
 
