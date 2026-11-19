@@ -53,6 +53,13 @@ TIMER_MEAN = (
 TIMER_UNITS = {TIMER_CALLS: "ops", TIMER_MEAN: "s"}
 TIMER_LEGEND = "{{class}} {{method}}"
 RETIRED_SERIES = "freedriver_io_blocking_ns_total"
+HANDLER_CALLS = "sum by (class) (rate(freedriver_mqtt_handler_seconds_count[5m]))"
+HANDLER_MEAN = (
+    "sum by (class) (rate(freedriver_mqtt_handler_seconds_sum[5m]))"
+    " / sum by (class) (rate(freedriver_mqtt_handler_seconds_count[5m]))"
+)
+HANDLER_UNITS = {HANDLER_CALLS: "ops", HANDLER_MEAN: "s"}
+HANDLER_LEGEND = "{{class}}"
 
 
 def field_unit(panel: dict, ref_id: str):
@@ -134,6 +141,29 @@ def check_blocking_io_timer(panels: list) -> None:
             fail(f"metrics.json timer panel overlaps panel {other.get('title')!r}")
 
 
+def check_mqtt_handler_timer(panels: list) -> None:
+    """One timeseries panel holds the MQTT handler timer by class: calls per second and mean seconds (#594)."""
+    found = [p for p in panels if any(t.get("expr") == HANDLER_CALLS for t in p.get("targets") or [])]
+    if len(found) != 1:
+        fail(f"metrics.json needs one panel with the query {HANDLER_CALLS!r}, found {len(found)}")
+    panel = found[0]
+    if panel.get("type") != "timeseries":
+        fail(f"metrics.json handler panel type is {panel.get('type')!r}, expected 'timeseries'")
+    targets = panel.get("targets") or []
+    if sorted(t.get("expr") or "" for t in targets) != sorted(HANDLER_UNITS):
+        fail("metrics.json handler panel must hold the calls query and the mean query, once each")
+    for target in targets:
+        expr = target["expr"]
+        unit = field_unit(panel, target.get("refId"))
+        if unit != HANDLER_UNITS[expr]:
+            fail(f"metrics.json handler query {expr!r} has unit {unit!r}, expected {HANDLER_UNITS[expr]!r}")
+        if target.get("legendFormat") != HANDLER_LEGEND:
+            fail(f"metrics.json handler query {expr!r} legendFormat is {target.get('legendFormat')!r}")
+    for other in panels:
+        if other is not panel and overlaps(panel["gridPos"], other["gridPos"]):
+            fail(f"metrics.json handler panel overlaps panel {other.get('title')!r}")
+
+
 def main() -> None:
     text = PROVIDER.read_text(encoding="utf-8")
     if "path: /etc/grafana/provisioning/dashboards/json" not in text:
@@ -185,6 +215,7 @@ def main() -> None:
 
     metrics = json.loads((JSON_DIR / "metrics.json").read_text(encoding="utf-8"))
     check_blocking_io_timer(metrics.get("panels") or [])
+    check_mqtt_handler_timer(metrics.get("panels") or [])
 
     logs = json.loads((JSON_DIR / "logs.json").read_text(encoding="utf-8"))
     log_exprs = [

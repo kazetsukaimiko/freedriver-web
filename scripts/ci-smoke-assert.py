@@ -371,6 +371,43 @@ def mcp_ten_calls(client: Client, url: str, headers: dict[str, str], start_id: i
     print("mcp session", url, "10 consecutive calls", kind)
 
 
+STATELESS_VERSION = "2026-07-28"
+
+
+def mcp_stateless_calls(client: Client, url: str, token: str, start_id: int) -> None:
+    """The form every OpenBot agent uses (#547): no cookie, no initialize and no session; each
+    tools/list carries MCP-Protocol-Version 2026-07-28, Mcp-Method and params._meta. Every answer
+    is 200 with the tool list and without an Mcp-Session-Id."""
+    headers = mcp_headers(token)
+    headers["MCP-Protocol-Version"] = STATELESS_VERSION
+    headers["Mcp-Method"] = "tools/list"
+    for offset in range(10):
+        rpc_id = start_id + offset
+        status, resp_headers, payload = mcp_post(
+            client,
+            url,
+            headers,
+            {
+                "jsonrpc": "2.0",
+                "id": rpc_id,
+                "method": "tools/list",
+                "params": {
+                    "_meta": {
+                        "io.modelcontextprotocol/protocolVersion": STATELESS_VERSION,
+                        "io.modelcontextprotocol/clientCapabilities": {},
+                    }
+                },
+            },
+        )
+        if status != 200:
+            raise SystemExit(f"{url} stateless tools/list #{rpc_id} HTTP {status} body={payload}")
+        if resp_headers.get("mcp-session-id"):
+            raise SystemExit(f"{url} stateless tools/list #{rpc_id} answered with an Mcp-Session-Id")
+        if payload.get("error") or not (payload.get("result") or {}).get("tools"):
+            raise SystemExit(f"{url} stateless tools/list #{rpc_id} without a tool list {payload}")
+    print("mcp stateless", url, "10 consecutive calls, no session")
+
+
 def parse_forms(html: str) -> list[dict]:
     parser = FormParser()
     parser.feed(html)
@@ -492,6 +529,30 @@ def assert_headers_anonymous(client: Client) -> None:
     raise SystemExit(f"outside headers HTTP {last[0]} url={last[1]} body={last[2]!r}")
 
 
+def assert_management_hidden(client: Client) -> None:
+    """The public app host answers 404 for the management paths (#593)."""
+    for path in ("/q", "/q/metrics", "/q/health"):
+        status, _, body, _ = client.request(f"{APP}{path}", follow=False)
+        if status != 404:
+            raise SystemExit(f"{path} through Caddy HTTP {status}, want 404 body={body[:200]!r}")
+        print("management hidden", path, status)
+
+
+def assert_metrics_inside() -> None:
+    """Prometheus's path still works: dashboard:8080/q/metrics on the compose network has meters (#593)."""
+    container = f"{PROJECT}-caddy-1"
+    text = subprocess.check_output(
+        ["docker", "exec", container, "wget", "-qO-", "http://dashboard:8080/q/metrics"],
+        text=True,
+        stderr=subprocess.STDOUT,
+        timeout=30,
+    )
+    types = [line for line in text.splitlines() if line.startswith("# TYPE ")]
+    if "jvm_memory_used_bytes" not in text or len(types) < 10:
+        raise SystemExit(f"dashboard:8080/q/metrics has {len(types)} meters, no jvm_memory_used_bytes")
+    print("metrics inside", len(types), "meters")
+
+
 def assert_phone_sign_in(client: Client) -> None:
     status, headers, body, url = client.request(f"{APP}/login")
     html = body.decode("utf-8", "replace")
@@ -597,6 +658,9 @@ def assert_mcp_tools(client: Client) -> None:
         mcp_session(bare, dispatcher_path, dispatcher_token),
         start_id=40,
     )
+    stateless = Client(cookies=False)
+    mcp_stateless_calls(stateless, autonomy, autonomy_token, start_id=60)
+    mcp_stateless_calls(stateless, f"{APP}/dispatch/mcp", dispatcher_token, start_id=80)
     print("mcp tools ok")
 
 
@@ -791,9 +855,11 @@ def main() -> int:
     assert_build(client)
     assert_mcp_challenges(client)
     assert_headers_anonymous(client)
+    assert_management_hidden(client)
     assert_replica_counts()
     for name in ("dashboard", "agent-dispatcher", "autonomy-mcp"):
         wait_caddy_dns(name)
+    assert_metrics_inside()
     assert_phone_sign_in(client)
     assert_login_across_replicas(client)
     assert_mcp_tools(client)
