@@ -150,6 +150,15 @@ public final class RoleRules {
         return own.isEmpty() && inPackage.size() == 1 ? Optional.of(inPackage.get(0)) : Optional.empty();
     }
 
+    /**
+     * True when the top-level class and its package carry no hexagonal role. {@link #role} is also
+     * empty when the class or its package carries more than one, and that conflict is not this case.
+     */
+    static boolean hasNoRole(JavaClass c) {
+        JavaClass top = topLevel(c);
+        return roles(top).isEmpty() && roles(top.getPackage()).isEmpty();
+    }
+
     private static ArchCondition<JavaClass> haveOneRole() {
         return new ArchCondition<>("have exactly one architecture role, their own or their package's") {
             @Override
