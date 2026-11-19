@@ -1,5 +1,7 @@
 package io.freedriver.dispatcher;
 
+import io.freedriver.dispatcher.jobs.JobStore;
+
 import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
