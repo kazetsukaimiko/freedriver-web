@@ -124,6 +124,17 @@ class HttpsDeviceClientTest {
         assertThrows(IllegalArgumentException.class, () -> HttpsDeviceClient.requireFixed(URI.create("https://user:pass@app.freedriver.io/api/device/register")));
         assertThrows(IllegalArgumentException.class, () -> HttpsDeviceClient.requireFixed(URI.create("https://app.freedriver.io/api/device/register?access_token=x")));
 
+        for (String refused : List.of(
+                "https://app.freedriver.io/api/dispatcher/host/report",
+                "https://app.freedriver.io/api/device/../dispatcher/host/report",
+                "https://app.freedriver.io/api/device/./register",
+                "https://app.freedriver.io/api/device/%2e%2e/dispatcher/jobs",
+                "https://app.freedriver.io/api/device%2Fregister",
+                "https://app.freedriver.io/api/device/%252e%252e/register")) {
+            assertThrows(IllegalArgumentException.class, () -> HttpsDeviceClient.requireFixed(URI.create(refused)), refused);
+        }
+
+        // The Grok client's own source holds the allow-list and no dispatcher path.
         String source = Files.readString(Path.of("src/main/java/io/freedriver/daemon/HttpsDeviceClient.java"));
         assertTrue(source.contains("followRedirects(REDIRECTS)"));
         assertTrue(source.contains("Redirect.NEVER"));
@@ -131,7 +142,14 @@ class HttpsDeviceClientTest {
         assertFalse(source.contains("/api/dispatcher/"));
         assertFalse(source.contains("TrustAll"));
         assertFalse(source.contains("InsecureTrustManager"));
-        assertTrue(source.contains("https://app.freedriver.io"));
+        // The transport it shares holds the fixed origin and no API path of either client.
+        String transport = Files.readString(Path.of("src/main/java/io/freedriver/daemon/DeviceTransport.java"));
+        assertTrue(transport.contains("https://app.freedriver.io"));
+        assertTrue(transport.contains("followRedirects(REDIRECTS)"));
+        assertFalse(transport.contains("/api/dispatcher"));
+        assertFalse(transport.contains("/api/device"));
+        assertFalse(transport.contains("TrustAll"));
+        assertFalse(transport.contains("InsecureTrustManager"));
     }
 
     @Test

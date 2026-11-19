@@ -1,0 +1,19 @@
+# User unit for the OpenBot host: the dispatch connector (device-daemon in
+# OpenBot mode). Copy the freedriver-openbot client secret to the config's
+# secretFile (mode 0600), and run this unit as the OS user that runs OpenBot,
+# so it can read OpenBot's automation folder. The secret stays in that file.
+[Unit]
+Description=Freedriver dispatch connector for OpenBot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/java -jar %h/.local/share/freedriver/device-daemon.jar --config %h/.config/freedriver/openbot-dispatcher-worker.json
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
