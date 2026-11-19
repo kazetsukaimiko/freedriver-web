@@ -598,7 +598,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     timeout-minutes: 45
-    if: github.repository == 'kazetsukaimiko/freedriver-web'
+    if: github.repository == 'kazetsukaimiko/freedriver-web' && github.event_name == 'push'
     permissions:
       contents: read
       packages: read
