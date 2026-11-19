@@ -1,5 +1,6 @@
 package io.freedriver.app.security;
 
+import io.freedriver.dashboard.api.RateLimitBucket;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
@@ -13,17 +14,18 @@ import java.security.Principal;
  */
 public class RateLimitedFilter implements ContainerRequestFilter {
 
-    private final String bucket;
+    private final RateLimitBucket bucket;
     private final CallerRateLimiter limiter;
     private final SecurityIdentity identity;
 
-    public RateLimitedFilter(@NonNull String bucket, @NonNull CallerRateLimiter limiter, @NonNull SecurityIdentity identity) {
+    public RateLimitedFilter(@NonNull RateLimitBucket bucket, @NonNull CallerRateLimiter limiter,
+            @NonNull SecurityIdentity identity) {
         this.bucket = bucket;
         this.limiter = limiter;
         this.identity = identity;
     }
 
-    String bucket() {
+    RateLimitBucket bucket() {
         return bucket;
     }
 
