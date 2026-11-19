@@ -30,6 +30,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SignInRenewTemplateTest {
 
     private static final Path THEME = themeDir();
+    /** Relative to this module, the same path the build-cache input lists. */
+    private static final String PROVISION_SCRIPT = "../../scripts/provision-keycloak-freedriver.sh";
 
     /** The client bean Keycloak puts in the template; only its home address matters here. */
     public static final class Client {
@@ -83,7 +85,7 @@ class SignInRenewTemplateTest {
 
     @Test
     void theProvisionScriptGivesFreedriverApiAloneAHomeAddress() throws IOException {
-        String script = Files.readString(repo().resolve("scripts/provision-keycloak-freedriver.sh"));
+        String script = Files.readString(provisionScript());
         Matcher home = Pattern.compile("(?m)^HOME_URL='([^']+)'$").matcher(script);
         assertTrue(home.find(), "HOME_URL in the provision script");
         assertEquals("https://app.freedriver.io/", home.group(1));
@@ -119,16 +121,27 @@ class SignInRenewTemplateTest {
         return out.toString();
     }
 
-    private static Path repo() {
-        for (Path p = Path.of("").toAbsolutePath(); p != null; p = p.getParent()) {
-            if (Files.isDirectory(p.resolve("keycloak/themes/freedriver/login")) && Files.isDirectory(p.resolve("scripts"))) {
-                return p;
-            }
+    private static Path provisionScript() {
+        Path fromModule = Path.of(PROVISION_SCRIPT);
+        if (Files.isRegularFile(fromModule)) {
+            return fromModule;
         }
-        throw new AssertionError("repository root not found");
+        Path fromRepo = Path.of("scripts/provision-keycloak-freedriver.sh");
+        if (Files.isRegularFile(fromRepo)) {
+            return fromRepo;
+        }
+        throw new AssertionError("provision script not found");
     }
 
     private static Path themeDir() {
-        return repo().resolve("keycloak/themes/freedriver/login");
+        Path fromModule = Path.of("../themes/freedriver/login");
+        if (Files.isDirectory(fromModule)) {
+            return fromModule;
+        }
+        Path fromRepo = Path.of("keycloak/themes/freedriver/login");
+        if (Files.isDirectory(fromRepo)) {
+            return fromRepo;
+        }
+        throw new AssertionError("login theme not found");
     }
 }
