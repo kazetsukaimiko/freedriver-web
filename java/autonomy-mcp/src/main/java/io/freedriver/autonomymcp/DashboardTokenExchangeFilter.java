@@ -33,14 +33,14 @@ import org.jboss.resteasy.reactive.client.spi.ResteasyReactiveClientRequestFilte
  * the statuses {@link DashboardCalls} already turns into a dashboard answer.
  */
 @ApplicationScoped
-public class DashboardTokenExchange implements ResteasyReactiveClientRequestFilter {
+public class DashboardTokenExchangeFilter implements ResteasyReactiveClientRequestFilter {
 
     private final Instance<TokenCredential> accessToken;
     private final SecurityIdentity identity;
     private final OidcClient exchange;
 
     @Inject
-    public DashboardTokenExchange(
+    public DashboardTokenExchangeFilter(
             Instance<TokenCredential> accessToken,
             SecurityIdentity identity,
             @NamedOidcClient("dashboard-exchange") OidcClient exchange) {

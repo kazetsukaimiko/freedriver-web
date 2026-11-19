@@ -72,11 +72,11 @@ class DashboardExchangeGrantTest {
 
     @Test
     void a_disabled_exchange_client_aborts_with_500_and_a_refusal_with_401() {
-        assertEquals(500, DashboardTokenExchange.abortStatus(new DisabledOidcClientException()));
-        assertEquals(500, DashboardTokenExchange.abortStatus(
+        assertEquals(500, DashboardTokenExchangeFilter.abortStatus(new DisabledOidcClientException()));
+        assertEquals(500, DashboardTokenExchangeFilter.abortStatus(
                 new IllegalStateException(new DisabledOidcClientException())));
-        assertEquals(401, DashboardTokenExchange.abortStatus(new IllegalStateException("invalid_request")));
-        assertEquals(401, DashboardTokenExchange.abortStatus(null));
+        assertEquals(401, DashboardTokenExchangeFilter.abortStatus(new IllegalStateException("invalid_request")));
+        assertEquals(401, DashboardTokenExchangeFilter.abortStatus(null));
     }
 
     private static final class ScopeToken implements JsonWebToken {
