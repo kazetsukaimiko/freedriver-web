@@ -1,9 +1,11 @@
 name: Grok review
 
-# Same-repository pull request review (#64). pull_request_target runs main's
-# grok_review.py and prompts in the grok-review environment. The head is fetched
-# into pr/ with core.symlinks false, so each symlink is a plain file, and both
-# jobs execute that main script.
+# pull_request_target review (#64, #625). Each job runs only in this repository.
+# A same-repository head selects the grok-review environment, checks out main's
+# grok_review.py, and fetches the head into pr/ with core.symlinks false, so
+# each symlink is a plain file. A fork or a missing head prints the
+# same-repository line and exits 1 before checkout, fetch, or the review step,
+# and the environment expression selects null.
 on:
   pull_request_target:
     branches: [main]
@@ -21,19 +23,27 @@ jobs:
   review:
     name: Principled Engineering Review
     runs-on: ubuntu-latest
-    if: github.repository == 'kazetsukaimiko/freedriver-web' && github.event.pull_request.head.repo.full_name == github.repository
-    environment: grok-review
+    if: github.repository == 'kazetsukaimiko/freedriver-web'
+    environment: ${{ github.event.pull_request.head.repo.full_name == github.repository && 'grok-review' || null }}
     permissions:
       contents: read
       pull-requests: write
     steps:
+      - name: Refuse a fork or missing head
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "reviews run for same-repository pull requests only"
+          exit 1
+
       - name: Checkout main's reviewer script and prompt
+        if: github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/checkout@v5
         with:
           path: reviewer
           persist-credentials: false
 
       - name: Fetch PR head and base as data
+        if: github.event.pull_request.head.repo.full_name == github.repository
         env:
           REPO: ${{ github.repository }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -46,6 +56,7 @@ jobs:
           git -C pr -c advice.detachedHead=false checkout -q "$HEAD_SHA"
 
       - name: Review with full files and neighbors
+        if: github.event.pull_request.head.repo.full_name == github.repository
         working-directory: pr
         env:
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
@@ -64,19 +75,27 @@ jobs:
   security-review:
     name: Security Review
     runs-on: ubuntu-latest
-    if: github.repository == 'kazetsukaimiko/freedriver-web' && github.event.pull_request.head.repo.full_name == github.repository
-    environment: grok-review
+    if: github.repository == 'kazetsukaimiko/freedriver-web'
+    environment: ${{ github.event.pull_request.head.repo.full_name == github.repository && 'grok-review' || null }}
     permissions:
       contents: read
       pull-requests: write
     steps:
+      - name: Refuse a fork or missing head
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "reviews run for same-repository pull requests only"
+          exit 1
+
       - name: Checkout main's reviewer script and prompt
+        if: github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/checkout@v5
         with:
           path: reviewer
           persist-credentials: false
 
       - name: Fetch PR head and base as data
+        if: github.event.pull_request.head.repo.full_name == github.repository
         env:
           REPO: ${{ github.repository }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -89,6 +108,7 @@ jobs:
           git -C pr -c advice.detachedHead=false checkout -q "$HEAD_SHA"
 
       - name: Review with full files and neighbors
+        if: github.event.pull_request.head.repo.full_name == github.repository
         working-directory: pr
         env:
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
