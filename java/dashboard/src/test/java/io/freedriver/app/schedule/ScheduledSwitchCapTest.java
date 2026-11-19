@@ -1,6 +1,7 @@
 package io.freedriver.app.schedule;
 
 import io.freedriver.app.security.CsrfFilter;
+import io.quarkus.redis.datasource.RedisDataSource;
 import io.quarkus.security.runtime.QuarkusPrincipal;
 import io.quarkus.security.runtime.QuarkusSecurityIdentity;
 import io.quarkus.test.junit.QuarkusTest;
@@ -42,6 +43,9 @@ class ScheduledSwitchCapTest {
     ScheduledSwitchRepository rows;
 
     @Inject
+    RedisDataSource redis;
+
+    @Inject
     ScheduledSwitchesConfig config;
 
     @Inject
@@ -50,6 +54,7 @@ class ScheduledSwitchCapTest {
     @BeforeEach
     void empty() {
         rows.deleteAll();
+        redis.flushall();
     }
 
     @Test
@@ -197,7 +202,7 @@ class ScheduledSwitchCapTest {
         int cap = config.maxPending();
         Instant later = Instant.now().plusSeconds(90);
         for (int i = 0; i < cap - 1; i++) {
-            assertEquals(202, post(HOUSE_1, "seed-" + i, later).statusCode());
+            rows.persist(stored(SUBJECT_A, i % 2 == 0 ? HOUSE_1 : HOUSE_2, "seed-" + i, later));
         }
         assertEquals(cap - 1, rows.countBySubject(SUBJECT_A));
 
