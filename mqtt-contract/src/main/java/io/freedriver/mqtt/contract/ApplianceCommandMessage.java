@@ -9,7 +9,11 @@ import lombok.NonNull;
  * Command body carried on {@link ApplianceSchemas#commandsTopic(java.util.UUID)}.
  * {@code commandId} identifies the command, {@code applianceName} names the appliance,
  * and {@code state} is the requested on/off value.
+ *
+ * @deprecated Use {@link ApplianceCommandList} on the command-lists topic
+ * ({@link ApplianceSchemas#commandListsTopic(java.util.UUID)}).
  */
+@Deprecated
 public record ApplianceCommandMessage(
         @JsonProperty(required = true) @NonNull @NotBlank String commandId,
         @JsonProperty(required = true) @NonNull @NotBlank @Size(max = ApplianceSchemas.NAME_MAX) String applianceName,
