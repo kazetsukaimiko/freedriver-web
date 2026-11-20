@@ -36,9 +36,11 @@ public final class LayeringRules {
     public static ArchRule jaxRsStaysAtTheEdge() {
         return noClasses().that(not(enclosedBy(LayeringRules::jaxRsEdge, "the JAX-RS edge")))
                 .should().dependOnClassesThat().resideInAPackage("jakarta.ws.rs..")
-                .because("JAX-RS belongs at the edge: a *Resource, *Api, *Filter, *Mapper(s), @Provider or "
-                        + "REST client interface. Throw a domain exception and map it to a status in the "
-                        + "module's ErrorMappers, or move the HTTP type into an edge class");
+                .because("JAX-RS belongs at the edge: a class whose role, its own or its package's as "
+                        + "RoleRules.role resolves it, is one @PrimaryAdapter or one @SecondaryAdapter, or, "
+                        + "for a class with no hexagonal role, a *Resource, *Api, *Filter, *Mapper(s), "
+                        + "@Provider or REST client interface. Throw a domain exception and map it to a "
+                        + "status in the module's ErrorMappers, or move the HTTP type into an edge class");
     }
 
     /** Row 2a: every XxxResource implements XxxApi. */
@@ -79,9 +81,11 @@ public final class LayeringRules {
     public static ArchRule securityIdentityStaysAtTheEdge() {
         return noClasses().that(not(enclosedBy(LayeringRules::securityEdge, "the security edge")))
                 .should().dependOnClassesThat().haveFullyQualifiedName(SECURITY_IDENTITY)
-                .because("the identity is read at the edge (a *Resource, *Filter, *Feature, MCP *Tools "
-                        + "class, identity augmentor, authentication mechanism, tenant resolver or tool "
-                        + "filter); pass the service the subject or roles it needs as plain values");
+                .because("the identity is read at the edge: one @PrimaryAdapter, on the class or its package "
+                        + "as RoleRules.role resolves it, or, for a class with no hexagonal role, a *Resource, "
+                        + "*Filter, *Feature, MCP *Tools class, identity augmentor, authentication mechanism, "
+                        + "tenant resolver or tool filter; a @SecondaryAdapter is outside that edge; pass the "
+                        + "service the subject or roles it needs as plain values");
     }
 
     /** Row 5: service unit tests do not import JAX-RS. Run against the test classes. */
