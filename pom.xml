@@ -36,7 +36,9 @@
         <surefire-plugin.version>3.5.6</surefire-plugin.version>
         <jandex-plugin.version>3.6.0</jandex-plugin.version>
         <enforcer-plugin.version>3.5.0</enforcer-plugin.version>
-        <!-- Versions Keycloak 26.7.5 puts on its runtime (Jackson, JAX-RS) or build (validation) classpath. -->
+        <!-- Versions Keycloak 26.7.5 puts on its runtime (Jackson, JAX-RS) or build (validation) classpath.
+             keycloak.version pins the sms-client test unpack of that distribution only. -->
+        <keycloak.version>26.7.5</keycloak.version>
         <keycloak.jackson.version>2.21.7</keycloak.jackson.version>
         <keycloak.jackson.annotations.version>2.21</keycloak.jackson.annotations.version>
         <keycloak.jakarta.ws.rs.version>3.1.0</keycloak.jakarta.ws.rs.version>
