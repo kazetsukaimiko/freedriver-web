@@ -11,6 +11,7 @@ import io.freedriver.dispatcher.model.StartRequest;
 import io.freedriver.dispatcher.model.TakeRequest;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -398,6 +399,68 @@ class OpenBotWorkerTest {
         worker.takeOnce(50);
         assertEquals(64, host.holdings.get(2).size());
         assertTrue(host.holdings.stream().allMatch(holding -> holding.size() <= 64));
+    }
+
+    @Test
+    void the_example_roster_reports_the_seven_and_sends_only_their_jobs() throws Exception {
+        DaemonConfig config = DaemonConfig.parse(Files.readString(Path.of("openbot-dispatcher-worker.json.example")));
+        List<String> configured = config.settings().agents();
+        assertEquals(List.of("PM", "Coder", "Architect", "TechOps", "Security", "Dispatcher", "Sysadmin"), configured);
+
+        record Named(String id, String openBotName) {
+        }
+        List<Named> seven = List.of(
+                new Named("id-pm", "PM"),
+                new Named("id-coder", "coder"),
+                new Named("id-architect", "Architect"),
+                new Named("id-techops", "TechOps"),
+                new Named("id-security", "security"),
+                new Named("id-dispatcher", "Dispatcher"),
+                new Named("id-sysadmin", "Sysadmin"));
+        List<String> outsiders = List.of("Project Manager", "Product Manager", "Yuni", "Relay", "Bench");
+        List<AgentHost.Agent> listed = new ArrayList<>();
+        for (Named agent : seven) {
+            listed.add(new AgentHost.Agent(agent.id, agent.openBotName));
+        }
+        int outsider = 0;
+        for (String name : outsiders) {
+            listed.add(new AgentHost.Agent("id-outsider-" + outsider, name));
+            outsider++;
+        }
+        agents.listed = listed;
+        OpenBotWorker worker = new OpenBotWorker(host, agents, config.settings(),
+                () -> List.of(CLIENT_SECRET), inline(), log::add);
+
+        HostReport report = worker.reportOnce();
+        List<String> spelled = new ArrayList<>();
+        for (Named agent : seven) {
+            spelled.add(agent.openBotName);
+        }
+        assertEquals(spelled, report.bots().stream().map(ReportedBot::name).toList());
+        assertEquals(spelled.size(), report.bots().stream().map(ReportedBot::name).distinct().count());
+        assertTrue(report.bots().stream().allMatch(bot -> "idle".equals(bot.state()) && "".equals(bot.activity())));
+
+        List<AssignmentView> jobs = new ArrayList<>();
+        for (String name : configured) {
+            jobs.add(claimed(UUID.randomUUID(), name, "go"));
+        }
+        host.takes.add(jobs);
+        worker.takeOnce(50);
+
+        assertEquals(seven.size(), agents.sends.size());
+        for (int i = 0; i < seven.size(); i++) {
+            assertEquals(seven.get(i).id, agents.sends.get(i).agentId, configured.get(i));
+            assertEquals(jobs.get(i).assignmentId().toString(), agents.sends.get(i).key, configured.get(i));
+        }
+
+        for (String name : outsiders) {
+            int sends = agents.sends.size();
+            host.takes.add(List.of(claimed(UUID.randomUUID(), name, "go")));
+            worker.takeOnce(50);
+            assertEquals(sends, agents.sends.size(), name);
+            assertEquals(new FinishRequest(false, "agent is not on this host"),
+                    host.finishes.get(host.finishes.size() - 1).request, name);
+        }
     }
 
     @Test
