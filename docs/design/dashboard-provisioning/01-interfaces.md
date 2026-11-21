@@ -96,11 +96,9 @@ From house provision to the Keycloak user stage.
 | username | Equal to `instanceId`. |
 | label | Optional. The user attribute `label`. One value. Absent when blank. |
 | password | The minted password. Keycloak stores it as the user's credential. |
-| publishTopic | `ApplianceSchemas.appliancesTopic(instanceId)`. |
-| subscribeTopic | `ApplianceSchemas.commandsTopic(instanceId)`. |
 | group | `mqtt-instance`. |
 
-`publishTopic` is the user's `mqtt_publ_topic`. `subscribeTopic` is the user's `mqtt_subs_topic`. Each attribute has one value. The aggregate mapper writes the claim as a list, so one topic is a one-element list.
+The Keycloak user stage derives the topic attributes from the house uuid. `mqtt_publ_topic` is `ApplianceSchemas.appliancesTopic(instanceId)` and `ApplianceSchemas.scheduledTopic(instanceId)`. `mqtt_subs_topic` is `ApplianceSchemas.commandsTopic(instanceId)` and `ApplianceSchemas.commandListsTopic(instanceId)`. Each attribute has those two values. Read-back accepts either order. A list of another length, a repeated value, or a topic for another house deletes the new user. The aggregate mapper writes each claim as a list.
 
 ### KeycloakUserResult
 

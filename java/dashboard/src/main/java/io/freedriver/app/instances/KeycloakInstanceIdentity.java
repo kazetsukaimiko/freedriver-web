@@ -162,6 +162,7 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
     }
 
     private static UserRepresentation representation(KeycloakUser user) {
+        UUID id = requireHouse(user);
         CredentialRepresentation password = new CredentialRepresentation();
         password.setType(CredentialRepresentation.PASSWORD);
         password.setValue(user.password());
@@ -170,8 +171,9 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
         if (user.label() != null) {
             attributes.put(LABEL_ATTRIBUTE, List.of(user.label()));
         }
-        attributes.put(PUBLISH_ATTRIBUTE, List.of(user.publishTopic()));
-        attributes.put(SUBSCRIBE_ATTRIBUTE, List.of(user.subscribeTopic()));
+        Map<String, List<String>> topics = houseTopics(id);
+        attributes.put(PUBLISH_ATTRIBUTE, topics.get(PUBLISH_ATTRIBUTE));
+        attributes.put(SUBSCRIBE_ATTRIBUTE, topics.get(SUBSCRIBE_ATTRIBUTE));
         UserRepresentation representation = new UserRepresentation();
         representation.setUsername(user.username());
         representation.setEnabled(true);
@@ -184,7 +186,10 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
         if (!user.username().equals(stored.getUsername())) {
             return false;
         }
-        if (!one(stored, PUBLISH_ATTRIBUTE, user.publishTopic()) || !one(stored, SUBSCRIBE_ATTRIBUTE, user.subscribeTopic())) {
+        UUID id = canonical(user.instanceId());
+        Map<String, List<String>> topics = houseTopics(id);
+        if (!pair(stored, PUBLISH_ATTRIBUTE, topics.get(PUBLISH_ATTRIBUTE))
+                || !pair(stored, SUBSCRIBE_ATTRIBUTE, topics.get(SUBSCRIBE_ATTRIBUTE))) {
             return false;
         }
         if (user.label() == null) {
@@ -242,13 +247,34 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
         if (id == null || !id.toString().equals(user.username()) || !GROUP.equals(user.group())) {
             throw new IllegalArgumentException("house user is not the mqtt-instance username");
         }
-        if (!ApplianceSchemas.appliancesTopic(id).equals(user.publishTopic())
-                || !ApplianceSchemas.commandsTopic(id).equals(user.subscribeTopic())) {
-            throw new IllegalArgumentException("house topics are not that house");
-        }
-        MqttBrokers.assertExactTopic(user.publishTopic());
-        MqttBrokers.assertExactTopic(user.subscribeTopic());
         return id;
+    }
+
+    /** Publish and subscribe topics for one house. The commands topic stays until that grant is removed. */
+    @SuppressWarnings("deprecation")
+    private static Map<String, List<String>> houseTopics(UUID id) {
+        List<String> publish = List.of(
+                ApplianceSchemas.appliancesTopic(id),
+                ApplianceSchemas.scheduledTopic(id));
+        List<String> subscribe = List.of(
+                ApplianceSchemas.commandsTopic(id),
+                ApplianceSchemas.commandListsTopic(id));
+        for (String topic : publish) {
+            MqttBrokers.assertExactTopic(topic);
+        }
+        for (String topic : subscribe) {
+            MqttBrokers.assertExactTopic(topic);
+        }
+        return Map.of(PUBLISH_ATTRIBUTE, publish, SUBSCRIBE_ATTRIBUTE, subscribe);
+    }
+
+    /** Each stored list has length 2 and the same values as the derived pair. Order is ignored. */
+    private static boolean pair(UserRepresentation user, String name, List<String> expected) {
+        List<String> values = user.getAttributes() == null ? null : user.getAttributes().get(name);
+        if (values == null || values.size() != expected.size() || values.contains(null)) {
+            return false;
+        }
+        return new HashSet<>(values).equals(new HashSet<>(expected));
     }
 
     private static UUID canonical(String raw) {

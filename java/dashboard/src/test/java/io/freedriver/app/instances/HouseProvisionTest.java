@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class HouseProvisionTest {
 
     @Test
-    void create_mints_a_password_and_only_that_houses_topics() {
+    void create_mints_a_password_for_that_house() {
         FakeIdentity identity = new FakeIdentity();
         HouseProvision houses = new HouseProvision(identity, new SecureRandom());
         ProvisionedInstance first = houses.create("  porch ");
@@ -32,12 +32,12 @@ class HouseProvisionTest {
         assertFalse(first.toString().contains(first.password()));
         assertEquals("porch", first.label());
         assertNull(second.label());
-        assertEquals("freedriver/v1/" + first.instanceId() + "/appliances", identity.created.get(0).publishTopic());
-        assertEquals("freedriver/v1/" + first.instanceId() + "/commands", identity.created.get(0).subscribeTopic());
+        assertEquals(first.instanceId(), identity.created.get(0).username());
+        assertEquals(first.instanceId(), identity.created.get(0).instanceId());
         assertEquals(InstanceIdentity.GROUP, identity.created.get(0).group());
-        assertFalse(identity.created.get(1).publishTopic().contains(first.instanceId()));
-        assertFalse(identity.created.get(1).subscribeTopic().contains(first.instanceId()));
-        assertNotEquals(identity.created.get(0).publishTopic(), identity.created.get(1).publishTopic());
+        assertEquals("porch", identity.created.get(0).label());
+        assertNull(identity.created.get(1).label());
+        assertNotEquals(identity.created.get(0).username(), identity.created.get(1).username());
     }
 
     @Test
