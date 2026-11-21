@@ -60,7 +60,15 @@ public class DispatcherTools {
     @ToolGuardrails(input = DeclaredToolArguments.class)
     @Tool(
             name = "list_agents",
-            description = "Freedriver dispatch: list agents that can take a job, with name, server, idle or busy state, and activity.")
+            description = "Freedriver dispatch: list agents with name, server, state, activity, reportedAt and seenAt. "
+                    + "reportedAt is the host's last report and seenAt the later of its last report and its last take, "
+                    + "both ISO-8601 UTC times. IDLE or BUSY is the state as of reportedAt. "
+                    + "UNKNOWN means the host is taking jobs and its state has not been reported since reportedAt, "
+                    + "so a job reaches the agent. "
+                    + "OFFLINE means neither a report nor a take since seenAt, so a job is stored and expires after "
+                    + "the dispatcher's take-within time, 10 minutes by default, unless the host returns; "
+                    + "say so before sending one. "
+                    + "activity is the host's own note and does not change UNKNOWN or OFFLINE.")
     @RolesAllowed(Actors.DISPATCHER)
     String listAgents() {
         return guard(jobs::listAgents);

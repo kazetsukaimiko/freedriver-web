@@ -25,6 +25,8 @@
         <freemarker.version>2.3.35</freemarker.version>
         <!-- Image build sets this from the deploy commit. Not a secret. -->
         <source.commit>unknown</source.commit>
+        <!-- keycloak/sms-otp-spi is outside the reactor scan of .github/scripts/cache_inputs_check.py. -->
+        <maven.build.cache.input.outside1>../../sms-model/src/test/resources/us-phone-shapes.json</maven.build.cache.input.outside1>
     </properties>
 
     <dependencies>
