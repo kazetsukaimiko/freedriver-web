@@ -37,7 +37,8 @@ import java.util.function.BooleanSupplier;
  * {@link SubmitLocks}. Every state change is one conditional write, so replicas need no lock.
  * A wait re-reads Mongo on an interval that starts at 250 ms and rises to 1 s.
  * A host holds a job it took for {@code hostLease}; a queued job no host takes within
- * {@code takeWithin} expires.
+ * {@code takeWithin} expires. A host silent for {@code hostSilentAfter} shows its agents as
+ * {@code UNKNOWN} or {@code OFFLINE} in {@link #listAgents}.
  */
 @Application
 @ApplicationScoped
@@ -46,6 +47,7 @@ public class JobStoreService implements JobStore {
     static final Duration LOCK_TTL = Duration.ofMinutes(3);
     static final Duration DEFAULT_HOST_LEASE = Duration.ofSeconds(90);
     static final Duration DEFAULT_TAKE_WITHIN = Duration.ofMinutes(10);
+    static final Duration DEFAULT_HOST_SILENT_AFTER = Duration.ofMinutes(10);
     static final String NOBODY_TOOK_IT = "no host took it";
     private static final Logger LOG = Logger.getLogger(JobStoreService.class);
     private static final long FIRST_WAIT_MILLIS = 250;
@@ -58,20 +60,23 @@ public class JobStoreService implements JobStore {
     private final JobPing jobPing;
     private final Duration hostLease;
     private final Duration takeWithin;
+    private final Duration hostSilentAfter;
 
     @Inject
     JobStoreService(AssignmentRepository assignments, DeviceRepository devices, SubmitLocks locks, JobPing jobPing,
                     DispatcherConfig config) {
-        this(assignments, devices, locks, Clock.systemUTC(), jobPing, config.hostLease(), config.takeWithin());
+        this(assignments, devices, locks, Clock.systemUTC(), jobPing, config.hostLease(), config.takeWithin(),
+                config.hostSilentAfter());
     }
 
     JobStoreService(AssignmentRepository assignments, DeviceRepository devices, SubmitLocks locks, Clock clock,
                     JobPing jobPing) {
-        this(assignments, devices, locks, clock, jobPing, DEFAULT_HOST_LEASE, DEFAULT_TAKE_WITHIN);
+        this(assignments, devices, locks, clock, jobPing, DEFAULT_HOST_LEASE, DEFAULT_TAKE_WITHIN,
+                DEFAULT_HOST_SILENT_AFTER);
     }
 
     JobStoreService(AssignmentRepository assignments, DeviceRepository devices, SubmitLocks locks, Clock clock,
-                    JobPing jobPing, Duration hostLease, Duration takeWithin) {
+                    JobPing jobPing, Duration hostLease, Duration takeWithin, Duration hostSilentAfter) {
         this.assignments = assignments;
         this.devices = devices;
         this.locks = locks;
@@ -79,6 +84,7 @@ public class JobStoreService implements JobStore {
         this.jobPing = jobPing == null ? JobPing.NONE : jobPing;
         this.hostLease = hostLease;
         this.takeWithin = takeWithin;
+        this.hostSilentAfter = hostSilentAfter;
     }
 
     @Override
@@ -105,18 +111,45 @@ public class JobStoreService implements JobStore {
                 clock.instant()));
     }
 
+    /**
+     * The roster with each host's report and take times. A host that reported within
+     * {@code hostSilentAfter} gives its reported state; one that only took jobs within it gives
+     * {@code UNKNOWN}; any other gives {@code OFFLINE}. Computed from the clock on each read.
+     */
     @Override
     public List<AgentRosterEntry> listAgents() {
+        Instant now = clock.instant();
         List<AgentRosterEntry> rows = new ArrayList<>();
         for (Device device : devices.listAll()) {
             Map<String, String> activity = orEmpty(device.activity);
             Map<String, String> notes = orEmpty(device.activityText);
+            boolean reported = withinSilence(device.lastHeartbeat, now);
+            boolean taking = withinSilence(device.lastTake, now);
+            Instant seenAt = later(device.lastHeartbeat, device.lastTake);
             for (String agent : orEmpty(device.agents)) {
-                String state = "busy".equals(activity.get(agent)) ? "BUSY" : "IDLE";
-                rows.add(new AgentRosterEntry("bot", agent, device.hostname, state, notes.getOrDefault(agent, "")));
+                String state;
+                if (reported) {
+                    state = "busy".equals(activity.get(agent)) ? "BUSY" : "IDLE";
+                } else {
+                    state = taking ? "UNKNOWN" : "OFFLINE";
+                }
+                rows.add(new AgentRosterEntry("bot", agent, device.hostname, state, notes.getOrDefault(agent, ""),
+                        device.lastHeartbeat, seenAt));
             }
         }
         return List.copyOf(rows);
+    }
+
+    /** Whether {@code time} exists and is younger than {@code hostSilentAfter}. An age equal to it is outside. */
+    private boolean withinSilence(Instant time, Instant now) {
+        return time != null && Duration.between(time, now).compareTo(hostSilentAfter) < 0;
+    }
+
+    private static Instant later(Instant first, Instant second) {
+        if (first == null) {
+            return second;
+        }
+        return second == null || first.isAfter(second) ? first : second;
     }
 
     /** The one device whose hostname and agent match. */
@@ -417,7 +450,9 @@ public class JobStoreService implements JobStore {
             throw badRequest("waitSeconds");
         }
         List<String> held = holding == null ? List.of() : holding.stream().map(UUID::toString).distinct().toList();
-        assignments.hold(deviceId, held, clock.instant().plus(hostLease));
+        Instant asked = clock.instant();
+        devices.took(deviceId, asked);
+        assignments.hold(deviceId, held, asked.plus(hostLease));
         List<Assignment> taken = new ArrayList<>();
         waitUntil(System.nanoTime() + waited.toNanos(), () -> {
             taken.addAll(takeOnce(deviceId, held));
