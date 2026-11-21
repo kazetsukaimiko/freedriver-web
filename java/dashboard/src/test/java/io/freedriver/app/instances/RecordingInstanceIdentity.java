@@ -73,8 +73,7 @@ public class RecordingInstanceIdentity implements InstanceIdentity {
             throw new UsernameTakenException();
         }
         users.put(user.username(), new Stored(
-                user.username(), user.label(), user.publishTopic(), user.subscribeTopic(), user.group(),
-                user.password()));
+                user.username(), user.label(), user.group(), user.password()));
         return new KeycloakUserResult(user.username());
     }
 
@@ -88,8 +87,7 @@ public class RecordingInstanceIdentity implements InstanceIdentity {
             throw new BrokerRefusedException();
         }
         users.put(reset.instanceId(), new Stored(
-                existing.instanceId(), existing.label(), existing.publishTopic(), existing.subscribeTopic(),
-                existing.group(), reset.password()));
+                existing.instanceId(), existing.label(), existing.group(), reset.password()));
     }
 
     @Override
@@ -107,8 +105,6 @@ public class RecordingInstanceIdentity implements InstanceIdentity {
     public record Stored(
             String instanceId,
             String label,
-            String publishTopic,
-            String subscribeTopic,
             String group,
             String password) {
     }

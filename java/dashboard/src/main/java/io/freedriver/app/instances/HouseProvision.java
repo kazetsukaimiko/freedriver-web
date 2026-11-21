@@ -84,8 +84,6 @@ public class HouseProvision {
                 username,
                 label,
                 password,
-                ApplianceSchemas.appliancesTopic(id),
-                ApplianceSchemas.commandsTopic(id),
                 InstanceIdentity.GROUP));
         if (result == null || !username.equals(result.username())) {
             HouseMqttLog.house(id, "refused");
