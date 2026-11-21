@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // The Keycloak login theme's sign-in renewal (#552),
 // keycloak/sms-otp-spi/src/main/resources/theme/freedriver/login/resources/js/sign-in-renew.js,
-// and the number it keeps for phone-fragment.js on the fresh page.
+// and the number it keeps for phone-fragment.js on the fresh page. Both use us-phone.js.
 // They live in the theme; this suite runs them because the web UI suite is the repository's JavaScript test runner.
 /// <reference types="node" />
 import { readFileSync } from 'node:fs'
@@ -9,6 +9,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 // Vitest runs from java/dashboard/src/main/webui, locally and in CI.
 const themeJs = `${process.cwd()}/../../../../../keycloak/sms-otp-spi/src/main/resources/theme/freedriver/login/resources/js`
+const usPhoneSource = readFileSync(`${themeJs}/us-phone.js`, 'utf8')
+new Function(usPhoneSource)()
 const renewSource = readFileSync(`${themeJs}/sign-in-renew.js`, 'utf8')
 const fragmentSource = readFileSync(`${themeJs}/phone-fragment.js`, 'utf8')
 
@@ -21,9 +23,9 @@ let page: Document
 let win: EventTarget & { Date: DateConstructor; location: { replace: typeof replace }; sessionStorage: Storage;
   setTimeout: typeof setTimeout }
 
-function setLocation() {
+function setLocation(hash = '') {
   replace = vi.fn()
-  Object.defineProperty(window, 'location', { configurable: true, value: { replace, hash: '' } })
+  Object.defineProperty(window, 'location', { configurable: true, value: { replace, hash } })
 }
 
 // The page freedriver-renew.ftl renders: renewal after half the lifetime, the full lifetime, and the
@@ -122,6 +124,29 @@ it('after the full lifetime keeps a +1 number and the fresh page fills it in', (
   expect(submit().defaultPrevented).toBe(true)
   expect(replace).toHaveBeenCalledWith(HOME)
   expect(freshPage()).toBe('+15555550100')
+})
+
+it('phone checks use the shared stored-form string', () => {
+  expect(usPhoneSource).toContain(String.raw`^\\+1[0-9]{10}$`)
+  expect(fragmentSource).not.toContain('[0-9]{10}')
+  expect(renewSource).not.toContain('[0-9]{10}')
+  expect(fragmentSource).toContain('freedriverStoredUsPhone')
+  expect(renewSource).toContain('freedriverStoredUsPhone')
+})
+
+it('fills the username only when the fragment matches the shared pattern', () => {
+  document.body.innerHTML = '<form id="freedriver-phone-username-form"><input name="username" value=""></form>'
+  setLocation('#+15555550100')
+  new Function(fragmentSource)()
+  expect((document.querySelector('input[name="username"]') as HTMLInputElement).value).toBe('+15555550100')
+  expect(sessionStorage.getItem('freedriver.login.phone')).toBe('+15555550100')
+
+  sessionStorage.clear()
+  document.body.innerHTML = '<form id="freedriver-phone-username-form"><input name="username" value=""></form>'
+  setLocation('#+447700900123')
+  new Function(fragmentSource)()
+  expect((document.querySelector('input[name="username"]') as HTMLInputElement).value).toBe('')
+  expect(sessionStorage.getItem('freedriver.login.phone')).toBeNull()
 })
 
 it('after the full lifetime keeps no number in a form the fresh page cannot fill in', () => {

@@ -10,6 +10,18 @@ fail() {
   exit 1
 }
 
+# Literal, seed, profile, and outside-file checks for the stored US form.
+# The rest of this script locks older provision text that has drifted from compose,
+# so CI runs this slice on its own.
+run_stored_us_phone() {
+  awk '/^# stored-us-phone:begin$/{p=1; next} /^# stored-us-phone:end$/{exit} p' "${BASH_SOURCE[0]}" | python3
+}
+
+if [[ "${1:-}" == "--stored-us-phone" ]]; then
+  run_stored_us_phone
+  exit
+fi
+
 if grep -q 'sms.freedriver.io' Caddyfile; then
   fail "do not add a Caddy site for sms"
 fi
@@ -191,8 +203,16 @@ env = re.search(r"^    environment:\n((?:      .*\n)+)", block, re.M)
 keys = [] if env is None else re.findall(r"^      ([A-Z0-9_]+):", env.group(1), re.M)
 SEED = "FREEDRIVER_SEED_PHONE: ${FREEDRIVER_SEED_PHONE:-}"
 CAP = "FREEDRIVER_SMS_DAILY_SEND_CAP: ${FREEDRIVER_SMS_DAILY_SEND_CAP:?FREEDRIVER_SMS_DAILY_SEND_CAP is required}"
-if keys != ["SMS_OTP_SHARED_SECRET", "FREEDRIVER_SEED_PHONE", "FREEDRIVER_SMS_DAILY_SEND_CAP"] or SECRET not in block or SEED not in block or CAP not in block:
-    raise SystemExit("sms environment is SMS_OTP_SHARED_SECRET, FREEDRIVER_SEED_PHONE, and a required FREEDRIVER_SMS_DAILY_SEND_CAP")
+MONGO_CONN = "QUARKUS_MONGODB_CONNECTION_STRING: ${QUARKUS_MONGODB_CONNECTION_STRING:-mongodb://mongodb:27017/freedriver}"
+MONGO_DB = "QUARKUS_MONGODB_DATABASE: freedriver"
+if keys != [
+    "SMS_OTP_SHARED_SECRET",
+    "FREEDRIVER_SEED_PHONE",
+    "FREEDRIVER_SMS_DAILY_SEND_CAP",
+    "QUARKUS_MONGODB_CONNECTION_STRING",
+    "QUARKUS_MONGODB_DATABASE",
+] or SECRET not in block or SEED not in block or CAP not in block or MONGO_CONN not in block or MONGO_DB not in block:
+    raise SystemExit("sms environment is SMS_OTP_SHARED_SECRET, FREEDRIVER_SEED_PHONE, a required FREEDRIVER_SMS_DAILY_SEND_CAP, and the two Mongo keys")
 if compose.count("FREEDRIVER_SEED_PHONE") != 2:
     raise SystemExit("only sms receives FREEDRIVER_SEED_PHONE")
 if compose.count("FREEDRIVER_SMS_DAILY_SEND_CAP") != 3 or compose.replace(block, "").count("FREEDRIVER_SMS_DAILY_SEND_CAP") != 0:
@@ -232,8 +252,8 @@ if instances_env not in dash:
     raise SystemExit("dashboard loads the instances admin secret env file, and it is not required before provision")
 if "keycloak-freedriver-instances.env" in compose.replace(dash, ""):
     raise SystemExit("only dashboard loads the instances admin secret env file")
-if compose.count("\n    env_file:\n") != 3:
-    raise SystemExit("env_file is the sms twilio file, the dashboard secret files, and the grafana secret file")
+if compose.count("\n    env_file:\n") != 4:
+    raise SystemExit("env_file is the sms twilio file, the dashboard secret files, the grafana secret file, and the autonomy-mcp secret file")
 if "TWILIO_" in compose.replace(block, ""):
     raise SystemExit("only sms receives TWILIO_ variables")
 if "sms-otp.env.example" in block or "sms-otp.env.example" in compose:
@@ -299,6 +319,7 @@ if [[ "$(grep -v '^#' secrets/twilio-verify.env.example)" != "$(printf '%s=\n' T
 fi
 if grep -RInE '^TWILIO_[A-Z_]+=.+' \
   --exclude-dir .git --exclude-dir target \
+  --exclude 'ci-smoke.sh' \
   sms keycloak secrets scripts docs README.md docker-compose.yml Caddyfile .env.example; then
   fail "do not commit a Twilio credential value"
 fi
@@ -313,12 +334,13 @@ if ! grep -B2 '^FREEDRIVER_SMS_DAILY_SEND_CAP=100$' .env.example | grep -q 'plac
 fi
 if grep -RInE '^FREEDRIVER_SMS_DAILY_SEND_CAP=.+' \
   --exclude-dir .git --exclude-dir target \
-  --exclude '.env.example' \
+  --exclude '.env.example' --exclude 'ci-smoke.sh' \
   sms keycloak secrets scripts docs README.md docker-compose.yml Caddyfile; then
   fail "do not commit a live daily send cap"
 fi
 if grep -RInE '^\s*(export\s+)?FREEDRIVER_SEED_PHONE=.+' \
   --exclude-dir .git --exclude-dir target \
+  --exclude 'ci-smoke.sh' \
   sms keycloak secrets scripts docs README.md docker-compose.yml Caddyfile .env.example; then
   fail "do not commit a FREEDRIVER_SEED_PHONE value"
 fi
@@ -338,6 +360,7 @@ if [[ "$(grep -c '^SMS_OTP_SHARED_SECRET=' secrets/sms-otp.env.example)" != "1" 
 fi
 if grep -RInE '^SMS_OTP_SHARED_SECRET=.+' \
   --exclude 'sms-otp.env.example' \
+  --exclude 'ci-smoke.sh' \
   --exclude-dir .git --exclude-dir target \
   sms keycloak secrets scripts docs README.md docker-compose.yml Caddyfile; then
   fail "do not commit a live SMS_OTP_SHARED_SECRET assignment"
@@ -685,7 +708,10 @@ if "uuid.fullmatch(entry)" not in invite_test:
 print("phone role allow-list and invite permission scope")
 PY
 
-if grep -RIn 'offline_access' java/dashboard keycloak/sms-otp-spi/src/main/resources/theme >/dev/null; then
+# Java and .properties can request a scope. A changelog line that names
+# offline_access (release 1.7.0, #543) cannot.
+if grep -RIn --include='*.java' --include='*.properties' 'offline_access' java/dashboard >/dev/null \
+  || grep -RIn 'offline_access' keycloak/sms-otp-spi/src/main/resources/theme >/dev/null; then
   fail "the app must not request offline_access"
 fi
 # The self-service invite page is gone (#521): no @invite block, no /invite route in Caddy.
@@ -943,7 +969,380 @@ if "999:999 /opt/freedriver-storage/redis" not in deploy:
 print("redis is an unpublished compose singleton")
 PY
 
-chmod +x scripts/test-invite-service-account.sh
+# hte-707-dcr-provider-checks
+# Extract the shell function without counting braces inside its Python heredocs.
+dcr_body="$(mktemp)"
+python3 - "$dcr_body" <<'PY'
+import re
+import sys
+from pathlib import Path
+script = Path("scripts/provision-keycloak-freedriver.sh").read_text()
+parts = script.split("ensure_dcr_one_year_tokens() {", 1)
+if len(parts) != 2:
+    raise SystemExit("provision script must define ensure_dcr_one_year_tokens")
+depth = 1
+heredoc_tag = None
+kept = []
+for line in parts[1].splitlines():
+    if heredoc_tag is not None:
+        kept.append(line)
+        if line == heredoc_tag:
+            heredoc_tag = None
+        continue
+    opener = re.search(r"<<'?(\w+)'?\s*$", line)
+    if opener:
+        heredoc_tag = opener.group(1)
+    elif line.strip() == "{":
+        depth += 1
+    elif line.strip() == "}":
+        depth -= 1
+        if depth == 0:
+            break
+    kept.append(line)
+body = "\n".join(kept) + "\n"
+needles = [
+    "Could not list client registration providers in realm ${REALM}; check the admin session.",
+    "Unreadable client registration provider list from realm ${REALM}.",
+    "missing the client registration provider ${provider_id}.",
+    "kcadm_stdin create components",
+    "kcadm_stdin update",
+]
+missing = [needle for needle in needles if needle not in body]
+if missing:
+    raise SystemExit("brace-depth split dropped: " + "; ".join(missing))
+Path(sys.argv[1]).write_text(body)
+print("extracted ensure_dcr_one_year_tokens")
+PY
+
+dcr_cases="$(mktemp -d)"
+python3 - "$dcr_cases" scripts/fixtures/keycloak-26.7.5-client-registration-providers.json <<'PY'
+import json, sys
+from pathlib import Path
+out = Path(sys.argv[1])
+fixture = json.loads(Path(sys.argv[2]).read_text())
+if not isinstance(fixture, list) or not fixture:
+    raise SystemExit("provider fixture must be a non-empty JSON array")
+ids = []
+for item in fixture:
+    if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not item["id"].strip():
+        raise SystemExit("provider fixture entries are objects with a string id")
+    ids.append(item["id"])
+if "freedriver-one-year-tokens" in ids:
+    raise SystemExit("stock fixture must lack freedriver-one-year-tokens")
+if "trusted-hosts" not in ids:
+    raise SystemExit("stock fixture must include trusted-hosts")
+provider = {"id": "freedriver-one-year-tokens", "helpText": "one year"}
+present = fixture + [provider]
+cases = [
+    ("html", "html", "<html><body>not json</body></html>", "unreadable"),
+    ("no-string-id", "ok", [{"helpText": "trusted hosts"}], "unreadable"),
+    ("fixture", "ok", fixture, "missing"),
+    ("with-id", "ok", present, "present"),
+    ("wrapped", "ok", {"providers": fixture}, "missing"),
+    ("results", "ok", {"results": ["trusted-hosts", "scope"]}, "missing"),
+    ("bare", "ok", ["trusted-hosts", "scope"], "missing"),
+    ("empty", "ok", [], "missing"),
+    ("empty-wrapped", "ok", {"providers": []}, "missing"),
+    ("malformed-with-id", "ok", [provider, {"helpText": "no id"}], "unreadable"),
+    ("neither", "ok", {"error": "HTTP 401 Unauthorized"}, "unreadable"),
+    ("bare-with-id", "ok", ["trusted-hosts", "freedriver-one-year-tokens"], "present"),
+    ("results-with-id", "ok", {"results": ["freedriver-one-year-tokens"]}, "present"),
+    ("blank-id", "ok", [{"id": ""}], "unreadable"),
+    ("number-id", "ok", [{"id": "freedriver-one-year-tokens"}, {"id": 7}], "unreadable"),
+]
+manifest = out / "manifest"
+lines = ["fail\tfail\t-\tsession"]
+for name, mode, payload, expect in cases:
+    path = out / (name + ".json")
+    if isinstance(payload, str):
+        path.write_text(payload)
+    else:
+        path.write_text(json.dumps(payload))
+    lines.append(f"{name}\t{mode}\t{path}\t{expect}")
+manifest.write_text("\n".join(lines) + "\n")
+print("provider fixture is the Keycloak 26.7.5 list of", len(ids), "ids")
+PY
+
+run_dcr_case() {
+  local name="$1"
+  local mode="$2"
+  local payload_path="$3"
+  local expect="$4"
+  local case_work log stub out err rc saw payload
+  local session unread missing
+  session='Could not list client registration providers in realm freedriver; check the admin session.'
+  unread='Unreadable client registration provider list from realm freedriver.'
+  missing='The Keycloak server is missing the client registration provider freedriver-one-year-tokens.'
+  case_work="$(mktemp -d)"
+  log="$case_work/calls"
+  : > "$log"
+  stub="$case_work/kcadm-stub"
+  cat > "$stub" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DCR_LOG"
+if [[ "${1:-}" == get && "${2:-}" == client-registration-policy/providers ]]; then
+  if [[ "$DCR_MODE" == fail ]]; then
+    echo "providers call failed" >&2
+    exit 1
+  fi
+  printf '%s' "$DCR_STDOUT"
+  exit 0
+fi
+if [[ "${1:-}" == get && "${2:-}" == realms/freedriver ]]; then
+  printf '%s' '{"id":"realm-1"}'
+  exit 0
+fi
+if [[ "${1:-}" == get && "${2:-}" == components ]]; then
+  printf '%s' '[]'
+  exit 0
+fi
+if [[ "${1:-}" == create || "${1:-}" == update ]]; then
+  cat >/dev/null
+  exit 0
+fi
+echo "unexpected kcadm: $*" >&2
+exit 1
+STUB
+  chmod +x "$stub"
+  if [[ "$payload_path" == "-" ]]; then
+    payload=""
+  else
+    payload="$(cat "$payload_path")"
+  fi
+  out="$case_work/out"
+  err="$case_work/err"
+  set +e
+  DCR_MODE="$mode" DCR_LOG="$log" DCR_STDOUT="$payload" \
+    bash -c '
+      set -euo pipefail
+      REALM=freedriver
+      ONE_YEAR_TOKEN_SECONDS=31536000
+      work="$1"
+      KCADM_BIN="$2"
+      kcadm() { "$KCADM_BIN" "$@"; }
+      kcadm_stdin() { "$KCADM_BIN" "$@"; }
+      run() { source "$3"; }
+      run "$@"
+    ' bash "$case_work" "$stub" "$dcr_body" >"$out" 2>"$err"
+  rc=$?
+  set -e
+  if grep -Eq '^(create|update) components( |$)' "$log"; then
+    saw=1
+  else
+    saw=0
+  fi
+  if [[ "$expect" == present ]]; then
+    if [[ "$rc" -ne 0 || "$saw" -ne 1 ]]; then
+      fail "DCR case ${name} exit ${rc} component ${saw}: $(cat "$err")"
+    fi
+    if grep -Fqx "$session" "$err" || grep -Fqx "$unread" "$err" || grep -Fqx "$missing" "$err"; then
+      fail "DCR case ${name} printed a failure sentence"
+    fi
+  else
+    local sentence="$session"
+    if [[ "$expect" == unreadable ]]; then
+      sentence="$unread"
+    elif [[ "$expect" == missing ]]; then
+      sentence="$missing"
+    fi
+    if [[ "$rc" -ne 1 || "$saw" -ne 0 ]] || ! grep -Fqx "$sentence" "$err"; then
+      fail "DCR case ${name} exit ${rc} component ${saw} stderr: $(cat "$err")"
+    fi
+    if [[ "$expect" == missing ]]; then
+      if grep -Fq "$session" "$err" || grep -Fq "$unread" "$err"; then
+        fail "DCR case ${name} mixed the missing-provider sentence with another exit"
+      fi
+    elif grep -Fq "$missing" "$err"; then
+      fail "DCR case ${name} used the missing-provider sentence"
+    fi
+  fi
+  rm -rf "$case_work"
+  echo "DCR case ${name} ${expect}"
+}
+
+while IFS=$'\t' read -r name mode payload_path expect; do
+  [[ -n "$name" ]] || continue
+  run_dcr_case "$name" "$mode" "$payload_path" "$expect"
+done < "$dcr_cases/manifest"
+rm -rf "$dcr_cases"
+rm -f "$dcr_body"
+echo "ensure_dcr_one_year_tokens exits match the provider list"
+# hte-707-dcr-provider-checks-end
+
+if [[ "${FREEDRIVER_SCAFFOLD_TEXT_ONLY:-}" == "1" ]]; then
+  echo "sms otp scaffold locks ok"
+  exit 0
+fi
+
+chmod +x scripts/test-invite-service-account.sh scripts/test-dcr-one-year-stock-image.sh
 ./scripts/test-invite-service-account.sh
+
+: <<'STORED_US_PHONE'
+# stored-us-phone:begin
+import importlib.util
+import json, re, subprocess
+from pathlib import Path
+
+def java_string(source, marker):
+    chunk = source.split(marker, 1)[1].split(";", 1)[0]
+    parts = re.findall(r'"((?:\\.|[^"\\])*)"', chunk)
+    return "".join(bytes(p, "utf-8").decode("unicode_escape") for p in parts)
+
+regex = java_string(
+    Path("sms-model/src/main/java/io/freedriver/sms/validation/UsPhoneNumber.java").read_text(),
+    "REGEX =",
+)
+message = "Enter a US number as +1 and ten digits, for example +15555550100."
+spec = importlib.util.spec_from_file_location("sms_otp_flow", "scripts/check-sms-otp-flow.py")
+flow = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(flow)
+shell = Path("scripts/provision-keycloak-sms-otp.sh").read_text()
+if flow.PHONE_CREATE_PATTERN != regex or flow.PHONE_CREATE_MESSAGE != message:
+    raise SystemExit("phone create payload must carry UsPhoneNumber.REGEX and the admin sentence")
+if regex in shell or "+[1-9][0-9]{7,14}" in shell or "Use international form" in shell:
+    raise SystemExit("provision script keeps a second phone pattern")
+if not re.fullmatch(regex, "+15555550100") or re.fullmatch(regex, "+447700900123"):
+    raise SystemExit("stored form must accept +15555550100 and refuse +447700900123")
+
+def run_attr(body):
+    path = Path("/tmp/freedriver-phone-profile.json")
+    path.write_text(body)
+    before = path.read_bytes()
+    result = subprocess.run(
+        ["python3", "scripts/check-sms-otp-flow.py", "--apply-phone-attribute", str(path)],
+        capture_output=True, text=True)
+    return result.returncode, before, path.read_bytes()
+
+code, before, after = run_attr("{")
+if code == 0 or after != before:
+    raise SystemExit("malformed profile JSON must fail and leave the file unchanged")
+
+admin = json.dumps({
+    "attributes": [{
+        "name": "phone",
+        "permissions": {"view": ["admin"], "edit": ["admin"]},
+        "validations": {"pattern": {"pattern": "keep-me", "error-message": "keep-message"}},
+    }]
+})
+code, before, after = run_attr(admin)
+if code != 3 or after != before:
+    raise SystemExit("admin-only phone attribute must exit 3 and leave the file unchanged")
+
+repair = json.dumps({
+    "attributes": [{
+        "name": "phone",
+        "permissions": {"view": ["admin"], "edit": ["user"]},
+        "validations": {"pattern": {"pattern": "keep-me", "error-message": "keep-message"}},
+    }]
+})
+code, before, after = run_attr(repair)
+if code != 0:
+    raise SystemExit("permission repair must exit 0")
+repaired = json.loads(after)
+attr = repaired["attributes"][0]
+if attr["permissions"] != {"view": ["admin"], "edit": ["admin"]}:
+    raise SystemExit("permission repair must set admin-only")
+if attr["validations"]["pattern"]["pattern"] != "keep-me" or attr["validations"]["pattern"]["error-message"] != "keep-message":
+    raise SystemExit("permission repair must keep the pattern and message")
+
+code, before, after = run_attr(json.dumps({"attributes": []}))
+if code != 0:
+    raise SystemExit("a missing phone attribute must be created")
+created = json.loads(after)["attributes"][0]["validations"]["pattern"]
+if created["pattern"] != regex or created["error-message"] != message:
+    raise SystemExit("create payload pattern or message drifted from the stored form")
+
+def branch(body):
+    work = Path("/tmp/freedriver-phone-branch")
+    work.mkdir(exist_ok=True)
+    profile = work / "profile.json"
+    log = work / "log"
+    profile.write_text(body)
+    before = profile.read_bytes()
+    result = subprocess.run(
+        ["bash", "scripts/provision-keycloak-sms-otp.sh", "--phone-profile-fixture", str(profile), str(log)],
+        capture_output=True, text=True)
+    written = log.read_text() if log.exists() else ""
+    return result.returncode, before, profile.read_bytes(), written
+
+code, before, after, written = branch("[]")
+if code == 0 or written.strip() or after != before:
+    raise SystemExit("a status other than 0 and 3 must write nothing and not continue")
+
+code, before, after, written = branch(admin)
+if code != 0 or written != "continued\n" or after != before:
+    raise SystemExit("the admin-only branch continues without a profile PUT")
+
+seed = Path("scripts/provision-keycloak-freedriver.sh").read_text()
+seed_pattern = regex.replace("[0-9]{10}$", "[2-9][0-9]{9}$")
+if seed_pattern not in seed:
+    raise SystemExit("seed check must be UsPhoneNumber.REGEX with the 2-9 tail")
+window = seed.split(seed_pattern, 1)[0].splitlines()[-8:]
+if not any("2-9 rule is intentional" in line for line in window):
+    raise SystemExit("seed check must say the 2-9 rule is intentional")
+if re.fullmatch(seed_pattern, "+10000000000"):
+    raise SystemExit("seed check must refuse +10000000000")
+
+theme = Path("keycloak/sms-otp-spi/src/main/resources/theme/freedriver/login")
+shared = (theme / "resources/js/us-phone.js").read_text()
+strings = re.findall(r'"((?:\\.|[^"\\])*)"', shared)
+if len(strings) != 1:
+    raise SystemExit("us-phone.js defines one pattern string")
+literal = bytes(strings[0], "utf-8").decode("unicode_escape")
+if literal != regex:
+    raise SystemExit("us-phone.js pattern must equal UsPhoneNumber.REGEX")
+if "location.hash" in shared or "sessionStorage" in shared or "function" in shared:
+    raise SystemExit("us-phone.js only defines the pattern")
+for name in ("phone-fragment.js", "sign-in-renew.js"):
+    caller = (theme / "resources/js" / name).read_text()
+    if "[0-9]{10}" in caller or "/^" in caller:
+        raise SystemExit(f"{name} keeps its own pattern")
+    if "freedriverStoredUsPhone" not in caller:
+        raise SystemExit(f"{name} must use the shared pattern")
+for name in ("freedriver-phone-username.ftl", "freedriver-renew.ftl"):
+    page = (theme / name).read_text()
+    if "${url.resourcesPath}/js/us-phone.js" not in page:
+        raise SystemExit(f"{name} must load us-phone.js from the resources path")
+router = (theme / "freedriver-phone-username.ftl").read_text()
+if router.index("us-phone.js") > router.index("phone-fragment.js"):
+    raise SystemExit("the router page must load us-phone.js before phone-fragment.js")
+if router.count("us-phone.js") != 1:
+    raise SystemExit("the router page loads us-phone.js once")
+
+module = Path("keycloak/sms-otp-spi").resolve()
+repo = Path(".").resolve()
+outside = []
+for java in (module / "src/test").rglob("*.java"):
+    for raw in re.findall(r'"((?:\\.|[^"\\])*)"', java.read_text()):
+        lit = bytes(raw, "utf-8").decode("unicode_escape")
+        if "/" not in lit and ".." not in lit:
+            continue
+        for base in (module, repo):
+            resolved = (base / lit).resolve()
+            if not resolved.exists():
+                continue
+            try:
+                resolved.relative_to(module)
+            except ValueError:
+                outside.append(resolved)
+theme_root = theme.resolve()
+try:
+    theme_root.relative_to(module)
+except ValueError:
+    raise SystemExit("the login theme root must be inside sms-otp-spi")
+pom = (module / "pom.xml").read_text()
+props = re.findall(r"<maven\.build\.cache\.input\.outside\d+>([^<]+)</", pom)
+if any(item.strip() == "../themes/freedriver/login" for item in props):
+    raise SystemExit("the in-module theme root is not an outside cache input")
+covered = [(module / item.strip()).resolve() for item in props]
+def is_covered(path):
+    return any(path == root or root in path.parents for root in covered)
+missing = sorted({str(path) for path in outside if not is_covered(path)})
+if missing:
+    raise SystemExit("sms-otp-spi tests read outside the module with no cache input: " + ", ".join(missing))
+print("stored US phone checks match UsPhoneNumber.REGEX")
+# stored-us-phone:end
+STORED_US_PHONE
+run_stored_us_phone
 
 echo "sms otp scaffold locks ok"
