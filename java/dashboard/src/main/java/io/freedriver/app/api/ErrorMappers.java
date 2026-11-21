@@ -12,6 +12,7 @@ import io.freedriver.app.instances.InstanceNotFoundException;
 import io.freedriver.app.instances.InvalidLabelException;
 import io.freedriver.app.invites.InviteUpstreamException;
 import io.freedriver.app.jobs.DispatcherUnavailable;
+import io.freedriver.app.errors.PendingCapException;
 import io.freedriver.app.security.RateLimitedException;
 import io.freedriver.dashboard.model.InstanceView;
 import io.quarkus.security.ForbiddenException;
@@ -49,6 +50,12 @@ public class ErrorMappers {
 
     @ServerExceptionMapper
     public Response rateLimited(RateLimitedException exception) {
+        return Response.status(429).build();
+    }
+
+    /** A full pending cap is the same empty 429 as {@link RateLimitedException}. */
+    @ServerExceptionMapper
+    public Response pendingCap(PendingCapException exception) {
         return Response.status(429).build();
     }
 
