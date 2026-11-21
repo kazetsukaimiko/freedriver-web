@@ -2,6 +2,7 @@ package io.freedriver.app.security;
 
 import io.freedriver.app.appliances.AppliancesConfig;
 import io.freedriver.app.appliances.TestAppliancesConfig;
+import io.freedriver.dashboard.api.RateLimitBucket;
 import io.freedriver.ratelimit.MemoryHitWindow;
 import org.junit.jupiter.api.Test;
 
@@ -23,16 +24,16 @@ class CallerRateLimiterTest {
     void tryAcquire_rejects_after_permit_window() {
         CallerRateLimiter limiter = new CallerRateLimiter(CONFIG, new MemoryHitWindow());
 
-        assertTrue(limiter.tryAcquire("invites", "ada"));
-        assertTrue(limiter.tryAcquire("invites", "ada"));
-        assertFalse(limiter.tryAcquire("invites", "ada"));
+        assertTrue(limiter.tryAcquire(RateLimitBucket.INVITES, "ada"));
+        assertTrue(limiter.tryAcquire(RateLimitBucket.INVITES, "ada"));
+        assertFalse(limiter.tryAcquire(RateLimitBucket.INVITES, "ada"));
 
         MemoryHitWindow shared = new MemoryHitWindow();
         CallerRateLimiter first = new CallerRateLimiter(CONFIG, shared);
         CallerRateLimiter second = new CallerRateLimiter(CONFIG, shared);
-        assertTrue(first.tryAcquire("invites", "ada"));
-        assertTrue(second.tryAcquire("invites", "ada"));
-        assertFalse(first.tryAcquire("invites", "ada"));
+        assertTrue(first.tryAcquire(RateLimitBucket.INVITES, "ada"));
+        assertTrue(second.tryAcquire(RateLimitBucket.INVITES, "ada"));
+        assertFalse(first.tryAcquire(RateLimitBucket.INVITES, "ada"));
     }
 
     @Test
@@ -40,9 +41,9 @@ class CallerRateLimiterTest {
         MemoryHitWindow hits = new MemoryHitWindow();
         CallerRateLimiter limiter = new CallerRateLimiter(CONFIG, hits);
 
-        assertTrue(limiter.tryAcquire("appliances.commands", "ada"));
+        assertTrue(limiter.tryAcquire(RateLimitBucket.APPLIANCES_COMMANDS, "ada"));
 
-        assertEquals("appliances.commands:ada", CallerRateLimiter.key("appliances.commands", "ada"));
+        assertEquals("appliances.commands:ada", CallerRateLimiter.key(RateLimitBucket.APPLIANCES_COMMANDS, "ada"));
         assertEquals(1, hits.count("appliances.commands:ada", WINDOW_MS));
         assertEquals(0, hits.count("command:ada", WINDOW_MS));
         assertEquals(0, hits.count("ada", WINDOW_MS));
@@ -53,13 +54,13 @@ class CallerRateLimiterTest {
         MemoryHitWindow hits = new MemoryHitWindow();
         CallerRateLimiter limiter = new CallerRateLimiter(CONFIG, hits);
 
-        assertTrue(limiter.tryAcquire("instances", "ada"));
-        assertTrue(limiter.tryAcquire("instances", "ada"));
-        assertFalse(limiter.tryAcquire("instances", "ada"));
+        assertTrue(limiter.tryAcquire(RateLimitBucket.INSTANCES, "ada"));
+        assertTrue(limiter.tryAcquire(RateLimitBucket.INSTANCES, "ada"));
+        assertFalse(limiter.tryAcquire(RateLimitBucket.INSTANCES, "ada"));
 
-        assertTrue(limiter.tryAcquire("instances", "yuni"));
-        assertTrue(limiter.tryAcquire("instances", "yuni"));
-        assertFalse(limiter.tryAcquire("instances", "yuni"));
+        assertTrue(limiter.tryAcquire(RateLimitBucket.INSTANCES, "yuni"));
+        assertTrue(limiter.tryAcquire(RateLimitBucket.INSTANCES, "yuni"));
+        assertFalse(limiter.tryAcquire(RateLimitBucket.INSTANCES, "yuni"));
 
         assertEquals(2, hits.count("instances:ada", WINDOW_MS));
         assertEquals(2, hits.count("instances:yuni", WINDOW_MS));
@@ -70,13 +71,13 @@ class CallerRateLimiterTest {
         MemoryHitWindow hits = new MemoryHitWindow();
         CallerRateLimiter limiter = new CallerRateLimiter(CONFIG, hits);
 
-        assertTrue(limiter.tryAcquire("invites", "ada"));
-        assertTrue(limiter.tryAcquire("invites", "ada"));
-        assertFalse(limiter.tryAcquire("invites", "ada"));
+        assertTrue(limiter.tryAcquire(RateLimitBucket.INVITES, "ada"));
+        assertTrue(limiter.tryAcquire(RateLimitBucket.INVITES, "ada"));
+        assertFalse(limiter.tryAcquire(RateLimitBucket.INVITES, "ada"));
 
-        assertTrue(limiter.tryAcquire("phones", "ada"));
-        assertTrue(limiter.tryAcquire("phones", "ada"));
-        assertFalse(limiter.tryAcquire("phones", "ada"));
+        assertTrue(limiter.tryAcquire(RateLimitBucket.PHONES, "ada"));
+        assertTrue(limiter.tryAcquire(RateLimitBucket.PHONES, "ada"));
+        assertFalse(limiter.tryAcquire(RateLimitBucket.PHONES, "ada"));
 
         assertEquals(2, hits.count("invites:ada", WINDOW_MS));
         assertEquals(2, hits.count("phones:ada", WINDOW_MS));

@@ -270,6 +270,11 @@ class PhoneUsernameRouterTest {
     }
 
     @Test
+    void aNonUsE164StaysAUsername() {
+        assertUsername(router, "+447700900123");
+    }
+
+    @Test
     void nonPhoneUsernameIsNotLookedUpOrRewritten() {
         assertUsername(router, "house.user");
         assertUsername(router, "ada");
@@ -307,10 +312,7 @@ class PhoneUsernameRouterTest {
 
     @Test
     void pageCopyAndAuthenticityToken() throws IOException {
-        String form = repoText(
-                "keycloak/themes/freedriver/login/freedriver-phone-username.ftl",
-                "../themes/freedriver/login/freedriver-phone-username.ftl",
-                "themes/freedriver/login/freedriver-phone-username.ftl");
+        String form = moduleText("theme/freedriver/login/freedriver-phone-username.ftl");
         assertTrue(form.contains("action=\"${url.loginAction}\""));
         assertTrue(form.contains("name=\"username\""));
         assertTrue(form.contains("freedriverPhoneUsernameLabel"));
@@ -324,10 +326,7 @@ class PhoneUsernameRouterTest {
         assertTrue(form.indexOf("name=\"username\"") < form.indexOf("id=\"freedriver-sms-agreement\""));
         assertTrue(form.indexOf("id=\"freedriver-sms-agreement\"") < form.indexOf("freedriverPhoneUsernameContinue"));
 
-        String script = repoText(
-                "keycloak/themes/freedriver/login/resources/js/phone-fragment.js",
-                "../themes/freedriver/login/resources/js/phone-fragment.js",
-                "themes/freedriver/login/resources/js/phone-fragment.js");
+        String script = moduleText("theme/freedriver/login/resources/js/phone-fragment.js");
         assertTrue(script.contains("location.hash"));
         assertTrue(script.contains("sessionStorage"));
         assertTrue(script.contains("freedriver.login.phone"));
@@ -335,41 +334,41 @@ class PhoneUsernameRouterTest {
         assertFalse(script.contains("location.search"));
         assertFalse(script.contains("URLSearchParams"));
 
-        String messages = repoText(
-                "keycloak/themes/freedriver/login/messages/messages_en.properties",
-                "../themes/freedriver/login/messages/messages_en.properties",
-                "themes/freedriver/login/messages/messages_en.properties");
-        assertTrue(messages.contains("freedriverPhoneUsernameLabel=Phone number or username"));
-        assertTrue(messages.contains("freedriverPhoneUsernameContinue=Continue"));
-        assertTrue(messages.contains(
-                "freedriverSmsCodeHint=Enter the 6-digit code we texted to your phone."));
-        assertTrue(messages.contains(
-                "freedriverSmsWrongCode=That code didn''t work. Try again or send a new code."));
-        assertTrue(messages.contains(
-                "freedriverSmsDenied=That code didn''t work. Request a new one."));
-        assertTrue(messages.contains(
-                "freedriverSmsCodeLimit=Code limit reached. Try again in 15 minutes."));
-        assertTrue(messages.contains("freedriverSmsCodeExpiry=Your code works for 5 minutes."));
-        assertTrue(messages.contains("freedriverSmsExpired=That code expired. Send a new code."));
-        assertTrue(messages.contains("freedriverSmsTooManyCodes=Too many wrong codes. Send a new code."));
+        List<String> messageLines = Files.readAllLines(
+                moduleResource("theme/freedriver/login/messages/messages_en.properties"));
+        String messages = String.join("\n", messageLines);
+        for (String line : List.of(
+                "freedriverPhoneUsernameLabel=Phone number or username",
+                "freedriverPhoneUsernameContinue=Continue",
+                "freedriverSmsCodeHint=Enter the 6-digit code we texted to your phone.",
+                "freedriverSmsWrongCode=That code didn''t work. Try again or send a new code.",
+                "freedriverSmsDenied=That code didn''t work. Request a new one.",
+                "freedriverSmsCodeLimit=Code limit reached. Try again in 15 minutes.",
+                "freedriverSmsCodeExpiry=Your code works for 5 minutes.",
+                "freedriverSmsExpired=That code expired. Send a new code.",
+                "freedriverSmsTooManyCodes=Too many wrong codes. Send a new code.")) {
+            assertTrue(messageLines.contains(line), line);
+        }
         assertFalse(messages.contains("unavailable for this account"));
         assertFalse(messages.contains("allowlist"));
 
-        String services = repoText(
-                "keycloak/sms-otp-spi/src/main/resources/META-INF/services/org.keycloak.authentication.AuthenticatorFactory",
-                "src/main/resources/META-INF/services/org.keycloak.authentication.AuthenticatorFactory");
+        String services = moduleText(
+                "META-INF/services/org.keycloak.authentication.AuthenticatorFactory");
         assertTrue(services.contains("io.freedriver.keycloak.sms.SmsOtpAuthenticatorFactory"));
         assertTrue(services.contains("io.freedriver.keycloak.sms.PhoneUsernameRouterFactory"));
         assertTrue(services.contains("io.freedriver.keycloak.sms.SmsRouteConditionFactory"));
     }
 
-    private static String repoText(String... candidates) throws IOException {
-        for (String candidate : candidates) {
-            Path path = Path.of(candidate);
-            if (Files.isRegularFile(path)) {
-                return Files.readString(path);
-            }
+    /** Surefire's working directory is this module. */
+    private static Path moduleResource(String relative) {
+        return Path.of("src/main/resources").resolve(relative);
+    }
+
+    private static String moduleText(String relative) throws IOException {
+        Path path = moduleResource(relative);
+        if (!Files.isRegularFile(path)) {
+            throw new AssertionError("missing " + path);
         }
-        throw new AssertionError("missing " + String.join(" or ", candidates));
+        return Files.readString(path);
     }
 }

@@ -3,17 +3,21 @@ package io.freedriver.app.security;
 import io.quarkus.redis.datasource.RedisDataSource;
 import io.freedriver.app.appliances.ApplianceAudit;
 import io.freedriver.app.appliances.AppliancesConfig;
-import io.freedriver.ratelimit.HitWindow;
 import io.freedriver.app.appliances.MockAutonomy;
+import io.freedriver.app.schedule.ScheduledSwitchRepository;
+import io.freedriver.dashboard.api.RateLimitBucket;
+import io.freedriver.ratelimit.HitWindow;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.TestProfile;
+import io.restassured.response.Response;
 import io.smallrye.jwt.build.Jwt;
 import jakarta.inject.Inject;
 import org.jboss.logmanager.Logger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -51,6 +55,12 @@ class InternalTenantTest {
 
     @Inject
     AppliancesConfig config;
+
+    @Inject
+    CallerRateLimiter limiter;
+
+    @Inject
+    ScheduledSwitchRepository switches;
 
     @BeforeEach
     void reset() {
@@ -188,6 +198,62 @@ class InternalTenantTest {
                 .get("/api/mcp/appliances")
                 .then()
                 .statusCode(499);
+    }
+
+    @Test
+    void an_internal_bearer_stores_a_switch_without_a_csrf_token() {
+        switches.deleteAll();
+        String subject = "schedule-bearer-sub";
+        String key = CallerRateLimiter.key(RateLimitBucket.APPLIANCES_SCHEDULES, subject);
+        long windowMs = config.rateLimit().window().toMillis();
+        assertEquals(0, hits.count(key, windowMs));
+
+        schedule(subject, Set.of("mcp-user", "dashboard")).then().statusCode(202);
+
+        assertEquals(1, hits.count(key, windowMs));
+        assertEquals(1, switches.count());
+        assertEquals(subject, switches.listAll().getFirst().subject);
+    }
+
+    @Test
+    void a_full_schedules_window_refuses_the_exchanged_token() {
+        switches.deleteAll();
+        String subject = "schedule-full-sub";
+        String key = CallerRateLimiter.key(RateLimitBucket.APPLIANCES_SCHEDULES, subject);
+        long windowMs = config.rateLimit().window().toMillis();
+        int taken = 0;
+        while (limiter.tryAcquire(RateLimitBucket.APPLIANCES_SCHEDULES, subject)) {
+            taken++;
+        }
+        assertEquals(config.rateLimit().permits(), taken);
+        assertEquals(config.rateLimit().permits(), hits.count(key, windowMs));
+
+        Response refused = schedule(subject, Set.of("mcp-user", "dashboard"));
+        refused.then().statusCode(429);
+        assertEquals("", refused.asString());
+        assertEquals(0, switches.count());
+        assertEquals(config.rateLimit().permits(), hits.count(key, windowMs));
+    }
+
+    @Test
+    void an_exchanged_mcp_user_cannot_store_a_switch() {
+        switches.deleteAll();
+        schedule("schedule-reader-sub", Set.of("mcp-user")).then().statusCode(403);
+        assertEquals(0, switches.count());
+    }
+
+    private Response schedule(String subject, Set<String> roles) {
+        return given().header("Authorization", "Bearer " + exchanged(subject, roles))
+                .contentType("application/json")
+                .body(switchBody())
+                .when()
+                .post("/api/mcp/scheduled-switches");
+    }
+
+    private static String switchBody() {
+        return "{\"instanceId\":\"" + MockAutonomy.INSTANCE_ID
+                + "\",\"applianceName\":\"" + MockAutonomy.FIXTURE_NAMES.get(0)
+                + "\",\"on\":false,\"dueAt\":\"" + Instant.now().plusSeconds(120) + "\"}";
     }
 
     /** The token Keycloak answers the exchange with: the user's sub and roles, audience freedriver-api. */

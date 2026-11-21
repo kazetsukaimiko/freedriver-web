@@ -3,7 +3,7 @@ package io.freedriver.app.metrics;
 import io.freedriver.app.appliances.SubscribedHouses;
 import io.freedriver.app.appliances.MqttAcl;
 import io.freedriver.mqtt.MqttConnection;
-import io.freedriver.mqtt.MqttLog;
+import io.freedriver.app.mqttlog.HouseMqttLog;
 import io.micrometer.core.annotation.Timed;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -43,7 +43,7 @@ public class MetricsMqttForwarder {
             connection.subscribe(MetricsTopics.metricsTopic(instanceId), MetricsTopics.QOS,
                     handlers.timed(MetricsMqttForwarder.class, this::onBrokerMessage));
         } catch (RuntimeException e) {
-            MqttLog.metricsRejected(MetricsTopics.metricsTopic(instanceId), "subscribe-failed");
+            HouseMqttLog.metricsRejected(MetricsTopics.metricsTopic(instanceId), "subscribe-failed");
         }
     }
 
@@ -54,27 +54,27 @@ public class MetricsMqttForwarder {
     void onBrokerMessage(String topic, byte[] payload) {
         UUID instanceId = MqttAcl.instanceIdFrom(topic, "metrics");
         if (instanceId == null || !subscriptions.contains(instanceId)) {
-            MqttLog.metricsRejected(topic, "unknown-instance");
+            HouseMqttLog.metricsRejected(topic, "unknown-instance");
             return;
         }
         if (payload != null && payload.length > MAX_BYTES) {
-            MqttLog.metricsRejected(topic, "size");
+            HouseMqttLog.metricsRejected(topic, "size");
             return;
         }
         final MetricsPointPayload point;
         try {
             point = MetricsPointJson.read(payload);
         } catch (RuntimeException e) {
-            MqttLog.metricsRejected(topic, "schema");
+            HouseMqttLog.metricsRejected(topic, "schema");
             return;
         }
         try {
             emitter.emit(withInstance(point, instanceId));
         } catch (RuntimeException e) {
-            MqttLog.metricsRejected(topic, "kind");
+            HouseMqttLog.metricsRejected(topic, "kind");
             return;
         }
-        MqttLog.metricsReceived(instanceId);
+        HouseMqttLog.metricsReceived(instanceId);
     }
 
     static MetricsPointPayload withInstance(MetricsPointPayload point, UUID instanceId) {

@@ -42,6 +42,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
+echo "building the SMS OTP provider jar"
+./mvnw -B -C -pl sms-client -am package -DskipTests
+./mvnw -B -C -pl sms-client -am install -DskipTests
+./mvnw -B -f keycloak/sms-otp-spi/pom.xml -DskipTests package
+PROVIDER_JAR="$ROOT/keycloak/sms-otp-spi/target/freedriver-sms-otp-spi-1.0.0-SNAPSHOT.jar"
+if [[ ! -s "$PROVIDER_JAR" ]]; then
+  echo "missing provider jar $PROVIDER_JAR" >&2
+  exit 1
+fi
+
 if [[ "$USE_DOCKER" -eq 1 ]]; then
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
   docker run -d --name "$CONTAINER" --memory=2g --memory-swap=2g \
@@ -49,6 +59,7 @@ if [[ "$USE_DOCKER" -eq 1 ]]; then
     -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
     -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
     -e JAVA_OPTS_APPEND="-Xms256m -Xmx768m" \
+    -v "${PROVIDER_JAR}:/opt/keycloak/providers/freedriver-sms-otp.jar:ro" \
     "$IMAGE" start-dev >/dev/null
   KCADM=(docker exec "$CONTAINER" /opt/keycloak/bin/kcadm.sh)
   KCADM_CONFIG=/tmp/kcadm-admin.config
@@ -66,6 +77,8 @@ else
   fi
   tar -xzf "$tarball" -C "$work"
   kc_home="$work/keycloak-${KC_VERSION}"
+  mkdir -p "$kc_home/providers"
+  cp "$PROVIDER_JAR" "$kc_home/providers/freedriver-sms-otp.jar"
   export JAVA_HOME="$JAVA21"
   export PATH="$JAVA_HOME/bin:$PATH"
   export KC_BOOTSTRAP_ADMIN_USERNAME=admin
@@ -109,7 +122,12 @@ admin() {
 admin_stdin() {
   local verb="$1"
   shift
-  "${KCADM[@]}" "$verb" --config "$KCADM_CONFIG" "$@"
+  if [[ "$USE_DOCKER" -eq 1 ]]; then
+    docker exec -i "$CONTAINER" /opt/keycloak/bin/kcadm.sh "$verb" \
+      --config "$KCADM_CONFIG" "$@"
+  else
+    "${KCADM[@]}" "$verb" --config "$KCADM_CONFIG" "$@"
+  fi
 }
 
 csv_id() {
@@ -366,7 +384,11 @@ if isinstance(aud, str):
     aud = [aud]
 aud = aud or []
 roles = set(claims.get("roles") or [])
-want_roles = set(subject.get("roles") or [])
+# offline_access is a default scope on the grok.com client only. The exchange
+# client does not request it, so that role stays on the subject token.
+want_roles = set(subject.get("roles") or []) - {"offline_access"}
+if "offline_access" not in (subject.get("roles") or []):
+    raise SystemExit("DCR subject token is missing offline_access")
 if claims.get("sub") != subject.get("sub"):
     raise SystemExit("exchanged sub differs from the DCR token")
 missing = sorted(want_roles - roles)

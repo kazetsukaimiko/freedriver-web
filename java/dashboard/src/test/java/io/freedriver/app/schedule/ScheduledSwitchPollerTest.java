@@ -2,6 +2,8 @@ package io.freedriver.app.schedule;
 
 import io.freedriver.app.appliances.ApplianceAudit;
 import io.freedriver.app.appliances.ApplianceService;
+import io.freedriver.app.security.CallerRateLimiter;
+import io.freedriver.dashboard.api.RateLimitBucket;
 import io.freedriver.dashboard.model.InstanceView;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -24,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The poller on the Dev Services Mongo container, with a recording appliance service. */
@@ -35,6 +38,9 @@ class ScheduledSwitchPollerTest {
 
     @Inject
     ScheduledSwitchRepository rows;
+
+    @Inject
+    CallerRateLimiter limiter;
 
     private final RecordingAudit audit = new RecordingAudit();
 
@@ -141,6 +147,24 @@ class ScheduledSwitchPollerTest {
     }
 
     @Test
+    void a_due_row_runs_while_the_callers_windows_are_full() {
+        String subject = "poller-windows-full";
+        fill(RateLimitBucket.APPLIANCES_SCHEDULES, subject);
+        fill(RateLimitBucket.APPLIANCES_COMMANDS, subject);
+        ScheduledSwitch due = row("due-full", NOW);
+        due.subject = subject;
+        rows.persist(due);
+        FakeAppliances appliances = new FakeAppliances(0);
+
+        assertEquals(1, new ScheduledSwitchPoller(rows, appliances, audit, new MutableClock(NOW)).pass());
+
+        assertEquals(1, runs(appliances, "due-full"));
+        assertEquals(0, rows.count());
+        assertFalse(limiter.tryAcquire(RateLimitBucket.APPLIANCES_SCHEDULES, subject));
+        assertFalse(limiter.tryAcquire(RateLimitBucket.APPLIANCES_COMMANDS, subject));
+    }
+
+    @Test
     void a_future_row_stays() {
         rows.persist(row("later", NOW.plusSeconds(30)));
         FakeAppliances appliances = new FakeAppliances(0);
@@ -148,6 +172,12 @@ class ScheduledSwitchPollerTest {
         assertEquals(0, new ScheduledSwitchPoller(rows, appliances, audit, new MutableClock(NOW)).pass());
 
         assertEquals(1, rows.count());
+    }
+
+    private void fill(RateLimitBucket bucket, String caller) {
+        while (limiter.tryAcquire(bucket, caller)) {
+            // The allowance is the injected permits. The loop stops when the window is full.
+        }
     }
 
     private static int drain(ScheduledSwitchPoller poller) {

@@ -1,5 +1,6 @@
 package io.freedriver.sms.phones;
 
+import io.freedriver.sms.validation.UsPhoneNumbers;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -40,7 +41,7 @@ public class PhoneDirectory {
      * A null or blank name is stored as the masked number. False when the number is already listed.
      */
     public boolean whitelist(String phone, String name) {
-        if (phone == null || !phone.matches("\\+1[0-9]{10}")) {
+        if (phone == null || !UsPhoneNumbers.isCanonical(phone)) {
             throw new IllegalArgumentException("phone");
         }
         if (phones.find(phone).isPresent()) {

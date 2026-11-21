@@ -1,5 +1,6 @@
 package io.freedriver.app.instances;
 
+import io.freedriver.dashboard.api.RateLimitBucket;
 import io.freedriver.dashboard.api.RateLimited;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.Consumes;
@@ -27,13 +28,13 @@ public interface InstancesApi {
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @RolesAllowed("portal-admin")
-    @RateLimited("instances")
+    @RateLimited(RateLimitBucket.INSTANCES)
     @ResponseStatus(201)
     ProvisionedInstance create(CreateInstance request);
 
     @POST
     @Path("{instanceId}/open")
     @RolesAllowed("portal-admin")
-    @RateLimited("instances")
+    @RateLimited(RateLimitBucket.INSTANCES)
     ProvisionedInstance open(@PathParam("instanceId") String instanceId);
 }

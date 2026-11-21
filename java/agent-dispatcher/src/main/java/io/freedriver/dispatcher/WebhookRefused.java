@@ -2,8 +2,10 @@ package io.freedriver.dispatcher;
 
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.rest.client.ext.ResponseExceptionMapper;
+import org.jmolecules.architecture.hexagonal.SecondaryAdapter;
 
 /** The webhook answered 400 or more. */
+@SecondaryAdapter
 final class WebhookRefused extends RuntimeException {
 
     private final int status;

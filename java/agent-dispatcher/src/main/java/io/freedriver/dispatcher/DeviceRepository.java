@@ -6,6 +6,7 @@ import com.mongodb.client.model.Updates;
 import io.quarkus.mongodb.panache.PanacheMongoRepositoryBase;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.bson.Document;
+import org.jmolecules.architecture.hexagonal.SecondaryPort;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -17,6 +18,7 @@ import static com.mongodb.client.model.Filters.and;
 import static com.mongodb.client.model.Filters.eq;
 
 /** {@code agent-devices}. Each write is one command. */
+@SecondaryPort
 @ApplicationScoped
 public class DeviceRepository implements PanacheMongoRepositoryBase<Device, String> {
 

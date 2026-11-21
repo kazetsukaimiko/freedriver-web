@@ -5,10 +5,12 @@ import com.mongodb.client.model.Indexes;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
+import org.jmolecules.architecture.hexagonal.SecondaryAdapter;
 
 import java.util.concurrent.TimeUnit;
 
 /** Creates the dispatcher's indexes at startup. Creating an index that exists is a no-op. */
+@SecondaryAdapter
 @ApplicationScoped
 class JobIndexes {
 

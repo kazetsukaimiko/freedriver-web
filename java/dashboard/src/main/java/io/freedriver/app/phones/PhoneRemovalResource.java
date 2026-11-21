@@ -1,7 +1,9 @@
 package io.freedriver.app.phones;
 
 import io.freedriver.app.api.LoginLinks;
+import io.freedriver.dashboard.api.RateLimitBucket;
 import io.freedriver.dashboard.api.RateLimited;
+import io.freedriver.sms.validation.UsPhoneNumbers;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -14,7 +16,6 @@ import jakarta.ws.rs.core.Response;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.regex.Pattern;
 
 /**
  * Portal-admin phone list. Removal takes the number off sms and out of Keycloak {@code phone-sign-in}.
@@ -23,8 +24,6 @@ import java.util.regex.Pattern;
 @RolesAllowed("portal-admin")
 @Produces(MediaType.APPLICATION_JSON)
 public class PhoneRemovalResource {
-
-    static final Pattern PHONE = Pattern.compile("^\\+1[0-9]{10}$");
 
     private final SmsPhoneList sms;
     private final PhoneSignInDirectory keycloak;
@@ -59,10 +58,10 @@ public class PhoneRemovalResource {
     @POST
     @Path("remove")
     @Consumes(MediaType.APPLICATION_JSON)
-    @RateLimited("phones")
+    @RateLimited(RateLimitBucket.PHONES)
     public Response remove(RemovePhone request) {
         String phone = request == null ? null : request.phone();
-        if (phone == null || !PHONE.matcher(phone).matches()) {
+        if (phone == null || !UsPhoneNumbers.isCanonical(phone)) {
             return Response.status(400).entity("{}").build();
         }
         // Blank secret fails closed before Keycloak. A failed group removal must leave the sms row in place.

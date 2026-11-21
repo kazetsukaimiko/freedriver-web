@@ -35,7 +35,8 @@ class DaemonConfigTest {
 
         assertEquals(OpenBotWorker.DEVICE_ID, config.deviceId());
         assertEquals(WorkerMode.OPENBOT, config.mode());
-        assertEquals(List.of("techops", "yuni"), config.settings().agents());
+        assertEquals(List.of("PM", "Coder", "Architect", "TechOps", "Security", "Dispatcher", "Sysadmin"),
+                config.settings().agents());
         assertEquals(Path.of("/home/pc/.config/OpenBot/automation"), config.settings().automationDir());
         assertNull(config.settings().grokBinary());
         assertTrue(config.settings().allow().isEmpty());
