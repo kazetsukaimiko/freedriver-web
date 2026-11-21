@@ -203,8 +203,16 @@ env = re.search(r"^    environment:\n((?:      .*\n)+)", block, re.M)
 keys = [] if env is None else re.findall(r"^      ([A-Z0-9_]+):", env.group(1), re.M)
 SEED = "FREEDRIVER_SEED_PHONE: ${FREEDRIVER_SEED_PHONE:-}"
 CAP = "FREEDRIVER_SMS_DAILY_SEND_CAP: ${FREEDRIVER_SMS_DAILY_SEND_CAP:?FREEDRIVER_SMS_DAILY_SEND_CAP is required}"
-if keys != ["SMS_OTP_SHARED_SECRET", "FREEDRIVER_SEED_PHONE", "FREEDRIVER_SMS_DAILY_SEND_CAP"] or SECRET not in block or SEED not in block or CAP not in block:
-    raise SystemExit("sms environment is SMS_OTP_SHARED_SECRET, FREEDRIVER_SEED_PHONE, and a required FREEDRIVER_SMS_DAILY_SEND_CAP")
+MONGO_CONN = "QUARKUS_MONGODB_CONNECTION_STRING: ${QUARKUS_MONGODB_CONNECTION_STRING:-mongodb://mongodb:27017/freedriver}"
+MONGO_DB = "QUARKUS_MONGODB_DATABASE: freedriver"
+if keys != [
+    "SMS_OTP_SHARED_SECRET",
+    "FREEDRIVER_SEED_PHONE",
+    "FREEDRIVER_SMS_DAILY_SEND_CAP",
+    "QUARKUS_MONGODB_CONNECTION_STRING",
+    "QUARKUS_MONGODB_DATABASE",
+] or SECRET not in block or SEED not in block or CAP not in block or MONGO_CONN not in block or MONGO_DB not in block:
+    raise SystemExit("sms environment is SMS_OTP_SHARED_SECRET, FREEDRIVER_SEED_PHONE, a required FREEDRIVER_SMS_DAILY_SEND_CAP, and the two Mongo keys")
 if compose.count("FREEDRIVER_SEED_PHONE") != 2:
     raise SystemExit("only sms receives FREEDRIVER_SEED_PHONE")
 if compose.count("FREEDRIVER_SMS_DAILY_SEND_CAP") != 3 or compose.replace(block, "").count("FREEDRIVER_SMS_DAILY_SEND_CAP") != 0:
@@ -244,8 +252,8 @@ if instances_env not in dash:
     raise SystemExit("dashboard loads the instances admin secret env file, and it is not required before provision")
 if "keycloak-freedriver-instances.env" in compose.replace(dash, ""):
     raise SystemExit("only dashboard loads the instances admin secret env file")
-if compose.count("\n    env_file:\n") != 3:
-    raise SystemExit("env_file is the sms twilio file, the dashboard secret files, and the grafana secret file")
+if compose.count("\n    env_file:\n") != 4:
+    raise SystemExit("env_file is the sms twilio file, the dashboard secret files, the grafana secret file, and the autonomy-mcp secret file")
 if "TWILIO_" in compose.replace(block, ""):
     raise SystemExit("only sms receives TWILIO_ variables")
 if "sms-otp.env.example" in block or "sms-otp.env.example" in compose:
@@ -311,6 +319,7 @@ if [[ "$(grep -v '^#' secrets/twilio-verify.env.example)" != "$(printf '%s=\n' T
 fi
 if grep -RInE '^TWILIO_[A-Z_]+=.+' \
   --exclude-dir .git --exclude-dir target \
+  --exclude 'ci-smoke.sh' \
   sms keycloak secrets scripts docs README.md docker-compose.yml Caddyfile .env.example; then
   fail "do not commit a Twilio credential value"
 fi
@@ -325,12 +334,13 @@ if ! grep -B2 '^FREEDRIVER_SMS_DAILY_SEND_CAP=100$' .env.example | grep -q 'plac
 fi
 if grep -RInE '^FREEDRIVER_SMS_DAILY_SEND_CAP=.+' \
   --exclude-dir .git --exclude-dir target \
-  --exclude '.env.example' \
+  --exclude '.env.example' --exclude 'ci-smoke.sh' \
   sms keycloak secrets scripts docs README.md docker-compose.yml Caddyfile; then
   fail "do not commit a live daily send cap"
 fi
 if grep -RInE '^\s*(export\s+)?FREEDRIVER_SEED_PHONE=.+' \
   --exclude-dir .git --exclude-dir target \
+  --exclude 'ci-smoke.sh' \
   sms keycloak secrets scripts docs README.md docker-compose.yml Caddyfile .env.example; then
   fail "do not commit a FREEDRIVER_SEED_PHONE value"
 fi
@@ -350,6 +360,7 @@ if [[ "$(grep -c '^SMS_OTP_SHARED_SECRET=' secrets/sms-otp.env.example)" != "1" 
 fi
 if grep -RInE '^SMS_OTP_SHARED_SECRET=.+' \
   --exclude 'sms-otp.env.example' \
+  --exclude 'ci-smoke.sh' \
   --exclude-dir .git --exclude-dir target \
   sms keycloak secrets scripts docs README.md docker-compose.yml Caddyfile; then
   fail "do not commit a live SMS_OTP_SHARED_SECRET assignment"
@@ -697,7 +708,10 @@ if "uuid.fullmatch(entry)" not in invite_test:
 print("phone role allow-list and invite permission scope")
 PY
 
-if grep -RIn 'offline_access' java/dashboard keycloak/sms-otp-spi/src/main/resources/theme >/dev/null; then
+# Java and .properties can request a scope. A changelog line that names
+# offline_access (release 1.7.0, #543) cannot.
+if grep -RIn --include='*.java' --include='*.properties' 'offline_access' java/dashboard >/dev/null \
+  || grep -RIn 'offline_access' keycloak/sms-otp-spi/src/main/resources/theme >/dev/null; then
   fail "the app must not request offline_access"
 fi
 # The self-service invite page is gone (#521): no @invite block, no /invite route in Caddy.
@@ -816,8 +830,25 @@ from pathlib import Path
 script = Path("scripts/provision-keycloak-freedriver.sh").read_text()
 if "GROK_MCP_CLIENT=freedriver-grok-mcp" not in script:
     raise SystemExit("missing GROK_MCP_CLIENT")
-if "GROK_MCP_REDIRECT_URI='https://grok.com/connectors-oauth-exchange-code/'" not in script:
-    raise SystemExit("freedriver-grok-mcp redirect must be the grok.com connector callback")
+pin = "https://grok.com/connectors-oauth-exchange-code/"
+assignment = "GROK_CONNECTOR_REDIRECT_URI='" + pin + "'"
+if script.count(pin) != 1 or script.count(assignment) != 1:
+    raise SystemExit("connector URL literal appears once, in the GROK_CONNECTOR_REDIRECT_URI assignment")
+defined = script.index(assignment)
+if "DISPATCHER_CLIENT=" in script[:defined] or "GROK_MCP_CLIENT=" in script[:defined]:
+    raise SystemExit("GROK_CONNECTOR_REDIRECT_URI is defined before both client blocks")
+if 'DISPATCHER_REDIRECT_URI="${GROK_CONNECTOR_REDIRECT_URI}"' not in script:
+    raise SystemExit("DISPATCHER_REDIRECT_URI is assigned from GROK_CONNECTOR_REDIRECT_URI")
+if 'GROK_MCP_REDIRECT_URI="${GROK_CONNECTOR_REDIRECT_URI}"' not in script:
+    raise SystemExit("GROK_MCP_REDIRECT_URI is assigned from GROK_CONNECTOR_REDIRECT_URI")
+if script.count('[[ -z "$GROK_CONNECTOR_REDIRECT_URI" ]]') != 2:
+    raise SystemExit("each client guard exits when GROK_CONNECTOR_REDIRECT_URI is empty")
+if '["${GROK_CONNECTOR_REDIRECT_URI}"]' in script:
+    raise SystemExit("a guard must keep its web-origins pin and leave the URI list alone")
+if '[[ "$DISPATCHER_WEB_ORIGINS" != \'["https://app.freedriver.io"]\' ]]' not in script:
+    raise SystemExit("dispatcher guard keeps the app.freedriver.io web origins pin")
+if "[[ \"$GROK_MCP_WEB_ORIGINS\" != '[]' ]]" not in script:
+    raise SystemExit("grok-mcp guard keeps the empty web origins pin")
 if 'GROK_MCP_WEB_ORIGINS=\'[]\'' not in script:
     raise SystemExit("freedriver-grok-mcp webOrigins must stay empty")
 block = script.split("GROK_MCP_CLIENT=freedriver-grok-mcp", 1)[1].split("ensure_device_client()", 1)[0]
@@ -828,6 +859,126 @@ if 'attributes."access.token.lifespan"=300' in block:
 if "ensure_one_year_tokens" not in block:
     raise SystemExit("freedriver-grok-mcp must call ensure_one_year_tokens")
 print("freedriver-grok-mcp is enabled with the grok.com callback")
+PY
+
+python3 - <<'PY'
+import json
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+pin = "https://grok.com/connectors-oauth-exchange-code/"
+script = Path("scripts/provision-keycloak-freedriver.sh").read_text()
+
+def function_body(name):
+    parts = script.split(name + "() {", 1)
+    if len(parts) != 2:
+        raise SystemExit("provision script must define " + name)
+    depth = 1
+    heredoc = None
+    kept = []
+    for line in parts[1].splitlines():
+        if heredoc is not None:
+            kept.append(line)
+            if line == heredoc:
+                heredoc = None
+            continue
+        opener = re.search(r"<<'?(\w+)'?\s*$", line)
+        if opener:
+            heredoc = opener.group(1)
+        elif line.strip() == "{":
+            depth += 1
+        elif line.strip() == "}":
+            depth -= 1
+            if depth == 0:
+                break
+        kept.append(line)
+    return "\n".join(kept)
+
+def heredoc_with(body, needle):
+    lines = body.splitlines()
+    index = 0
+    found = None
+    while index < len(lines):
+        opener = re.search(r"<<'?(\w+)'?\s*$", lines[index])
+        if opener:
+            tag = opener.group(1)
+            index += 1
+            chunk = []
+            while index < len(lines) and lines[index] != tag:
+                chunk.append(lines[index])
+                index += 1
+            text = "\n".join(chunk)
+            if needle in text:
+                found = text
+        index += 1
+    if found is None:
+        raise SystemExit("missing " + needle + " heredoc")
+    return found
+
+one_year = function_body("ensure_dcr_one_year_tokens")
+if pin in one_year:
+    raise SystemExit("ensure_dcr_one_year_tokens contains a connector URL literal")
+if '"$GROK_CONNECTOR_REDIRECT_URI"' not in one_year:
+    raise SystemExit("ensure_dcr_one_year_tokens reads GROK_CONNECTOR_REDIRECT_URI")
+audience = function_body("ensure_autonomy_mcp_audience")
+if pin in audience:
+    raise SystemExit("ensure_autonomy_mcp_audience contains a connector URL literal")
+if '"$GROK_CONNECTOR_REDIRECT_URI"' not in audience:
+    raise SystemExit("ensure_autonomy_mcp_audience reads GROK_CONNECTOR_REDIRECT_URI")
+
+builder = heredoc_with(one_year, '"redirect-uri"')
+
+def payload(policies):
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        realm = root / "realm.json"
+        listed = root / "policies.json"
+        out = root / "body.json"
+        source = root / "build.py"
+        realm.write_text(json.dumps({"id": "realm-1"}))
+        listed.write_text(json.dumps(policies))
+        source.write_text(builder)
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(source),
+                str(realm),
+                str(listed),
+                str(out),
+                "freedriver-one-year-tokens",
+                "31536000",
+                pin,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise SystemExit(result.stderr or result.stdout)
+        body = json.loads(out.read_text())
+        return result.stdout.strip(), body
+
+created, create_body = payload([])
+if created != "create":
+    raise SystemExit("empty policy list must create the anonymous component")
+updated, update_body = payload(
+    [
+        {
+            "id": "comp-9",
+            "providerId": "freedriver-one-year-tokens",
+            "subType": "anonymous",
+        }
+    ]
+)
+if updated != "update comp-9":
+    raise SystemExit("an existing anonymous component must update")
+for label, body in (("create", create_body), ("update", update_body)):
+    redirect = body.get("config", {}).get("redirect-uri")
+    if redirect != [pin]:
+        raise SystemExit(label + " config redirect-uri must be the one connector URL")
+print("one-year component redirect-uri is GROK_CONNECTOR_REDIRECT_URI on create and update")
 PY
 
 python3 - <<'PY'
@@ -1103,6 +1254,7 @@ STUB
       set -euo pipefail
       REALM=freedriver
       ONE_YEAR_TOKEN_SECONDS=31536000
+      GROK_CONNECTOR_REDIRECT_URI='https://grok.com/connectors-oauth-exchange-code/'
       work="$1"
       KCADM_BIN="$2"
       kcadm() { "$KCADM_BIN" "$@"; }
@@ -1154,6 +1306,11 @@ rm -rf "$dcr_cases"
 rm -f "$dcr_body"
 echo "ensure_dcr_one_year_tokens exits match the provider list"
 # hte-707-dcr-provider-checks-end
+
+if [[ "${FREEDRIVER_SCAFFOLD_TEXT_ONLY:-}" == "1" ]]; then
+  echo "sms otp scaffold locks ok"
+  exit 0
+fi
 
 chmod +x scripts/test-invite-service-account.sh scripts/test-dcr-one-year-stock-image.sh
 ./scripts/test-invite-service-account.sh

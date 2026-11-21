@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.8.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.7.0...v1.8.0) (2026-11-21)
+
+
+### Features
+
+* **dashboard:** cap pending scheduled switches per subject ([#690](https://github.com/kazetsukaimiko/freedriver-web/issues/690)) ([b405f77](https://github.com/kazetsukaimiko/freedriver-web/commit/b405f775522fbd21fa68bd533c824b12420bb487))
+* **dashboard:** rate-limit a stored appliance switch ([#675](https://github.com/kazetsukaimiko/freedriver-web/issues/675)) ([9b74ed2](https://github.com/kazetsukaimiko/freedriver-web/commit/9b74ed23a6ab2c739b73b69a8f5a0e72915441a3)), closes [#548](https://github.com/kazetsukaimiko/freedriver-web/issues/548)
+* **dashboard:** switch several appliances in one MCP call ([#592](https://github.com/kazetsukaimiko/freedriver-web/issues/592)) ([e6c64ac](https://github.com/kazetsukaimiko/freedriver-web/commit/e6c64ac406858d7fb0267a2a59198f8398021f46)), closes [#584](https://github.com/kazetsukaimiko/freedriver-web/issues/584)
+* **dashboard:** the MQTT broker handlers are timed under freedriver.mqtt.handler ([#604](https://github.com/kazetsukaimiko/freedriver-web/issues/604)) ([f723d79](https://github.com/kazetsukaimiko/freedriver-web/commit/f723d790d6f95f4eadd3c00b56af112649b2a62f)), closes [#594](https://github.com/kazetsukaimiko/freedriver-web/issues/594)
+* **dispatcher:** every class declares its role, and a service holds no state in memory ([#611](https://github.com/kazetsukaimiko/freedriver-web/issues/611)) ([3e4bcd7](https://github.com/kazetsukaimiko/freedriver-web/commit/3e4bcd7e2c313d429201822e1e38d0a4b738c127)), closes [#608](https://github.com/kazetsukaimiko/freedriver-web/issues/608)
+* **dispatcher:** list the seven OpenBot agents on the roster ([#649](https://github.com/kazetsukaimiko/freedriver-web/issues/649)) ([accd8cf](https://github.com/kazetsukaimiko/freedriver-web/commit/accd8cfc178fa4f28a613def138a64c3a4284315)), closes [#588](https://github.com/kazetsukaimiko/freedriver-web/issues/588)
+* **dispatcher:** list_agents says how old its answer is and shows UNKNOWN or OFFLINE ([#606](https://github.com/kazetsukaimiko/freedriver-web/issues/606)) ([a99c61a](https://github.com/kazetsukaimiko/freedriver-web/commit/a99c61af65950820e3b07b662235bce5e9447075)), closes [#587](https://github.com/kazetsukaimiko/freedriver-web/issues/587)
+* **dispatcher:** read the OpenBot webhook address from configuration ([#605](https://github.com/kazetsukaimiko/freedriver-web/issues/605)) ([30cf82e](https://github.com/kazetsukaimiko/freedriver-web/commit/30cf82e25ccdc1676eb6780c3a47334d48b73985)), closes [#541](https://github.com/kazetsukaimiko/freedriver-web/issues/541)
+* **dispatcher:** the device daemon's OpenBot mode is the dispatch connector ([#607](https://github.com/kazetsukaimiko/freedriver-web/issues/607)) ([9f8e02e](https://github.com/kazetsukaimiko/freedriver-web/commit/9f8e02ec30a7628062c64c5fc8f60392fb7ed39b)), closes [#538](https://github.com/kazetsukaimiko/freedriver-web/issues/538)
+* **keycloak:** apply one-year tokens when grok.com registers a client ([#640](https://github.com/kazetsukaimiko/freedriver-web/issues/640)) ([08a4493](https://github.com/kazetsukaimiko/freedriver-web/commit/08a4493255b1dc62b1024d35cca6d1c00d9eff0d)), closes [#566](https://github.com/kazetsukaimiko/freedriver-web/issues/566)
+* **mqtt:** add command-list and scheduled contract types ([#659](https://github.com/kazetsukaimiko/freedriver-web/issues/659)) ([ac7dfe5](https://github.com/kazetsukaimiko/freedriver-web/commit/ac7dfe5a8d25c3d857dd6702f45806fccf5ee45b)), closes [#635](https://github.com/kazetsukaimiko/freedriver-web/issues/635)
+* **sms:** one US phone number definition for dashboard, sms and Keycloak ([#643](https://github.com/kazetsukaimiko/freedriver-web/issues/643)) ([bdc7fcf](https://github.com/kazetsukaimiko/freedriver-web/commit/bdc7fcf6c53d91991bfb3d4a4c09438423f2a2b3)), closes [#482](https://github.com/kazetsukaimiko/freedriver-web/issues/482)
+
+
+### Bug Fixes
+
+* **ci:** pair a reworded store rule with its old file ([#712](https://github.com/kazetsukaimiko/freedriver-web/issues/712)) ([2cd3808](https://github.com/kazetsukaimiko/freedriver-web/commit/2cd38086d35f7f457b7f5937e185b1880867d7aa)), closes [#685](https://github.com/kazetsukaimiko/freedriver-web/issues/685)
+* **deploy:** the public app host answers 404 for the dashboard's management paths ([#601](https://github.com/kazetsukaimiko/freedriver-web/issues/601)) ([1e72957](https://github.com/kazetsukaimiko/freedriver-web/commit/1e72957d5db89e96c4779968529b2c61fbf4e59b)), closes [#593](https://github.com/kazetsukaimiko/freedriver-web/issues/593)
+* **dispatcher:** the connector's finish on a finished job answers its state and keeps the agent's result ([#596](https://github.com/kazetsukaimiko/freedriver-web/issues/596)) ([20aad97](https://github.com/kazetsukaimiko/freedriver-web/commit/20aad970c38c6f1dfce2f6f65e0dea7716118c68))
+* **keycloak:** match script and theme phone checks to the stored US form ([#677](https://github.com/kazetsukaimiko/freedriver-web/issues/677)) ([4b4c8a0](https://github.com/kazetsukaimiko/freedriver-web/commit/4b4c8a07f8c019c73ebccacc9f88e0f040f0f4b5)), closes [#641](https://github.com/kazetsukaimiko/freedriver-web/issues/641)
+* **keycloak:** separate a failed provider list from a missing one ([#713](https://github.com/kazetsukaimiko/freedriver-web/issues/713)) ([08484ce](https://github.com/kazetsukaimiko/freedriver-web/commit/08484ce68882495ba1370d5423972c787fadefa6))
+
+
+### Refactors
+
+* **dashboard:** rate-limit buckets are an enum ([#645](https://github.com/kazetsukaimiko/freedriver-web/issues/645)) ([93d824c](https://github.com/kazetsukaimiko/freedriver-web/commit/93d824c3421877348823674b5b5636a70684361a)), closes [#482](https://github.com/kazetsukaimiko/freedriver-web/issues/482)
+* **dashboard:** time blocking I/O with Micrometer @Timed ([#599](https://github.com/kazetsukaimiko/freedriver-web/issues/599)) ([3b56b75](https://github.com/kazetsukaimiko/freedriver-web/commit/3b56b75219438d8c56b12665d5a648e9ad5dd380)), closes [#482](https://github.com/kazetsukaimiko/freedriver-web/issues/482)
+* **dispatcher:** find the layering edge by adapter role ([#663](https://github.com/kazetsukaimiko/freedriver-web/issues/663)) ([2af41b2](https://github.com/kazetsukaimiko/freedriver-web/commit/2af41b2d8a7d78cf400335b099a60b5963b19174)), closes [#647](https://github.com/kazetsukaimiko/freedriver-web/issues/647)
+* **dispatcher:** name adapter roles in the layering because-texts ([#688](https://github.com/kazetsukaimiko/freedriver-web/issues/688)) ([e1ce456](https://github.com/kazetsukaimiko/freedriver-web/commit/e1ce45633fd965b1e17182973f50926af6de6285)), closes [#661](https://github.com/kazetsukaimiko/freedriver-web/issues/661)
+* **dispatcher:** one package per architecture role ([#664](https://github.com/kazetsukaimiko/freedriver-web/issues/664)) ([112ff7e](https://github.com/kazetsukaimiko/freedriver-web/commit/112ff7eede0409ce73ad7c927a4ace3a97ee1909))
+* **keycloak:** ship the login theme in the provider jar ([#653](https://github.com/kazetsukaimiko/freedriver-web/issues/653)) ([52a84af](https://github.com/kazetsukaimiko/freedriver-web/commit/52a84af2f0b401c11ae46933d951bf8c18a73b43)), closes [#626](https://github.com/kazetsukaimiko/freedriver-web/issues/626)
+* **mqtt:** keep the session and the Paho client in one module ([#642](https://github.com/kazetsukaimiko/freedriver-web/issues/642)) ([ab1123a](https://github.com/kazetsukaimiko/freedriver-web/commit/ab1123ad3964adb3d4b39dbeb1abde994826010a)), closes [#482](https://github.com/kazetsukaimiko/freedriver-web/issues/482)
+
 ## [1.7.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.6.0...v1.7.0) (2026-11-18)
 
 

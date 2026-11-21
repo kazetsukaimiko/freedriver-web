@@ -463,14 +463,18 @@ ensure_mapper() {
   echo "Created mapper ${name}."
 }
 
-DISPATCHER_CLIENT=freedriver-dispatcher
 # Exact Grok callback. The trailing slash is part of the value.
-DISPATCHER_REDIRECT_URI='https://grok.com/connectors-oauth-exchange-code/'
+# One assignment. The dispatcher client, the grok MCP client, the one-year
+# component, and the autonomy audience all read this variable.
+GROK_CONNECTOR_REDIRECT_URI='https://grok.com/connectors-oauth-exchange-code/'
+
+DISPATCHER_CLIENT=freedriver-dispatcher
+DISPATCHER_REDIRECT_URI="${GROK_CONNECTOR_REDIRECT_URI}"
 DISPATCHER_REDIRECT_URIS="[\"${DISPATCHER_REDIRECT_URI}\"]"
 DISPATCHER_WEB_ORIGINS='["https://app.freedriver.io"]'
-if [[ "$DISPATCHER_REDIRECT_URIS" != '["https://grok.com/connectors-oauth-exchange-code/"]' ]] \
+if [[ -z "$GROK_CONNECTOR_REDIRECT_URI" ]] \
     || [[ "$DISPATCHER_WEB_ORIGINS" != '["https://app.freedriver.io"]' ]]; then
-  echo "freedriver-dispatcher redirect or web origins are not the pinned values." >&2
+  echo "freedriver-dispatcher connector redirect is empty or web origins are not the pinned values." >&2
   exit 1
 fi
 DISPATCHER_UUID="$(kcadm get clients -r "$REALM" -q "clientId=${DISPATCHER_CLIENT}" --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
@@ -527,12 +531,12 @@ ensure_mapper "$DISPATCHER_UUID" role-dispatcher \
 # Public Grok Bot client for /autonomy/mcp. Same grok.com callback as
 # freedriver-dispatcher; a separate client so azp stays freedriver-grok-mcp.
 GROK_MCP_CLIENT=freedriver-grok-mcp
-GROK_MCP_REDIRECT_URI='https://grok.com/connectors-oauth-exchange-code/'
+GROK_MCP_REDIRECT_URI="${GROK_CONNECTOR_REDIRECT_URI}"
 GROK_MCP_REDIRECT_URIS="[\"${GROK_MCP_REDIRECT_URI}\"]"
 GROK_MCP_WEB_ORIGINS='[]'
-if [[ "$GROK_MCP_REDIRECT_URIS" != '["https://grok.com/connectors-oauth-exchange-code/"]' ]] \
+if [[ -z "$GROK_CONNECTOR_REDIRECT_URI" ]] \
     || [[ "$GROK_MCP_WEB_ORIGINS" != '[]' ]]; then
-  echo "freedriver-grok-mcp redirect or web origins are not the pinned values." >&2
+  echo "freedriver-grok-mcp connector redirect is empty or web origins are not the pinned values." >&2
   exit 1
 fi
 GROK_MCP_UUID="$(kcadm get clients -r "$REALM" -q "clientId=${GROK_MCP_CLIENT}" --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
@@ -821,7 +825,6 @@ ensure_dcr_trusted_hosts
 # already exist. A server without this provider stops here.
 ensure_dcr_one_year_tokens() {
   local provider_id=freedriver-one-year-tokens
-  local grok_redirect='https://grok.com/connectors-oauth-exchange-code/'
   local action comp_id provider_state
   # A failed or unreadable providers call is an admin-session problem.
   # The missing-provider sentence stays for a list of string ids that lacks this one.
@@ -884,7 +887,7 @@ PY
     -q type=org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy \
     > "$work/dcr-policies.json"
   action="$(python3 - "$work/realm-id.json" "$work/dcr-policies.json" "$work/dcr-one-year.json" \
-    "$provider_id" "$ONE_YEAR_TOKEN_SECONDS" "$grok_redirect" <<'PY'
+    "$provider_id" "$ONE_YEAR_TOKEN_SECONDS" "$GROK_CONNECTOR_REDIRECT_URI" <<'PY'
 import json, sys
 realm = json.load(open(sys.argv[1], encoding="utf-8"))
 policies = json.load(open(sys.argv[2], encoding="utf-8"))
@@ -988,7 +991,6 @@ ensure_dcr_autonomy_role_scope
 ensure_autonomy_mcp_audience() {
   local audience='https://app.freedriver.io/autonomy/mcp'
   local mapper_name='audience-autonomy-mcp'
-  local grok_redirect='https://grok.com/connectors-oauth-exchange-code/'
   local scope_id mapper_id have_default
   python3 - "$work/audience-mapper.json" "$mapper_name" "$audience" <<'PY'
 import json, sys
@@ -1084,7 +1086,7 @@ PY
   fi
 
   kcadm get clients -r "$REALM" > "$work/audience-clients-raw.json"
-  python3 - "$work/audience-clients-raw.json" "$work/audience-clients.json" "$work/audience-targets.json" "$grok_redirect" <<'PY'
+  python3 - "$work/audience-clients-raw.json" "$work/audience-clients.json" "$work/audience-targets.json" "$GROK_CONNECTOR_REDIRECT_URI" <<'PY'
 import json, sys
 raw_path, slim_path, targets_path, redirect = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 clients = json.load(open(raw_path, encoding="utf-8"))
