@@ -8,22 +8,31 @@ import org.keycloak.models.ClientScopeModel;
 import org.keycloak.models.RealmModel;
 import org.keycloak.services.clientregistration.ClientRegistrationContext;
 import org.keycloak.services.clientregistration.ClientRegistrationProvider;
+import org.keycloak.services.clientregistration.policy.ClientRegistrationPolicyFactory;
 
 import java.io.IOException;
-import java.io.InputStream;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Enumeration;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.ServiceLoader;
 import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class OneYearTokensTest {
@@ -77,7 +86,8 @@ class OneYearTokensTest {
     }
 
     @Test
-    void otherHooksDoNothing() throws Exception {
+    void otherHooksDoNothing() {
+        clearInvocations(client);
         ClientRegistrationContext context = mock(ClientRegistrationContext.class);
         ClientRegistrationProvider provider = mock(ClientRegistrationProvider.class);
 
@@ -87,24 +97,44 @@ class OneYearTokensTest {
         policy.beforeView(provider, client);
         policy.beforeDelete(provider, client);
 
-        verify(client, never()).setAttribute(any(), any());
-        verify(client, never()).addClientScope(any(), anyBoolean());
+        verifyNoInteractions(client);
     }
 
     @Test
-    void factoryIdAndConfig() throws IOException {
+    void factoryIdAndConfig() {
         OneYearTokensFactory factory = new OneYearTokensFactory();
         assertEquals("freedriver-one-year-tokens", factory.getId());
         assertEquals(
                 OneYearTokensFactory.ACCESS_TOKEN_LIFESPAN,
                 factory.getConfigProperties().get(0).getName());
         assertEquals(OneYearTokensFactory.REDIRECT_URI, factory.getConfigProperties().get(1).getName());
-        String resource = "META-INF/services/org.keycloak.services.clientregistration.policy.ClientRegistrationPolicyFactory";
-        try (InputStream in = OneYearTokensFactory.class.getClassLoader().getResourceAsStream(resource)) {
-            assertTrue(in != null);
-            String listed = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-            assertTrue(listed.contains(OneYearTokensFactory.class.getName()));
-        }
+    }
+
+    @Test
+    void serviceFileLoadsEachFactory() throws IOException {
+        Path serviceFile = Path.of(
+                "src/main/resources/META-INF/services/org.keycloak.services.clientregistration.policy.ClientRegistrationPolicyFactory");
+        List<String> lines = Files.readAllLines(serviceFile, StandardCharsets.UTF_8).stream()
+                .filter(line -> !line.isBlank())
+                .toList();
+        String factory = OneYearTokensFactory.class.getName();
+        assertEquals(1, lines.stream().filter(factory::equals).count());
+        URL serviceUrl = serviceFile.toUri().toURL();
+        String serviceName =
+                "META-INF/services/org.keycloak.services.clientregistration.policy.ClientRegistrationPolicyFactory";
+        ClassLoader listedHere = new ClassLoader(OneYearTokensTest.class.getClassLoader()) {
+            @Override
+            public Enumeration<URL> getResources(String name) throws IOException {
+                if (serviceName.equals(name)) {
+                    return Collections.enumeration(List.of(serviceUrl));
+                }
+                return super.getResources(name);
+            }
+        };
+        List<String> loaded = new ArrayList<>();
+        ServiceLoader.load(ClientRegistrationPolicyFactory.class, listedHere)
+                .forEach(item -> loaded.add(item.getClass().getName()));
+        assertEquals(lines, loaded);
     }
 
     @Test
