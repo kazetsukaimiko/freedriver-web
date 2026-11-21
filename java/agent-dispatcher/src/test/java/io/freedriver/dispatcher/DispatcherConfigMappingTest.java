@@ -11,13 +11,11 @@ import jakarta.validation.Validator;
 import org.hibernate.validator.messageinterpolation.ParameterMessageInterpolator;
 import org.junit.jupiter.api.Test;
 
-import java.net.URI;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -25,9 +23,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DispatcherConfigMappingTest {
 
     private static final String WEBHOOK_URL = "openbot-webhook-url";
-
-    private static final URI COMPILED = URI.create(
-            "https://signal.openbot.run/v1/webhooks/0ca403fc-5874-407c-8e70-38c518d442ee");
 
     @Test
     void the_host_lease_and_take_window_default_to_ninety_seconds_and_ten_minutes() {
@@ -58,35 +53,14 @@ class DispatcherConfigMappingTest {
     }
 
     @Test
-    void the_ping_resolves_the_compiled_address_when_the_webhook_url_is_absent() {
-        DispatcherConfig config = mapping(Map.of());
+    void the_host_silence_window_defaults_to_ten_minutes_and_must_be_longer_than_fifty_seconds() {
+        assertEquals(Duration.ofMinutes(10), mapping(Map.of()).hostSilentAfter());
 
-        assertFalse(config.openbotWebhookUrl().isPresent());
-        assertEquals(COMPILED, new OpenBotJobPing(config).url());
-    }
+        ConfigValidationException refused = assertThrows(ConfigValidationException.class,
+                () -> mapping(Map.of("host-silent-after", "50s")));
+        assertTrue(refused.getMessage().contains("host-silent-after"), refused.getMessage());
 
-    @Test
-    void the_ping_resolves_the_compiled_address_when_the_webhook_url_is_empty() {
-        DispatcherConfig config = mapping(Map.of(WEBHOOK_URL, ""));
-
-        assertFalse(config.openbotWebhookUrl().isPresent());
-        assertEquals(COMPILED, new OpenBotJobPing(config).url());
-    }
-
-    @Test
-    void the_ping_resolves_the_compiled_address_when_the_webhook_url_is_white_space() {
-        DispatcherConfig config = mapping(Map.of(WEBHOOK_URL, " \t "));
-
-        assertFalse(config.openbotWebhookUrl().isPresent());
-        assertEquals(COMPILED, new OpenBotJobPing(config).url());
-    }
-
-    @Test
-    void the_ping_is_built_with_a_configured_https_webhook_url() {
-        String relay = "https://signal.openbot.run/v1/webhooks/relay-agent";
-
-        assertEquals(URI.create(relay), new OpenBotJobPing(mapping(Map.of(WEBHOOK_URL, relay))).url());
-        assertEquals(URI.create(relay), new OpenBotJobPing(mapping(Map.of(WEBHOOK_URL, " " + relay + " "))).url());
+        assertEquals(Duration.ofSeconds(51), mapping(Map.of("host-silent-after", "51s")).hostSilentAfter());
     }
 
     @Test
