@@ -785,7 +785,8 @@ def assert_dispatcher_claim_race(client: Client) -> None:
             f"host report HTTP {status} body={body[:300]!r} {token_role_summary(device_token)}"
         )
     # REST POST /api/dispatcher/jobs waits until every assignment is terminal
-    # (75s). openbot_send_prompt is submitNow: it stores the row and returns.
+    # or freedriver.dispatcher.submit-timeout (default 75 s) elapses.
+    # openbot_send_prompt is submitNow: it stores the row and returns.
     dispatcher_path = f"{APP}/mcp"
     session = mcp_session(client, dispatcher_path, dispatcher_token)
     status, _, payload = mcp_post(
