@@ -3,6 +3,7 @@ package io.freedriver.dispatcher.jobs;
 import io.freedriver.dispatcher.model.AgentRosterEntry;
 import io.freedriver.dispatcher.model.AssignmentPage;
 import io.freedriver.dispatcher.model.AssignmentView;
+import io.freedriver.dispatcher.model.DeviceListEntry;
 import io.freedriver.dispatcher.model.DeviceView;
 import io.freedriver.dispatcher.model.StartRequest;
 import io.freedriver.dispatcher.model.JobPage;
@@ -59,7 +60,11 @@ public interface JobStore {
 
     DeviceView heartbeat(String deviceId);
 
-    List<DeviceView> listDevices();
+    /**
+     * Each host with the same states and the same {@code reportedAt} and {@code seenAt} as
+     * {@link #listAgents}, from {@code host-silent-after}.
+     */
+    List<DeviceListEntry> listDevices();
 
     JobView submit(@NotBlank String dispatcherSubject, @Valid @NotNull SubmitJobRequest request, Duration wait);
 
