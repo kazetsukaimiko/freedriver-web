@@ -1,10 +1,14 @@
 package io.freedriver.keycloak.sms;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.http.HttpRequest;
@@ -13,6 +17,7 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -26,9 +31,11 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -45,17 +52,16 @@ class PhoneUsernameRouterTest {
     private static final String SECRET = "super-secret-value";
     private static final String CANONICAL = "+11234567890";
 
-    /** Every accepted shape of 1234567890, including the canonical form. */
-    private static final String[] SHAPES = {
-            "123-456-7890",
-            "1234567890",
-            "(123) 456-7890",
-            "123.456.7890",
-            "123 456 7890",
-            "1-123-456-7890",
-            "+1 123 456 7890",
-            "+11234567890"
-    };
+    /** Surefire's working directory is this module. */
+    private static final Path ROUTER_SHAPES =
+            Path.of("../../sms-model/src/test/resources/us-phone-shapes.json");
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record Shapes(List<Example> dashboard, List<Example> router, List<String> nonMatches) {
+    }
+
+    private record Example(String raw, String stored) {
+    }
 
     private final Map<String, String> notes = new HashMap<>();
     private final Map<String, Object> formAttributes = new HashMap<>();
@@ -227,11 +233,21 @@ class PhoneUsernameRouterTest {
         assertNoUserAndNoSession();
     }
 
-    @Test
-    void everyListedShapeAndTheCanonicalFormRouteToThePhone() {
-        for (String raw : SHAPES) {
-            assertPhone(router, raw, CANONICAL);
+    static Stream<Example> routerShapes() throws IOException {
+        assertTrue(Files.isRegularFile(ROUTER_SHAPES), "missing " + ROUTER_SHAPES);
+        Shapes shapes;
+        try (InputStream in = Files.newInputStream(ROUTER_SHAPES)) {
+            shapes = new ObjectMapper().readValue(in, Shapes.class);
         }
+        assertNotNull(shapes.router(), "router group is missing in " + ROUTER_SHAPES);
+        assertFalse(shapes.router().isEmpty(), "router group is empty in " + ROUTER_SHAPES);
+        return shapes.router().stream();
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("routerShapes")
+    void everyListedShapeAndTheCanonicalFormRouteToThePhone(Example example) {
+        assertPhone(router, example.raw(), example.stored());
     }
 
     @Test
@@ -320,6 +336,8 @@ class PhoneUsernameRouterTest {
         assertTrue(form.contains("id=\"freedriver-sms-agreement\""));
         assertTrue(form.contains("${freedriverSmsAgreement}"));
         assertTrue(form.contains("phone-fragment.js"));
+        assertTrue(form.contains("${url.resourcesPath}/js/us-phone.js"));
+        assertTrue(form.indexOf("us-phone.js") < form.indexOf("phone-fragment.js"));
         assertFalse(form.contains("By tapping Send code"));
         assertFalse(form.contains("name=\"send\""));
         assertFalse(form.contains("freedriverSmsSend"));

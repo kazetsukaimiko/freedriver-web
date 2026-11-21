@@ -14,6 +14,8 @@
 
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
+        <!-- One instant so two installs of this jar hash the same. The provider's cache key is that hash. -->
+        <project.build.outputTimestamp>2026-01-01T00:00:00Z</project.build.outputTimestamp>
         <keycloak.dist.skip>false</keycloak.dist.skip>
         <!-- SHA-256 of keycloak-quarkus-dist-26.7.5.zip at keycloak.version. A keycloak.version change needs a new digest. -->
         <keycloak.dist.sha256>30ef87fb7101c43d29688d1ae80c0588ff4a151b3330e9f664bf9692d398658a</keycloak.dist.sha256>

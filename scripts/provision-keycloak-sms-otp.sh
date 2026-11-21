@@ -41,6 +41,35 @@ if [[ "${1:-}" == "--check-executions" ]]; then
   exec python3 "$CHECK" "$@"
 fi
 
+# 0 runs on_write (the profile PUT). 3 leaves the file and returns.
+# Any other status, including 1, stops before either users/profile PUT.
+phone_attribute_branch() {
+  local profile="$1"
+  local on_write="$2"
+  set +e
+  python3 "$CHECK" --apply-phone-attribute "$profile"
+  local phone_rc=$?
+  set -e
+  if [[ "$phone_rc" -eq 0 ]]; then
+    "$on_write"
+    return 0
+  fi
+  if [[ "$phone_rc" -eq 3 ]]; then
+    return 0
+  fi
+  exit 1
+}
+
+if [[ "${1:-}" == "--phone-profile-fixture" ]]; then
+  profile="${2:?profile}"
+  log="${3:?log}"
+  : > "$log"
+  record_put() { printf 'put\n' >> "$log"; }
+  phone_attribute_branch "$profile" record_put
+  printf 'continued\n' >> "$log"
+  exit 0
+fi
+
 # Non-root may run only as a member of lonewatt-techops. Root may always run.
 # GROUP above is the Keycloak group, not this Unix group.
 in_allowed_group() {
@@ -118,33 +147,13 @@ if [[ -z "$(kcadm get groups -r "$REALM" -q "search=${GROUP}" -q exact=true --fi
 fi
 
 # User profile attribute "phone", viewed and edited by admins only.
-kcadm get users/profile -r "$REALM" > "$tmp"
-if python3 - "$tmp" "$PHONE_ATTRIBUTE" <<'PY'
-import json, sys
-path, name = sys.argv[1], sys.argv[2]
-profile = json.load(open(path, encoding="utf-8"))
-attributes = profile.setdefault("attributes", [])
-wanted = {"view": ["admin"], "edit": ["admin"]}
-for attribute in attributes:
-    if attribute.get("name") == name:
-        if attribute.get("permissions") == wanted:
-            sys.exit(1)
-        attribute["permissions"] = wanted
-        break
-else:
-    attributes.append({
-        "name": name,
-        "displayName": "Phone",
-        "permissions": wanted,
-        "validations": {"pattern": {"pattern": "^\\+[1-9][0-9]{7,14}$", "error-message": "Use international form, e.g. +15555550100."}},
-        "multivalued": False,
-    })
-json.dump(profile, open(path, "w", encoding="utf-8"))
-PY
-then
+# The pattern lives in check-sms-otp-flow.py --apply-phone-attribute.
+write_phone_profile() {
   kcadm_stdin update users/profile -r "$REALM" -f - < "$tmp" >/dev/null
   echo "User profile attribute ${PHONE_ATTRIBUTE} is admin-only."
-fi
+}
+kcadm get users/profile -r "$REALM" > "$tmp"
+phone_attribute_branch "$tmp" write_phone_profile
 
 # The admin API enforces this username rule. It refuses a later username
 # that matches the #155 grammar. It does not write a username or a number.
