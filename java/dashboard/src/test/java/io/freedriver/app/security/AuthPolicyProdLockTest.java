@@ -115,6 +115,7 @@ class AuthPolicyProdLockTest {
         hostile.put("quarkus.http.auth.permission.open-post.paths", "/api/appliances/cmd");
         hostile.put("quarkus.http.auth.permission.open-post.policy", "permit");
         hostile.put("freedriver.appliances.rate-limit.permits", "100000");
+        hostile.put("freedriver.scheduled-switches.max-pending", "100000");
         Map<String, String> previous = new HashMap<>();
         for (Map.Entry<String, String> entry : hostile.entrySet()) {
             previous.put(entry.getKey(), System.getProperty(entry.getKey()));
@@ -178,6 +179,7 @@ class AuthPolicyProdLockTest {
             assertEquals("false", prod.getConfigValue("quarkus.oidc.enabled").getValue());
             assertEquals("permit", prod.getConfigValue("quarkus.http.auth.permission.appliances.policy").getValue());
             assertEquals("100000", prod.getConfigValue("freedriver.appliances.rate-limit.permits").getValue());
+            assertEquals("100000", prod.getConfigValue("freedriver.scheduled-switches.max-pending").getValue());
         } finally {
             LaunchMode.set(previous);
         }
@@ -191,6 +193,7 @@ class AuthPolicyProdLockTest {
         assertTrue(owned.contains("quarkus.http.auth.permission.changelog.policy"));
         assertTrue(owned.contains("quarkus.http.auth.permission.account.policy"));
         assertTrue(owned.contains("freedriver.appliances.rate-limit.permits"));
+        assertTrue(owned.contains("freedriver.scheduled-switches.max-pending"));
         assertTrue(owned.contains("freedriver.appliances.rate-limit.window"));
         Set<String> seen = new HashSet<>();
         try (Stream<Path> walk = Files.walk(Path.of("."))) {
@@ -291,6 +294,7 @@ class AuthPolicyProdLockTest {
         values.put("quarkus.http.auth.permission.login.policy", "permit");
         values.put("quarkus.http.auth.permission.logout.policy", "permit");
         values.put("freedriver.appliances.rate-limit.permits", "100000");
+        values.put("freedriver.scheduled-switches.max-pending", "100000");
         values.put("freedriver.appliances.rate-limit.window", "1s");
         values.put("quarkus.oidc.credentials.secret", "secret");
         hostileDefaults(values);
@@ -303,6 +307,7 @@ class AuthPolicyProdLockTest {
         values.put("%prod.quarkus.oidc.enabled", "false");
         values.put("quarkus.http.auth.permission.appliances.policy", "permit");
         values.put("freedriver.appliances.rate-limit.permits", "100000");
+        values.put("freedriver.scheduled-switches.max-pending", "100000");
         hostileDefaults(values);
         return new ConfigSource() {
             @Override
@@ -333,6 +338,7 @@ class AuthPolicyProdLockTest {
         values.put("%prod.quarkus.oidc.enabled", "false");
         values.put("quarkus.http.auth.permission.appliances.policy", "permit");
         values.put("freedriver.appliances.rate-limit.permits", "100000");
+        values.put("freedriver.scheduled-switches.max-pending", "100000");
         hostileDefaults(values);
         return new ConfigSource() {
             @Override
@@ -386,6 +392,7 @@ class AuthPolicyProdLockTest {
         values.put("quarkus.http.auth.permission.login.policy", "permit");
         values.put("quarkus.http.auth.permission.logout.policy", "permit");
         values.put("freedriver.appliances.rate-limit.permits", "100000");
+        values.put("freedriver.scheduled-switches.max-pending", "100000");
         values.put("freedriver.appliances.rate-limit.window", "1s");
         values.put("quarkus.oidc.credentials.secret", "secret");
         values.put("quarkus.http.auth.permission.appliances.enabled", "false");
@@ -428,6 +435,7 @@ class AuthPolicyProdLockTest {
         assertAbsent(prod, "quarkus.oidc.mcp.client-id");
         assertAbsent(prod, "quarkus.http.auth.permission.mcp.paths");
         assertEquals("30", prod.getConfigValue("freedriver.appliances.rate-limit.permits").getValue());
+        assertEquals("30", prod.getConfigValue("freedriver.scheduled-switches.max-pending").getValue());
         assertEquals("60s", prod.getConfigValue("freedriver.appliances.rate-limit.window").getValue());
         assertAbsent(prod, "quarkus.http.auth.permission.appliances.enabled");
         assertAbsent(prod, "quarkus.http.auth.permission.open-post.paths");
@@ -470,6 +478,7 @@ class AuthPolicyProdLockTest {
         values.put("quarkus.http.auth.permission.open-post.paths", "/api/appliances/cmd");
         values.put("quarkus.http.auth.permission.open-post.policy", "permit");
         values.put("freedriver.appliances.rate-limit.permits", "100000");
+        values.put("freedriver.scheduled-switches.max-pending", "100000");
         hostileDefaults(values);
         return new PropertiesConfigSource(values, "SysPropConfigSource", 400);
     }
@@ -569,11 +578,12 @@ class AuthPolicyProdLockTest {
                     || "quarkus.http.auth.permission.account.policy".equals(name)
                     || "quarkus.oidc.credentials.secret".equals(name)
                     || "freedriver.appliances.rate-limit.permits".equals(name)
-                    || "freedriver.appliances.rate-limit.window".equals(name)) {
+                    || "freedriver.appliances.rate-limit.window".equals(name)
+                    || "freedriver.scheduled-switches.max-pending".equals(name)) {
                 String replacement = "quarkus.oidc.evil.tenant-enabled".equals(name) ? "true"
                         : "quarkus.oidc.enabled".equals(name) || name.endsWith("tenant-enabled")
                         || name.endsWith(".enabled") ? "false"
-                        : name.endsWith(".permits") ? "100000"
+                        : name.endsWith(".permits") || "freedriver.scheduled-switches.max-pending".equals(name) ? "100000"
                         : name.endsWith(".window") ? "1s"
                         : name.endsWith(".secret") ? "secret"
                         : name.endsWith(".paths") ? "/api/appliances/*"
