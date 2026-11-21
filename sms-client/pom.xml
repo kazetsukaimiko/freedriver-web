@@ -14,6 +14,9 @@
 
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
+        <!-- One instant so two installs of this jar hash the same. The provider's cache key is that hash. -->
+        <project.build.outputTimestamp>2026-01-01T00:00:00Z</project.build.outputTimestamp>
+        <keycloak.dist.skip>false</keycloak.dist.skip>
     </properties>
 
     <dependencies>
@@ -97,6 +100,101 @@
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>3.2.0</version>
+                <executions>
+                    <execution>
+                        <id>clean-keycloak-dist</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                        <configuration>
+                            <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                            <skip>${keycloak.dist.skip}</skip>
+                            <filesets>
+                                <fileset>
+                                    <directory>${project.build.directory}/keycloak</directory>
+                                </fileset>
+                            </filesets>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.11.0</version>
+                <executions>
+                    <execution>
+                        <id>unpack-keycloak-dist</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>unpack</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${keycloak.dist.skip}</skip>
+                            <outputDirectory>${project.build.directory}/keycloak</outputDirectory>
+                            <markersDirectory>${project.build.directory}/keycloak/.markers</markersDirectory>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>org.keycloak</groupId>
+                                    <artifactId>keycloak-quarkus-dist</artifactId>
+                                    <version>${keycloak.version}</version>
+                                    <type>zip</type>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <keycloak.home>${project.build.directory}/keycloak/keycloak-${keycloak.version}</keycloak.home>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>skip-keycloak-dist-on-skipTests</id>
+            <activation>
+                <property>
+                    <name>skipTests</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <properties>
+                <keycloak.dist.skip>true</keycloak.dist.skip>
+            </properties>
+        </profile>
+        <profile>
+            <id>skip-keycloak-dist-on-maven-test-skip</id>
+            <activation>
+                <property>
+                    <name>maven.test.skip</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <properties>
+                <keycloak.dist.skip>true</keycloak.dist.skip>
+            </properties>
+        </profile>
+        <profile>
+            <id>skip-keycloak-dist-on-keycloak-home</id>
+            <activation>
+                <property>
+                    <name>env.KEYCLOAK_HOME</name>
+                </property>
+            </activation>
+            <properties>
+                <keycloak.dist.skip>true</keycloak.dist.skip>
+            </properties>
+        </profile>
+    </profiles>
 </project>

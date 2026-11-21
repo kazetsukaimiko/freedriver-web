@@ -2139,6 +2139,8 @@ if [[ -z "$seed_phone" ]]; then
   echo "FREEDRIVER_SEED_PHONE is empty in ${SECRETS_ENV}; user ${PHONE_USER} is unchanged."
   exit 0
 fi
+# The 2-9 rule is intentional: the router and sms accept a stored number whose
+# first national digit is 0 or 1, and this check refuses it for kaze's user.
 if ! [[ "$seed_phone" =~ ^\+1[2-9][0-9]{9}$ ]]; then
   echo "FREEDRIVER_SEED_PHONE in ${SECRETS_ENV} is not a +1 number like +15555550100." >&2
   exit 1

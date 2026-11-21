@@ -13,8 +13,9 @@
             <@buttons.actionGroup>
                 <@buttons.button id="freedriver-phone-username-continue" name="continue" label="freedriverPhoneUsernameContinue" class=["kcButtonPrimaryClass", "kcButtonBlockClass"] />
             </@buttons.actionGroup>
+            <script src="${url.resourcesPath}/js/us-phone.js"></script>
             <script src="${url.resourcesPath}/js/phone-fragment.js"></script>
         </form>
-        <@renewal.renew/>
+        <@renewal.renew phonePatternLoaded=true/>
     </#if>
 </@layout.registrationLayout>

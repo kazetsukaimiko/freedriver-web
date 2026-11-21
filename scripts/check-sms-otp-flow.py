@@ -7,17 +7,23 @@ username CONDITIONAL subflow. webauthn-authenticator-passwordless is a later
 top-level ALTERNATIVE (priority 50), after that subflow. The check fails if
 auth-cookie is missing or if freedriver-phone-username-router is ahead of it.
 
-The phone grammar is the seven US forms plus the canonical +1 and ten digits
-from #155. It matches any US ten-digit number, not one fixed digit string.
-A longer string that only contains those digits is not a phone.
+PHONE_FORMS is the eight typed shapes of UsPhoneNumbers.canonical: ten digits,
+three-three-four with dashes, parentheses, dots, or spaces, a leading 1 with
+dashes, +1 with spaces, and +1 immediately followed by ten digits. The tuple
+order is the shipped username reject string. It matches any US ten-digit
+number, not one fixed digit string. A longer string that only contains those
+digits is not a phone.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 COOKIE = "auth-cookie"
@@ -67,6 +73,19 @@ PHONE_FORMS = (
 )
 
 USERNAME_RULE_MESSAGE = "Choose a username that is not a phone number."
+
+# The string username_reject_pattern() returns on origin/main. apply_username_rule
+# refuses to replace a different installed pattern, so this literal stays byte for byte.
+SHIPPED_USERNAME_REJECT = (
+    r"(?!(?:[0-9]{3}-[0-9]{3}-[0-9]{4}|[0-9]{10}|\([0-9]{3}\) [0-9]{3}-[0-9]{4}"
+    r"|[0-9]{3}\.[0-9]{3}\.[0-9]{4}|[0-9]{3} [0-9]{3} [0-9]{4}"
+    r"|1-[0-9]{3}-[0-9]{3}-[0-9]{4}|\+1 [0-9]{3} [0-9]{3} [0-9]{4}|\+1[0-9]{10})$).*"
+)
+
+# Create payload for a new phone attribute. The provision script has no second copy.
+PHONE_CREATE_PATTERN = "^\\+1[0-9]{10}$"
+PHONE_CREATE_MESSAGE = "Enter a US number as +1 and ten digits, for example +15555550100."
+PHONE_ADMIN_ONLY = {"view": ["admin"], "edit": ["admin"]}
 
 DESCRIPTIONS = {
     TOP: "Phone or username sign-in. auth-cookie stays ahead of this subflow.",
@@ -689,6 +708,107 @@ def count_phone_usernames(data) -> int:
     return count
 
 
+def apply_phone_attribute(profile: dict) -> int:
+    """Return 0 when the profile changed, 3 when phone is already admin-only.
+
+    An existing attribute keeps its pattern and message. A missing attribute is
+    created with PHONE_CREATE_PATTERN. Permissions that are not admin-only are
+    repaired to admin-only.
+    """
+    attributes = profile.get("attributes")
+    if attributes is None:
+        attributes = []
+        profile["attributes"] = attributes
+    if not isinstance(attributes, list):
+        fail("user profile attributes must be a list")
+    for attribute in attributes:
+        if not isinstance(attribute, dict) or attribute.get("name") != "phone":
+            continue
+        if attribute.get("permissions") == PHONE_ADMIN_ONLY:
+            return 3
+        attribute["permissions"] = {"view": ["admin"], "edit": ["admin"]}
+        return 0
+    attributes.append({
+        "name": "phone",
+        "displayName": "Phone",
+        "permissions": {"view": ["admin"], "edit": ["admin"]},
+        "validations": {
+            "pattern": {
+                "pattern": PHONE_CREATE_PATTERN,
+                "error-message": PHONE_CREATE_MESSAGE,
+            }
+        },
+        "multivalued": False,
+    })
+    return 0
+
+
+def apply_phone_attribute_file(path: str) -> None:
+    file = Path(path)
+    raw = file.read_bytes()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        fail("user profile is not JSON")
+    if not isinstance(data, dict):
+        fail("expected a user profile document")
+    status = apply_phone_attribute(data)
+    if status == 3:
+        if file.read_bytes() != raw:
+            fail("admin-only phone attribute must leave the profile unchanged")
+        raise SystemExit(3)
+    if status != 0:
+        fail("phone attribute was not applied")
+    file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    raise SystemExit(0)
+
+
+def shape_alternatives(source: str) -> set[str]:
+    marker = "Pattern SHAPE = Pattern.compile("
+    if marker not in source:
+        fail("UsPhoneNumbers.SHAPE is missing")
+    chunk = source.split(marker, 1)[1].split(");", 1)[0]
+    parts = re.findall(r'"((?:\\.|[^"\\])*)"', chunk)
+    pattern = "".join(bytes(part, "utf-8").decode("unicode_escape") for part in parts)
+    return set(re.split(r"(?<!\\)\|", pattern))
+
+
+def assert_shipped_phone_forms() -> None:
+    if username_reject_pattern() != SHIPPED_USERNAME_REJECT:
+        fail("username reject pattern changed")
+    repo = Path(__file__).resolve().parents[1]
+    java = (repo / "sms-model/src/main/java/io/freedriver/sms/validation/UsPhoneNumbers.java").read_text(
+        encoding="utf-8"
+    )
+    if set(PHONE_FORMS) != shape_alternatives(java):
+        fail("PHONE_FORMS is not the UsPhoneNumbers.canonical shape set")
+    body = json.dumps(
+        {
+            "attributes": [
+                {
+                    "name": "username",
+                    "validations": {"pattern": {"pattern": "not-the-shipped-pattern", "error-message": "x"}},
+                }
+            ]
+        }
+    )
+    handle = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+    handle.write(body)
+    handle.close()
+    try:
+        before = Path(handle.name).read_bytes()
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), "--apply-username-rule", handle.name],
+            capture_output=True,
+            text=True,
+        )
+        after = Path(handle.name).read_bytes()
+        if result.returncode != 1 or after != before:
+            fail("a different username pattern must exit 1 and leave the profile unchanged")
+    finally:
+        os.unlink(handle.name)
+
+
 def apply_username_rule(profile: dict) -> bool:
     pattern = username_reject_pattern()
     wanted = {"pattern": pattern, "error-message": USERNAME_RULE_MESSAGE}
@@ -906,6 +1026,7 @@ def self_test() -> None:
     kept = profile["attributes"][0]["validations"]["length"]["min"]
     if kept != 3:
         fail("username rule must leave other validations in place")
+    assert_shipped_phone_forms()
     print("sms otp flow self-test ok")
 
 
@@ -919,6 +1040,7 @@ def main() -> None:
     parser.add_argument("--config-key", default="route")
     parser.add_argument("--count-usernames", action="store_true")
     parser.add_argument("--apply-username-rule", action="store_true")
+    parser.add_argument("--apply-phone-attribute", action="store_true")
     parser.add_argument("--username-reject-pattern", action="store_true")
     parser.add_argument("--select-config-key", action="store_true")
     parser.add_argument("--passkeys-policy-ok", action="store_true")
@@ -932,6 +1054,11 @@ def main() -> None:
         return
     if args.username_reject_pattern:
         print(username_reject_pattern())
+        return
+    if args.apply_phone_attribute:
+        if args.path is None:
+            fail("expected a user profile document")
+        apply_phone_attribute_file(args.path)
         return
     if args.path is None and not args.self_test:
         fail("expected a JSON file")

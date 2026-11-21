@@ -7,6 +7,7 @@ import io.freedriver.dispatcher.store.JobPing;
 import io.freedriver.dispatcher.jobs.JobStore;
 import io.freedriver.dispatcher.store.SubmitLocks;
 
+import io.freedriver.dispatcher.model.AgentRosterEntry;
 import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
@@ -14,6 +15,7 @@ import io.freedriver.dispatcher.model.JobPage;
 import io.freedriver.dispatcher.model.JobSummary;
 import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.OnBusy;
+import io.freedriver.dispatcher.model.ReportedBot;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
 import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
 import io.quarkus.test.junit.QuarkusTest;
@@ -35,6 +37,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import static com.mongodb.client.model.Filters.eq;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -417,8 +420,116 @@ class JobStoreTest {
         clock.now = clock.now.plusSeconds(30);
 
         assertEquals(clock.now, store.heartbeat("pc-a").lastHeartbeat());
+        assertNull(storedDevice("pc-a").get("lastTake"));
         DispatcherException error = assertThrows(DispatcherException.class, () -> store.heartbeat("missing"));
         assertEquals(DispatcherException.Kind.NOT_FOUND, error.kind());
+    }
+
+    @Test
+    void list_agents_goes_from_reported_to_unknown_to_offline_and_back_on_the_next_report() {
+        Instant reported = Instant.parse("2026-11-17T12:00:00Z");
+        MutableClock clock = new MutableClock(reported);
+        JobStore store = service(clock, null);
+        store.report("pc-a", "a.local", List.of(new ReportedBot("yuni", "busy", "reviewing")));
+
+        clock.advance(Duration.ofSeconds(20));
+        AgentRosterEntry fresh = agent(store, "yuni");
+        assertEquals("BUSY", fresh.state());
+        assertEquals(reported, fresh.reportedAt());
+        assertEquals(reported, fresh.seenAt());
+
+        clock.advance(Duration.ofMinutes(5));
+        store.take("pc-a", List.of(), Duration.ZERO);
+        assertEquals("BUSY", agent(store, "yuni").state());
+        clock.advance(Duration.ofMinutes(5));
+        Instant lastTake = clock.now;
+        store.take("pc-a", List.of(), Duration.ZERO);
+
+        AgentRosterEntry unknown = agent(store, "yuni");
+        assertEquals("UNKNOWN", unknown.state());
+        assertEquals(reported, unknown.reportedAt());
+        assertEquals(lastTake, unknown.seenAt());
+        assertEquals("reviewing", unknown.activity());
+
+        clock.advance(Duration.ofMinutes(9));
+        assertEquals("UNKNOWN", agent(store, "yuni").state());
+        clock.advance(Duration.ofMinutes(1));
+        AgentRosterEntry offline = agent(store, "yuni");
+        assertEquals("OFFLINE", offline.state());
+        assertEquals(reported, offline.reportedAt());
+        assertEquals(lastTake, offline.seenAt());
+        assertEquals("reviewing", offline.activity());
+
+        clock.advance(Duration.ofMinutes(1));
+        Instant again = clock.now;
+        store.report("pc-a", "a.local", List.of(new ReportedBot("yuni", "idle", "")));
+        AgentRosterEntry back = agent(store, "yuni");
+        assertEquals("IDLE", back.state());
+        assertEquals(again, back.reportedAt());
+        assertEquals(again, back.seenAt());
+    }
+
+    @Test
+    void list_agents_reads_each_mix_of_missing_and_old_times() {
+        Instant now = Instant.parse("2026-11-17T12:00:00Z");
+        MutableClock clock = new MutableClock(now);
+        JobStore store = service(clock, null);
+        Instant fresh = now.minusSeconds(30);
+        Instant old = now.minus(Duration.ofDays(4));
+        rawDevice("pc-reported", "reported.local", fresh, null);
+        rawDevice("pc-taking", "taking.local", null, fresh);
+        rawDevice("pc-none", "none.local", null, null);
+        rawDevice("pc-edge", "edge.local", now.minus(Duration.ofMinutes(10)), null);
+        rawDevice("pc-old", "old.local", old, null);
+
+        assertAgent(store, "reported.local", "BUSY", fresh, fresh);
+        assertAgent(store, "taking.local", "UNKNOWN", null, fresh);
+        assertAgent(store, "none.local", "OFFLINE", null, null);
+        assertAgent(store, "edge.local", "OFFLINE", now.minus(Duration.ofMinutes(10)), now.minus(Duration.ofMinutes(10)));
+        assertAgent(store, "old.local", "OFFLINE", old, old);
+        assertFalse(storedDevice("pc-old").containsKey("lastTake"));
+    }
+
+    @Test
+    void take_stamps_the_server_clock_on_the_existing_row_only() {
+        Instant start = Instant.parse("2026-11-17T12:00:00Z");
+        MutableClock clock = new MutableClock(start);
+        JobStore store = service(clock, null);
+        store.register("pc-a", "a.local", List.of("yuni"));
+        assertNull(storedDevice("pc-a").get("lastTake"));
+
+        clock.advance(Duration.ofSeconds(30));
+        store.take("pc-a", List.of(), Duration.ZERO);
+        Instant took = clock.now;
+        assertEquals(took, storedDevice("pc-a").getDate("lastTake").toInstant());
+        assertEquals(start, storedDevice("pc-a").getDate("lastHeartbeat").toInstant());
+
+        clock.advance(Duration.ofSeconds(30));
+        assertThrows(DispatcherException.class, () -> store.take("pc-a", List.of(), Duration.ofSeconds(51)));
+        assertEquals(took, storedDevice("pc-a").getDate("lastTake").toInstant());
+
+        store.report("pc-a", "a.local", List.of(new ReportedBot("yuni", "idle", "")));
+        store.register("pc-a", "a.local", List.of("yuni"));
+        assertEquals(clock.now, store.heartbeat("pc-a").lastHeartbeat());
+        assertEquals(took, storedDevice("pc-a").getDate("lastTake").toInstant());
+        assertEquals(clock.now, storedDevice("pc-a").getDate("lastHeartbeat").toInstant());
+
+        store.take("pc-missing", List.of(), Duration.ZERO);
+        assertNull(storedDevice("pc-missing"));
+    }
+
+    @Test
+    void a_prompt_for_an_offline_agent_is_still_stored() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-11-17T12:00:00Z"));
+        JobStore store = service(clock, null);
+        store.register("pc-a", "a.local", List.of("yuni"));
+        clock.advance(Duration.ofHours(1));
+        assertEquals("OFFLINE", agent(store, "yuni").state());
+
+        JobView sent = store.submitNow("grok", job(List.of(store.deviceIdFor("a.local", "yuni")), "yuni"));
+
+        assertEquals(AssignmentState.QUEUED, sent.assignments().getFirst().state());
+        assertEquals(1, storedJobs().size());
     }
 
     @Test
@@ -837,7 +948,8 @@ class JobStoreTest {
                 .append("activity", new Document("yuni", "busy").append("kai", "idle"))
                 .append("activityText", new Document("yuni", "working").append("kai", ""))
                 .append("lastHeartbeat", created));
-        JobStore store = store();
+        // Inside the silence window, the old row decodes to its reported state and note.
+        JobStore store = service(new MutableClock(created.toInstant().plusSeconds(60)), null);
 
         JobView job = store.getJob("grok", UUID.fromString(jobId));
         assertEquals("old prompt", job.prompt());
@@ -860,6 +972,14 @@ class JobStoreTest {
         assertTrue(roster.stream().anyMatch(row -> row.name().equals("kai") && row.state().equals("IDLE")),
                 roster::toString);
 
+        // On the system clock, a row last reported on 2026-11-01 with no lastTake is OFFLINE and keeps its note.
+        for (AgentRosterEntry row : store().listAgents()) {
+            assertEquals("OFFLINE", row.state(), row::toString);
+            assertEquals(created.toInstant(), row.reportedAt());
+            assertEquals(created.toInstant(), row.seenAt());
+        }
+        assertEquals("working", agent(store(), "yuni").activity());
+
         AssignmentView finished = store.finish("pc-old", UUID.fromString(assignmentId), true, "done");
         assertEquals(AssignmentState.SUCCEEDED, finished.state());
         assertEquals(AssignmentState.SUCCEEDED, store.getJob("grok", UUID.fromString(jobId)).assignments().getFirst().state());
@@ -871,6 +991,40 @@ class JobStoreTest {
 
     private JobStore service(Clock clock, JobPing ping) {
         return new JobStoreService(assignments, devices, locks, clock, ping);
+    }
+
+    private static AgentRosterEntry agent(JobStore store, String name) {
+        return store.listAgents().stream().filter(row -> row.name().equals(name)).findFirst()
+                .orElseThrow(() -> new AssertionError(name));
+    }
+
+    private static void assertAgent(JobStore store, String server, String state, Instant reportedAt, Instant seenAt) {
+        AgentRosterEntry row = store.listAgents().stream().filter(entry -> entry.server().equals(server)).findFirst()
+                .orElseThrow(() -> new AssertionError(server));
+        assertEquals(state, row.state(), server);
+        assertEquals(reportedAt, row.reportedAt(), server);
+        assertEquals(seenAt, row.seenAt(), server);
+        assertEquals("note", row.activity(), server);
+    }
+
+    /** An {@code agent-devices} row with one busy agent; a null time is a missing field. */
+    private void rawDevice(String id, String hostname, Instant lastHeartbeat, Instant lastTake) {
+        Document row = new Document("_id", id)
+                .append("hostname", hostname)
+                .append("agents", List.of("yuni"))
+                .append("activity", new Document("yuni", "busy"))
+                .append("activityText", new Document("yuni", "note"));
+        if (lastHeartbeat != null) {
+            row.append("lastHeartbeat", java.util.Date.from(lastHeartbeat));
+        }
+        if (lastTake != null) {
+            row.append("lastTake", java.util.Date.from(lastTake));
+        }
+        devices.mongoCollection().withDocumentClass(Document.class).insertOne(row);
+    }
+
+    private Document storedDevice(String id) {
+        return devices.mongoCollection().withDocumentClass(Document.class).find(eq("_id", id)).first();
     }
 
     /** The stored {@code agent-jobs} rows as Mongo holds them. */
