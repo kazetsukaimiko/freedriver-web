@@ -6,9 +6,11 @@ import io.freedriver.dashboard.api.McpOpsApi;
 import io.freedriver.dashboard.model.ApplianceMapResponse;
 import io.freedriver.dashboard.model.HomeStatusResponse;
 import io.freedriver.dashboard.model.InstanceView;
+import io.freedriver.app.errors.PendingCapException;
 import io.freedriver.app.schedule.ScheduledSwitch;
 import io.freedriver.app.schedule.ScheduledSwitchRules;
 import io.freedriver.app.schedule.ScheduledSwitchRepository;
+import io.freedriver.app.schedule.ScheduledSwitchesConfig;
 import io.freedriver.app.security.OidcSubjects;
 import io.freedriver.dashboard.model.McpDebugResponse;
 import io.freedriver.dashboard.model.ScheduledSwitchRequest;
@@ -36,6 +38,9 @@ public class McpOpsResource implements McpOpsApi {
 
     @Inject
     ScheduledSwitchRepository switches;
+
+    @Inject
+    ScheduledSwitchesConfig scheduledSwitches;
 
     @Override
     public ApplianceMapResponse appliances() {
@@ -72,13 +77,25 @@ public class McpOpsResource implements McpOpsApi {
         Instant now = Instant.now();
         ScheduledSwitchRules.check(
                 body.getInstanceId(), body.getApplianceName(), body.getDueAt(), subject, now);
-        switches.persist(new ScheduledSwitch(
+        ScheduledSwitch held = switches.storeHeld(new ScheduledSwitch(
                 UUID.randomUUID().toString(),
                 body.getInstanceId().toString(),
                 body.getApplianceName(),
                 body.getOn(),
                 body.getDueAt(),
-                subject));
+                subject), now);
+        long count;
+        try {
+            count = switches.countBySubject(subject);
+        } catch (RuntimeException ex) {
+            switches.deleteById(held.id);
+            throw ex;
+        }
+        if (count > scheduledSwitches.maxPending()) {
+            switches.deleteById(held.id);
+            throw new PendingCapException();
+        }
+        switches.release(held.id);
         return Response.accepted().build();
     }
 }
