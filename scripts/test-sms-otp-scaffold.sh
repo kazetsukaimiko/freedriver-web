@@ -830,8 +830,25 @@ from pathlib import Path
 script = Path("scripts/provision-keycloak-freedriver.sh").read_text()
 if "GROK_MCP_CLIENT=freedriver-grok-mcp" not in script:
     raise SystemExit("missing GROK_MCP_CLIENT")
-if "GROK_MCP_REDIRECT_URI='https://grok.com/connectors-oauth-exchange-code/'" not in script:
-    raise SystemExit("freedriver-grok-mcp redirect must be the grok.com connector callback")
+pin = "https://grok.com/connectors-oauth-exchange-code/"
+assignment = "GROK_CONNECTOR_REDIRECT_URI='" + pin + "'"
+if script.count(pin) != 1 or script.count(assignment) != 1:
+    raise SystemExit("connector URL literal appears once, in the GROK_CONNECTOR_REDIRECT_URI assignment")
+defined = script.index(assignment)
+if "DISPATCHER_CLIENT=" in script[:defined] or "GROK_MCP_CLIENT=" in script[:defined]:
+    raise SystemExit("GROK_CONNECTOR_REDIRECT_URI is defined before both client blocks")
+if 'DISPATCHER_REDIRECT_URI="${GROK_CONNECTOR_REDIRECT_URI}"' not in script:
+    raise SystemExit("DISPATCHER_REDIRECT_URI is assigned from GROK_CONNECTOR_REDIRECT_URI")
+if 'GROK_MCP_REDIRECT_URI="${GROK_CONNECTOR_REDIRECT_URI}"' not in script:
+    raise SystemExit("GROK_MCP_REDIRECT_URI is assigned from GROK_CONNECTOR_REDIRECT_URI")
+if script.count('[[ -z "$GROK_CONNECTOR_REDIRECT_URI" ]]') != 2:
+    raise SystemExit("each client guard exits when GROK_CONNECTOR_REDIRECT_URI is empty")
+if '["${GROK_CONNECTOR_REDIRECT_URI}"]' in script:
+    raise SystemExit("a guard must keep its web-origins pin and leave the URI list alone")
+if '[[ "$DISPATCHER_WEB_ORIGINS" != \'["https://app.freedriver.io"]\' ]]' not in script:
+    raise SystemExit("dispatcher guard keeps the app.freedriver.io web origins pin")
+if "[[ \"$GROK_MCP_WEB_ORIGINS\" != '[]' ]]" not in script:
+    raise SystemExit("grok-mcp guard keeps the empty web origins pin")
 if 'GROK_MCP_WEB_ORIGINS=\'[]\'' not in script:
     raise SystemExit("freedriver-grok-mcp webOrigins must stay empty")
 block = script.split("GROK_MCP_CLIENT=freedriver-grok-mcp", 1)[1].split("ensure_device_client()", 1)[0]
@@ -842,6 +859,126 @@ if 'attributes."access.token.lifespan"=300' in block:
 if "ensure_one_year_tokens" not in block:
     raise SystemExit("freedriver-grok-mcp must call ensure_one_year_tokens")
 print("freedriver-grok-mcp is enabled with the grok.com callback")
+PY
+
+python3 - <<'PY'
+import json
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+pin = "https://grok.com/connectors-oauth-exchange-code/"
+script = Path("scripts/provision-keycloak-freedriver.sh").read_text()
+
+def function_body(name):
+    parts = script.split(name + "() {", 1)
+    if len(parts) != 2:
+        raise SystemExit("provision script must define " + name)
+    depth = 1
+    heredoc = None
+    kept = []
+    for line in parts[1].splitlines():
+        if heredoc is not None:
+            kept.append(line)
+            if line == heredoc:
+                heredoc = None
+            continue
+        opener = re.search(r"<<'?(\w+)'?\s*$", line)
+        if opener:
+            heredoc = opener.group(1)
+        elif line.strip() == "{":
+            depth += 1
+        elif line.strip() == "}":
+            depth -= 1
+            if depth == 0:
+                break
+        kept.append(line)
+    return "\n".join(kept)
+
+def heredoc_with(body, needle):
+    lines = body.splitlines()
+    index = 0
+    found = None
+    while index < len(lines):
+        opener = re.search(r"<<'?(\w+)'?\s*$", lines[index])
+        if opener:
+            tag = opener.group(1)
+            index += 1
+            chunk = []
+            while index < len(lines) and lines[index] != tag:
+                chunk.append(lines[index])
+                index += 1
+            text = "\n".join(chunk)
+            if needle in text:
+                found = text
+        index += 1
+    if found is None:
+        raise SystemExit("missing " + needle + " heredoc")
+    return found
+
+one_year = function_body("ensure_dcr_one_year_tokens")
+if pin in one_year:
+    raise SystemExit("ensure_dcr_one_year_tokens contains a connector URL literal")
+if '"$GROK_CONNECTOR_REDIRECT_URI"' not in one_year:
+    raise SystemExit("ensure_dcr_one_year_tokens reads GROK_CONNECTOR_REDIRECT_URI")
+audience = function_body("ensure_autonomy_mcp_audience")
+if pin in audience:
+    raise SystemExit("ensure_autonomy_mcp_audience contains a connector URL literal")
+if '"$GROK_CONNECTOR_REDIRECT_URI"' not in audience:
+    raise SystemExit("ensure_autonomy_mcp_audience reads GROK_CONNECTOR_REDIRECT_URI")
+
+builder = heredoc_with(one_year, '"redirect-uri"')
+
+def payload(policies):
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        realm = root / "realm.json"
+        listed = root / "policies.json"
+        out = root / "body.json"
+        source = root / "build.py"
+        realm.write_text(json.dumps({"id": "realm-1"}))
+        listed.write_text(json.dumps(policies))
+        source.write_text(builder)
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(source),
+                str(realm),
+                str(listed),
+                str(out),
+                "freedriver-one-year-tokens",
+                "31536000",
+                pin,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise SystemExit(result.stderr or result.stdout)
+        body = json.loads(out.read_text())
+        return result.stdout.strip(), body
+
+created, create_body = payload([])
+if created != "create":
+    raise SystemExit("empty policy list must create the anonymous component")
+updated, update_body = payload(
+    [
+        {
+            "id": "comp-9",
+            "providerId": "freedriver-one-year-tokens",
+            "subType": "anonymous",
+        }
+    ]
+)
+if updated != "update comp-9":
+    raise SystemExit("an existing anonymous component must update")
+for label, body in (("create", create_body), ("update", update_body)):
+    redirect = body.get("config", {}).get("redirect-uri")
+    if redirect != [pin]:
+        raise SystemExit(label + " config redirect-uri must be the one connector URL")
+print("one-year component redirect-uri is GROK_CONNECTOR_REDIRECT_URI on create and update")
 PY
 
 python3 - <<'PY'
@@ -1117,6 +1254,7 @@ STUB
       set -euo pipefail
       REALM=freedriver
       ONE_YEAR_TOKEN_SECONDS=31536000
+      GROK_CONNECTOR_REDIRECT_URI='https://grok.com/connectors-oauth-exchange-code/'
       work="$1"
       KCADM_BIN="$2"
       kcadm() { "$KCADM_BIN" "$@"; }
