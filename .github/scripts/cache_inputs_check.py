@@ -8,7 +8,8 @@ pom: a property whose name starts with `maven.build.cache.input` (the `.glob` pr
 with a path relative to the module directory. A directory input covers every file under it.
 
 This script scans the src/test of each module in the reactor (the `<module>` entries of the root
-pom, followed into each aggregator pom) for string literals that start with `../`,
+pom, followed into each aggregator pom) and of the standalone Keycloak provider
+(`keycloak/sms-otp-spi`, a pom beside the reactor) for string literals that start with `../`,
 resolves each against the module directory, and fails naming the file when no input of that
 module covers it. A bare `".."` names a directory, not a file, and is not a read by itself:
 sms-client's tests use `here.resolve("..").resolve(module)` to reach the compiled classes of
@@ -99,10 +100,19 @@ def _inside(path: Path, directory: Path) -> bool:
         return False
 
 
+def scanned_poms(repo: Path) -> list[Path]:
+    """Reactor poms plus the standalone provider pom."""
+    found = reactor_poms(repo)
+    standalone = repo / "keycloak" / "sms-otp-spi" / "pom.xml"
+    if standalone.is_file() and standalone not in found:
+        found.append(standalone)
+    return sorted(found)
+
+
 def gaps(repo: Path) -> list[str]:
     """One line per outside read that no per-module input covers."""
     found = []
-    for pom in reactor_poms(repo):
+    for pom in scanned_poms(repo):
         module = pom.parent
         inputs = module_inputs(pom)
         for path, where in sorted(outside_reads(module).items()):
@@ -177,6 +187,22 @@ def self_test() -> int:
         checks.append(("a module outside java/ is scanned", len(lines) == 1
                        and lines[0].startswith("sms: a test reads ../docker-compose.yml")
                        and "to sms/pom.xml" in lines[0]))
+        spi = repo / "keycloak" / "sms-otp-spi"
+        (spi / "src" / "test" / "java").mkdir(parents=True)
+        (spi / "pom.xml").write_text(f"<project {ns}></project>")
+        (spi / "src" / "test" / "java" / "SpiTest.java").write_text(
+            'class SpiTest { String s = Path.of("../../scripts/provision-keycloak-freedriver.sh"); }\n')
+        lines = gaps(repo)
+        checks.append(("a standalone provider module with a missing input is a gap",
+                       any(line.startswith("keycloak/sms-otp-spi:")
+                           and "../../scripts/provision-keycloak-freedriver.sh" in line
+                           for line in lines)))
+        (spi / "pom.xml").write_text(
+            f"<project {ns}><properties>"
+            f"<{INPUT_PREFIX}.outside1>../../scripts/provision-keycloak-freedriver.sh</{INPUT_PREFIX}.outside1>"
+            f"</properties></project>")
+        checks.append(("a standalone provider input covers its read",
+                       all(not line.startswith("keycloak/sms-otp-spi:") for line in gaps(repo))))
     failed = [name for name, ok in checks if not ok]
     for name in failed:
         print(f"FAIL: {name}")

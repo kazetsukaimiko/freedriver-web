@@ -269,6 +269,11 @@ jobs:
           python3 .github/scripts/cache_inputs_check.py --self-test
           python3 .github/scripts/cache_inputs_check.py
 
+      - name: Stored US phone checks
+        run: |
+          bash scripts/test-sms-otp-scaffold.sh --stored-us-phone
+          python3 scripts/check-sms-otp-flow.py --self-test
+
       - name: Draft PRs become ready when checks pass
         run: |
           python3 .github/scripts/pr_ready_when_green.py --self-test
@@ -315,6 +320,9 @@ jobs:
 
       - name: Release stamp is semver
         run: ./scripts/test-semver-stamp.sh
+
+      - name: Keycloak version pins agree
+        run: python3 scripts/check-keycloak-version.py --self-test && python3 scripts/check-keycloak-version.py
 
       - name: Keycloak provision gives freedriver-api its home address
         run: python3 scripts/check-provision-home-url.py --self-test && python3 scripts/check-provision-home-url.py

@@ -1,5 +1,9 @@
 package io.freedriver.dispatcher;
 
+import io.freedriver.dispatcher.store.AssignmentRepository;
+import io.freedriver.dispatcher.store.DeviceRepository;
+import io.freedriver.dispatcher.store.SubmitLocks;
+
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
 import io.quarkus.runtime.StartupEvent;
