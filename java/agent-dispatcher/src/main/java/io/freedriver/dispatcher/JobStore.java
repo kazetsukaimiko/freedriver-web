@@ -95,7 +95,8 @@ public interface JobStore {
     List<AssignmentView> poll(String deviceId, Duration wait);
 
     /**
-     * The host's take, in order: hold every open assignment named in {@code holding}; expire queued
+     * The host's take, in order: record the time of this take on the host's row
+     * ({@code agent-devices.lastTake}); hold every open assignment named in {@code holding}; expire queued
      * ones no host took in time; claim the rest of the queued ones and hold again every claimed or
      * running one outside {@code holding} whose hold has lapsed. When that returned nothing, the
      * expire and claim steps repeat until {@code wait} (0 to 50 seconds) has passed. Each returned

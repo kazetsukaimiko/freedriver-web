@@ -46,7 +46,7 @@ Refusals: 400 for a bad body, 403 for another device's assignment, 404 for an un
 
 `take`, for the caller's device, in this order:
 
-1. Every open assignment named in `holding` gets `heldUntil = now + host-lease`.
+1. The host's `agent-devices` row gets `lastTake = now` from the server clock, an update of the existing row only. A take refused for its `waitSeconds` writes nothing. Every open assignment named in `holding` gets `heldUntil = now + host-lease`.
 2. Every `QUEUED` assignment older than `take-within` becomes `EXPIRED` with note `no host took it`.
 3. Every other `QUEUED` assignment becomes `CLAIMED` with `heldUntil = now + host-lease`, and every `CLAIMED` or `RUNNING` assignment outside `holding` whose `heldUntil` is past or absent gets a new `heldUntil`. Each is one conditional `findOneAndUpdate`, and the reply holds only the rows a write matched, so two replicas or two calls hand each job to one caller.
 4. When nothing was returned, steps 2 and 3 repeat on the store's re-read schedule (250 ms, doubling to 1 s) until `waitSeconds` have passed.
@@ -54,6 +54,18 @@ Refusals: 400 for a bad body, 403 for another device's assignment, 404 for an un
 `start` moves `CLAIMED` to `RUNNING`, stores `deliveryRef`, and renews `heldUntil`. The same call again on a `RUNNING` assignment with the same `deliveryRef` returns it unchanged. Another `deliveryRef` is a conflict, and another device's assignment is refused. `AssignmentView.deliveryRef` is null until `start` sets it. `report` is the store's `report`, and `finish` is the store's `finishIfOpen`.
 
 Lease and expiry: `freedriver.dispatcher.host-lease` is 90 seconds and `freedriver.dispatcher.take-within` is 10 minutes. Start-up fails when `take-within` is under one second, and when `host-lease` is 50 seconds or less, the longest `take` wait, so a host that names its jobs in `holding` on every take keeps them. A job whose host stops taking is handed out again once its lease has passed, with its state and `deliveryRef`. The dispatcher logs one INFO line per returned job and per `start`: assignment id, device id, state, and `ageMs` since the job was stored.
+
+## Agent states
+
+Each `agent-devices` row stores two times: `lastHeartbeat`, the host's last `report` (also set by `register` and `heartbeat`), and `lastTake`, its last `take`. `list_agents` returns each agent with `reportedAt`, the row's `lastHeartbeat`, and `seenAt`, the later of the two times, as ISO-8601 UTC strings, null when the row has neither. The state is computed on each read from the clock, the two times and `freedriver.dispatcher.host-silent-after` (default 10 minutes, over 50 seconds or start-up fails). A time is inside the window when it exists and its age is under that setting.
+
+| Host | `state` | A job sent to the agent |
+| --- | --- | --- |
+| `lastHeartbeat` inside the window | the reported `IDLE` or `BUSY` | reaches it |
+| `lastHeartbeat` missing or outside, `lastTake` inside | `UNKNOWN` | reaches it |
+| neither inside | `OFFLINE` | is stored, and expires after `take-within` unless the host takes it |
+
+`UNKNOWN` and `OFFLINE` keep the agent's last activity note. A row written before `lastTake` existed has none, so its host is `IDLE` or `BUSY` while it reports and `OFFLINE` once its last report is older than the window. `GET /api/dispatcher/devices` shows the stored roster.
 
 ## Dispatch connector
 
