@@ -320,6 +320,8 @@ class PhoneUsernameRouterTest {
         assertTrue(form.contains("id=\"freedriver-sms-agreement\""));
         assertTrue(form.contains("${freedriverSmsAgreement}"));
         assertTrue(form.contains("phone-fragment.js"));
+        assertTrue(form.contains("${url.resourcesPath}/js/us-phone.js"));
+        assertTrue(form.indexOf("us-phone.js") < form.indexOf("phone-fragment.js"));
         assertFalse(form.contains("By tapping Send code"));
         assertFalse(form.contains("name=\"send\""));
         assertFalse(form.contains("freedriverSmsSend"));
