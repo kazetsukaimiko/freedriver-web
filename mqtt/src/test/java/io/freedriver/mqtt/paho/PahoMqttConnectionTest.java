@@ -1,5 +1,6 @@
 package io.freedriver.mqtt.paho;
 
+import io.freedriver.mqtt.LogLines;
 import io.freedriver.mqtt.MqttEndpoint;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;

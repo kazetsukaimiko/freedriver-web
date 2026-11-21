@@ -50,6 +50,20 @@ class LayeringEdgeTest {
         assertFailsBoth("conflict", "io.freedriver.architecture.fixtures.layering.conflict.SplitResource");
     }
 
+    @Test
+    void the_because_texts_name_the_adapter_roles() {
+        String jaxRs = LayeringRules.jaxRsStaysAtTheEdge().getDescription();
+        assertTrue(jaxRs.contains("@PrimaryAdapter"), jaxRs);
+        assertTrue(jaxRs.contains("@SecondaryAdapter"), jaxRs);
+
+        String security = LayeringRules.securityIdentityStaysAtTheEdge().getDescription();
+        assertTrue(security.contains("@PrimaryAdapter"), security);
+        int secondary = security.indexOf("@SecondaryAdapter");
+        assertTrue(secondary > 0 && security.indexOf("@SecondaryAdapter", secondary + 1) < 0, security);
+        assertTrue(security.regionMatches(secondary - 2, "a @SecondaryAdapter is outside", 0,
+                "a @SecondaryAdapter is outside".length()), security);
+    }
+
     private static void assertPasses(String fixture) {
         assertPasses(LayeringRules.jaxRsStaysAtTheEdge(), fixture);
         assertPasses(LayeringRules.securityIdentityStaysAtTheEdge(), fixture);
