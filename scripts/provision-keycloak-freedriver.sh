@@ -822,29 +822,63 @@ ensure_dcr_trusted_hosts
 ensure_dcr_one_year_tokens() {
   local provider_id=freedriver-one-year-tokens
   local grok_redirect='https://grok.com/connectors-oauth-exchange-code/'
-  local action comp_id
+  local action comp_id provider_state
+  # A failed or unreadable providers call is an admin-session problem.
+  # The missing-provider sentence stays for a list of string ids that lacks this one.
   if ! kcadm get client-registration-policy/providers -r "$REALM" > "$work/dcr-provider-types.json"; then
-    echo "The Keycloak server is missing the client registration provider ${provider_id}." >&2
+    echo "Could not list client registration providers in realm ${REALM}; check the admin session." >&2
     exit 1
   fi
-  if ! python3 - "$work/dcr-provider-types.json" "$provider_id" <<'PY'
+  if ! provider_state="$(python3 - "$work/dcr-provider-types.json" "$provider_id" <<'PY'
 import json, sys
-data = json.load(open(sys.argv[1], encoding="utf-8"))
-wanted = sys.argv[2]
+
+def finish(state):
+    print(state)
+    raise SystemExit(0)
+
+path, wanted = sys.argv[1], sys.argv[2]
+try:
+    data = json.load(open(path, encoding="utf-8"))
+except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+    finish("unreadable")
 if isinstance(data, dict):
-    data = data.get("providers") or data.get("results") or list(data.values())
+    wrapped = data.get("providers")
+    if not isinstance(wrapped, list):
+        wrapped = data.get("results")
+    if not isinstance(wrapped, list):
+        finish("unreadable")
+    data = wrapped
+elif not isinstance(data, list):
+    finish("unreadable")
 ids = []
 for item in data:
-    if isinstance(item, dict) and item.get("id"):
-        ids.append(item["id"])
-    elif isinstance(item, str):
+    if isinstance(item, str):
         ids.append(item)
-raise SystemExit(0 if wanted in ids else 1)
+        continue
+    if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"].strip():
+        ids.append(item["id"])
+        continue
+    finish("unreadable")
+finish("present" if wanted in ids else "missing")
 PY
-  then
-    echo "The Keycloak server is missing the client registration provider ${provider_id}." >&2
+)"; then
+    provider_state=""
+  fi
+  if [[ -z "$provider_state" ]]; then
+    echo "Unreadable client registration provider list from realm ${REALM}." >&2
     exit 1
   fi
+  case "$provider_state" in
+    present) ;;
+    missing)
+      echo "The Keycloak server is missing the client registration provider ${provider_id}." >&2
+      exit 1
+      ;;
+    *)
+      echo "Unreadable client registration provider list from realm ${REALM}." >&2
+      exit 1
+      ;;
+  esac
   kcadm get "realms/${REALM}" --fields id > "$work/realm-id.json"
   kcadm get components -r "$REALM" \
     -q type=org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy \

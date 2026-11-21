@@ -955,7 +955,207 @@ if "999:999 /opt/freedriver-storage/redis" not in deploy:
 print("redis is an unpublished compose singleton")
 PY
 
-chmod +x scripts/test-invite-service-account.sh
+# hte-707-dcr-provider-checks
+# Extract the shell function without counting braces inside its Python heredocs.
+dcr_body="$(mktemp)"
+python3 - "$dcr_body" <<'PY'
+import re
+import sys
+from pathlib import Path
+script = Path("scripts/provision-keycloak-freedriver.sh").read_text()
+parts = script.split("ensure_dcr_one_year_tokens() {", 1)
+if len(parts) != 2:
+    raise SystemExit("provision script must define ensure_dcr_one_year_tokens")
+depth = 1
+heredoc_tag = None
+kept = []
+for line in parts[1].splitlines():
+    if heredoc_tag is not None:
+        kept.append(line)
+        if line == heredoc_tag:
+            heredoc_tag = None
+        continue
+    opener = re.search(r"<<'?(\w+)'?\s*$", line)
+    if opener:
+        heredoc_tag = opener.group(1)
+    elif line.strip() == "{":
+        depth += 1
+    elif line.strip() == "}":
+        depth -= 1
+        if depth == 0:
+            break
+    kept.append(line)
+body = "\n".join(kept) + "\n"
+needles = [
+    "Could not list client registration providers in realm ${REALM}; check the admin session.",
+    "Unreadable client registration provider list from realm ${REALM}.",
+    "missing the client registration provider ${provider_id}.",
+    "kcadm_stdin create components",
+    "kcadm_stdin update",
+]
+missing = [needle for needle in needles if needle not in body]
+if missing:
+    raise SystemExit("brace-depth split dropped: " + "; ".join(missing))
+Path(sys.argv[1]).write_text(body)
+print("extracted ensure_dcr_one_year_tokens")
+PY
+
+dcr_cases="$(mktemp -d)"
+python3 - "$dcr_cases" scripts/fixtures/keycloak-26.7.5-client-registration-providers.json <<'PY'
+import json, sys
+from pathlib import Path
+out = Path(sys.argv[1])
+fixture = json.loads(Path(sys.argv[2]).read_text())
+if not isinstance(fixture, list) or not fixture:
+    raise SystemExit("provider fixture must be a non-empty JSON array")
+ids = []
+for item in fixture:
+    if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not item["id"].strip():
+        raise SystemExit("provider fixture entries are objects with a string id")
+    ids.append(item["id"])
+if "freedriver-one-year-tokens" in ids:
+    raise SystemExit("stock fixture must lack freedriver-one-year-tokens")
+if "trusted-hosts" not in ids:
+    raise SystemExit("stock fixture must include trusted-hosts")
+provider = {"id": "freedriver-one-year-tokens", "helpText": "one year"}
+present = fixture + [provider]
+cases = [
+    ("html", "html", "<html><body>not json</body></html>", "unreadable"),
+    ("no-string-id", "ok", [{"helpText": "trusted hosts"}], "unreadable"),
+    ("fixture", "ok", fixture, "missing"),
+    ("with-id", "ok", present, "present"),
+    ("wrapped", "ok", {"providers": fixture}, "missing"),
+    ("results", "ok", {"results": ["trusted-hosts", "scope"]}, "missing"),
+    ("bare", "ok", ["trusted-hosts", "scope"], "missing"),
+    ("empty", "ok", [], "missing"),
+    ("empty-wrapped", "ok", {"providers": []}, "missing"),
+    ("malformed-with-id", "ok", [provider, {"helpText": "no id"}], "unreadable"),
+    ("neither", "ok", {"error": "HTTP 401 Unauthorized"}, "unreadable"),
+    ("bare-with-id", "ok", ["trusted-hosts", "freedriver-one-year-tokens"], "present"),
+    ("results-with-id", "ok", {"results": ["freedriver-one-year-tokens"]}, "present"),
+    ("blank-id", "ok", [{"id": ""}], "unreadable"),
+    ("number-id", "ok", [{"id": "freedriver-one-year-tokens"}, {"id": 7}], "unreadable"),
+]
+manifest = out / "manifest"
+lines = ["fail\tfail\t-\tsession"]
+for name, mode, payload, expect in cases:
+    path = out / (name + ".json")
+    if isinstance(payload, str):
+        path.write_text(payload)
+    else:
+        path.write_text(json.dumps(payload))
+    lines.append(f"{name}\t{mode}\t{path}\t{expect}")
+manifest.write_text("\n".join(lines) + "\n")
+print("provider fixture is the Keycloak 26.7.5 list of", len(ids), "ids")
+PY
+
+run_dcr_case() {
+  local name="$1"
+  local mode="$2"
+  local payload_path="$3"
+  local expect="$4"
+  local case_work log stub out err rc saw payload
+  local session unread missing
+  session='Could not list client registration providers in realm freedriver; check the admin session.'
+  unread='Unreadable client registration provider list from realm freedriver.'
+  missing='The Keycloak server is missing the client registration provider freedriver-one-year-tokens.'
+  case_work="$(mktemp -d)"
+  log="$case_work/calls"
+  : > "$log"
+  stub="$case_work/kcadm-stub"
+  cat > "$stub" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DCR_LOG"
+if [[ "${1:-}" == get && "${2:-}" == client-registration-policy/providers ]]; then
+  if [[ "$DCR_MODE" == fail ]]; then
+    echo "providers call failed" >&2
+    exit 1
+  fi
+  printf '%s' "$DCR_STDOUT"
+  exit 0
+fi
+if [[ "${1:-}" == get && "${2:-}" == realms/freedriver ]]; then
+  printf '%s' '{"id":"realm-1"}'
+  exit 0
+fi
+if [[ "${1:-}" == get && "${2:-}" == components ]]; then
+  printf '%s' '[]'
+  exit 0
+fi
+if [[ "${1:-}" == create || "${1:-}" == update ]]; then
+  cat >/dev/null
+  exit 0
+fi
+echo "unexpected kcadm: $*" >&2
+exit 1
+STUB
+  chmod +x "$stub"
+  if [[ "$payload_path" == "-" ]]; then
+    payload=""
+  else
+    payload="$(cat "$payload_path")"
+  fi
+  out="$case_work/out"
+  err="$case_work/err"
+  set +e
+  DCR_MODE="$mode" DCR_LOG="$log" DCR_STDOUT="$payload" \
+    bash -c '
+      set -euo pipefail
+      REALM=freedriver
+      ONE_YEAR_TOKEN_SECONDS=31536000
+      work="$1"
+      KCADM_BIN="$2"
+      kcadm() { "$KCADM_BIN" "$@"; }
+      kcadm_stdin() { "$KCADM_BIN" "$@"; }
+      run() { source "$3"; }
+      run "$@"
+    ' bash "$case_work" "$stub" "$dcr_body" >"$out" 2>"$err"
+  rc=$?
+  set -e
+  if grep -Eq '^(create|update) components( |$)' "$log"; then
+    saw=1
+  else
+    saw=0
+  fi
+  if [[ "$expect" == present ]]; then
+    if [[ "$rc" -ne 0 || "$saw" -ne 1 ]]; then
+      fail "DCR case ${name} exit ${rc} component ${saw}: $(cat "$err")"
+    fi
+    if grep -Fqx "$session" "$err" || grep -Fqx "$unread" "$err" || grep -Fqx "$missing" "$err"; then
+      fail "DCR case ${name} printed a failure sentence"
+    fi
+  else
+    local sentence="$session"
+    if [[ "$expect" == unreadable ]]; then
+      sentence="$unread"
+    elif [[ "$expect" == missing ]]; then
+      sentence="$missing"
+    fi
+    if [[ "$rc" -ne 1 || "$saw" -ne 0 ]] || ! grep -Fqx "$sentence" "$err"; then
+      fail "DCR case ${name} exit ${rc} component ${saw} stderr: $(cat "$err")"
+    fi
+    if [[ "$expect" == missing ]]; then
+      if grep -Fq "$session" "$err" || grep -Fq "$unread" "$err"; then
+        fail "DCR case ${name} mixed the missing-provider sentence with another exit"
+      fi
+    elif grep -Fq "$missing" "$err"; then
+      fail "DCR case ${name} used the missing-provider sentence"
+    fi
+  fi
+  rm -rf "$case_work"
+  echo "DCR case ${name} ${expect}"
+}
+
+while IFS=$'\t' read -r name mode payload_path expect; do
+  [[ -n "$name" ]] || continue
+  run_dcr_case "$name" "$mode" "$payload_path" "$expect"
+done < "$dcr_cases/manifest"
+rm -rf "$dcr_cases"
+rm -f "$dcr_body"
+echo "ensure_dcr_one_year_tokens exits match the provider list"
+# hte-707-dcr-provider-checks-end
+
+chmod +x scripts/test-invite-service-account.sh scripts/test-dcr-one-year-stock-image.sh
 ./scripts/test-invite-service-account.sh
 
 : <<'STORED_US_PHONE'
