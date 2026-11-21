@@ -23,5 +23,8 @@ public class Device {
     public Map<String, String> activity;
     /** Agent name to its short activity note. */
     public Map<String, String> activityText;
+    /** The time of the host's last report. */
     public Instant lastHeartbeat;
+    /** The time of the host's last take call, from the server clock. Absent on rows written before it existed. */
+    public Instant lastTake;
 }
