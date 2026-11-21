@@ -13,6 +13,7 @@ import jakarta.validation.ConstraintViolationException;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.WebApplicationException;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
+import org.jmolecules.architecture.hexagonal.SecondaryAdapter;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -23,8 +24,11 @@ import java.util.function.Supplier;
  * the refused status from {@link DashboardResponses}, 400 when the client refuses an invalid
  * argument, 503 when the dashboard is unreachable, or the status the token-exchange filter aborted
  * with when the caller's token could not be exchanged. No JAX-RS type leaves this class.
+ * {@code pendingCap} on an answer is copied from {@link DashboardRefused} and stays false on every
+ * other path. {@link #schedule} closes a 2xx response and leaves the header to the mapper.
  */
 @ApplicationScoped
+@SecondaryAdapter
 public class DashboardCalls {
 
     private final AppliancesApi appliances;
@@ -73,7 +77,7 @@ public class DashboardCalls {
         try {
             return new Answer<>(200, request.get());
         } catch (DashboardRefused refused) {
-            return new Answer<>(refused.status(), null);
+            return new Answer<>(refused.status(), null, refused.pendingCap());
         } catch (ConstraintViolationException invalid) {
             return new Answer<>(400, null);
         } catch (ProcessingException unreachable) {
@@ -85,8 +89,16 @@ public class DashboardCalls {
         }
     }
 
-    /** {@code body} is set only on 2xx, and is null for a call with no answer body. */
-    public record Answer<T>(int status, T body) {
+    /**
+     * {@code body} is set only on 2xx, and is null for a call with no answer body.
+     * {@code pendingCap} is true when the dashboard marked a full pending cap.
+     */
+    public record Answer<T>(int status, T body, boolean pendingCap) {
+
+        /** An answer whose pending-cap mark is false. */
+        public Answer(int status, T body) {
+            this(status, body, false);
+        }
 
         public boolean ok() {
             return status >= 200 && status < 300;
