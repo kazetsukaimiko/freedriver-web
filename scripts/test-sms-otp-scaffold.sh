@@ -944,11 +944,10 @@ print("redis is an unpublished compose singleton")
 PY
 
 # hte-707-dcr-provider-checks
-# Run ensure_dcr_one_year_tokens alone. The brace-depth split is the same one
-# this file uses for the other provision functions. The provision script stays
-# a straight-through script.
+# Extract the shell function without counting braces inside its Python heredocs.
 dcr_body="$(mktemp)"
 python3 - "$dcr_body" <<'PY'
+import re
 import sys
 from pathlib import Path
 script = Path("scripts/provision-keycloak-freedriver.sh").read_text()
@@ -956,9 +955,18 @@ parts = script.split("ensure_dcr_one_year_tokens() {", 1)
 if len(parts) != 2:
     raise SystemExit("provision script must define ensure_dcr_one_year_tokens")
 depth = 1
+heredoc_tag = None
 kept = []
 for line in parts[1].splitlines():
-    if line.strip() == "{":
+    if heredoc_tag is not None:
+        kept.append(line)
+        if line == heredoc_tag:
+            heredoc_tag = None
+        continue
+    opener = re.search(r"<<'?(\w+)'?\s*$", line)
+    if opener:
+        heredoc_tag = opener.group(1)
+    elif line.strip() == "{":
         depth += 1
     elif line.strip() == "}":
         depth -= 1

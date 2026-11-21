@@ -898,7 +898,17 @@ comp = next(
     ),
     None,
 )
-body = {"name": "One-year tokens", "providerId": provider_id, "providerType": "org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy", "subType": "anonymous", "parentId": realm_id, "config": {"access-token-lifespan": [lifespan], "redirect-uri": [redirect]}}
+body = {
+    "name": "One-year tokens",
+    "providerId": provider_id,
+    "providerType": "org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy",
+    "subType": "anonymous",
+    "parentId": realm_id,
+    "config": {
+        "access-token-lifespan": [lifespan],
+        "redirect-uri": [redirect],
+    },
+}
 if comp and comp.get("id"):
     body["id"] = comp["id"]
     json.dump(body, open(sys.argv[3], "w", encoding="utf-8"))
