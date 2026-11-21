@@ -772,17 +772,13 @@ PY
   rm -f "$work/portal-jobs-token.json"
 }
 
-assert_portal_jobs_token
-assert_offline_access
-assert_registration_one_year
-if grep -q 'FREEDRIVER_AUTONOMY_MCP_CLIENT_SECRET' "$work/secrets/api.secret" "$work/secrets.env" "$work/secrets/invite.env" "$work/secrets/instances.env" "$work/secrets/grafana.env" "$work/secrets/mqtt.env"; then
-  echo "autonomy MCP secret leaked into another file" >&2
-  exit 1
-fi
-instances_client="$(admin get clients -r freedriver -q clientId=freedriver-instances --fields id --format csv --noquotes | csv_id)"
-instances_sa="$(admin get "clients/${instances_client}/service-account-user" -r freedriver --fields id --format csv --noquotes | csv_id)"
-admin get "users/${instances_sa}/role-mappings" -r freedriver > "$work/instances-roles.json"
-python3 - "$work/instances-roles.json" <<'PY'
+assert_instances_token() {
+  local instances_uuid rm_uuid instances_sa groups_status
+  instances_uuid="$(admin get clients -r freedriver -q clientId=freedriver-instances --fields id --format csv --noquotes | csv_id)"
+  rm_uuid="$(admin get clients -r freedriver -q clientId=realm-management --fields id --format csv --noquotes | csv_id)"
+  instances_sa="$(admin get "clients/${instances_uuid}/service-account-user" -r freedriver --fields id --format csv --noquotes | csv_id)"
+  admin get "users/${instances_sa}/role-mappings" -r freedriver > "$work/instances-roles.json"
+  python3 - "$work/instances-roles.json" <<'PY'
 import json, sys
 mappings = json.load(open(sys.argv[1], encoding="utf-8"))
 client = (mappings.get("clientMappings") or {}).get("realm-management") or {}
@@ -791,6 +787,75 @@ if "manage-users" not in names:
     sys.exit("instances service account is missing manage-users")
 print("instances service account has manage-users")
 PY
+  admin get "clients/${instances_uuid}/scope-mappings/clients/${rm_uuid}" -r freedriver --fields id,name \
+    > "$work/instances-rm-scope.json"
+  python3 - "$work/instances-rm-scope.json" <<'PY'
+import json, sys
+names = [item.get("name") for item in json.load(open(sys.argv[1], encoding="utf-8"))]
+if "manage-users" not in names:
+    sys.exit("instances client is missing realm-management manage-users scope mapping")
+print("instances token maps manage-users")
+PY
+  python3 - "$work/secrets/instances.env" "$work/instances-token-form" <<'PY'
+import sys
+from pathlib import Path
+from urllib.parse import urlencode
+secret = Path(sys.argv[1]).read_text(encoding="utf-8").split("=", 1)[1].strip()
+Path(sys.argv[2]).write_text(urlencode({
+    "grant_type": "client_credentials",
+    "client_id": "freedriver-instances",
+    "client_secret": secret,
+}), encoding="utf-8")
+PY
+  chmod 600 "$work/instances-token-form"
+  curl -sS -o "$work/instances-token.json" --data-binary @"$work/instances-token-form" \
+    "${BASE}/realms/freedriver/protocol/openid-connect/token"
+  rm -f "$work/instances-token-form"
+  python3 - "$work/instances-token.json" "$work/instances-token" <<'PY'
+import base64, json, sys
+from pathlib import Path
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+token = data.get("access_token")
+if not token:
+    print(data.get("error") or "no instances token", file=sys.stderr)
+    sys.exit(1)
+payload = token.split(".")[1]
+payload += "=" * (-len(payload) % 4)
+claims = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
+roles = list(((claims.get("resource_access") or {}).get("realm-management") or {}).get("roles") or [])
+if "manage-users" not in roles:
+    sys.exit("instances token realm-management roles are %s, want manage-users" % roles)
+Path(sys.argv[2]).write_text(token, encoding="utf-8")
+print("instances token roles:", ",".join(roles))
+PY
+  chmod 600 "$work/instances-token"
+  rm -f "$work/instances-token.json"
+  groups_status="$(curl -sS --max-time 30 -o "$work/instances-groups.json" -w '%{http_code}' \
+    -H "Authorization: Bearer $(cat "$work/instances-token")" \
+    "${BASE}/admin/realms/freedriver/groups?search=mqtt-instance")"
+  rm -f "$work/instances-token"
+  python3 - "$groups_status" "$work/instances-groups.json" <<'PY'
+import json, sys
+status = sys.argv[1]
+if status != "200":
+    sys.exit("instances GET groups HTTP %s, want 200" % status)
+groups = json.load(open(sys.argv[2], encoding="utf-8"))
+houses = [group for group in groups if group.get("name") == "mqtt-instance" and not group.get("parentId")]
+if len(houses) != 1:
+    sys.exit("instances token listed %s mqtt-instance groups, want 1" % len(houses))
+print("instances GET groups", status)
+PY
+  rm -f "$work/instances-groups.json"
+}
+
+assert_portal_jobs_token
+assert_offline_access
+assert_registration_one_year
+assert_instances_token
+if grep -q 'FREEDRIVER_AUTONOMY_MCP_CLIENT_SECRET' "$work/secrets/api.secret" "$work/secrets.env" "$work/secrets/invite.env" "$work/secrets/instances.env" "$work/secrets/grafana.env" "$work/secrets/mqtt.env"; then
+  echo "autonomy MCP secret leaked into another file" >&2
+  exit 1
+fi
 admin get groups -r freedriver -q search=mqtt-instance -q exact=true > "$work/mqtt-groups.json"
 python3 - "$work/mqtt-groups.json" <<'PY'
 import json, sys
@@ -848,6 +913,7 @@ PROVISION_ALLOW_NON_ROOT=1 \
   bash scripts/provision-keycloak-freedriver.sh
 assert_invite_scopes
 assert_portal_jobs_token
+assert_instances_token
 
 admin create users -r freedriver -s username=outside-invite -s enabled=true >/dev/null
 outside_id="$(admin get users -r freedriver -q username=outside-invite -q exact=true --fields id --format csv --noquotes | csv_id)"
