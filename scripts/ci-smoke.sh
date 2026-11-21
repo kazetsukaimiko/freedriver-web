@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Start docker-compose.yml plus the CI overlay and assert routing, realm
-# wiring, and cross-service calls through Caddy (#484).
+# wiring, MQTT through the stack broker, and cross-service calls through
+# Caddy (#484, #533).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -77,7 +78,9 @@ FREEDRIVER_SMS_DAILY_SEND_CAP=20
 SMS_OTP_SHARED_SECRET=${SMS_SECRET}
 FREEDRIVER_SEED_PHONE=${PHONE}
 FREEDRIVER_AUTONOMY_MCP_ENABLED=true
-FREEDRIVER_APPLIANCES_LIVE_COMMANDS=false
+FREEDRIVER_APPLIANCES_LIVE_COMMANDS=true
+FIXTURE_INSTANCE_ID=pending
+FIXTURE_HOUSE_PASSWORD=pending
 DASHBOARD_REPLICAS=2
 DISPATCHER_REPLICAS=2
 AUTONOMY_MCP_REPLICAS=2
@@ -124,14 +127,13 @@ EOF
 chmod 600 "$SECRETS/twilio-verify.env"
 
 # Dashboard still mounts api.pass (gid 1001). It no longer mounts the ACL;
-# houses come from Keycloak. Fixture house is #533.
-printf '%s\n' 'smoke' >"$SECRETS/mosquitto/api.pass"
-if [[ ! -s "$SECRETS/mqtt-internal/ca.crt" ]]; then
-  openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
-    -subj "/CN=smoke" \
-    -keyout "$SECRETS/mqtt-internal/ca.key" \
-    -out "$SECRETS/mqtt-internal/ca.crt" >/dev/null 2>&1
-fi
+# houses come from Keycloak. Throwaway password; provision-mosquitto.sh
+# builds the broker passwd from this file and the autonomy pass it writes.
+printf '%s\n' "$(rand_secret)" >"$SECRETS/mosquitto/api.pass"
+chmod 640 "$SECRETS/mosquitto/api.pass"
+# Bind mounts must be files before compose up. Real certs replace these.
+: >"$SECRETS/caddy-local-root.crt"
+: >"$SECRETS/mqtt-internal/ca.crt"
 
 if ! grep -q 'app.freedriver.io' /etc/hosts; then
   as_root tee -a /etc/hosts >/dev/null <<'EOF'
@@ -140,11 +142,24 @@ EOF
 fi
 
 # Production Caddyfile plus a CI global block and the Twilio stub site.
-{
-  printf '%s\n' '{' '	skip_install_trust' '	local_certs' '}' ''
-  cat "$ROOT/Caddyfile"
-  printf '%s\n' '' 'verify.twilio.com {' '	reverse_proxy twilio-stub:8080' '}'
-} >"$ROOT/Caddyfile.smoke"
+# House list talks to https://auth.freedriver.io; smoke reverse_proxies /admin
+# to Keycloak. Production Caddyfile still 404s /admin.
+python3 - "$ROOT/Caddyfile" "$ROOT/Caddyfile.smoke" <<'PY'
+from pathlib import Path
+import sys
+
+src, dest = Path(sys.argv[1]), Path(sys.argv[2])
+text = src.read_text()
+block = "\t@admin path /admin /admin/*\n\thandle @admin {\n\t\trespond 404\n\t}\n"
+if block not in text:
+    raise SystemExit("Caddyfile is missing the auth.freedriver.io /admin 404 handle")
+text = text.replace(block, "", 1)
+dest.write_text(
+    "{\n\tskip_install_trust\n\tlocal_certs\n}\n\n"
+    + text
+    + "\nverify.twilio.com {\n\treverse_proxy twilio-stub:8080\n}\n"
+)
+PY
 
 "${COMPOSE[@]}" config --quiet
 
@@ -162,6 +177,8 @@ PRODUCT_PATHS=(
   keycloak/
   scripts/health-ready.sh
   scripts/check-sms-otp-provider-jar.sh
+  mosquitto/
+  scripts/provision-mosquitto.sh
 )
 RELEASE_TAG="v${GHCR_TAG}"
 if ! git rev-parse -q --verify "refs/tags/${RELEASE_TAG}^{commit}" >/dev/null; then
@@ -210,11 +227,12 @@ build_service() {
   "${COMPOSE[@]}" build "$service"
 }
 
-# Always build the Twilio stub. Pull the five product images at v<version.txt>
-# only when none of their Dockerfile inputs differs from that tag; otherwise
-# build all five from this commit.
-"${COMPOSE[@]}" build twilio-stub
-SERVICES=(dashboard agent-dispatcher autonomy-mcp keycloak sms)
+# Always build the Twilio stub and the fixture-house responder. Pull the
+# product images at v<version.txt> only when none of their Dockerfile inputs
+# differs from that tag; otherwise build them from this commit. Mosquitto is
+# under the same rule as the five product images.
+"${COMPOSE[@]}" build twilio-stub fixture-house
+SERVICES=(dashboard agent-dispatcher autonomy-mcp keycloak sms mosquitto)
 if product_differs_from_release; then
   echo "product paths differ from ${RELEASE_TAG}; building ${SERVICES[*]}"
   for service in "${SERVICES[@]}"; do
@@ -229,7 +247,7 @@ fi
 echo "smoke images built: ${BUILT[*]:-none}"
 echo "smoke images pulled: ${PULLED[*]:-none}"
 
-"${COMPOSE[@]}" up -d keycloak-db mongodb redis keycloak sms twilio-stub mosquitto caddy
+"${COMPOSE[@]}" up -d keycloak-db mongodb redis keycloak sms twilio-stub caddy
 
 echo "waiting for Keycloak"
 ready=0
@@ -319,11 +337,53 @@ docker exec "$KEYCLOAK_CONTAINER" /opt/keycloak/bin/kcadm.sh update "users/${KAZ
   -s firstName=Kaze -s lastName=Smoke \
   -s email=kaze@freedriver.invalid -s emailVerified=true \
   -s 'requiredActions=[]' >/dev/null
-# Throwaway realm: concurrent invite create needs portal-admin on the session.
+# Throwaway realm: portal-admin for instance create and invite; dashboard for switch_appliance.
 docker exec "$KEYCLOAK_CONTAINER" /opt/keycloak/bin/kcadm.sh add-roles \
   --config /tmp/kcadm-smoke-admin.config -r freedriver \
   --uusername kaze --rolename portal-admin --rolename dashboard >/dev/null
 unset KAZE_ID
+
+echo "waiting for Caddy local CA"
+ca_ok=0
+for _ in $(seq 1 30); do
+  curl -sk --resolve auth.freedriver.io:443:127.0.0.1 https://auth.freedriver.io/ >/dev/null 2>&1 || true
+  if docker exec "${COMPOSE_PROJECT_NAME}-caddy-1" test -f /data/caddy/pki/authorities/local/root.crt; then
+    docker exec "${COMPOSE_PROJECT_NAME}-caddy-1" cat /data/caddy/pki/authorities/local/root.crt \
+      >"$SECRETS/caddy-local-root.crt"
+    ca_ok=1
+    break
+  fi
+  sleep 2
+done
+if [[ "$ca_ok" != 1 || ! -s "$SECRETS/caddy-local-root.crt" ]]; then
+  echo "Caddy local CA was not issued" >&2
+  exit 1
+fi
+
+# Production mosquitto.conf needs passwd, ACL, and both listener certs.
+# Bootstrap UUID lets the broker start; the smoke assert reapplies the ACL
+# for the minted fixture id.
+BOOTSTRAP_HOUSE="123e4567-e89b-12d3-a456-426614174000"
+as_root env \
+  INSTANCE_ID="$BOOTSTRAP_HOUSE" \
+  bash "$ROOT/scripts/provision-mosquitto.sh"
+as_root chmod -R a+rX "$SECRETS"
+
+"${COMPOSE[@]}" up -d mosquitto
+echo "waiting for Mosquitto"
+mqtt_ok=0
+for _ in $(seq 1 30); do
+  if docker logs "${COMPOSE_PROJECT_NAME}-mosquitto-1" 2>&1 | grep -q 'running'; then
+    mqtt_ok=1
+    break
+  fi
+  sleep 2
+done
+if [[ "$mqtt_ok" != 1 ]]; then
+  echo "mosquitto did not start" >&2
+  docker logs "${COMPOSE_PROJECT_NAME}-mosquitto-1" 2>&1 | tail -n 80 >&2 || true
+  exit 1
+fi
 
 API_SECRET="$(tr -d '\n' <"$SECRETS/keycloak-freedriver-api.secret")"
 python3 - "$ENV_FILE" "$API_SECRET" <<'PY'

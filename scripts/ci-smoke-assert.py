@@ -11,6 +11,7 @@ import socket
 import ssl
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -24,6 +25,11 @@ APP = "https://app.freedriver.io"
 AUTH = "https://auth.freedriver.io"
 PHONE = os.environ.get("FREEDRIVER_SEED_PHONE", "+15555550100")
 PROJECT = os.environ.get("COMPOSE_PROJECT_NAME", "freedriver-web")
+ROOT = Path(__file__).resolve().parent.parent
+SECRETS = Path(os.environ.get("FREEDRIVER_SMOKE_SECRETS", "/opt/freedriver-secrets"))
+ENV_FILE = Path(os.environ.get("FREEDRIVER_SMOKE_ENV", str(SECRETS / ".env")))
+FIXTURE_LABEL = "Fixture"
+FIXTURE_APPLIANCES = ("hallway", "fridge")
 AUTONOMY_META = f"{APP}/api/autonomy/oauth-protected-resource"
 DISPATCH_META = f"{APP}/api/dispatcher/oauth-protected-resource"
 AUTONOMY_CHALLENGE = f'Bearer resource_metadata="{AUTONOMY_META}"'
@@ -112,11 +118,58 @@ def https_handler() -> urllib.request.HTTPSHandler:
 
 
 def env_value(name: str) -> str:
-    path = Path("/opt/freedriver-secrets/.env")
-    for line in path.read_text(encoding="utf-8").splitlines():
+    if not ENV_FILE.is_file():
+        return ""
+    for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
         if line.startswith(name + "="):
             return line.split("=", 1)[1]
     return ""
+
+
+def set_env_value(name: str, value: str) -> None:
+    lines: list[str] = []
+    replaced = False
+    if ENV_FILE.is_file():
+        for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+            if line.startswith(name + "="):
+                lines.append(f"{name}={value}")
+                replaced = True
+            else:
+                lines.append(line)
+    if not replaced:
+        lines.append(f"{name}={value}")
+    ENV_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def compose(*args: str) -> None:
+    subprocess.check_call(
+        [
+            "docker",
+            "compose",
+            "--env-file",
+            str(ENV_FILE),
+            "-f",
+            str(ROOT / "docker-compose.yml"),
+            "-f",
+            str(ROOT / "docker-compose.ci.yml"),
+            *args,
+        ]
+    )
+
+
+def as_root(argv: list[str]) -> None:
+    if os.geteuid() == 0:
+        subprocess.check_call(argv)
+    else:
+        subprocess.check_call(["sudo", *argv])
+
+
+def mcp_text(payload: dict) -> str:
+    if payload.get("result", {}).get("isError"):
+        raise SystemExit(f"mcp error {payload}")
+    contents = payload.get("result", {}).get("content") or []
+    texts = [item.get("text", "") for item in contents if isinstance(item, dict)]
+    return "\n".join(texts)
 
 
 def secret_file(name: str) -> str:
@@ -593,6 +646,211 @@ def assert_phone_sign_in(client: Client) -> None:
     print("phone sign-in", status, url.split("?", 1)[0])
 
 
+def provision_fixture_house(client: Client) -> tuple[str, str]:
+    status, _, body, _ = client.request(f"{APP}/api/instances")
+    if status != 200:
+        raise SystemExit(f"GET /api/instances HTTP {status} body={body[:300]!r}")
+    listed = json.loads(body)
+    csrf = listed.get("csrfToken") or ""
+    if not csrf:
+        raise SystemExit("GET /api/instances missing csrfToken")
+    status, _, body, _ = client.request(
+        f"{APP}/api/instances",
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "X-CSRF-Token": csrf,
+        },
+        data=json.dumps({"label": FIXTURE_LABEL}).encode(),
+    )
+    if status not in {200, 201}:
+        raise SystemExit(f"POST /api/instances HTTP {status} body={body[:300]!r}")
+    created = json.loads(body)
+    instance_id = created.get("instanceId") or ""
+    password = created.get("password") or ""
+    if not instance_id or not password:
+        raise SystemExit("POST /api/instances missing instanceId or password")
+    print("fixture house", instance_id)
+    return instance_id, password
+
+
+def kcadm(*args: str) -> str:
+    container = os.environ.get("KEYCLOAK_CONTAINER", f"{PROJECT}-keycloak-1")
+    try:
+        return subprocess.check_output(
+            ["docker", "exec", container, "/opt/keycloak/bin/kcadm.sh", *args],
+            text=True,
+            stderr=subprocess.STDOUT,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit(f"kcadm {args[0]} failed: {(exc.output or '')[:300]!r}") from exc
+
+
+def complete_fixture_profile(instance_id: str) -> None:
+    """Fill firstName, lastName, and email so VERIFY_PROFILE is clear.
+
+    Realm user profile requires those fields. Admin create of the house
+    username leaves required action VERIFY_PROFILE, and the broker plugin
+    password grant then returns HTTP 400 Account is not fully set up.
+    ci-smoke.sh already fills the same fields on kaze.
+    """
+    config = "/tmp/kcadm-smoke-admin.config"
+    admin_password = env_value("KC_BOOTSTRAP_ADMIN_PASSWORD")
+    if not admin_password:
+        raise SystemExit("KC_BOOTSTRAP_ADMIN_PASSWORD missing")
+    kcadm(
+        "config",
+        "credentials",
+        "--config",
+        config,
+        "--server",
+        "http://127.0.0.1:8080",
+        "--realm",
+        "master",
+        "--user",
+        "admin",
+        "--password",
+        admin_password,
+    )
+    raw = kcadm(
+        "get",
+        "users",
+        "--config",
+        config,
+        "-r",
+        "freedriver",
+        "-q",
+        f"username={instance_id}",
+        "-q",
+        "exact=true",
+        "--fields",
+        "id",
+        "--format",
+        "csv",
+        "--noquotes",
+    )
+    user_id = next((line.strip() for line in raw.splitlines() if line.strip() and line.strip() != "id"), "")
+    if not user_id:
+        raise SystemExit(f"fixture house user {instance_id} missing in Keycloak")
+    kcadm(
+        "update",
+        f"users/{user_id}",
+        "--config",
+        config,
+        "-r",
+        "freedriver",
+        "-s",
+        "firstName=Fixture",
+        "-s",
+        "lastName=House",
+        "-s",
+        f"email=fixture-{instance_id}@freedriver.invalid",
+        "-s",
+        "emailVerified=true",
+        "-s",
+        "requiredActions=[]",
+    )
+    print("fixture house profile complete")
+
+
+def apply_fixture_acl(instance_id: str) -> None:
+    fd, tmp_name = tempfile.mkstemp(prefix="smoke-acl-", suffix=".acl")
+    os.close(fd)
+    tmp = Path(tmp_name)
+    dest = SECRETS / "mosquitto" / "acl"
+    try:
+        subprocess.check_call(
+            [
+                str(ROOT / "scripts/provision-mosquitto.sh"),
+                "--acl-only",
+                "--instance-id",
+                instance_id,
+                "--acl-out",
+                str(tmp),
+            ]
+        )
+        as_root(["install", "-m", "0644", str(tmp), str(dest)])
+    finally:
+        tmp.unlink(missing_ok=True)
+    compose("kill", "-s", "HUP", "mosquitto")
+
+
+def wait_dashboard_mqtt_follows(instance_id: str) -> None:
+    """Both dashboard replicas subscribe to a new house on a 60s refresh."""
+    needle = f"mqtt instance subscription instance={instance_id} outcome=subscribed"
+    ids = replica_ids("dashboard")
+    if len(ids) != 2:
+        raise SystemExit(f"dashboard replica count {len(ids)}, want 2")
+    pending = set(ids)
+    for _ in range(45):
+        still: set[str] = set()
+        for cid in pending:
+            try:
+                raw = subprocess.check_output(
+                    ["docker", "logs", cid],
+                    text=True,
+                    stderr=subprocess.STDOUT,
+                )
+            except subprocess.CalledProcessError as exc:
+                raw = exc.output or ""
+            if needle not in raw:
+                still.add(cid)
+        pending = still
+        if not pending:
+            print("dashboard mqtt subscribed", instance_id)
+            return
+        time.sleep(2)
+    raise SystemExit(
+        f"dashboard replicas missing mqtt subscribe for {instance_id}: {len(pending)} still waiting"
+    )
+
+
+def start_fixture_house(instance_id: str, password: str) -> None:
+    set_env_value("FIXTURE_INSTANCE_ID", instance_id)
+    set_env_value("FIXTURE_HOUSE_PASSWORD", password)
+    compose("up", "-d", "--no-build", "fixture-house")
+    container = f"{PROJECT}-fixture-house-1"
+    for _ in range(30):
+        try:
+            raw = subprocess.check_output(
+                [
+                    "docker",
+                    "exec",
+                    container,
+                    "python3",
+                    "-c",
+                    "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/health').getcode())",
+                ],
+                text=True,
+                stderr=subprocess.STDOUT,
+            )
+        except subprocess.CalledProcessError:
+            time.sleep(2)
+            continue
+        if raw.strip() == "200":
+            print("fixture-house ready")
+            return
+        time.sleep(2)
+    raise SystemExit("fixture-house never became ready")
+
+
+def fixture_command_count() -> int:
+    container = f"{PROJECT}-fixture-house-1"
+    raw = subprocess.check_output(
+        [
+            "docker",
+            "exec",
+            container,
+            "python3",
+            "-c",
+            "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/commands').read().decode())",
+        ],
+        text=True,
+    )
+    payload = json.loads(raw)
+    return int(payload.get("count", -1))
+
+
 def assert_login_across_replicas(client: Client) -> None:
     last = (0, b"")
     for i in range(20):
@@ -620,23 +878,69 @@ def assert_mcp_tools(client: Client) -> None:
     if status != 200:
         raise SystemExit(f"tools/list HTTP {status}")
     names = [tool.get("name") for tool in payload.get("result", {}).get("tools", [])]
-    if "home_status" not in names:
-        raise SystemExit(f"tools/list missing home_status: {names}")
-    status, _, payload = mcp_post(
-        client,
-        autonomy,
-        session_headers,
+    for required in ("home_status", "list_appliances", "switch_appliances"):
+        if required not in names:
+            raise SystemExit(f"tools/list missing {required}: {names}")
+
+    def call_tool(rpc_id: int, name: str, arguments: dict) -> dict:
+        status, _, payload = mcp_post(
+            client,
+            autonomy,
+            session_headers,
+            {
+                "jsonrpc": "2.0",
+                "id": rpc_id,
+                "method": "tools/call",
+                "params": {"name": name, "arguments": arguments},
+            },
+        )
+        if status != 200:
+            raise SystemExit(f"{name} HTTP {status} body={payload}")
+        return payload
+
+    houses: list[dict] = []
+    for _ in range(20):
+        payload = call_tool(3, "list_appliances", {})
+        try:
+            houses = json.loads(mcp_text(payload))
+        except json.JSONDecodeError:
+            houses = []
+        if houses and houses[0].get("appliances"):
+            break
+        time.sleep(2)
+    if not houses:
+        raise SystemExit("list_appliances returned no houses")
+    house = houses[0]
+    instance_id = house.get("instanceId") or ""
+    if instance_id != os.environ.get("FIXTURE_INSTANCE_ID", instance_id):
+        raise SystemExit(f"list_appliances instance {instance_id}")
+    got = {item.get("name"): item.get("state") for item in house.get("appliances") or []}
+    for name in FIXTURE_APPLIANCES:
+        if name not in got:
+            raise SystemExit(f"list_appliances missing {name}: {got}")
+    print("appliances", sorted(got))
+
+    before = fixture_command_count()
+    payload = call_tool(
+        4,
+        "switch_appliances",
         {
-            "jsonrpc": "2.0",
-            "id": 3,
-            "method": "tools/call",
-            "params": {"name": "home_status", "arguments": {}},
+            "instanceId": instance_id,
+            "appliances": [{"applianceName": "hallway", "on": False}],
         },
     )
-    if status != 200:
-        raise SystemExit(f"home_status HTTP {status} body={payload}")
-    if payload.get("result", {}).get("isError"):
-        raise SystemExit(f"home_status error {payload}")
+    spoken = mcp_text(payload)
+    if "turned off" not in spoken.lower():
+        raise SystemExit(f"switch_appliances not confirmed: {spoken!r}")
+    after = fixture_command_count()
+    if after - before != 1:
+        raise SystemExit(f"fixture-house saw {after - before} commands, want 1")
+    print("switch_appliances confirmed")
+
+    payload = call_tool(5, "home_status", {})
+    spoken = mcp_text(payload)
+    if "broker is connected" not in spoken.lower():
+        raise SystemExit(f"home_status {spoken!r}")
     mcp_ten_calls(client, autonomy, session_headers, start_id=10)
     bare = Client(cookies=False)
     mcp_ten_calls(
@@ -866,6 +1170,12 @@ def main() -> int:
         wait_caddy_dns(name)
     assert_metrics_inside()
     assert_phone_sign_in(client)
+    instance_id, password = provision_fixture_house(client)
+    complete_fixture_profile(instance_id)
+    apply_fixture_acl(instance_id)
+    start_fixture_house(instance_id, password)
+    wait_dashboard_mqtt_follows(instance_id)
+    os.environ["FIXTURE_INSTANCE_ID"] = instance_id
     assert_login_across_replicas(client)
     assert_mcp_tools(client)
     assert_invite_spent_once(client)
