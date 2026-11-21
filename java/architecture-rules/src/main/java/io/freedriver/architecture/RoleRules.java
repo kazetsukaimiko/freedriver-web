@@ -173,16 +173,22 @@ public final class RoleRules {
                     }
                 } else if (own.size() > 1) {
                     events.add(SimpleConditionEvent.violated(c, c.getName() + " carries two roles: " + names(own)));
-                } else if (own.isEmpty() && inPackage.isEmpty()) {
-                    events.add(SimpleConditionEvent.violated(c, c.getName() + " has no role: neither it nor package "
-                            + pkg + " carries one"));
-                } else if (own.isEmpty() && inPackage.size() > 1) {
-                    events.add(SimpleConditionEvent.violated(c, c.getName() + " has no role of its own, and package "
-                            + pkg + " carries two: " + names(inPackage)));
+                } else if (inPackage.size() > 1) {
+                    events.add(SimpleConditionEvent.violated(c, "package " + pkg + " carries two roles: "
+                            + names(inPackage) + "; " + c.getName() + " is in it"));
                 } else if (unqualified(c).isPresent()) {
                     events.add(SimpleConditionEvent.violated(c, c.getName() + " has the unqualified "
                             + names(List.of(unqualified(c).get())) + "; it is for a @ConfigMapping interface only "
                             + "(@Port) or for no class (@Adapter): give it a primary or secondary role"));
+                } else if (own.isEmpty() && inPackage.isEmpty()) {
+                    events.add(SimpleConditionEvent.violated(c, c.getName() + " has no role: neither it nor package "
+                            + pkg + " carries one"));
+                } else if (own.size() == 1 && inPackage.isEmpty()) {
+                    events.add(SimpleConditionEvent.violated(c, c.getName() + " is in package " + pkg
+                            + ", which carries no role"));
+                } else if (own.size() == 1 && own.equals(inPackage) && !configMappingPort(c)) {
+                    events.add(SimpleConditionEvent.violated(c, c.getName() + " repeats package " + pkg + "'s role "
+                            + names(own) + "; a class carries a role only when it differs from its package"));
                 } else if (own.size() == 1 && inPackage.size() == 1 && PACKAGE_WIDE.contains(inPackage.get(0))
                         && !own.equals(inPackage)) {
                     events.add(SimpleConditionEvent.violated(c, c.getName() + " carries " + names(own) + " in package "
@@ -191,6 +197,14 @@ public final class RoleRules {
                 }
             }
         };
+    }
+
+    /**
+     * A {@code @ConfigMapping} interface whose own role is {@code @Port}. Repeating the package's
+     * {@code @Port} is how configuration is declared, so that pair is not a redundant role.
+     */
+    private static boolean configMappingPort(JavaClass c) {
+        return c.isInterface() && c.isAnnotatedWith(CONFIG_MAPPING) && roles(c).equals(List.of(PORT));
     }
 
     /**
