@@ -4,7 +4,7 @@ import io.freedriver.dispatcher.DispatcherConfig;
 import io.freedriver.dispatcher.jobs.JobStore;
 
 import io.freedriver.dispatcher.api.DispatcherApi;
-import io.freedriver.dispatcher.model.DeviceView;
+import io.freedriver.dispatcher.model.DeviceListEntry;
 import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -34,7 +34,7 @@ public class DispatcherResource implements DispatcherApi {
     }
 
     @Override
-    public List<DeviceView> listDevices() {
+    public List<DeviceListEntry> listDevices() {
         return jobs.listDevices();
     }
 

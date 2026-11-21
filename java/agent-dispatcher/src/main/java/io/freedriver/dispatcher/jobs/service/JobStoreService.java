@@ -11,9 +11,11 @@ import io.freedriver.dispatcher.jobs.JobStore;
 import io.freedriver.dispatcher.store.SubmitLocks;
 
 import io.freedriver.dispatcher.model.AgentRosterEntry;
+import io.freedriver.dispatcher.model.AgentState;
 import io.freedriver.dispatcher.model.AssignmentPage;
 import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
+import io.freedriver.dispatcher.model.DeviceListEntry;
 import io.freedriver.dispatcher.model.DeviceView;
 import io.freedriver.dispatcher.model.JobPage;
 import io.freedriver.dispatcher.model.JobSummary;
@@ -47,7 +49,7 @@ import java.util.function.BooleanSupplier;
  * A wait re-reads Mongo on an interval that starts at 250 ms and rises to 1 s.
  * A host holds a job it took for {@code hostLease}; a queued job no host takes within
  * {@code takeWithin} expires. A host silent for {@code hostSilentAfter} shows its agents as
- * {@code UNKNOWN} or {@code OFFLINE} in {@link #listAgents}.
+ * {@code UNKNOWN} or {@code OFFLINE} in {@link #listAgents} and {@link #listDevices}.
  */
 @ApplicationScoped
 public class JobStoreService implements JobStore {
@@ -129,23 +131,40 @@ public class JobStoreService implements JobStore {
         Instant now = clock.instant();
         List<AgentRosterEntry> rows = new ArrayList<>();
         for (Device device : devices.listAll()) {
-            Map<String, String> activity = orEmpty(device.activity);
             Map<String, String> notes = orEmpty(device.activityText);
-            boolean reported = withinSilence(device.lastHeartbeat, now);
-            boolean taking = withinSilence(device.lastTake, now);
-            Instant seenAt = later(device.lastHeartbeat, device.lastTake);
+            ListedHost host = listed(device, now);
             for (String agent : orEmpty(device.agents)) {
-                String state;
-                if (reported) {
-                    state = "busy".equals(activity.get(agent)) ? "BUSY" : "IDLE";
-                } else {
-                    state = taking ? "UNKNOWN" : "OFFLINE";
-                }
-                rows.add(new AgentRosterEntry("bot", agent, device.hostname, state, notes.getOrDefault(agent, ""),
-                        device.lastHeartbeat, seenAt));
+                rows.add(new AgentRosterEntry("bot", agent, device.hostname,
+                        host.stateByAgent().get(agent).name(), notes.getOrDefault(agent, ""),
+                        host.reportedAt(), host.seenAt()));
             }
         }
         return List.copyOf(rows);
+    }
+
+    /**
+     * One host on one clock instant: {@code reportedAt} is the row's {@code lastHeartbeat}, {@code seenAt}
+     * is the later of that and {@code lastTake}, and each agent is {@code BUSY} or {@code IDLE} when the
+     * report is inside the window, {@code UNKNOWN} when only the take is, and {@code OFFLINE} otherwise.
+     */
+    private ListedHost listed(Device device, Instant now) {
+        Map<String, String> activity = orEmpty(device.activity);
+        boolean reported = withinSilence(device.lastHeartbeat, now);
+        boolean taking = withinSilence(device.lastTake, now);
+        Map<String, AgentState> states = new LinkedHashMap<>();
+        for (String agent : orEmpty(device.agents)) {
+            AgentState state;
+            if (reported) {
+                state = "busy".equals(activity.get(agent)) ? AgentState.BUSY : AgentState.IDLE;
+            } else {
+                state = taking ? AgentState.UNKNOWN : AgentState.OFFLINE;
+            }
+            states.put(agent, state);
+        }
+        return new ListedHost(device.lastHeartbeat, later(device.lastHeartbeat, device.lastTake), Map.copyOf(states));
+    }
+
+    private record ListedHost(Instant reportedAt, Instant seenAt, Map<String, AgentState> stateByAgent) {
     }
 
     /** Whether {@code time} exists and is younger than {@code hostSilentAfter}. An age equal to it is outside. */
@@ -211,8 +230,15 @@ public class JobStoreService implements JobStore {
     }
 
     @Override
-    public List<DeviceView> listDevices() {
-        return devices.listAll().stream().map(JobStoreService::viewDevice).toList();
+    public List<DeviceListEntry> listDevices() {
+        Instant now = clock.instant();
+        List<DeviceListEntry> rows = new ArrayList<>();
+        for (Device device : devices.listAll()) {
+            ListedHost host = listed(device, now);
+            rows.add(new DeviceListEntry(device.id, device.hostname, List.copyOf(orEmpty(device.agents)),
+                    device.lastHeartbeat, host.reportedAt(), host.seenAt(), host.stateByAgent()));
+        }
+        return List.copyOf(rows);
     }
 
     @Override

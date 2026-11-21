@@ -1,6 +1,6 @@
 package io.freedriver.dispatcher.api;
 
-import io.freedriver.dispatcher.model.DeviceView;
+import io.freedriver.dispatcher.model.DeviceListEntry;
 import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
 import jakarta.annotation.security.RolesAllowed;
@@ -21,10 +21,15 @@ import java.util.UUID;
 @Produces(MediaType.APPLICATION_JSON)
 public interface DispatcherApi {
 
+    /**
+     * Hosts as {@code list_agents} reports them: the same states and the same {@code reportedAt} and
+     * {@code seenAt}, from {@code freedriver.dispatcher.host-silent-after}. A quiet host is
+     * {@code UNKNOWN} or {@code OFFLINE} rather than its last stored activity.
+     */
     @GET
     @Path("/devices")
     @RolesAllowed(Actors.DISPATCHER)
-    List<DeviceView> listDevices();
+    List<DeviceListEntry> listDevices();
 
     @GET
     @Path("/jobs")
