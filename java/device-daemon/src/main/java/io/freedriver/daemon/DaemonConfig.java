@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.time.DateTimeException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -18,8 +17,6 @@ final class DaemonConfig {
     static final Duration DEFAULT_SESSION_TIMEOUT = Duration.ofMinutes(10);
     static final Duration DEFAULT_WATCH = Duration.ofSeconds(1);
 
-    private static final Set<String> GROK_KEYS = Set.of(
-            "deviceId", "hostname", "agents", "secretFile", "allow", "grok", "sessionTimeout", "workDir", "mode");
     private static final Set<String> OPENBOT_KEYS = Set.of(
             "deviceId", "hostname", "agents", "secretFile", "mode", "automationDir");
     private static final Set<String> OPENBOT_REFUSED = Set.of("router", "sessionTimeout", "workDir", "grok", "allow");
@@ -61,15 +58,14 @@ final class DaemonConfig {
         if (node == null || !node.isObject()) {
             throw new IllegalArgumentException("config is not json");
         }
-        WorkerMode mode = mode(node);
-        Set<String> keys = mode == WorkerMode.OPENBOT ? OPENBOT_KEYS : GROK_KEYS;
+        requireOpenBot(node);
         Iterator<String> names = node.fieldNames();
         while (names.hasNext()) {
             String key = names.next();
-            if (mode == WorkerMode.OPENBOT && OPENBOT_REFUSED.contains(key)) {
+            if (OPENBOT_REFUSED.contains(key)) {
                 throw new IllegalArgumentException(key + " is not an openbot mode setting");
             }
-            if (!keys.contains(key)) {
+            if (!OPENBOT_KEYS.contains(key)) {
                 throw new IllegalArgumentException("unknown config key " + key);
             }
         }
@@ -77,7 +73,7 @@ final class DaemonConfig {
         if (deviceId.startsWith("-") || !deviceId.matches("[A-Za-z0-9._-]{1,64}")) {
             throw new IllegalArgumentException("device id is not safe");
         }
-        if (mode == WorkerMode.OPENBOT && !OpenBotWorker.DEVICE_ID.equals(deviceId)) {
+        if (!OpenBotWorker.DEVICE_ID.equals(deviceId)) {
             throw new IllegalArgumentException("openbot device id is freedriver-openbot, not " + deviceId);
         }
         String hostname = text(node, "hostname");
@@ -92,23 +88,32 @@ final class DaemonConfig {
             throw new IllegalArgumentException("secretFile is required");
         }
         Path secretFile = Path.of(text(node, "secretFile"));
-        if (mode == WorkerMode.OPENBOT) {
-            checkConnectorAgents(agents);
-            Path automationDir = node.has("automationDir")
-                    ? Path.of(text(node, "automationDir"))
-                    : defaultAutomationDir(env, home);
-            return new DaemonConfig(deviceId, secretFile, DaemonSettings.openBot(hostname, agents, automationDir));
+        checkConnectorAgents(agents);
+        Path automationDir = node.has("automationDir")
+                ? Path.of(text(node, "automationDir"))
+                : defaultAutomationDir(env, home);
+        return new DaemonConfig(deviceId, secretFile, DaemonSettings.openBot(hostname, agents, automationDir));
+    }
+
+    /**
+     * Mode is the first check, before keys and the device id. {@code grok} and a missing mode are
+     * retired. Any other value is a config error.
+     */
+    private static void requireOpenBot(JsonNode node) {
+        if (!node.has("mode")) {
+            throw new RetiredModeException();
         }
-        List<String> allow = node.has("allow") ? GrokCommand.sanitize(strings(node.get("allow"), "allow")) : List.of();
-        String grok = node.has("grok") ? text(node, "grok") : "grok";
-        Duration timeout = node.has("sessionTimeout")
-                ? duration(text(node, "sessionTimeout"))
-                : DEFAULT_SESSION_TIMEOUT;
-        Path workDir = node.has("workDir") ? Path.of(text(node, "workDir")) : null;
-        return new DaemonConfig(
-                deviceId,
-                secretFile,
-                new DaemonSettings(hostname, agents, allow, grok, timeout, DEFAULT_WATCH, workDir));
+        JsonNode value = node.get("mode");
+        if (value == null || !value.isTextual() || value.asText().isBlank()) {
+            throw new IllegalArgumentException("mode is required");
+        }
+        String mode = value.asText();
+        if ("grok".equals(mode)) {
+            throw new RetiredModeException();
+        }
+        if (!"openbot".equals(mode)) {
+            throw new IllegalArgumentException("mode is grok or openbot");
+        }
     }
 
     /** At most 32 names, each at most 64 characters, no two equal without regard to case. */
@@ -140,32 +145,6 @@ final class DaemonConfig {
 
     WorkerMode mode() {
         return settings.mode();
-    }
-
-    private static WorkerMode mode(JsonNode node) {
-        if (!node.has("mode")) {
-            return WorkerMode.GROK;
-        }
-        String value = text(node, "mode");
-        if ("grok".equals(value)) {
-            return WorkerMode.GROK;
-        }
-        if ("openbot".equals(value)) {
-            return WorkerMode.OPENBOT;
-        }
-        throw new IllegalArgumentException("mode is grok or openbot");
-    }
-
-    private static Duration duration(String text) {
-        try {
-            Duration parsed = Duration.parse(text);
-            if (parsed.isZero() || parsed.isNegative()) {
-                throw new IllegalArgumentException("session timeout must be positive");
-            }
-            return parsed;
-        } catch (DateTimeException failed) {
-            throw new IllegalArgumentException("session timeout must be an ISO-8601 duration");
-        }
     }
 
     private static String text(JsonNode node, String key) {

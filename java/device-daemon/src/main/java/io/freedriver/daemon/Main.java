@@ -2,73 +2,54 @@ package io.freedriver.daemon;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 
 public final class Main {
-
-    private static final Duration HEARTBEAT = Duration.ofSeconds(30);
-    private static final Duration POLL_BACKOFF = Duration.ofSeconds(2);
 
     private Main() {
     }
 
     public static void main(String[] args) {
+        System.exit(run(args));
+    }
+
+    /**
+     * Loads config and starts the OpenBot connector. A retired mode exits 0 before the secret file
+     * is read, so an installed unit with {@code Restart=on-failure} stays stopped. Every other
+     * config or credential error exits 2.
+     */
+    static int run(String[] args) {
         Path configPath;
         try {
             configPath = configPath(args);
         } catch (IllegalArgumentException bad) {
             System.err.println(bad.getMessage());
-            System.exit(2);
-            return;
+            return 2;
         }
         DaemonConfig config;
-        SecretFile.Material material;
         try {
             config = DaemonConfig.parse(Files.readString(configPath));
+        } catch (RetiredModeException retired) {
+            System.err.println(retired.getMessage());
+            return 0;
+        } catch (IllegalArgumentException bad) {
+            System.err.println(bad.getMessage());
+            return 2;
+        } catch (Exception failed) {
+            System.err.println("config was not usable");
+            return 2;
+        }
+        SecretFile.Material material;
+        try {
             material = SecretFile.read(config.secretFile());
         } catch (IllegalArgumentException bad) {
             System.err.println(bad.getMessage());
-            System.exit(2);
-            return;
+            return 2;
         } catch (Exception failed) {
             System.err.println("config was not usable");
-            System.exit(2);
-            return;
+            return 2;
         }
-        if (config.mode() == WorkerMode.OPENBOT) {
-            connect(config, material);
-            return;
-        }
-        HttpsDeviceClient http = HttpsDeviceClient.create(config.deviceId(), material);
-        DeviceWorker worker = new DeviceDaemon(
-                http,
-                new ProcessGrokLauncher(http::forbidden),
-                config.settings());
-        try {
-            worker.registerOnce();
-        } catch (RuntimeException failed) {
-            System.err.println("register failed");
-            System.exit(1);
-            return;
-        }
-        Thread heartbeat = Thread.ofPlatform().name("device-heartbeat").unstarted(() -> beat(worker));
-        Thread poller = Thread.ofPlatform().name("device-poll").unstarted(() -> poll(worker));
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try {
-                worker.close();
-            } catch (Exception ignored) {
-                // shutdown
-            }
-            heartbeat.interrupt();
-            poller.interrupt();
-        }, "device-stop"));
-        heartbeat.start();
-        poller.start();
-        try {
-            poller.join();
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-        }
+        connect(config, material);
+        return 0;
     }
 
     /**
@@ -101,41 +82,5 @@ public final class Main {
             throw new IllegalArgumentException("usage: device-daemon --config <file>");
         }
         return Path.of(args[1]);
-    }
-
-    private static void beat(DeviceWorker worker) {
-        while (!Thread.currentThread().isInterrupted()) {
-            try {
-                worker.heartbeatOnce();
-                Thread.sleep(HEARTBEAT);
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
-                return;
-            } catch (RuntimeException failed) {
-                System.err.println("heartbeat failed");
-                try {
-                    Thread.sleep(POLL_BACKOFF);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-            }
-        }
-    }
-
-    private static void poll(DeviceWorker worker) {
-        while (!Thread.currentThread().isInterrupted()) {
-            try {
-                worker.pollOnce();
-            } catch (RuntimeException failed) {
-                System.err.println("poll failed");
-                try {
-                    Thread.sleep(POLL_BACKOFF);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-            }
-        }
     }
 }
