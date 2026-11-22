@@ -1,6 +1,7 @@
 package io.freedriver.autonomymcp;
 
 import com.sun.net.httpserver.HttpServer;
+import io.freedriver.dashboard.api.PendingCapHeader;
 import io.quarkus.test.common.QuarkusTestResourceLifecycleManager;
 
 import java.io.IOException;
@@ -12,7 +13,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -28,6 +32,14 @@ public final class DashboardStub implements QuarkusTestResourceLifecycleManager 
     static final AtomicBoolean down = new AtomicBoolean(false);
     /** Appliance name to the status the stub dashboard answers a command for it with. */
     static final Map<String, Integer> refusedAppliances = new ConcurrentHashMap<>();
+    /**
+     * Appliance name, from the scheduled-switches body, to the status of that store.
+     * A name absent from this map is stored with 202.
+     */
+    static final Map<String, Integer> refusedSchedules = new ConcurrentHashMap<>();
+    /** Names in {@link #refusedSchedules} whose 429 carries {@link PendingCapHeader#FULL}. */
+    static final Set<String> pendingCapSchedules = ConcurrentHashMap.newKeySet();
+    private static final Pattern APPLIANCE_NAME = Pattern.compile("\"applianceName\"\\s*:\\s*\"([^\"]*)\"");
     /** Keycloak refuses the exchange with 400 invalid_request. */
     static final AtomicBoolean refuseExchange = new AtomicBoolean(false);
 
@@ -94,8 +106,17 @@ public final class DashboardStub implements QuarkusTestResourceLifecycleManager 
             } else if ("/api/mcp/debug".equals(path)) {
                 body = "{\"health\":\"UP\",\"errorCategory\":\"none\"}";
             } else if ("/api/mcp/scheduled-switches".equals(path)) {
-                status = 202;
-                body = "{}";
+                String name = applianceName(requestBody);
+                if (refusedSchedules.containsKey(name)) {
+                    status = refusedSchedules.get(name);
+                    body = "";
+                    if (status == 429 && pendingCapSchedules.contains(name)) {
+                        exchange.getResponseHeaders().add(PendingCapHeader.NAME, PendingCapHeader.FULL);
+                    }
+                } else {
+                    status = 202;
+                    body = "";
+                }
             } else {
                 status = 404;
                 body = "{}";
@@ -124,6 +145,11 @@ public final class DashboardStub implements QuarkusTestResourceLifecycleManager 
     /** The token the stub Keycloak returns for this subject token. */
     static String exchanged(String subjectToken) {
         return "exchanged-" + subjectToken;
+    }
+
+    private static String applianceName(String body) {
+        Matcher match = APPLIANCE_NAME.matcher(body);
+        return match.find() ? match.group(1) : "";
     }
 
     private static String lastSegment(String path) {

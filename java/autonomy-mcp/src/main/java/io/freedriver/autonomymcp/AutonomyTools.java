@@ -125,10 +125,16 @@ public class AutonomyTools {
         boolean on = entry.on();
         int delay = entry.delay();
         if (delay > 0) {
-            int status = dashboard.schedule(instanceId, name, on, Instant.now().plusSeconds(delay)).status();
-            return ok(status)
-                    ? new Outcome(true, "scheduled", Spoken.scheduled(name, on, delay))
-                    : new Outcome(false, resultOf(status), Spoken.refused(name, status));
+            DashboardCalls.Answer<Void> answer =
+                    dashboard.schedule(instanceId, name, on, Instant.now().plusSeconds(delay));
+            int status = answer.status();
+            if (ok(status)) {
+                return new Outcome(true, "scheduled", Spoken.scheduled(name, on, delay));
+            }
+            if (status == 429 && answer.pendingCap()) {
+                return new Outcome(false, "pending-cap", Spoken.pendingCap(name));
+            }
+            return new Outcome(false, resultOf(status), Spoken.refused(name, status));
         }
         int status = dashboard.command(instanceId, name, on).status();
         return ok(status)

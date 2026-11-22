@@ -5,6 +5,7 @@ import io.freedriver.app.appliances.MockAutonomy;
 import io.freedriver.app.schedule.ScheduledSwitchRepository;
 import io.freedriver.app.security.CallerRateLimiter;
 import io.freedriver.app.security.CsrfFilter;
+import io.freedriver.dashboard.api.PendingCapHeader;
 import io.freedriver.dashboard.api.RateLimitBucket;
 import io.freedriver.ratelimit.HitWindow;
 import io.quarkus.redis.datasource.RedisDataSource;
@@ -26,6 +27,7 @@ import java.util.Set;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.is;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 /**
  * {@code POST /api/mcp/scheduled-switches} spends {@code appliances.schedules}. A cookie session
@@ -77,6 +79,7 @@ class ScheduledSwitchStoreTest {
         Response refused = store();
         refused.then().statusCode(429);
         assertEquals("", refused.asString());
+        assertNull(refused.header(PendingCapHeader.NAME));
         assertEquals(permits, switches.count());
         assertEquals(permits, schedules(CALLER_A));
 

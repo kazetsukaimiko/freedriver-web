@@ -1,6 +1,7 @@
 package io.freedriver.app.schedule;
 
 import io.freedriver.app.security.CsrfFilter;
+import io.freedriver.dashboard.api.PendingCapHeader;
 import io.quarkus.redis.datasource.RedisDataSource;
 import io.quarkus.security.runtime.QuarkusPrincipal;
 import io.quarkus.security.runtime.QuarkusSecurityIdentity;
@@ -104,8 +105,7 @@ class ScheduledSwitchCapTest {
         long above = rows.countBySubject(SUBJECT_A);
         assertTrue(above > cap);
         Response stillRefused = post(HOUSE_1, "still-over", later);
-        assertEquals(429, stillRefused.statusCode());
-        assertEquals("", stillRefused.body().asString());
+        assertPendingCap(stillRefused);
         assertEquals(above, rows.countBySubject(SUBJECT_A));
         for (String id : seeded) {
             assertEquals(id, rows.findById(id).id);
@@ -146,8 +146,7 @@ class ScheduledSwitchCapTest {
         long before = rows.countBySubject(SUBJECT_A);
 
         Response refused = post(HOUSE_1, "not-stored", due);
-        assertEquals(429, refused.statusCode());
-        assertEquals("", refused.body().asString());
+        assertPendingCap(refused);
         assertEquals(before, rows.countBySubject(SUBJECT_A));
         assertTrue(rows.list("applianceName", "not-stored").isEmpty());
 
@@ -261,7 +260,7 @@ class ScheduledSwitchCapTest {
         }
         Instant due = Instant.now();
         Response refused = post(HOUSE_1, "refused-now", due);
-        assertEquals(429, refused.statusCode());
+        assertPendingCap(refused);
         assertTrue(rows.list("applianceName", "refused-now").isEmpty());
 
         ScheduledSwitchPollerTest.FakeAppliances appliances = new ScheduledSwitchPollerTest.FakeAppliances(0);
@@ -321,6 +320,12 @@ class ScheduledSwitchCapTest {
     private static ScheduledSwitch stored(String subject, UUID instanceId, String applianceName, Instant dueAt) {
         return new ScheduledSwitch(
                 UUID.randomUUID().toString(), instanceId.toString(), applianceName, true, dueAt, subject);
+    }
+
+    private static void assertPendingCap(Response response) {
+        assertEquals(429, response.statusCode());
+        assertEquals("", response.body().asString());
+        assertEquals(PendingCapHeader.FULL, response.header(PendingCapHeader.NAME));
     }
 
     private static int runs(ScheduledSwitchPollerTest.FakeAppliances appliances, String name) {
