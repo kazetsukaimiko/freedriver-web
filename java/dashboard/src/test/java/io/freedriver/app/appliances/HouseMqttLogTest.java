@@ -3,6 +3,7 @@ package io.freedriver.app.appliances;
 import io.freedriver.app.mqttlog.HouseMqttLog;
 import org.junit.jupiter.api.Test;
 
+import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.logging.Level;
 
@@ -66,6 +67,31 @@ class HouseMqttLogTest {
             assertEquals(Level.WARNING.intValue(), logs.levelOf("mqtt metrics rejected"));
             assertEquals(Level.WARNING.intValue(), logs.levelOf("mqtt command unacknowledged"));
             assertEquals(Level.WARNING.intValue(), logs.levelOf("mqtt command failed"));
+        }
+    }
+
+    @Test
+    void refresh_failure_lines_name_the_reason_and_an_http_status() {
+        try (MqttLogCapture logs = MqttLogCapture.open()) {
+            HouseMqttLog.instancesRefreshFailed("not-configured", OptionalInt.empty());
+            HouseMqttLog.instancesRefreshFailed("group-missing", OptionalInt.empty());
+            HouseMqttLog.instancesRefreshFailed("list-failed", OptionalInt.of(404));
+            HouseMqttLog.instancesRefreshFailed("list-failed", OptionalInt.of(401));
+            HouseMqttLog.instancesRefreshFailed("list-failed", OptionalInt.of(403));
+            HouseMqttLog.instancesRefreshFailed("transport", OptionalInt.empty());
+            HouseMqttLog.instancesRefreshFailed("list-failed\ntoken secret", OptionalInt.empty());
+
+            String all = logs.all();
+            assertTrue(all.contains("mqtt instances refresh failed reason=not-configured"), all);
+            assertTrue(all.contains("mqtt instances refresh failed reason=group-missing"), all);
+            assertTrue(all.contains("mqtt instances refresh failed reason=list-failed status=404"), all);
+            assertTrue(all.contains("mqtt instances refresh failed reason=list-failed status=401"), all);
+            assertTrue(all.contains("mqtt instances refresh failed reason=list-failed status=403"), all);
+            assertTrue(all.contains("mqtt instances refresh failed reason=transport"), all);
+            assertTrue(all.contains("mqtt instances refresh failed reason=list-failedtoken secret"), all);
+            assertFalse(all.contains("\ntoken"), all);
+            assertFalse(all.contains("reason=transport status="), all);
+            assertEquals(Level.WARNING.intValue(), logs.levelOf("mqtt instances refresh failed reason=transport"));
         }
     }
 }

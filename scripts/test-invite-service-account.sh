@@ -11,13 +11,16 @@ cd "$ROOT"
 CONTAINER=freedriver-invite-kc-test
 PORT=18080
 BASE="http://127.0.0.1:${PORT}"
+HOST_CONTAINER=freedriver-instances-host-kc
+HOST_PORT=18081
+HOST_BASE="http://127.0.0.1:${HOST_PORT}"
 IMAGE=quay.io/keycloak/keycloak:26.7.5
 
 if ! command -v docker >/dev/null; then
   echo "docker is required for the invite service-account checks" >&2
   exit 1
 fi
-if [[ "${KEYCLOAK_CONTAINER:-}" == "freedriver-web-keycloak-1" || "$CONTAINER" == "freedriver-web-keycloak-1" ]]; then
+if [[ "${KEYCLOAK_CONTAINER:-}" == "freedriver-web-keycloak-1" || "$CONTAINER" == "freedriver-web-keycloak-1" || "$HOST_CONTAINER" == "freedriver-web-keycloak-1" ]]; then
   echo "refusing to run the invite checks against the production Keycloak container" >&2
   exit 1
 fi
@@ -27,6 +30,7 @@ work="$(mktemp -d)"
 chmod 700 "$work"
 cleanup() {
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+  docker rm -f "$HOST_CONTAINER" >/dev/null 2>&1 || true
   rm -rf "$work"
 }
 trap cleanup EXIT
@@ -772,7 +776,101 @@ PY
   rm -f "$work/portal-jobs-token.json"
 }
 
+# Fresh instances token: realm-management roles are exactly manage-users, and the
+# admin group and member reads return 200. The bearer stays in a curl config file.
+instances_admin_probe() {
+  local base="$1" envfile="$2" dir="$3" expect_iss="$4"
+  local tracing=0 group_id token_code groups_code members_code token_rc
+  case $- in
+    *x*) tracing=1 ;;
+  esac
+  set +x
+  python3 - "$envfile" "$dir/instances-token.form" <<'PY'
+import sys
+from pathlib import Path
+from urllib.parse import urlencode
+secret = Path(sys.argv[1]).read_text(encoding="utf-8").split("=", 1)[1].strip()
+Path(sys.argv[2]).write_text(urlencode({
+    "grant_type": "client_credentials",
+    "client_id": "freedriver-instances",
+    "client_secret": secret,
+}), encoding="utf-8")
+PY
+  chmod 600 "$dir/instances-token.form"
+  token_code="$(curl -sS --max-redirs 0 --max-time 30 -o "$dir/instances-token.json" -w '%{http_code}' \
+    -X POST "${base}/realms/freedriver/protocol/openid-connect/token" \
+    -H 'Content-Type: application/x-www-form-urlencoded' \
+    --data-binary @"$dir/instances-token.form" || true)"
+  rm -f "$dir/instances-token.form"
+  echo "instances token HTTP ${token_code}"
+  token_rc=0
+  python3 - "$dir/instances-token.json" "$token_code" "$dir/instances.curl" "$expect_iss" <<'PY' || token_rc=$?
+import base64, json, sys
+from pathlib import Path
+code = sys.argv[2]
+expect = sys.argv[4]
+if code != "200":
+    sys.exit("instances token status is %s" % code)
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+token = data.get("access_token") or ""
+if not token:
+    sys.exit("instances token response has no access token")
+payload = token.split(".")[1]
+payload += "=" * (-len(payload) % 4)
+claims = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
+roles = ((claims.get("resource_access") or {}).get("realm-management") or {}).get("roles")
+if roles != ["manage-users"]:
+    sys.exit("instances token realm-management roles are not exactly manage-users")
+if expect and claims.get("iss") != expect:
+    sys.exit("instances token iss is %s" % (claims.get("iss") or ""))
+Path(sys.argv[3]).write_text('header = "Authorization: Bearer %s"\n' % token, encoding="utf-8")
+if expect:
+    print("instances token iss:", claims.get("iss"))
+print("instances token roles: manage-users")
+PY
+  if [[ "$token_rc" -ne 0 ]]; then
+    rm -f "$dir/instances-token.json" "$dir/instances.curl"
+    if [[ "$tracing" == 1 ]]; then set -x; fi
+    exit "$token_rc"
+  fi
+  chmod 600 "$dir/instances.curl"
+  groups_code="$(curl -sS --config "$dir/instances.curl" --max-redirs 0 --max-time 30 \
+    -o "$dir/instances-groups.json" -w '%{http_code}' \
+    "${base}/admin/realms/freedriver/groups?search=mqtt-instance" || true)"
+  echo "instances groups HTTP ${groups_code}"
+  if [[ "$groups_code" != "200" ]]; then
+    rm -f "$dir/instances-token.json" "$dir/instances.curl" "$dir/instances-groups.json"
+    if [[ "$tracing" == 1 ]]; then set -x; fi
+    echo "instances groups status is ${groups_code}" >&2
+    exit 1
+  fi
+  group_id="$(python3 - "$dir/instances-groups.json" <<'PY'
+import json, sys
+groups = json.load(open(sys.argv[1], encoding="utf-8"))
+ids = [g.get("id") for g in groups if g.get("name") == "mqtt-instance" and not g.get("parentId") and g.get("id")]
+if len(ids) != 1:
+    sys.exit("instances groups response has no single mqtt-instance id")
+print(ids[0])
+PY
+)"
+  members_code="$(curl -sS --config "$dir/instances.curl" --max-redirs 0 --max-time 30 \
+    -o "$dir/instances-members.json" -w '%{http_code}' \
+    "${base}/admin/realms/freedriver/groups/${group_id}/members" || true)"
+  echo "instances members HTTP ${members_code}"
+  rm -f "$dir/instances-token.json" "$dir/instances.curl" "$dir/instances-groups.json" "$dir/instances-members.json"
+  if [[ "$tracing" == 1 ]]; then set -x; fi
+  if [[ "$members_code" != "200" ]]; then
+    echo "instances members status is ${members_code}" >&2
+    exit 1
+  fi
+}
+
+assert_instances_token() {
+  instances_admin_probe "$BASE" "$work/secrets/instances.env" "$work" ""
+}
+
 assert_portal_jobs_token
+assert_instances_token
 assert_offline_access
 assert_registration_one_year
 if grep -q 'FREEDRIVER_AUTONOMY_MCP_CLIENT_SECRET' "$work/secrets/api.secret" "$work/secrets.env" "$work/secrets/invite.env" "$work/secrets/instances.env" "$work/secrets/grafana.env" "$work/secrets/mqtt.env"; then
@@ -848,6 +946,7 @@ PROVISION_ALLOW_NON_ROOT=1 \
   bash scripts/provision-keycloak-freedriver.sh
 assert_invite_scopes
 assert_portal_jobs_token
+assert_instances_token
 
 admin create users -r freedriver -s username=outside-invite -s enabled=true >/dev/null
 outside_id="$(admin get users -r freedriver -q username=outside-invite -q exact=true --fields id --format csv --noquotes | csv_id)"
@@ -1157,5 +1256,104 @@ if phone != ["+15555550143"]:
     sys.exit("phone attribute changed or was missing")
 print("phone attribute unchanged after the refused role check")
 PY
+
+# Second throwaway with the production hostname settings. Token and admin reads
+# stay on plain HTTP with redirects left unfollowed. The issuer is the public realm.
+prove_instances_hostname() {
+  local host_work ready
+  echo "starting hostname Keycloak"
+  docker rm -f "$HOST_CONTAINER" >/dev/null 2>&1 || true
+  docker run -d --name "$HOST_CONTAINER" --memory=2g --memory-swap=2g \
+    -p "127.0.0.1:${HOST_PORT}:8080" \
+    -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
+    -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+    -e KC_HOSTNAME=https://auth.freedriver.io \
+    -e KC_HOSTNAME_ADMIN=http://127.0.0.1:8081 \
+    -e KC_HTTP_ENABLED=true \
+    -e KC_PROXY_HEADERS=xforwarded \
+    -e JAVA_OPTS_APPEND="-Xms256m -Xmx768m" \
+    -v "${PROVIDER_JAR}:/opt/keycloak/providers/freedriver-sms-otp.jar:ro" \
+    "$IMAGE" start-dev >/dev/null
+  ready=0
+  for _ in $(seq 1 90); do
+    if docker exec "$HOST_CONTAINER" /opt/keycloak/bin/kcadm.sh config credentials \
+        --config /tmp/kcadm-admin.config \
+        --server http://127.0.0.1:8080 --realm master --user admin --password admin \
+        >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 2
+  done
+  if [[ "$ready" != 1 ]]; then
+    echo "hostname Keycloak did not become ready" >&2
+    docker logs "$HOST_CONTAINER" 2>&1 | tail -n 40 >&2 || true
+    exit 1
+  fi
+  host_work="$(mktemp -d)"
+  chmod 700 "$host_work"
+  openssl rand -hex 24 > "$host_work/techops.pass"
+  chmod 600 "$host_work/techops.pass"
+  docker exec "$HOST_CONTAINER" /opt/keycloak/bin/kcadm.sh create users -r master \
+    --config /tmp/kcadm-admin.config -s username=techops -s enabled=true >/dev/null
+  TECHOPS_PASS="$(cat "$host_work/techops.pass")"
+  export TECHOPS_PASS
+  docker exec -e TECHOPS_PASS "$HOST_CONTAINER" \
+    sh -c '/opt/keycloak/bin/kcadm.sh set-password --config /tmp/kcadm-admin.config -r master --username techops --new-password "$TECHOPS_PASS"' \
+    >/dev/null
+  unset TECHOPS_PASS
+  docker exec "$HOST_CONTAINER" /opt/keycloak/bin/kcadm.sh add-roles -r master \
+    --config /tmp/kcadm-admin.config --uusername techops --rolename admin >/dev/null
+  docker exec "$HOST_CONTAINER" /opt/keycloak/bin/kcadm.sh create realms \
+    --config /tmp/kcadm-admin.config -s realm=freedriver -s enabled=true >/dev/null
+  docker exec "$HOST_CONTAINER" /opt/keycloak/bin/kcadm.sh create groups -r freedriver \
+    --config /tmp/kcadm-admin.config -s name=phone-sign-in >/dev/null
+  docker exec "$HOST_CONTAINER" /opt/keycloak/bin/kcadm.sh get users/profile -r freedriver \
+    --config /tmp/kcadm-admin.config > "$host_work/profile.json"
+  python3 - "$host_work/profile.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+profile = json.load(open(path, encoding="utf-8"))
+attributes = profile.setdefault("attributes", [])
+wanted = {"view": ["admin"], "edit": ["admin"]}
+for attribute in attributes:
+    if attribute.get("name") == "phone":
+        attribute["permissions"] = wanted
+        break
+else:
+    attributes.append({
+        "name": "phone",
+        "displayName": "Phone",
+        "permissions": wanted,
+        "multivalued": False,
+    })
+json.dump(profile, open(path, "w", encoding="utf-8"))
+PY
+  docker exec -i "$HOST_CONTAINER" /opt/keycloak/bin/kcadm.sh update users/profile -r freedriver \
+    --config /tmp/kcadm-admin.config -f - < "$host_work/profile.json" >/dev/null
+  printf 'FREEDRIVER_SEED_PHONE=+15555550143\n' > "$host_work/secrets.env"
+  chmod 600 "$host_work/secrets.env"
+  mkdir -p "$host_work/secrets"
+  chmod 700 "$host_work/secrets"
+  PROVISION_ALLOW_NON_ROOT=1 \
+    KEYCLOAK_CONTAINER="$HOST_CONTAINER" \
+    TECHOPS_PASS_FILE="$host_work/techops.pass" \
+    SECRET_FILE="$host_work/secrets/api.secret" \
+    INVITE_ENV_FILE="$host_work/secrets/invite.env" \
+    INSTANCES_ENV_FILE="$host_work/secrets/instances.env" \
+    PORTAL_JOBS_ENV_FILE="$host_work/secrets/portal-jobs.env" \
+    GRAFANA_ENV_FILE="$host_work/secrets/grafana.env" \
+    MQTT_ENV_FILE="$host_work/secrets/mqtt.env" \
+    MQTT_OAUTH_DIR="$host_work/secrets/mqtt-oauth.d" \
+    AUTONOMY_MCP_ENV_FILE="$host_work/secrets/autonomy-mcp.env" \
+    SECRETS_ENV="$host_work/secrets.env" \
+    bash scripts/provision-keycloak-freedriver.sh
+  instances_admin_probe "$HOST_BASE" "$host_work/secrets/instances.env" "$host_work" \
+    "https://auth.freedriver.io/realms/freedriver"
+  rm -rf "$host_work"
+  echo "hostname instances admin ok"
+}
+
+prove_instances_hostname
 
 echo "invite service account refusals ok"

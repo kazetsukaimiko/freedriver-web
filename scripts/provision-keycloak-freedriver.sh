@@ -1515,8 +1515,11 @@ PY
 }
 
 # House group and the instances admin client (#319). No topic attribute on the group.
+# freedriver-instances holds realm-management manage-users. fullScopeAllowed stays
+# false, so the role reaches the access token through a client scope mapping and
+# a client-local role mapper.
 ensure_instances_admin() {
-  local client_uuid sa_user secret tmp group_id has_role
+  local client_uuid sa_user secret tmp group_id has_role rm_uuid has_scope
   kcadm get groups -r "$REALM" -q search=mqtt-instance -q exact=true > "$work/mqtt-groups.json"
   group_id="$(python3 - "$work/mqtt-groups.json" <<'PY'
 import json, sys
@@ -1604,6 +1607,36 @@ PY
     kcadm add-roles -r "$REALM" --uid "$sa_user" --cclientid realm-management --rolename manage-users >/dev/null
     echo "Granted manage-users to the instances service account."
   fi
+  # fullScopeAllowed is off, so manage-users reaches the token only through this client scope mapping.
+  rm_uuid="$(kcadm get clients -r "$REALM" -q clientId=realm-management --fields id --format csv --noquotes | csv_id)"
+  kcadm get "clients/${client_uuid}/scope-mappings/clients/${rm_uuid}" -r "$REALM" > "$work/instances-scope.json"
+  has_scope="$(python3 - "$work/instances-scope.json" <<'PY'
+import json, sys
+roles = json.load(open(sys.argv[1], encoding="utf-8"))
+print("yes" if any(role.get("name") == "manage-users" for role in roles) else "no")
+PY
+)"
+  if [[ "$has_scope" != "yes" ]]; then
+    kcadm get "clients/${rm_uuid}/roles/manage-users" -r "$REALM" > "$work/manage-users-role.json"
+    python3 - "$work/manage-users-role.json" > "$work/manage-users-scope.json" <<'PY'
+import json, sys
+role = json.load(open(sys.argv[1], encoding="utf-8"))
+json.dump([{"id": role["id"], "name": role["name"]}], sys.stdout)
+PY
+    kcadm_stdin create "clients/${client_uuid}/scope-mappings/clients/${rm_uuid}" -r "$REALM" -f - < "$work/manage-users-scope.json" >/dev/null
+    echo "Mapped realm-management manage-users into the instances token."
+  fi
+  # Keycloak drops the built-in roles scope for this service account. This mapper
+  # puts resource_access.realm-management.roles on the access token only.
+  ensure_mapper "$client_uuid" "realm-management roles" \
+    -s protocolMapper=oidc-usermodel-client-role-mapper \
+    -s 'config."claim.name"=resource_access.${client_id}.roles' \
+    -s 'config."jsonType.label"=String' \
+    -s 'config.multivalued=true' \
+    -s 'config."usermodel.clientRoleMapping.clientId"=realm-management' \
+    -s 'config."access.token.claim"=true' \
+    -s 'config."id.token.claim"=false' \
+    -s 'config."userinfo.token.claim"=false'
   if [[ -e "$INSTANCES_ENV_FILE" ]]; then
     echo "Instances client env file already exists; not rotating or rewriting it."
   else

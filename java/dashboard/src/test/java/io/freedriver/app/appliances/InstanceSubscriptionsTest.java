@@ -1,6 +1,8 @@
 package io.freedriver.app.appliances;
 
+import io.freedriver.app.instances.BrokerRefusedException;
 import io.freedriver.app.instances.HouseProvision;
+import io.freedriver.app.instances.KeycloakUser;
 import io.freedriver.app.instances.RecordingInstanceIdentity;
 import io.freedriver.app.metrics.MetricsTopics;
 import io.freedriver.mqtt.contract.Appliance;
@@ -72,6 +74,9 @@ class InstanceSubscriptionsTest {
     @Inject
     ApplianceControl control;
 
+    @Inject
+    MqttSettings mqttSettings;
+
     @BeforeEach
     void reset() {
         identity.clear();
@@ -137,6 +142,63 @@ class InstanceSubscriptionsTest {
         identity.refuseList(false);
         subscriptions.refresh();
         assertTrue(followed.subscribed().isEmpty());
+    }
+
+    @Test
+    void a_failed_list_logs_one_reason_and_keeps_the_subscribed_set() {
+        UUID kept = UUID.fromString(houses.create("loft").instanceId());
+        subscriptions.refresh();
+        assertEquals(Set.of(kept), followed.subscribed());
+        RuntimeException[] failures = {
+                BrokerRefusedException.notConfigured(),
+                BrokerRefusedException.groupMissing(),
+                BrokerRefusedException.http(404),
+                BrokerRefusedException.http(401),
+                BrokerRefusedException.http(403),
+                BrokerRefusedException.transport(),
+                new IllegalStateException("bearer token secret\nbody")
+        };
+        String[] lines = {
+                "mqtt instances refresh failed reason=not-configured",
+                "mqtt instances refresh failed reason=group-missing",
+                "mqtt instances refresh failed reason=list-failed status=404",
+                "mqtt instances refresh failed reason=list-failed status=401",
+                "mqtt instances refresh failed reason=list-failed status=403",
+                "mqtt instances refresh failed reason=transport",
+                "mqtt instances refresh failed reason=list-failed"
+        };
+        for (int i = 0; i < failures.length; i++) {
+            identity.failList(failures[i]);
+            try (MqttLogCapture logs = MqttLogCapture.open()) {
+                subscriptions.refresh();
+                assertEquals(lines[i], logs.find("mqtt instances refresh failed"), logs.all());
+                assertEquals(1, logs.all().split("mqtt instances refresh failed", -1).length - 1, logs.all());
+                assertFalse(logs.all().contains("bearer"), logs.all());
+                assertFalse(logs.all().contains("secret"), logs.all());
+            }
+            assertEquals(Set.of(kept), followed.subscribed());
+        }
+    }
+
+    @Test
+    void a_house_added_without_house_created_is_subscribed_on_the_scheduled_refresh() {
+        assertFalse(mqttSettings.refresh());
+        UUID house = UUID.randomUUID();
+        identity.create(new KeycloakUser(
+                house.toString(),
+                house.toString(),
+                "fixture",
+                "pw-" + house.toString().substring(0, 8),
+                ApplianceSchemas.appliancesTopic(house),
+                ApplianceSchemas.commandsTopic(house),
+                "mqtt-instance"));
+        assertFalse(followed.contains(house));
+        try (MqttLogCapture logs = MqttLogCapture.open()) {
+            subscriptions.scheduledRefresh();
+            assertTrue(logs.find("outcome=subscribed").contains("instance=" + house), logs.all());
+        }
+        assertTrue(followed.contains(house));
+        assertFalse(mqtt.subscriptions().isEmpty());
     }
 
     @Test
