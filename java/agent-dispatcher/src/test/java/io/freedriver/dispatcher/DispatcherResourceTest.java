@@ -2,12 +2,10 @@ package io.freedriver.dispatcher;
 
 import io.freedriver.dispatcher.jobs.JobStore;
 
-import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
 import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
-import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import jakarta.inject.Inject;
@@ -207,12 +205,7 @@ class DispatcherResourceTest {
                     .statusCode(409)
                     .body("message", is("submit already in flight"));
 
-            UUID grokSession = UUID.randomUUID();
-            jobs.claim("pc-rest-cap", queued.assignmentId());
-            jobs.update("pc-rest-cap", queued.assignmentId(),
-                    new UpdateAssignmentRequest(AssignmentState.RUNNING, grokSession, null));
-            jobs.update("pc-rest-cap", queued.assignmentId(),
-                    new UpdateAssignmentRequest(AssignmentState.SUCCEEDED, grokSession, null));
+            jobs.finish("pc-rest-cap", queued.assignmentId(), true, null);
             pending.get(5, TimeUnit.SECONDS);
         } finally {
             pool.shutdownNow();
