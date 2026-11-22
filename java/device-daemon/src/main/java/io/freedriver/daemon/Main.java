@@ -13,9 +13,9 @@ public final class Main {
     }
 
     /**
-     * Loads config and starts the OpenBot connector. A retired mode exits 0 before the secret file
-     * is read, so an installed unit with {@code Restart=on-failure} stays stopped. Every other
-     * config or credential error exits 2.
+     * Loads config and starts the Agent Bridge ({@link OpenBotWorker}). A retired mode exits 0
+     * before the secret file is read, so an installed unit with {@code Restart=on-failure} stays
+     * stopped. Every other config or credential error exits 2.
      */
     static int run(String[] args) {
         Path configPath;
@@ -53,8 +53,8 @@ public final class Main {
     }
 
     /**
-     * OpenBot mode: the dispatch connector. A dispatcher that is down and an OpenBot that is not
-     * running are retries, so the process stays up from the start.
+     * Starts the Agent Bridge ({@link OpenBotWorker}). A dispatcher that is down, or an OpenBot
+     * that has stopped, is a retry, so the process stays up from the start.
      */
     private static void connect(DaemonConfig config, SecretFile.Material material) {
         ScriptsAgentHost openBot = ScriptsAgentHost.create(config.settings().automationDir());
