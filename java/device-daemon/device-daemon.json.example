@@ -1,9 +1,0 @@
-{
-  "deviceId": "pc-luna",
-  "hostname": "luna",
-  "agents": ["yuni"],
-  "secretFile": "/home/pc/.config/freedriver/device.secret",
-  "allow": [],
-  "sessionTimeout": "PT10M",
-  "workDir": "/home/pc"
-}

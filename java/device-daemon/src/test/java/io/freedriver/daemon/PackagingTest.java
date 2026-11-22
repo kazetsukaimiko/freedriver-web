@@ -19,16 +19,12 @@ class PackagingTest {
         String compose = Files.readString(root.resolve("docker-compose.yml"));
         String caddy = Files.readString(root.resolve("Caddyfile"));
         String deploy = Files.readString(root.resolve(".github/workflows/deploy.yml"));
-        String unit = Files.readString(root.resolve("java/device-daemon/freedriver-device-daemon.service"));
         String dashboard = Files.readString(root.resolve("java/dashboard/src/main/docker/Dockerfile.compose"));
         String dispatcher = Files.readString(root.resolve("java/agent-dispatcher/src/main/docker/Dockerfile.compose"));
 
         assertFalse(compose.contains("device-daemon"));
         assertFalse(caddy.contains("device-daemon"));
         assertFalse(deploy.contains("device-daemon"));
-        assertFalse(unit.contains("client_secret"));
-        assertFalse(unit.contains("EnvironmentFile"));
-        assertTrue(unit.contains("--config"));
         String connector = Files.readString(root.resolve("java/device-daemon/freedriver-openbot-connector.service"));
         assertFalse(connector.contains("client_secret"));
         assertFalse(connector.contains("EnvironmentFile"));

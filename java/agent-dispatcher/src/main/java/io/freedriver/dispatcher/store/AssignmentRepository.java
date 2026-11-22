@@ -39,19 +39,16 @@ public class AssignmentRepository implements PanacheMongoRepositoryBase<Assignme
             Set.of(AssignmentState.QUEUED, AssignmentState.CLAIMED, AssignmentState.RUNNING);
 
     /**
-     * Moves the assignment from one of {@code from} to {@code to}. {@code note} and
-     * {@code sessionId} are set only when not null. Null when nothing matched.
+     * Moves the assignment from one of {@code from} to {@code to}. {@code note} is set only when
+     * not null. Null when nothing matched.
      */
     public Assignment transition(String id, String deviceId, Set<AssignmentState> from, AssignmentState to,
-                          String note, String sessionId, Instant now) {
+                          String note, Instant now) {
         List<Bson> changes = new ArrayList<>();
         changes.add(Updates.set("status", to.name()));
         changes.add(Updates.set("updatedAt", Date.from(now)));
         if (note != null) {
             changes.add(Updates.set("note", note));
-        }
-        if (sessionId != null) {
-            changes.add(Updates.set("sessionId", sessionId));
         }
         return mongoCollection().findOneAndUpdate(
                 and(eq("_id", id), eq("deviceId", deviceId), in("status", names(from))),

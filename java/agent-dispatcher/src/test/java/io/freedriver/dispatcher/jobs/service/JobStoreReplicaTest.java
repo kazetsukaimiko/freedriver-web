@@ -81,10 +81,22 @@ class JobStoreReplicaTest {
             UUID assignment = queued(first).assignmentId();
 
             List<Object> outcomes = race(
-                    () -> first.claim("pc-a", assignment),
-                    () -> second.claim("pc-a", assignment));
+                    () -> first.take("pc-a", List.of(), Duration.ZERO),
+                    () -> second.take("pc-a", List.of(), Duration.ZERO));
 
-            assertOneWinner(outcomes);
+            List<?> winner = null;
+            int empty = 0;
+            for (Object outcome : outcomes) {
+                assertTrue(outcome instanceof List<?>, String.valueOf(outcome));
+                List<?> rows = (List<?>) outcome;
+                if (rows.isEmpty()) {
+                    empty++;
+                } else {
+                    winner = rows;
+                }
+            }
+            assertEquals(1, empty);
+            assertEquals(List.of(assignment), winner.stream().map(row -> ((AssignmentView) row).assignmentId()).toList());
             assertEquals(AssignmentState.CLAIMED, first.assignment("pc-a", assignment).state());
         }
     }
@@ -109,7 +121,7 @@ class JobStoreReplicaTest {
     }
 
     /**
-     * The connector's finish (host route) races the agent's finish_job on one assignment. Whoever
+     * The Agent Bridge's finish (host route) races the agent's finish_job on one assignment. Whoever
      * wins, the stored row is the winner's, the host call answers exactly that stored row, and the
      * agent's call either is the winner or is refused with the state the host stored (#590).
      */
