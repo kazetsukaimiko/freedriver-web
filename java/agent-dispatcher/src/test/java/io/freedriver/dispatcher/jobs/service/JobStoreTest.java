@@ -8,6 +8,9 @@ import io.freedriver.dispatcher.jobs.JobStore;
 import io.freedriver.dispatcher.store.SubmitLocks;
 
 import io.freedriver.dispatcher.model.AgentRosterEntry;
+import io.freedriver.dispatcher.model.AgentState;
+import io.freedriver.dispatcher.model.DeviceListEntry;
+import io.freedriver.dispatcher.model.DeviceView;
 import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
@@ -28,7 +31,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -986,6 +991,67 @@ class JobStoreTest {
         assertEquals(AssignmentState.SUCCEEDED, store.getJob("grok", UUID.fromString(jobId)).assignments().getFirst().state());
     }
 
+    @Test
+    void register_and_heartbeat_return_the_stored_roster() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-11-17T12:00:00Z"));
+        JobStore store = service(clock, null);
+
+        DeviceView registered = store.register("pc-roster", "roster.local", List.of("yuni", "kai"));
+
+        assertEquals("pc-roster", registered.deviceId());
+        assertEquals("roster.local", registered.hostname());
+        assertEquals(List.of("yuni", "kai"), registered.agents());
+        assertEquals(clock.now, registered.lastHeartbeat());
+        assertEquals(Map.of(), registered.activity());
+
+        clock.advance(Duration.ofSeconds(5));
+        DeviceView beat = store.heartbeat("pc-roster");
+        assertEquals(clock.now, beat.lastHeartbeat());
+        assertEquals(List.of("yuni", "kai"), beat.agents());
+        assertEquals(Map.of(), beat.activity());
+    }
+
+    @Test
+    void list_devices_matches_list_agents_including_the_cutoff() {
+        Instant now = Instant.parse("2026-11-17T12:10:00Z");
+        Duration window = Duration.ofMinutes(10);
+        MutableClock clock = new MutableClock(now);
+        JobStore store = service(clock, null);
+        rawPair("pc-fresh", "fresh.local", now.minusSeconds(20), now.minusSeconds(10));
+        rawPair("pc-unknown", "unknown.local", now.minus(window), now.minusSeconds(30));
+        rawPair("pc-kept", "kept.local", now.minusSeconds(30), now.minus(window));
+        rawPair("pc-offline", "offline.local", now.minus(window), null);
+        rawPair("pc-none", "none.local", null, null);
+
+        var byServer = new java.util.HashMap<String, AgentRosterEntry>();
+        for (AgentRosterEntry row : store.listAgents()) {
+            byServer.put(row.server() + "\n" + row.name(), row);
+        }
+        List<DeviceListEntry> listed = store.listDevices();
+        assertEquals(5, listed.size());
+        for (DeviceListEntry entry : listed) {
+            assertEquals(entry.agents(), List.copyOf(entry.stateByAgent().keySet()), entry.hostname());
+            for (String name : entry.agents()) {
+                AgentRosterEntry row = byServer.get(entry.hostname() + "\n" + name);
+                assertEquals(row.state(), entry.stateByAgent().get(name).name(), entry.hostname() + " " + name);
+                assertEquals(row.reportedAt(), entry.reportedAt(), entry.hostname());
+                assertEquals(row.seenAt(), entry.seenAt(), entry.hostname());
+            }
+        }
+        assertEquals(AgentState.BUSY, listed("fresh.local", listed).stateByAgent().get("yuni"));
+        assertEquals(AgentState.IDLE, listed("fresh.local", listed).stateByAgent().get("kai"));
+        assertEquals(AgentState.UNKNOWN, listed("unknown.local", listed).stateByAgent().get("yuni"));
+        assertEquals(AgentState.UNKNOWN, listed("unknown.local", listed).stateByAgent().get("kai"));
+        assertEquals(AgentState.BUSY, listed("kept.local", listed).stateByAgent().get("yuni"));
+        assertEquals(AgentState.IDLE, listed("kept.local", listed).stateByAgent().get("kai"));
+        assertEquals(AgentState.OFFLINE, listed("offline.local", listed).stateByAgent().get("yuni"));
+        assertEquals(AgentState.OFFLINE, listed("offline.local", listed).stateByAgent().get("kai"));
+        assertEquals(AgentState.OFFLINE, listed("none.local", listed).stateByAgent().get("yuni"));
+        assertNull(listed("none.local", listed).reportedAt());
+        assertNull(listed("none.local", listed).seenAt());
+        assertNull(listed("none.local", listed).lastHeartbeat());
+    }
+
     private JobStore store() {
         return service(Clock.systemUTC(), null);
     }
@@ -1008,6 +1074,11 @@ class JobStoreTest {
         assertEquals("note", row.activity(), server);
     }
 
+    private static DeviceListEntry listed(String hostname, List<DeviceListEntry> rows) {
+        return rows.stream().filter(entry -> entry.hostname().equals(hostname)).findFirst()
+                .orElseThrow(() -> new AssertionError(hostname));
+    }
+
     /** An {@code agent-devices} row with one busy agent; a null time is a missing field. */
     private void rawDevice(String id, String hostname, Instant lastHeartbeat, Instant lastTake) {
         Document row = new Document("_id", id)
@@ -1020,6 +1091,22 @@ class JobStoreTest {
         }
         if (lastTake != null) {
             row.append("lastTake", java.util.Date.from(lastTake));
+        }
+        devices.mongoCollection().withDocumentClass(Document.class).insertOne(row);
+    }
+
+    /** One row with yuni busy and kai idle. A null time is a missing field. */
+    private void rawPair(String id, String hostname, Instant lastHeartbeat, Instant lastTake) {
+        Document row = new Document("_id", id)
+                .append("hostname", hostname)
+                .append("agents", List.of("yuni", "kai"))
+                .append("activity", new Document("yuni", "busy").append("kai", "idle"))
+                .append("activityText", new Document("yuni", "note").append("kai", "note"));
+        if (lastHeartbeat != null) {
+            row.append("lastHeartbeat", Date.from(lastHeartbeat));
+        }
+        if (lastTake != null) {
+            row.append("lastTake", Date.from(lastTake));
         }
         devices.mongoCollection().withDocumentClass(Document.class).insertOne(row);
     }
