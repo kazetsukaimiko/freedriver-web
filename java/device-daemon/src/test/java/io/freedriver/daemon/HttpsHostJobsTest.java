@@ -1,6 +1,7 @@
 package io.freedriver.daemon;
 
 import io.freedriver.dispatcher.model.AssignmentState;
+import io.freedriver.dispatcher.model.DeviceView;
 import io.freedriver.dispatcher.model.FinishRequest;
 import io.freedriver.dispatcher.model.HostPaths;
 import io.freedriver.dispatcher.model.HostReport;
@@ -20,6 +21,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -64,6 +66,23 @@ class HttpsHostJobsTest {
         assertEquals("{\"deliveryRef\":\"delivery-1\"}", TestHttp.body(api.get(2)));
         String finish = TestHttp.body(api.get(3));
         assertEquals("{\"succeeded\":false,\"note\":\"saw [redacted] and [redacted] and [redacted]\"}", finish);
+    }
+
+    @Test
+    void report_reads_the_view_device_answer() throws Exception {
+        Sender sender = new Sender();
+        sender.apiBody = "{\"deviceId\":\"freedriver-openbot\",\"hostname\":\"luna\","
+                + "\"agents\":[\"PM\",\"TechOps\",\"Architect\"],"
+                + "\"lastHeartbeat\":\"2026-11-22T11:38:00Z\","
+                + "\"activity\":{\"PM\":\"idle\"},\"rosterNote\":\"ignored\"}";
+        DeviceView view = host(sender).report(new HostReport("luna", List.of(new ReportedBot("PM", "idle", ""))));
+
+        assertEquals(Instant.parse("2026-11-22T11:38:00Z"), view.lastHeartbeat());
+        assertEquals(Map.of("PM", "idle"), view.activity());
+        assertEquals("freedriver-openbot", view.deviceId());
+        assertEquals(List.of("PM", "TechOps", "Architect"), view.agents());
+        assertEquals("\"2026-11-22T11:38:00Z\"",
+                DeviceTransport.JSON.writeValueAsString(Instant.parse("2026-11-22T11:38:00Z")));
     }
 
     @Test
