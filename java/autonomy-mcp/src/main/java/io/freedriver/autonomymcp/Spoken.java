@@ -59,6 +59,15 @@ final class Spoken {
         };
     }
 
+    /**
+     * A full pending cap, naming the appliance: "Porch light: the pending cap is full until a stored
+     * switch fires or is given up after three failed attempts."
+     */
+    static String pendingCap(String applianceName) {
+        String reason = "The pending cap is full until a stored switch fires or is given up after three failed attempts.";
+        return label(applianceName) + ": " + Character.toLowerCase(reason.charAt(0)) + reason.substring(1);
+    }
+
     /** The dashboard's refusal of one entry, naming the appliance: "Porch light: too many requests. Try again in a minute." */
     static String refused(String applianceName, int status) {
         String reason = refusal(status);
