@@ -14,7 +14,6 @@ import java.util.Set;
 
 final class DaemonConfig {
 
-    static final Duration DEFAULT_SESSION_TIMEOUT = Duration.ofMinutes(10);
     static final Duration DEFAULT_WATCH = Duration.ofSeconds(1);
 
     private static final Set<String> OPENBOT_KEYS = Set.of(
@@ -112,7 +111,7 @@ final class DaemonConfig {
             throw new RetiredModeException();
         }
         if (!"openbot".equals(mode)) {
-            throw new IllegalArgumentException("mode is grok or openbot");
+            throw new IllegalArgumentException("mode must be openbot");
         }
     }
 
@@ -141,10 +140,6 @@ final class DaemonConfig {
             return Path.of(xdg, "OpenBot", "automation");
         }
         return Path.of(home, ".config", "OpenBot", "automation");
-    }
-
-    WorkerMode mode() {
-        return settings.mode();
     }
 
     private static String text(JsonNode node, String key) {

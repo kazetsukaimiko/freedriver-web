@@ -21,7 +21,6 @@ import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.OnBusy;
 import io.freedriver.dispatcher.model.ReportedBot;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
-import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.bson.Document;
@@ -32,7 +31,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -178,7 +176,7 @@ public class JobStoreService implements JobStore {
     public AssignmentView finish(String deviceId, UUID assignmentId, boolean succeeded, String note) {
         AssignmentState to = succeeded ? AssignmentState.SUCCEEDED : AssignmentState.FAILED;
         String kept = note == null || note.isBlank() ? null : note;
-        return move(deviceId, assignmentId, AssignmentRepository.OPEN, to, kept, null);
+        return move(deviceId, assignmentId, AssignmentRepository.OPEN, to, kept);
     }
 
     /** The same one step as {@link #finish}; when nothing matched, a finished job is the answer. */
@@ -187,7 +185,7 @@ public class JobStoreService implements JobStore {
         AssignmentState to = succeeded ? AssignmentState.SUCCEEDED : AssignmentState.FAILED;
         String kept = note == null || note.isBlank() ? null : note;
         String id = assignmentId.toString();
-        Assignment moved = assignments.transition(id, deviceId, AssignmentRepository.OPEN, to, kept, null,
+        Assignment moved = assignments.transition(id, deviceId, AssignmentRepository.OPEN, to, kept,
                 clock.instant());
         if (moved != null) {
             return viewAssignment(moved);
@@ -522,38 +520,14 @@ public class JobStoreService implements JobStore {
         return viewAssignment(own(deviceId, assignmentId.toString()));
     }
 
-    @Override
-    public AssignmentView claim(String deviceId, UUID assignmentId) {
-        return move(deviceId, assignmentId, EnumSet.of(AssignmentState.QUEUED), AssignmentState.CLAIMED, null, null);
-    }
-
-    @Override
-    public AssignmentView update(String deviceId, UUID assignmentId, UpdateAssignmentRequest request) {
-        AssignmentState to = request.state();
-        Set<AssignmentState> from = switch (to) {
-            case RUNNING -> EnumSet.of(AssignmentState.CLAIMED);
-            case SUCCEEDED -> EnumSet.of(AssignmentState.RUNNING);
-            case FAILED -> EnumSet.of(AssignmentState.RUNNING, AssignmentState.CLAIMED);
-            case EXPIRED -> AssignmentRepository.OPEN;
-            case QUEUED, CLAIMED -> {
-                own(deviceId, assignmentId.toString());
-                throw conflict("cannot move to " + to);
-            }
-        };
-        String session = to == AssignmentState.RUNNING && request.grokSessionId() != null
-                ? request.grokSessionId().toString()
-                : null;
-        return move(deviceId, assignmentId, from, to, request.note(), session);
-    }
-
     /**
      * One conditional write. When nothing matched, one read says why: no such assignment,
      * another device's assignment, or a state the move does not start from.
      */
     private AssignmentView move(String deviceId, UUID assignmentId, Set<AssignmentState> from, AssignmentState to,
-                                String note, String sessionId) {
+                                String note) {
         String id = assignmentId.toString();
-        Assignment moved = assignments.transition(id, deviceId, from, to, note, sessionId, clock.instant());
+        Assignment moved = assignments.transition(id, deviceId, from, to, note, clock.instant());
         if (moved == null) {
             Assignment row = own(deviceId, id);
             throw conflict("assignment is " + row.status);
@@ -566,7 +540,7 @@ public class JobStoreService implements JobStore {
         for (Assignment row : assignments.forJob(jobId)) {
             if (!row.terminal()) {
                 assignments.transition(row.id, row.deviceId, AssignmentRepository.OPEN, AssignmentState.EXPIRED,
-                        null, null, now);
+                        null, now);
             }
         }
     }

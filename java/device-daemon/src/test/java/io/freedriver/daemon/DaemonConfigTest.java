@@ -9,7 +9,6 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -30,7 +29,7 @@ class DaemonConfigTest {
         IllegalArgumentException unknown = assertThrows(IllegalArgumentException.class, () -> DaemonConfig.parse("""
                 {"deviceId":"freedriver-openbot","hostname":"luna","agents":["yuni"],"secretFile":"/tmp/openbot.secret","mode":"neither"}
                 """));
-        assertEquals("mode is grok or openbot", unknown.getMessage());
+        assertEquals("mode must be openbot", unknown.getMessage());
     }
 
     @Test
@@ -38,12 +37,9 @@ class DaemonConfigTest {
         DaemonConfig config = DaemonConfig.parse(Files.readString(Path.of("openbot-dispatcher-worker.json.example")));
 
         assertEquals(OpenBotWorker.DEVICE_ID, config.deviceId());
-        assertEquals(WorkerMode.OPENBOT, config.mode());
         assertEquals(List.of("PM", "Coder", "Architect", "TechOps", "Security", "Dispatcher", "Sysadmin"),
                 config.settings().agents());
         assertEquals(Path.of("/home/pc/.config/OpenBot/automation"), config.settings().automationDir());
-        assertNull(config.settings().grokBinary());
-        assertTrue(config.settings().allow().isEmpty());
         assertTrue(config.secretFile().toString().endsWith("openbot.secret"));
     }
 
