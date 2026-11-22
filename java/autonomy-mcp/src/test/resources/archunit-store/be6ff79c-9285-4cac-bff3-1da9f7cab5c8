@@ -1,5 +1,0 @@
-Method <io.freedriver.autonomymcp.DashboardCalls.call(java.util.function.Supplier)> calls method <jakarta.ws.rs.WebApplicationException.getResponse()> in (DashboardCalls.java:84)
-Method <io.freedriver.autonomymcp.DashboardCalls.call(java.util.function.Supplier)> calls method <jakarta.ws.rs.core.Response.getStatus()> in (DashboardCalls.java:84)
-Method <io.freedriver.autonomymcp.DashboardCalls.schedule(java.util.UUID, java.lang.String, boolean, java.time.Instant)> calls method <jakarta.ws.rs.core.Response.close()> in (DashboardCalls.java:67)
-Method <io.freedriver.autonomymcp.DashboardResponses.toThrowable(jakarta.ws.rs.core.Response)> calls method <jakarta.ws.rs.core.Response.getStatus()> in (DashboardResponses.java:11)
-Method <io.freedriver.autonomymcp.DashboardResponses.toThrowable(jakarta.ws.rs.core.Response)> has parameter of type <jakarta.ws.rs.core.Response> in (DashboardResponses.java:0)

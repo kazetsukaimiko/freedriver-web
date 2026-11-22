@@ -57,6 +57,10 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
+            <groupId>org.jmolecules</groupId>
+            <artifactId>jmolecules-hexagonal-architecture</artifactId>
+        </dependency>
+        <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-rest</artifactId>
         </dependency>

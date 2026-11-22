@@ -47,6 +47,8 @@ class McpResourceTest {
         DashboardStub.exchanges.clear();
         DashboardStub.down.set(false);
         DashboardStub.refusedAppliances.clear();
+        DashboardStub.refusedSchedules.clear();
+        DashboardStub.pendingCapSchedules.clear();
     }
 
     @Test
@@ -461,6 +463,75 @@ class McpResourceTest {
             assertEquals(3, posts());
             assertEquals(List.of("appliance=fridge result=allowed", "appliance=porch result=rate-limited",
                     "appliance=lamp result=allowed"), switchAudit(audit));
+        }
+    }
+
+    @Test
+    @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
+    void a_capped_delayed_entry_keeps_the_accepted_entries() {
+        DashboardStub.refusedSchedules.put("porch-light", 429);
+        DashboardStub.pendingCapSchedules.add("porch-light");
+        String session = initialize();
+        try (AuditLines audit = AuditLines.open()) {
+            given().contentType("application/json")
+                    .accept("application/json, text/event-stream")
+                    .header(McpEndpoint.SESSION_HEADER, session)
+                    .body(switches(entry("lamp", true, 300), entry("porch-light", false, 60), entry("fridge", true, null)))
+                    .post("/autonomy/mcp")
+                    .then()
+                    .statusCode(200)
+                    .body("result.isError", is(false))
+                    .body("result.content[0].text", is("Lamp will turn on in 5 minutes. "
+                            + "Porch light: the pending cap is full until a stored switch fires or is given up "
+                            + "after three failed attempts. Fridge turned on."));
+            assertEquals(List.of("appliance=lamp result=scheduled", "appliance=porch-light result=pending-cap",
+                    "appliance=fridge result=allowed"), switchAudit(audit));
+        }
+    }
+
+    @Test
+    @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
+    void every_delayed_entry_at_the_pending_cap_is_a_tool_error() {
+        DashboardStub.refusedSchedules.put("porch", 429);
+        DashboardStub.refusedSchedules.put("lamp", 429);
+        DashboardStub.pendingCapSchedules.add("porch");
+        DashboardStub.pendingCapSchedules.add("lamp");
+        String session = initialize();
+        try (AuditLines audit = AuditLines.open()) {
+            given().contentType("application/json")
+                    .accept("application/json, text/event-stream")
+                    .header(McpEndpoint.SESSION_HEADER, session)
+                    .body(switches(entry("porch", true, 60), entry("lamp", false, 90)))
+                    .post("/autonomy/mcp")
+                    .then()
+                    .statusCode(200)
+                    .body("result.isError", is(true))
+                    .body("result.content[0].text", is(
+                            "Porch: the pending cap is full until a stored switch fires or is given up "
+                                    + "after three failed attempts. "
+                                    + "Lamp: the pending cap is full until a stored switch fires or is given up "
+                                    + "after three failed attempts."));
+            assertEquals(List.of("appliance=porch result=pending-cap", "appliance=lamp result=pending-cap"),
+                    switchAudit(audit));
+        }
+    }
+
+    @Test
+    @TestSecurity(user = "mcp-switch", roles = {"mcp-user", "dashboard"})
+    void a_delayed_entry_with_a_bare_429_asks_for_a_minute() {
+        DashboardStub.refusedSchedules.put("porch", 429);
+        String session = initialize();
+        try (AuditLines audit = AuditLines.open()) {
+            given().contentType("application/json")
+                    .accept("application/json, text/event-stream")
+                    .header(McpEndpoint.SESSION_HEADER, session)
+                    .body(switches(entry("porch", true, 60)))
+                    .post("/autonomy/mcp")
+                    .then()
+                    .statusCode(200)
+                    .body("result.isError", is(true))
+                    .body("result.content[0].text", is("Porch: too many requests. Try again in a minute."));
+            assertEquals(List.of("appliance=porch result=rate-limited"), switchAudit(audit));
         }
     }
 

@@ -12,7 +12,6 @@ import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
 import io.freedriver.dispatcher.model.HostPaths;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
-import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import io.restassured.common.mapper.TypeRef;
@@ -173,13 +172,12 @@ class HostResourceTest {
                 failedPrompt, failedNote);
 
         String expiredPrompt = "prompt-expired-cobalt-harbor";
-        String expiredNote = "note-expired-cobalt-harbor";
         UUID expired = jobs.submitNow("grok-host-other", new SubmitJobRequest(
                 List.of("pc-host-owner"), "yuni", expiredPrompt, Channel.TEXT))
                 .assignments().getFirst().assignmentId();
-        jobs.update("pc-host-owner", expired, new UpdateAssignmentRequest(AssignmentState.EXPIRED, null, expiredNote));
+        TakePastTheWindow.take(assignments, devices, locks, "pc-host-owner");
         assertFinishError(expired.toString(), 403, "assignment belongs to another device",
-                expiredPrompt, expiredNote);
+                expiredPrompt, "no host took it");
     }
 
     @Test
@@ -223,10 +221,10 @@ class HostResourceTest {
         assertEquals("first", first.note());
         finishAgainLeavesTheStoredRow(first, true, "second");
 
-        UUID expired = jobs.submitNow("grok-host-kept", new SubmitJobRequest(
-                List.of("pc-host-kept"), "yuni", "host-kept-prompt-3", Channel.TEXT))
+        UUID expired = jobs.submit("grok-host-kept", new SubmitJobRequest(
+                List.of("pc-host-kept"), "yuni", "host-kept-prompt-3", Channel.TEXT),
+                Duration.ofMillis(40))
                 .assignments().getFirst().assignmentId();
-        jobs.update("pc-host-kept", expired, new UpdateAssignmentRequest(AssignmentState.EXPIRED, null, null));
         AssignmentView lapsed = jobs.assignment("pc-host-kept", expired);
         assertEquals(AssignmentState.EXPIRED, lapsed.state());
         assertNull(lapsed.note());

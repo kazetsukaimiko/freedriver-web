@@ -10,7 +10,6 @@ import io.freedriver.dispatcher.model.JobPage;
 import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.ReportedBot;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
-import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -52,7 +51,7 @@ public interface JobStore {
     /**
      * The host route's finish (#590): an open job moves as {@link #finish} moves it; a finished job
      * ({@code SUCCEEDED}, {@code FAILED} or {@code EXPIRED}) is answered as stored and changes nothing,
-     * so the connector's "the turn ended without a result" never replaces a result the agent posted
+     * so the Agent Bridge's "the turn ended without a result" never replaces a result the agent posted
      * first. The answer is the caller's own row read after the one conditional write did not match.
      */
     AssignmentView finishIfOpen(String deviceId, UUID assignmentId, boolean succeeded,
@@ -112,9 +111,5 @@ public interface JobStore {
                          @NotNull @Size(min = 1, max = 128) @Pattern(regexp = DELIVERY_REF) String deliveryRef);
 
     AssignmentView assignment(String deviceId, UUID assignmentId);
-
-    AssignmentView claim(String deviceId, UUID assignmentId);
-
-    AssignmentView update(String deviceId, UUID assignmentId, @Valid @NotNull UpdateAssignmentRequest request);
 
 }

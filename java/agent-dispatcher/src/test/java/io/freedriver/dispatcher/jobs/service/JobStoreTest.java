@@ -20,7 +20,6 @@ import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.OnBusy;
 import io.freedriver.dispatcher.model.ReportedBot;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
-import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.bson.Document;
@@ -43,6 +42,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static com.mongodb.client.model.Filters.eq;
+import static com.mongodb.client.model.Updates.set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -114,9 +114,13 @@ class JobStoreTest {
                     "grok", job(List.of("pc-a"), "yuni"), Duration.ofSeconds(5)));
             AssignmentView queued = waitForQueued(store, "pc-a");
 
-            DispatcherException error = assertThrows(
-                    DispatcherException.class, () -> store.claim("pc-b", queued.assignmentId()));
-            assertEquals(DispatcherException.Kind.FORBIDDEN, error.kind());
+            assertTrue(store.take("pc-b", List.of(), Duration.ZERO).isEmpty());
+            DispatcherException finish = assertThrows(
+                    DispatcherException.class, () -> store.finish("pc-b", queued.assignmentId(), true, null));
+            assertEquals(DispatcherException.Kind.FORBIDDEN, finish.kind());
+            DispatcherException start = assertThrows(
+                    DispatcherException.class, () -> store.start("pc-b", queued.assignmentId(), "ref"));
+            assertEquals(DispatcherException.Kind.FORBIDDEN, start.kind());
             assertEquals(AssignmentState.QUEUED, store.poll("pc-a", Duration.ZERO).get(0).state());
             succeed(store, queued);
             pending.get(5, TimeUnit.SECONDS);
@@ -134,16 +138,13 @@ class JobStoreTest {
             Future<JobView> pending = pool.submit(() -> store.submit(
                     "grok", job(List.of("pc-a"), "yuni"), Duration.ofSeconds(5)));
             AssignmentView queued = waitForQueued(store, "pc-a");
-            store.claim("pc-a", queued.assignmentId());
-            UUID session = UUID.randomUUID();
-            store.update("pc-a", queued.assignmentId(),
-                    new UpdateAssignmentRequest(AssignmentState.RUNNING, session, null));
-            store.update("pc-a", queued.assignmentId(),
-                    new UpdateAssignmentRequest(AssignmentState.SUCCEEDED, session, "done"));
+            assertEquals(1, store.take("pc-a", List.of(), Duration.ZERO).size());
+            store.start("pc-a", queued.assignmentId(), "ref-1");
+            store.finish("pc-a", queued.assignmentId(), true, "done");
 
             JobView finished = pending.get(5, TimeUnit.SECONDS);
             assertEquals(AssignmentState.SUCCEEDED, finished.assignments().get(0).state());
-            assertEquals(session, finished.assignments().get(0).grokSessionId());
+            assertNull(finished.assignments().get(0).grokSessionId());
             assertEquals(finished, store.getJob("grok", finished.jobId()));
             assertThrows(DispatcherException.class, () -> store.getJob("someone-else", finished.jobId()));
         } finally {
@@ -159,10 +160,15 @@ class JobStoreTest {
         JobView submitted = store.submit("grok", job(List.of("pc-a"), "yuni"), Duration.ofMillis(40));
 
         assertEquals(AssignmentState.EXPIRED, submitted.assignments().get(0).state());
+        assertNull(submitted.assignments().get(0).note());
         assertTrue(store.poll("pc-a", Duration.ZERO).isEmpty());
+        UUID expired = submitted.assignments().get(0).assignmentId();
         DispatcherException error = assertThrows(DispatcherException.class,
-                () -> store.claim("pc-a", submitted.assignments().get(0).assignmentId()));
+                () -> store.finish("pc-a", expired, true, null));
         assertEquals(DispatcherException.Kind.CONFLICT, error.kind());
+        AssignmentView kept = store.finishIfOpen("pc-a", expired, false, "too late");
+        assertEquals(AssignmentState.EXPIRED, kept.state());
+        assertNull(kept.note());
         assertEquals(submitted, store.getJob("grok", submitted.jobId()));
         assertThrows(DispatcherException.class, () -> store.getJob("someone-else", submitted.jobId()));
         assertEquals(List.of(submitted), store.listJobs("grok"));
@@ -178,14 +184,12 @@ class JobStoreTest {
             Future<JobView> pending = pool.submit(() -> store.submit(
                     "grok", job(List.of("pc-a"), "yuni"), Duration.ofSeconds(2)));
             AssignmentView queued = waitForQueued(store, "pc-a");
-            store.claim("pc-a", queued.assignmentId());
+            assertEquals(1, store.take("pc-a", List.of(), Duration.ZERO).size());
 
             JobView finished = pending.get(5, TimeUnit.SECONDS);
             assertEquals(AssignmentState.EXPIRED, finished.assignments().get(0).state());
-            DispatcherException error = assertThrows(DispatcherException.class, () -> store.update(
-                    "pc-a",
-                    queued.assignmentId(),
-                    new UpdateAssignmentRequest(AssignmentState.RUNNING, UUID.randomUUID(), null)));
+            DispatcherException error = assertThrows(DispatcherException.class,
+                    () -> store.start("pc-a", queued.assignmentId(), "ref"));
             assertEquals(DispatcherException.Kind.CONFLICT, error.kind());
         } finally {
             pool.shutdownNow();
@@ -208,7 +212,7 @@ class JobStoreTest {
             assertEquals(AssignmentState.SUCCEEDED, assignment(finished, "pc-a").state());
             assertEquals(AssignmentState.EXPIRED, assignment(finished, "pc-b").state());
             DispatcherException error = assertThrows(DispatcherException.class,
-                    () -> store.claim("pc-b", assignment(finished, "pc-b").assignmentId()));
+                    () -> store.finish("pc-b", assignment(finished, "pc-b").assignmentId(), true, null));
             assertEquals(DispatcherException.Kind.CONFLICT, error.kind());
         } finally {
             pool.shutdownNow();
@@ -247,7 +251,7 @@ class JobStoreTest {
     }
 
     @Test
-    void illegal_jump_to_succeeded_conflicts() throws Exception {
+    void finish_from_queued_reaches_succeeded() throws Exception {
         JobStore store = store();
         store.register("pc-a", "a.local", List.of("yuni"));
         ExecutorService pool = Executors.newSingleThreadExecutor();
@@ -256,19 +260,10 @@ class JobStoreTest {
                     "grok", job(List.of("pc-a"), "yuni"), Duration.ofSeconds(5)));
             AssignmentView queued = waitForQueued(store, "pc-a");
 
-            DispatcherException succeeded = assertThrows(DispatcherException.class, () -> store.update(
-                    "pc-a",
-                    queued.assignmentId(),
-                    new UpdateAssignmentRequest(AssignmentState.SUCCEEDED, null, null)));
-            assertEquals(DispatcherException.Kind.CONFLICT, succeeded.kind());
-            DispatcherException failed = assertThrows(DispatcherException.class, () -> store.update(
-                    "pc-a",
-                    queued.assignmentId(),
-                    new UpdateAssignmentRequest(AssignmentState.FAILED, null, null)));
-            assertEquals(DispatcherException.Kind.CONFLICT, failed.kind());
-            assertEquals(AssignmentState.QUEUED, store.poll("pc-a", Duration.ZERO).get(0).state());
-            succeed(store, queued);
-            pending.get(5, TimeUnit.SECONDS);
+            AssignmentView finished = store.finish("pc-a", queued.assignmentId(), true, null);
+            assertEquals(AssignmentState.SUCCEEDED, finished.state());
+            assertNull(finished.grokSessionId());
+            assertEquals(AssignmentState.SUCCEEDED, pending.get(5, TimeUnit.SECONDS).assignments().get(0).state());
         } finally {
             pool.shutdownNow();
         }
@@ -339,18 +334,12 @@ class JobStoreTest {
                     new SubmitJobRequest(List.of("freedriver-openbot"), "techops", "check appliance states", Channel.TEXT),
                     Duration.ofSeconds(5)));
             AssignmentView queued = waitForQueued(store, "freedriver-openbot");
-            store.claim("freedriver-openbot", queued.assignmentId());
-            AssignmentView running = store.update(
-                    "freedriver-openbot",
-                    queued.assignmentId(),
-                    new UpdateAssignmentRequest(AssignmentState.RUNNING, null, null));
+            assertEquals(1, store.take("freedriver-openbot", List.of(), Duration.ZERO).size());
+            AssignmentView running = store.start("freedriver-openbot", queued.assignmentId(), "openbot:task-1");
             assertEquals(AssignmentState.RUNNING, running.state());
             assertNull(running.grokSessionId());
             assertEquals("techops", running.agentName());
-            store.update(
-                    "freedriver-openbot",
-                    queued.assignmentId(),
-                    new UpdateAssignmentRequest(AssignmentState.SUCCEEDED, null, "pumps are on"));
+            store.finish("freedriver-openbot", queued.assignmentId(), true, "pumps are on");
 
             JobView finished = pending.get(5, TimeUnit.SECONDS);
             assertEquals(AssignmentState.SUCCEEDED, finished.assignments().get(0).state());
@@ -372,20 +361,16 @@ class JobStoreTest {
             Future<JobView> pending = pool.submit(() -> store.submit(
                     "grok", job(List.of("pc-a"), "yuni"), Duration.ofSeconds(5)));
             AssignmentView queued = waitForQueued(store, "pc-a");
-            store.claim("pc-a", queued.assignmentId());
+            assertEquals(1, store.take("pc-a", List.of(), Duration.ZERO).size());
+            store.start("pc-a", queued.assignmentId(), "ref-1");
 
-            AssignmentView failed = store.update(
-                    "pc-a",
-                    queued.assignmentId(),
-                    new UpdateAssignmentRequest(AssignmentState.FAILED, null, "refused SPEECH"));
+            AssignmentView failed = store.finish("pc-a", queued.assignmentId(), false, "refused SPEECH");
 
             assertEquals(AssignmentState.FAILED, failed.state());
             assertNull(failed.grokSessionId());
             assertEquals("refused SPEECH", failed.note());
-            DispatcherException succeeded = assertThrows(DispatcherException.class, () -> store.update(
-                    "pc-a",
-                    queued.assignmentId(),
-                    new UpdateAssignmentRequest(AssignmentState.SUCCEEDED, null, null)));
+            DispatcherException succeeded = assertThrows(DispatcherException.class,
+                    () -> store.finish("pc-a", queued.assignmentId(), true, null));
             assertEquals(DispatcherException.Kind.CONFLICT, succeeded.kind());
             assertEquals(AssignmentState.FAILED, pending.get(5, TimeUnit.SECONDS).assignments().get(0).state());
         } finally {
@@ -394,7 +379,7 @@ class JobStoreTest {
     }
 
     @Test
-    void succeeded_from_claimed_conflicts() throws Exception {
+    void finish_from_claimed_reaches_succeeded() throws Exception {
         JobStore store = store();
         store.register("pc-a", "a.local", List.of("yuni"));
         ExecutorService pool = Executors.newSingleThreadExecutor();
@@ -402,19 +387,31 @@ class JobStoreTest {
             Future<JobView> pending = pool.submit(() -> store.submit(
                     "grok", job(List.of("pc-a"), "yuni"), Duration.ofSeconds(5)));
             AssignmentView queued = waitForQueued(store, "pc-a");
-            store.claim("pc-a", queued.assignmentId());
+            assertEquals(1, store.take("pc-a", List.of(), Duration.ZERO).size());
 
-            DispatcherException error = assertThrows(DispatcherException.class, () -> store.update(
-                    "pc-a",
-                    queued.assignmentId(),
-                    new UpdateAssignmentRequest(AssignmentState.SUCCEEDED, null, null)));
-            assertEquals(DispatcherException.Kind.CONFLICT, error.kind());
-            store.update("pc-a", queued.assignmentId(),
-                    new UpdateAssignmentRequest(AssignmentState.FAILED, null, "refused"));
-            assertEquals(AssignmentState.FAILED, pending.get(5, TimeUnit.SECONDS).assignments().get(0).state());
+            AssignmentView finished = store.finish("pc-a", queued.assignmentId(), true, null);
+            assertEquals(AssignmentState.SUCCEEDED, finished.state());
+            assertNull(finished.grokSessionId());
+            assertEquals(AssignmentState.SUCCEEDED, pending.get(5, TimeUnit.SECONDS).assignments().get(0).state());
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    @Test
+    void a_stored_session_id_is_still_read_and_finish_leaves_it() {
+        JobStore store = store();
+        store.register("pc-a", "a.local", List.of("yuni"));
+        AssignmentView queued = store.submitNow("grok", job(List.of("pc-a"), "yuni")).assignments().get(0);
+        UUID session = UUID.randomUUID();
+        assignments.mongoCollection().updateOne(
+                eq("_id", queued.assignmentId().toString()), set("sessionId", session.toString()));
+
+        assertEquals(session, store.assignment("pc-a", queued.assignmentId()).grokSessionId());
+        AssignmentView finished = store.finish("pc-a", queued.assignmentId(), true, null);
+        assertEquals(AssignmentState.SUCCEEDED, finished.state());
+        assertEquals(session, finished.grokSessionId());
+        assertEquals(session.toString(), storedJobs().get(0).getString("sessionId"));
     }
 
     @Test
@@ -704,7 +701,9 @@ class JobStoreTest {
 
         assertEquals(AssignmentState.QUEUED, submitted.assignments().get(0).state());
         assertEquals(submitted, store.getJob("grok", submitted.jobId()));
-        AssignmentView claimed = store.claim("pc-a", submitted.assignments().get(0).assignmentId());
+        List<AssignmentView> taken = store.take("pc-a", List.of(), Duration.ZERO);
+        assertEquals(1, taken.size());
+        AssignmentView claimed = taken.get(0);
         assertEquals(AssignmentState.CLAIMED, claimed.state());
         store.finish("pc-a", claimed.assignmentId(), true, "done");
         assertEquals(AssignmentState.SUCCEEDED, store.getJob("grok", submitted.jobId()).assignments().get(0).state());
@@ -724,7 +723,9 @@ class JobStoreTest {
         assertTrue(rows.get(0).get("createdAt") != null);
 
         JobStore restarted = store();
-        AssignmentView claimed = restarted.claim("pc-a", submitted.assignments().get(0).assignmentId());
+        List<AssignmentView> taken = restarted.take("pc-a", List.of(), Duration.ZERO);
+        assertEquals(1, taken.size());
+        AssignmentView claimed = taken.get(0);
         assertEquals(AssignmentState.CLAIMED, claimed.state());
         assertEquals("CLAIMED", storedJobs().get(0).getString("status"));
         assertEquals(submitted.jobId(), restarted.getJob("grok", submitted.jobId()).jobId());
@@ -1124,12 +1125,7 @@ class JobStoreTest {
     }
 
     private static void succeed(JobStore store, AssignmentView queued) {
-        UUID session = UUID.randomUUID();
-        store.claim(queued.deviceId(), queued.assignmentId());
-        store.update(queued.deviceId(), queued.assignmentId(),
-                new UpdateAssignmentRequest(AssignmentState.RUNNING, session, null));
-        store.update(queued.deviceId(), queued.assignmentId(),
-                new UpdateAssignmentRequest(AssignmentState.SUCCEEDED, session, null));
+        store.finish(queued.deviceId(), queued.assignmentId(), true, null);
     }
 
     private static AssignmentView assignment(JobView job, String deviceId) {
