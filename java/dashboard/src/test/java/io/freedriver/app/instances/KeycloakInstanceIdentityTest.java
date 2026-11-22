@@ -16,6 +16,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,9 +52,10 @@ class KeycloakInstanceIdentityTest {
             String posts = realm.posts();
             assertTrue(posts.contains("\"username\":\"" + first + "\""));
             assertTrue(posts.contains("\"label\":[\"porch\"]"));
-            assertTrue(posts.contains("\"mqtt_publ_topic\":[\"" + ApplianceSchemas.appliancesTopic(first) + "\"]"));
-            assertTrue(posts.contains("\"mqtt_subs_topic\":[\"" + ApplianceSchemas.commandsTopic(first) + "\"]"));
-            assertTrue(posts.contains("\"mqtt_publ_topic\":[\"" + ApplianceSchemas.appliancesTopic(second) + "\"]"));
+            assertTrue(posts.contains(publishPair(first)));
+            assertTrue(posts.contains(subscribePair(first)));
+            assertTrue(posts.contains(publishPair(second)));
+            assertTrue(posts.contains(subscribePair(second)));
             assertFalse(posts.contains("\"groups\""));
             assertFalse(realm.bodyOf("POST", second.toString()).contains(first.toString()));
             assertTrue(realm.calls.stream().anyMatch(call -> call.startsWith(
@@ -108,23 +110,59 @@ class KeycloakInstanceIdentityTest {
     }
 
     @Test
-    void another_houses_topic_is_not_sent() {
-        Realm realm = new Realm();
-        UUID first = UUID.randomUUID();
-        UUID second = UUID.randomUUID();
+    void a_username_that_is_not_the_house_never_calls_keycloak() {
+        UUID id = UUID.randomUUID();
         KeycloakUser crossed = new KeycloakUser(
-                second.toString(),
-                second.toString(),
+                id.toString(),
+                "not-" + id,
                 null,
                 "pw",
-                ApplianceSchemas.appliancesTopic(first),
-                ApplianceSchemas.commandsTopic(second),
                 InstanceIdentity.GROUP);
         assertThrows(IllegalArgumentException.class, () -> new KeycloakInstanceIdentity(
                 () -> {
                     throw new AssertionError("admin client was built");
                 }, "freedriver", true).create(crossed));
-        assertTrue(realm.calls.isEmpty());
+    }
+
+    @Test
+    void reversed_topic_order_round_trips() throws Exception {
+        Realm realm = new Realm();
+        realm.readBack = ReadBack.REVERSED;
+        realm.start();
+        try {
+            UUID id = UUID.randomUUID();
+            realm.client().create(user(id, "porch"));
+            assertEquals(1, realm.users.size());
+            assertTrue(realm.posts().contains(publishPair(id)));
+            assertTrue(realm.posts().contains(subscribePair(id)));
+        } finally {
+            realm.stop();
+        }
+    }
+
+    @Test
+    void a_truncated_topic_pair_deletes_the_user() throws Exception {
+        refused(ReadBack.TRUNCATED);
+    }
+
+    @Test
+    void an_extra_topic_deletes_the_user() throws Exception {
+        refused(ReadBack.EXTRA);
+    }
+
+    @Test
+    void a_duplicate_topic_deletes_the_user() throws Exception {
+        refused(ReadBack.DUPLICATE_PAIR);
+    }
+
+    @Test
+    void a_duplicate_beside_the_pair_deletes_the_user() throws Exception {
+        refused(ReadBack.DUPLICATE_BESIDE);
+    }
+
+    @Test
+    void another_houses_topics_delete_the_user() throws Exception {
+        refused(ReadBack.FOREIGN);
     }
 
     @Test
@@ -247,9 +285,36 @@ class KeycloakInstanceIdentityTest {
                 id.toString(),
                 label,
                 "pw-" + id.toString().substring(0, 8),
-                ApplianceSchemas.appliancesTopic(id),
-                ApplianceSchemas.commandsTopic(id),
                 InstanceIdentity.GROUP);
+    }
+
+    private static void refused(ReadBack readBack) throws Exception {
+        Realm realm = new Realm();
+        realm.readBack = readBack;
+        realm.start();
+        try {
+            UUID id = UUID.randomUUID();
+            assertThrows(BrokerRefusedException.class, () -> realm.client().create(user(id, null)));
+            assertTrue(realm.users.isEmpty());
+            assertTrue(realm.calls.stream().anyMatch(call -> call.startsWith(
+                    "DELETE /admin/realms/freedriver/users/kc-" + id)));
+        } finally {
+            realm.stop();
+        }
+    }
+
+    private static String publishPair(UUID id) {
+        return "\"mqtt_publ_topic\":[\"" + ApplianceSchemas.appliancesTopic(id) + "\",\""
+                + ApplianceSchemas.scheduledTopic(id) + "\"]";
+    }
+
+    private static String subscribePair(UUID id) {
+        return "\"mqtt_subs_topic\":[\"" + ApplianceSchemas.commandsTopic(id) + "\",\""
+                + ApplianceSchemas.commandListsTopic(id) + "\"]";
+    }
+
+    private enum ReadBack {
+        AS_POSTED, REVERSED, TRUNCATED, EXTRA, DUPLICATE_PAIR, DUPLICATE_BESIDE, FOREIGN
     }
 
     private static final class Realm {
@@ -258,6 +323,8 @@ class KeycloakInstanceIdentityTest {
         private HttpServer server;
         private boolean failJoin;
         private boolean stripTopics;
+        private ReadBack readBack = ReadBack.AS_POSTED;
+        private final UUID foreign = UUID.randomUUID();
         private String stranger;
         private Integer groupsStatus;
         private String groupsBody;
@@ -291,8 +358,8 @@ class KeycloakInstanceIdentityTest {
             user.id = "kc-" + id;
             user.username = id.toString();
             user.password = password;
-            user.publish = ApplianceSchemas.appliancesTopic(id);
-            user.subscribe = ApplianceSchemas.commandsTopic(id);
+            user.publish = List.of(ApplianceSchemas.appliancesTopic(id), ApplianceSchemas.scheduledTopic(id));
+            user.subscribe = List.of(ApplianceSchemas.commandsTopic(id), ApplianceSchemas.commandListsTopic(id));
             user.inGroup = true;
             users.put(user.username, user);
         }
@@ -346,8 +413,8 @@ class KeycloakInstanceIdentityTest {
                 user.username = username;
                 user.password = body.path("credentials").path(0).path("value").asText();
                 user.label = body.path("attributes").path("label").path(0).asText(null);
-                user.publish = body.path("attributes").path("mqtt_publ_topic").path(0).asText();
-                user.subscribe = body.path("attributes").path("mqtt_subs_topic").path(0).asText();
+                user.publish = texts(body.path("attributes").path("mqtt_publ_topic"));
+                user.subscribe = texts(body.path("attributes").path("mqtt_subs_topic"));
                 users.put(username, user);
                 send(exchange, 201, "", "http://127.0.0.1/admin/realms/freedriver/users/" + user.id);
                 return;
@@ -420,16 +487,67 @@ class KeycloakInstanceIdentityTest {
         }
 
         private String identity(User user) {
-            String label = user.label == null ? "" : ",\"" + KeycloakInstanceIdentity.LABEL_ATTRIBUTE
-                    + "\":[\"" + user.label + "\"]";
-            String topics = stripTopics ? "" : ",\"" + KeycloakInstanceIdentity.PUBLISH_ATTRIBUTE + "\":[\""
-                    + user.publish + "\"],\"" + KeycloakInstanceIdentity.SUBSCRIBE_ATTRIBUTE + "\":[\""
-                    + user.subscribe + "\"]";
-            return "\"id\":\"" + user.id + "\",\"username\":\"" + user.username + "\",\"attributes\":{"
-                    + (label.isEmpty() ? "" : label.substring(1))
-                    + (label.isEmpty() || topics.isEmpty() ? "" : "")
-                    + (topics.isEmpty() ? "" : (label.isEmpty() ? topics.substring(1) : topics))
-                    + "}";
+            StringBuilder attributes = new StringBuilder();
+            if (user.label != null) {
+                attributes.append("\"").append(KeycloakInstanceIdentity.LABEL_ATTRIBUTE)
+                        .append("\":[\"").append(user.label).append("\"]");
+            }
+            if (!stripTopics) {
+                if (attributes.length() > 0) {
+                    attributes.append(',');
+                }
+                attributes.append("\"").append(KeycloakInstanceIdentity.PUBLISH_ATTRIBUTE).append("\":")
+                        .append(jsonArray(shown(user.publish, true)));
+                attributes.append(",\"").append(KeycloakInstanceIdentity.SUBSCRIBE_ATTRIBUTE).append("\":")
+                        .append(jsonArray(shown(user.subscribe, false)));
+            }
+            return "\"id\":\"" + user.id + "\",\"username\":\"" + user.username
+                    + "\",\"attributes\":{" + attributes + "}";
+        }
+
+        private List<String> shown(List<String> stored, boolean publish) {
+            List<String> values = new ArrayList<>(stored);
+            return switch (readBack) {
+                case AS_POSTED -> values;
+                case REVERSED -> {
+                    Collections.reverse(values);
+                    yield values;
+                }
+                case TRUNCATED -> values.subList(0, Math.min(1, values.size()));
+                case EXTRA -> {
+                    values.add(ApplianceSchemas.appliancesTopic(foreign));
+                    yield values;
+                }
+                case DUPLICATE_PAIR -> publish ? List.of(values.getFirst(), values.getFirst()) : values;
+                case DUPLICATE_BESIDE -> {
+                    if (publish) {
+                        values.add(values.getFirst());
+                    }
+                    yield values;
+                }
+                case FOREIGN -> publish
+                        ? List.of(ApplianceSchemas.appliancesTopic(foreign), ApplianceSchemas.scheduledTopic(foreign))
+                        : List.of(ApplianceSchemas.commandsTopic(foreign), ApplianceSchemas.commandListsTopic(foreign));
+            };
+        }
+
+        private static List<String> texts(JsonNode node) {
+            List<String> values = new ArrayList<>();
+            if (node != null && node.isArray()) {
+                node.forEach(item -> values.add(item.asText()));
+            }
+            return values;
+        }
+
+        private static String jsonArray(List<String> values) {
+            StringBuilder array = new StringBuilder("[");
+            for (int i = 0; i < values.size(); i++) {
+                if (i > 0) {
+                    array.append(',');
+                }
+                array.append('"').append(values.get(i)).append('"');
+            }
+            return array.append(']').toString();
         }
 
         private User userById(String id) {
@@ -468,8 +586,8 @@ class KeycloakInstanceIdentityTest {
         private String username;
         private String password;
         private String label;
-        private String publish;
-        private String subscribe;
+        private List<String> publish = List.of();
+        private List<String> subscribe = List.of();
         private boolean inGroup;
     }
 

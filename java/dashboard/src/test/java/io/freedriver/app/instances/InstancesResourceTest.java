@@ -61,16 +61,14 @@ class InstancesResourceTest {
         RecordingInstanceIdentity.Stored stored = identity.user(instanceId);
         assertEquals(password, stored.password());
         assertEquals("mqtt-instance", stored.group());
-        assertEquals("freedriver/v1/" + instanceId + "/appliances", stored.publishTopic());
-        assertEquals("freedriver/v1/" + instanceId + "/commands", stored.subscribeTopic());
+        assertEquals(instanceId, stored.instanceId());
 
         Response second = csrf().body("{}").post("/api/instances");
         second.then().statusCode(201);
         String other = second.path("instanceId");
         assertNull(second.path("label"));
-        assertFalse(identity.user(other).publishTopic().contains(instanceId));
-        assertFalse(identity.user(other).subscribeTopic().contains(instanceId));
-        assertNotEquals(stored.publishTopic(), identity.user(other).publishTopic());
+        assertNotEquals(instanceId, other);
+        assertEquals("mqtt-instance", identity.user(other).group());
 
         String list = given().when().get("/api/instances").asString();
         assertFalse(list.contains(password));

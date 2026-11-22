@@ -189,8 +189,6 @@ class InstanceSubscriptionsTest {
                 house.toString(),
                 "fixture",
                 "pw-" + house.toString().substring(0, 8),
-                ApplianceSchemas.appliancesTopic(house),
-                ApplianceSchemas.commandsTopic(house),
                 "mqtt-instance"));
         assertFalse(followed.contains(house));
         try (MqttLogCapture logs = MqttLogCapture.open()) {

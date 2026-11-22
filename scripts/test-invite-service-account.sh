@@ -901,6 +901,38 @@ if attributes:
     sys.exit("mqtt-instance must not carry topic attributes")
 print("mqtt-instance has no topic attributes")
 PY
+sa_id="$(admin get users -r freedriver -q username=service-account-freedriver-mqtt -q exact=true --fields id --format csv --noquotes | csv_id)"
+admin get "users/${sa_id}" -r freedriver > "$work/mqtt-sa.json"
+admin get "users/${sa_id}/groups" -r freedriver > "$work/mqtt-sa-groups.json"
+admin get users/profile -r freedriver > "$work/user-profile.json"
+python3 - "$work/mqtt-sa.json" "$work/mqtt-sa-groups.json" "$work/user-profile.json" <<'PY'
+import json, sys
+user = json.load(open(sys.argv[1], encoding="utf-8"))
+groups = json.load(open(sys.argv[2], encoding="utf-8"))
+profile = json.load(open(sys.argv[3], encoding="utf-8"))
+attrs = user.get("attributes") or {}
+pub = set(attrs.get("mqtt_publ_topic") or [])
+sub = set(attrs.get("mqtt_subs_topic") or [])
+if pub != {"freedriver/v1/+/commands", "freedriver/v1/+/command-lists"}:
+    sys.exit("service account publish topics are %s" % sorted(pub))
+if sub != {"freedriver/v1/+/appliances", "freedriver/v1/+/scheduled"}:
+    sys.exit("service account subscribe topics are %s" % sorted(sub))
+if (attrs.get("mqtt_superuser") or []) != ["false"]:
+    sys.exit("mqtt_superuser is not false")
+if not any(group.get("name") == "portal-broker" for group in groups):
+    sys.exit("service account is outside portal-broker")
+wanted = {
+    "label": False,
+    "mqtt_publ_topic": True,
+    "mqtt_subs_topic": True,
+    "mqtt_superuser": False,
+}
+found = {item.get("name"): bool(item.get("multivalued")) for item in profile.get("attributes") or []}
+for name, multi in wanted.items():
+    if found.get(name) is not multi:
+        sys.exit("profile %s multivalued=%s" % (name, found.get(name)))
+print("service account topics and multivalued profile attributes match")
+PY
 
 python3 - "$work/secrets/invite.env" "$work/token-form" <<'PY'
 import sys
@@ -1217,6 +1249,157 @@ expect 403 "$(http PUT "${BASE}/admin/realms/freedriver/users/${outside_id}" "$w
   "disable a user just added to phone-sign-in"
 expect 403 "$(http DELETE "${BASE}/admin/realms/freedriver/users/${outside_id}")" \
   "delete a user just added to phone-sign-in"
+
+# House topic migration. Separate from the phone-role failure run below.
+OLD_HOUSE=11111111-1111-4111-8111-111111111111
+NEW_HOUSE=22222222-2222-4222-8222-222222222222
+BAD_HOUSE=33333333-3333-4333-8333-333333333333
+OUT_HOUSE=44444444-4444-4444-8444-444444444444
+admin get groups -r freedriver -q search=mqtt-instance -q exact=true > "$work/mqtt-groups.json"
+house_group="$(python3 - "$work/mqtt-groups.json" <<'PY'
+import json, sys
+groups = json.load(open(sys.argv[1], encoding="utf-8"))
+ids = [group["id"] for group in groups if group.get("name") == "mqtt-instance" and not group.get("parentId")]
+if len(ids) != 1:
+    sys.exit("top-level mqtt-instance group was not found")
+print(ids[0])
+PY
+)"
+python3 - "$work" "$OLD_HOUSE" "$NEW_HOUSE" "$BAD_HOUSE" "$OUT_HOUSE" <<'PY'
+import json, sys
+from pathlib import Path
+work, old, new, bad, outside = sys.argv[1:]
+root = Path(work)
+
+def dump(name, username, publ, subs, label=None):
+    attributes = {
+        "mqtt_publ_topic": publ,
+        "mqtt_subs_topic": subs,
+        "mqtt_superuser": ["false"],
+    }
+    if label:
+        attributes["label"] = [label]
+    root.joinpath(name).write_text(json.dumps({
+        "username": username,
+        "enabled": True,
+        "attributes": attributes,
+    }), encoding="utf-8")
+
+dump("old-house.json", old, [f"freedriver/v1/{old}/appliances"], [f"freedriver/v1/{old}/commands"], "porch")
+dump("new-house.json", new,
+     [f"freedriver/v1/{new}/appliances", f"freedriver/v1/{new}/scheduled"],
+     [f"freedriver/v1/{new}/commands", f"freedriver/v1/{new}/command-lists"],
+     "steady")
+dump("bad-house.json", bad, [f"freedriver/v1/{bad}/nope"], [f"freedriver/v1/{bad}/commands"], "foreign")
+dump("out-house.json", outside, [f"freedriver/v1/{outside}/appliances"], [f"freedriver/v1/{outside}/commands"], "outside")
+PY
+seed_house() {
+  local file="$1"
+  local join="$2"
+  local username id
+  username="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["username"])' "$file")"
+  admin_stdin create users -r freedriver -f - < "$file" >/dev/null
+  id="$(admin get users -r freedriver -q "username=${username}" -q exact=true --fields id --format csv --noquotes | csv_id)"
+  if [[ "$join" == yes ]]; then
+    admin update "users/${id}/groups/${house_group}" -r freedriver >/dev/null
+  fi
+}
+seed_house "$work/old-house.json" yes
+seed_house "$work/new-house.json" yes
+seed_house "$work/bad-house.json" yes
+seed_house "$work/out-house.json" no
+run_house_provision() {
+  PROVISION_ALLOW_NON_ROOT=1 \
+    KEYCLOAK_CONTAINER="$CONTAINER" \
+    TECHOPS_PASS_FILE="$work/techops.pass" \
+    SECRET_FILE="$work/secrets/api.secret" \
+    INVITE_ENV_FILE="$work/secrets/invite.env" \
+    INSTANCES_ENV_FILE="$work/secrets/instances.env" \
+    PORTAL_JOBS_ENV_FILE="$work/secrets/portal-jobs.env" \
+    GRAFANA_ENV_FILE="$work/secrets/grafana.env" \
+    MQTT_ENV_FILE="$work/secrets/mqtt.env" \
+    MQTT_OAUTH_DIR="$work/secrets/mqtt-oauth.d" \
+    AUTONOMY_MCP_ENV_FILE="$work/secrets/autonomy-mcp.env" \
+    SECRETS_ENV="$work/secrets.env" \
+    bash scripts/provision-keycloak-freedriver.sh
+}
+assert_house_topics() {
+  local phase="$1"
+  admin get users -r freedriver -q briefRepresentation=false -q max=1000 > "$work/houses.json"
+  python3 - "$work/houses.json" "$phase" "$OLD_HOUSE" "$NEW_HOUSE" "$BAD_HOUSE" "$OUT_HOUSE" <<'PY'
+import json, sys
+users = json.load(open(sys.argv[1], encoding="utf-8"))
+phase, old, new, bad, outside = sys.argv[2:]
+by_name = {user.get("username"): user for user in users}
+
+def attrs(name):
+    user = by_name.get(name)
+    if user is None:
+        sys.exit("%s missing user %s" % (phase, name))
+    return user.get("attributes") or {}
+
+def topics(name):
+    found = attrs(name)
+    return list(found.get("mqtt_publ_topic") or []), list(found.get("mqtt_subs_topic") or [])
+
+def same(got, want):
+    return len(got) == len(want) and set(got) == set(want)
+
+old_attrs = attrs(old)
+if not same(topics(old)[0], [f"freedriver/v1/{old}/appliances", f"freedriver/v1/{old}/scheduled"]):
+    sys.exit("%s old publish %s" % (phase, topics(old)[0]))
+if not same(topics(old)[1], [f"freedriver/v1/{old}/commands", f"freedriver/v1/{old}/command-lists"]):
+    sys.exit("%s old subscribe %s" % (phase, topics(old)[1]))
+if old_attrs.get("label") != ["porch"] or old_attrs.get("mqtt_superuser") != ["false"]:
+    sys.exit("%s old label or mqtt_superuser changed" % phase)
+new_attrs = attrs(new)
+if not same(topics(new)[0], [f"freedriver/v1/{new}/appliances", f"freedriver/v1/{new}/scheduled"]):
+    sys.exit("%s new publish changed" % phase)
+if not same(topics(new)[1], [f"freedriver/v1/{new}/commands", f"freedriver/v1/{new}/command-lists"]):
+    sys.exit("%s new subscribe changed" % phase)
+if new_attrs.get("label") != ["steady"]:
+    sys.exit("%s new label changed" % phase)
+bad_attrs = attrs(bad)
+if topics(bad) != ([f"freedriver/v1/{bad}/nope"], [f"freedriver/v1/{bad}/commands"]):
+    sys.exit("%s foreign topics changed %s" % (phase, topics(bad)))
+if bad_attrs.get("label") != ["foreign"]:
+    sys.exit("%s foreign label changed" % phase)
+out_attrs = attrs(outside)
+if topics(outside) != ([f"freedriver/v1/{outside}/appliances"], [f"freedriver/v1/{outside}/commands"]):
+    sys.exit("%s outside user changed %s" % (phase, topics(outside)))
+if out_attrs.get("label") != ["outside"]:
+    sys.exit("%s outside label changed" % phase)
+print(phase, "house topic migration holds")
+PY
+}
+set +e
+run_house_provision >"$work/migrate.out" 2>&1
+migrate=$?
+set -e
+if [[ "$migrate" -eq 0 ]]; then
+  echo "house migration should name the foreign topic user" >&2
+  exit 1
+fi
+if ! grep -F "$BAD_HOUSE" "$work/migrate.out"; then
+  echo "house migration did not name the foreign topic user" >&2
+  exit 1
+fi
+assert_house_topics seeded
+printf 'FREEDRIVER_SEED_PHONE=\n' > "$work/secrets.env"
+set +e
+run_house_provision >"$work/migrate-empty.out" 2>&1
+migrate_empty=$?
+set -e
+if [[ "$migrate_empty" -eq 0 ]]; then
+  echo "empty-seed provision should name the foreign topic user" >&2
+  exit 1
+fi
+if ! grep -F "$BAD_HOUSE" "$work/migrate-empty.out"; then
+  echo "empty-seed provision did not name the foreign topic user" >&2
+  exit 1
+fi
+assert_house_topics "empty-seed"
+printf 'FREEDRIVER_SEED_PHONE=+15555550143\n' > "$work/secrets.env"
 
 # A failed role check must not replace the phone number.
 admin add-roles -r freedriver --uusername kaze --rolename portal-admin >/dev/null
