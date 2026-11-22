@@ -127,12 +127,12 @@ public class KeycloakInstanceIdentity implements InstanceIdentity {
     @Override
     public List<InstanceSummary> list() {
         if (!configured) {
-            throw new BrokerRefusedException();
+            throw BrokerRefusedException.notConfigured();
         }
         InstanceUsers users = users();
         String groupId = groupId(users);
         if (groupId == null) {
-            throw new BrokerRefusedException();
+            throw BrokerRefusedException.groupMissing();
         }
         List<InstanceSummary> summaries = new ArrayList<>();
         Set<String> scanned = new HashSet<>();

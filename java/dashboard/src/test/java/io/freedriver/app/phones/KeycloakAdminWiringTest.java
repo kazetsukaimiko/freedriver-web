@@ -8,6 +8,7 @@ import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.common.QuarkusTestResourceLifecycleManager;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -40,43 +41,82 @@ class KeycloakAdminWiringTest {
     @Inject
     KeycloakPhoneSignIn phones;
 
+    @Inject
+    @ConfigProperty(name = "quarkus.keycloak.admin-client.server-url")
+    String adminClientUrl;
+
+    @Inject
+    @ConfigProperty(name = "quarkus.rest-client.keycloak-invite.url")
+    String inviteRestUrl;
+
+    @Inject
+    @ConfigProperty(name = "quarkus.oidc-client.invite.auth-server-url")
+    String inviteOidcUrl;
+
+    @Inject
+    @ConfigProperty(name = "quarkus.oidc-client.portal-jobs.auth-server-url")
+    String portalJobsOidcUrl;
+
     @Test
     void the_injected_instances_client_lists_the_houses_as_freedriver_instances() {
         List<InstanceSummary> listed = instances.list();
 
         assertEquals(List.of(new InstanceSummary(HOUSE.toString(), "porch")), listed);
-        assertTrue(Realm.tokenClients.contains("freedriver-instances:instances-secret"), Realm.tokenClients::toString);
-        assertTrue(Realm.calls.contains("GET /admin/realms/freedriver/groups/group-m/members"), Realm.calls::toString);
+        assertTrue(Realm.adminTokens.contains("freedriver-instances:instances-secret"), Realm.adminTokens::toString);
+        assertTrue(Realm.adminCalls.contains("GET /admin/realms/freedriver/groups/group-m/members"),
+                Realm.adminCalls::toString);
+        assertAdminStaysOffThePublicHost();
     }
 
     @Test
     void the_produced_invite_client_removes_the_phone_as_freedriver_invite() {
         assertTrue(phones.removeFromPhoneSignIn("+15555550123"));
 
-        assertTrue(Realm.tokenClients.contains("freedriver-invite:invite-secret"), Realm.tokenClients::toString);
-        assertTrue(Realm.calls.contains("DELETE /admin/realms/freedriver/users/user-1/groups/group-p"),
-                Realm.calls::toString);
+        assertTrue(Realm.adminTokens.contains("freedriver-invite:invite-secret"), Realm.adminTokens::toString);
+        assertTrue(Realm.adminCalls.contains("DELETE /admin/realms/freedriver/users/user-1/groups/group-p"),
+                Realm.adminCalls::toString);
+        assertAdminStaysOffThePublicHost();
+    }
+
+    @Test
+    void invite_and_portal_jobs_resolve_the_public_server_url() {
+        assertEquals(Realm.adminBase, adminClientUrl);
+        assertEquals(Realm.publicBase, inviteRestUrl);
+        assertEquals(Realm.publicBase + "/realms/freedriver", inviteOidcUrl);
+        assertEquals(Realm.publicBase + "/realms/freedriver", portalJobsOidcUrl);
+    }
+
+    private static void assertAdminStaysOffThePublicHost() {
+        assertTrue(Realm.publicCalls.stream().noneMatch(call -> call.contains(" /admin/")), Realm.publicCalls::toString);
+        assertTrue(Realm.publicTokens.stream().noneMatch(client -> client.startsWith("freedriver-instances:")
+                || client.startsWith("freedriver-invite:")), Realm.publicTokens::toString);
     }
 
     /** One stub realm with the instances and the invite answers. */
     public static final class Realm implements QuarkusTestResourceLifecycleManager {
 
-        static final List<String> tokenClients = new CopyOnWriteArrayList<>();
-        static final List<String> calls = new CopyOnWriteArrayList<>();
-        private HttpServer server;
+        static final List<String> adminTokens = new CopyOnWriteArrayList<>();
+        static final List<String> publicTokens = new CopyOnWriteArrayList<>();
+        static final List<String> adminCalls = new CopyOnWriteArrayList<>();
+        static final List<String> publicCalls = new CopyOnWriteArrayList<>();
+        static String adminBase;
+        static String publicBase;
+        private HttpServer adminServer;
+        private HttpServer publicServer;
 
         @Override
         public Map<String, String> start() {
             try {
-                server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+                adminServer = listen(true);
+                publicServer = listen(false);
             } catch (IOException e) {
                 throw new IllegalStateException(e);
             }
-            server.createContext("/", this::handle);
-            server.start();
-            String base = "http://127.0.0.1:" + server.getAddress().getPort();
+            adminBase = base(adminServer);
+            publicBase = base(publicServer);
             Map<String, String> config = new LinkedHashMap<>();
-            config.put("freedriver.keycloak.server-url", base);
+            config.put("freedriver.keycloak.server-url", publicBase);
+            config.put("freedriver.keycloak.admin-url", adminBase);
             config.put("quarkus.keycloak.admin-client.client-secret", "instances-secret");
             config.put("freedriver.instances.client-secret", "instances-secret");
             config.put("freedriver.invite.client-secret", "invite-secret");
@@ -85,20 +125,35 @@ class KeycloakAdminWiringTest {
 
         @Override
         public void stop() {
-            if (server != null) {
-                server.stop(0);
+            if (adminServer != null) {
+                adminServer.stop(0);
+            }
+            if (publicServer != null) {
+                publicServer.stop(0);
             }
         }
 
-        private void handle(HttpExchange exchange) throws IOException {
+        private static HttpServer listen(boolean admin) throws IOException {
+            HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            server.createContext("/", exchange -> handle(exchange, admin));
+            server.start();
+            return server;
+        }
+
+        private static String base(HttpServer server) {
+            return "http://127.0.0.1:" + server.getAddress().getPort();
+        }
+
+        private static void handle(HttpExchange exchange, boolean admin) throws IOException {
             String method = exchange.getRequestMethod();
             String path = exchange.getRequestURI().getPath();
             String query = exchange.getRequestURI().getQuery() == null ? "" : exchange.getRequestURI().getQuery();
-            calls.add(method + " " + path);
+            (admin ? adminCalls : publicCalls).add(method + " " + path);
             if (path.endsWith("/protocol/openid-connect/token")) {
                 String header = exchange.getRequestHeaders().getFirst("Authorization");
                 if (header != null && header.startsWith("Basic ")) {
-                    tokenClients.add(new String(Base64.getDecoder().decode(header.substring("Basic ".length())),
+                    (admin ? adminTokens : publicTokens).add(new String(
+                            Base64.getDecoder().decode(header.substring("Basic ".length())),
                             StandardCharsets.UTF_8));
                 }
                 send(exchange, 200, "{\"access_token\":\"tok\",\"expires_in\":300,\"token_type\":\"Bearer\"}");

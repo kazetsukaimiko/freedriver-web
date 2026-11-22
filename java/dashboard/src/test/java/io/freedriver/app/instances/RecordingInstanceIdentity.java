@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /** Test double for the instances admin client. Refusing a create does not keep the user. */
 @Mock
@@ -20,6 +21,7 @@ public class RecordingInstanceIdentity implements InstanceIdentity {
     private final AtomicInteger creates = new AtomicInteger();
     private final AtomicBoolean refuse = new AtomicBoolean();
     private final AtomicBoolean refuseList = new AtomicBoolean();
+    private final AtomicReference<RuntimeException> listFailure = new AtomicReference<>();
 
     /** A test profile sets this to start with Keycloak refusing the list, as when it is not up yet. */
     @ConfigProperty(name = "recording-identity.refuse-list-at-start", defaultValue = "false")
@@ -35,6 +37,7 @@ public class RecordingInstanceIdentity implements InstanceIdentity {
         creates.set(0);
         refuse.set(false);
         refuseList.set(false);
+        listFailure.set(null);
     }
 
     public void refuse(boolean value) {
@@ -44,6 +47,11 @@ public class RecordingInstanceIdentity implements InstanceIdentity {
     /** Keycloak refuses the group member list, as when it is down. */
     public void refuseList(boolean value) {
         refuseList.set(value);
+    }
+
+    /** The next {@link #list()} throws this exception, including a {@link BrokerRefusedException}. */
+    public void failList(RuntimeException failure) {
+        listFailure.set(failure);
     }
 
     /** The house user is gone from {@code mqtt-instance}. */
@@ -92,6 +100,10 @@ public class RecordingInstanceIdentity implements InstanceIdentity {
 
     @Override
     public List<InstanceSummary> list() {
+        RuntimeException failure = listFailure.get();
+        if (failure != null) {
+            throw failure;
+        }
         if (refuseList.get()) {
             throw new BrokerRefusedException();
         }

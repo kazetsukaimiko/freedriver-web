@@ -2,6 +2,7 @@ package io.freedriver.app.mqttlog;
 
 import io.freedriver.mqtt.MqttLog;
 
+import java.util.OptionalInt;
 import java.util.logging.Logger;
 
 /**
@@ -46,9 +47,23 @@ public final class HouseMqttLog {
                 + " outcome=" + MqttLog.oneLine(outcome, "-"));
     }
 
-    /** The house list could not be read; the subscribed houses stay as they were. */
+    /**
+     * The house list could not be read; the subscribed houses stay as they were.
+     * {@code reason} is a fixed word ({@code not-configured}, {@code group-missing},
+     * {@code list-failed}, {@code transport}). A blank word becomes {@code list-failed}.
+     * {@code status} is the HTTP status, written only when present.
+     */
+    public static void instancesRefreshFailed(String reason, OptionalInt status) {
+        String line = "mqtt instances refresh failed reason=" + MqttLog.oneLine(reason, "list-failed");
+        if (status != null && status.isPresent()) {
+            line = line + " status=" + status.getAsInt();
+        }
+        warn(line);
+    }
+
+    /** The house list could not be read, with no status. */
     public static void instancesRefreshFailed() {
-        warn("mqtt instances refresh failed reason=" + MqttLog.oneLine("list-failed", "list-failed"));
+        instancesRefreshFailed("list-failed", OptionalInt.empty());
     }
 
     public static void metricsReceived(java.util.UUID instanceId) {

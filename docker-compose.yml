@@ -38,6 +38,8 @@ services:
       QUARKUS_MONGODB_CONNECTION_STRING: ${QUARKUS_MONGODB_CONNECTION_STRING:-mongodb://mongodb:27017/freedriver}
       FREEDRIVER_REDIS_URL: ${FREEDRIVER_REDIS_URL:-redis://redis:6379}
       FREEDRIVER_APPLIANCES_LIVE_COMMANDS: "true"
+      # Keycloak admin API on the compose network. The public issuer stays QUARKUS_OIDC_AUTH_SERVER_URL.
+      FREEDRIVER_KEYCLOAK_ADMIN_URL: http://keycloak:8080
     # Invite service account (#172) and instances admin client (#319).
     # The provision script writes these files. Do not also interpolate
     # FREEDRIVER_INVITE_CLIENT_SECRET, FREEDRIVER_INSTANCES_CLIENT_SECRET, or

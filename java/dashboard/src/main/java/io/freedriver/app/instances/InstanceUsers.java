@@ -1,7 +1,5 @@
 package io.freedriver.app.instances;
 
-import jakarta.ws.rs.ProcessingException;
-import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Response;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.resource.RealmResource;
@@ -90,8 +88,8 @@ final class InstanceUsers {
     private static <T> T refusing(Supplier<T> call) {
         try {
             return call.get();
-        } catch (WebApplicationException | ProcessingException failure) {
-            throw new BrokerRefusedException();
+        } catch (RuntimeException failure) {
+            throw KeycloakHttpMapper.refused(failure);
         }
     }
 

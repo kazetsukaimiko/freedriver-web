@@ -1,5 +1,6 @@
 package io.freedriver.app.appliances;
 
+import io.freedriver.app.instances.BrokerRefusedException;
 import io.freedriver.app.instances.HouseCreated;
 import io.freedriver.app.instances.InstanceIdentity;
 import io.freedriver.app.instances.InstanceSummary;
@@ -71,7 +72,7 @@ public class InstanceSubscriptions {
     public void refresh() {
         try {
             apply(false);
-        } catch (RuntimeException e) {
+        } catch (RuntimeException ignored) {
             HouseMqttLog.instancesRefreshFailed();
         }
     }
@@ -87,7 +88,10 @@ public class InstanceSubscriptions {
                 }
             }
             listed = true;
-        } catch (RuntimeException e) {
+        } catch (BrokerRefusedException refused) {
+            HouseMqttLog.instancesRefreshFailed(refused.logReason(), refused.status());
+            listed = false;
+        } catch (RuntimeException ignored) {
             HouseMqttLog.instancesRefreshFailed();
             listed = false;
         }

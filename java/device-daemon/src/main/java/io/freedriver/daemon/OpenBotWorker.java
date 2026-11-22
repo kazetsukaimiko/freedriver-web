@@ -162,7 +162,7 @@ final class OpenBotWorker implements AutoCloseable {
         return report;
     }
 
-    private void reportQuietly() {
+    void reportQuietly() {
         try {
             reportOnce();
         } catch (RuntimeException failed) {
