@@ -60,10 +60,7 @@ public interface JobStore {
 
     DeviceView heartbeat(String deviceId);
 
-    /**
-     * Each host with the same states and the same {@code reportedAt} and {@code seenAt} as
-     * {@link #listAgents}, from {@code host-silent-after}.
-     */
+    /** Same states and times as {@link #listAgents}. See {@code docs/device-dispatcher.md}. */
     List<DeviceListEntry> listDevices();
 
     JobView submit(@NotBlank String dispatcherSubject, @Valid @NotNull SubmitJobRequest request, Duration wait);

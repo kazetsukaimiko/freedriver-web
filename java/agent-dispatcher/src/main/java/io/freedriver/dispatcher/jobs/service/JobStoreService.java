@@ -33,6 +33,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.EnumSet;
 import java.util.HashSet;
@@ -142,11 +143,7 @@ public class JobStoreService implements JobStore {
         return List.copyOf(rows);
     }
 
-    /**
-     * One host on one clock instant: {@code reportedAt} is the row's {@code lastHeartbeat}, {@code seenAt}
-     * is the later of that and {@code lastTake}, and each agent is {@code BUSY} or {@code IDLE} when the
-     * report is inside the window, {@code UNKNOWN} when only the take is, and {@code OFFLINE} otherwise.
-     */
+    /** Shared reading for {@link #listAgents} and {@link #listDevices}. See {@code docs/device-dispatcher.md}. */
     private ListedHost listed(Device device, Instant now) {
         Map<String, String> activity = orEmpty(device.activity);
         boolean reported = withinSilence(device.lastHeartbeat, now);
@@ -161,7 +158,8 @@ public class JobStoreService implements JobStore {
             }
             states.put(agent, state);
         }
-        return new ListedHost(device.lastHeartbeat, later(device.lastHeartbeat, device.lastTake), Map.copyOf(states));
+        return new ListedHost(device.lastHeartbeat, later(device.lastHeartbeat, device.lastTake),
+                Collections.unmodifiableMap(states));
     }
 
     private record ListedHost(Instant reportedAt, Instant seenAt, Map<String, AgentState> stateByAgent) {

@@ -1,11 +1,13 @@
 package io.freedriver.dispatcher;
 
 import io.freedriver.dispatcher.jobs.JobStore;
+import io.freedriver.dispatcher.store.DeviceRepository;
 
 import io.freedriver.dispatcher.model.AssignmentState;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.Channel;
 import io.freedriver.dispatcher.model.JobView;
+import io.freedriver.dispatcher.model.ReportedBot;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
 import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
 import io.quarkus.test.junit.QuarkusTest;
@@ -14,6 +16,7 @@ import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -26,6 +29,8 @@ import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @QuarkusTest
@@ -33,6 +38,9 @@ class DispatcherResourceTest {
 
     @Inject
     JobStore jobs;
+
+    @Inject
+    DeviceRepository devices;
 
     @Test
     void anonymous_health_is_open() {
@@ -255,6 +263,47 @@ class DispatcherResourceTest {
     @TestSecurity(user = "grok-admin", roles = "dispatcher")
     void the_dispatcher_role_cannot_list_every_callers_jobs() {
         given().get("/api/dispatcher/admin/jobs").then().statusCode(403);
+    }
+
+    @Test
+    @TestSecurity(user = "grok-devices", roles = "dispatcher")
+    void list_devices_returns_each_agents_state_and_utc_times() throws Exception {
+        jobs.report("pc-two", "two.local", List.of(
+                new ReportedBot("yuni", "busy", "reviewing"),
+                new ReportedBot("kai", "idle", "waiting")));
+        devices.mongoCollection().withDocumentClass(org.bson.Document.class).insertOne(
+                new org.bson.Document("_id", "pc-quiet")
+                        .append("hostname", "quiet.local")
+                        .append("agents", List.of("yuni")));
+
+        com.fasterxml.jackson.databind.JsonNode body = mapper.readTree(
+                given().get("/api/dispatcher/devices").then().statusCode(200).extract().asString());
+        com.fasterxml.jackson.databind.JsonNode two = listed(body, "pc-two");
+        assertEquals("BUSY", two.path("stateByAgent").path("yuni").asText());
+        assertEquals("IDLE", two.path("stateByAgent").path("kai").asText());
+        assertTrue(two.path("reportedAt").asText().endsWith("Z"));
+        assertTrue(two.path("seenAt").asText().endsWith("Z"));
+        assertEquals(two.path("lastHeartbeat").asText(), two.path("reportedAt").asText());
+        assertFalse(two.has("activity"));
+        List<String> order = new ArrayList<>();
+        two.path("stateByAgent").fieldNames().forEachRemaining(order::add);
+        assertEquals(List.of("yuni", "kai"), order);
+
+        com.fasterxml.jackson.databind.JsonNode quiet = listed(body, "pc-quiet");
+        assertTrue(quiet.path("reportedAt").isNull());
+        assertTrue(quiet.path("seenAt").isNull());
+        assertTrue(quiet.path("lastHeartbeat").isNull());
+        assertEquals("OFFLINE", quiet.path("stateByAgent").path("yuni").asText());
+    }
+
+    private static com.fasterxml.jackson.databind.JsonNode listed(
+            com.fasterxml.jackson.databind.JsonNode body, String deviceId) {
+        for (com.fasterxml.jackson.databind.JsonNode node : body) {
+            if (deviceId.equals(node.path("deviceId").asText())) {
+                return node;
+            }
+        }
+        throw new AssertionError(deviceId);
     }
 
     private AssignmentView waitForQueued(String deviceId) throws InterruptedException {
