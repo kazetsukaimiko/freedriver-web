@@ -34,6 +34,12 @@ public interface McpOpsApi {
     @RolesAllowed("mcp-user")
     McpDebugResponse debug();
 
+    /**
+     * Stores one delayed switch. 202 means the row is stored. A spent {@code appliances.schedules}
+     * window and a full pending cap are both an empty 429. The cap response carries
+     * {@link PendingCapHeader#NAME} {@link PendingCapHeader#FULL}; the spent window leaves that
+     * header off. Stored rows still fire.
+     */
     @POST
     @Path("/scheduled-switches")
     @Consumes(MediaType.APPLICATION_JSON)
