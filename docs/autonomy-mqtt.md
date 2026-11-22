@@ -43,8 +43,8 @@ Use these topics. The live grants are in `mosquitto/acl.template`.
 | --- | --- | --- | --- | --- | --- |
 | A (state) | `freedriver/v1/__INSTANCE_ID__/appliances` | that instance's `autonomy` | `api` via `freedriver/v1/+/appliances` | 1 | **false** |
 | B (commands) | `freedriver/v1/__INSTANCE_ID__/commands` | `api` via `freedriver/v1/+/commands` | that instance's `autonomy` | 1 | **false** |
-| C (command lists) | `freedriver/v1/__INSTANCE_ID__/command-lists` | `api` via `freedriver/v1/+/command-lists`, once #636 grants it | that instance's `autonomy`, once #636 grants it | 1 | **false** |
-| D (scheduled) | `freedriver/v1/__INSTANCE_ID__/scheduled` | that instance's `autonomy`, once #636 grants it | `api` via `freedriver/v1/+/scheduled`, once #636 grants it | 1 | **false** |
+| C (command lists) | `freedriver/v1/__INSTANCE_ID__/command-lists` | `api` via `freedriver/v1/+/command-lists` | that instance's `autonomy` | 1 | **false** |
+| D (scheduled) | `freedriver/v1/__INSTANCE_ID__/scheduled` | that instance's `autonomy` | `api` via `freedriver/v1/+/scheduled` | 1 | **false** |
 | Metrics | `freedriver/v1/__INSTANCE_ID__/metrics/#` | that instance's `autonomy` | `api` via `freedriver/v1/+/metrics/#` | 1 | **false** |
 
 QoS 1 is a client convention, and retain is a publisher setting. retain=false keeps every map Quarkus sees live, because Quarkus liveness is receive-time.
@@ -98,7 +98,7 @@ While `live-commands` is on, Topic B stays the command topic `autonomy` and `api
 
 ## Topic C — command list (Quarkus → autonomy)
 
-`ApplianceCommandList` rides `freedriver/v1/__INSTANCE_ID__/command-lists` at QoS 1 with retain false, the same publication settings as Topic B. The broker sets `retain_available false`, so a retained publish is refused on this topic too. The broker grant for this topic arrives in #636. Until that grant, the controller's command subscription stays on Topic B, and this topic stays unused.
+`ApplianceCommandList` rides `freedriver/v1/__INSTANCE_ID__/command-lists` at QoS 1 with retain false, the same publication settings as Topic B. The broker sets `retain_available false`, so a retained publish is refused on this topic too. The broker grants `api` write of `freedriver/v1/+/command-lists` and that instance's `autonomy` read of the exact topic. Dashboard publish of the list is #637. Topic B remains the command topic.
 
 ```json
 {
@@ -146,7 +146,7 @@ QoS 1 can redeliver a list. Drop a list whose `issuedAt` is more than 20 seconds
 
 ## Topic D — scheduled snapshot (autonomy → Quarkus)
 
-`ScheduledCommandsMessage` is the controller's complete pending set on `freedriver/v1/__INSTANCE_ID__/scheduled`, QoS 1, retain false. The controller publishes it at start, on every change, and with each state map, once #636 grants the topic. `pending: []` means the pending set is empty. The pending set survives a controller restart, and the start snapshot carries it.
+`ScheduledCommandsMessage` is the controller's complete pending set on `freedriver/v1/__INSTANCE_ID__/scheduled`, QoS 1, retain false. The controller publishes it at start, on every change, and with each state map. The broker grants that instance's `autonomy` write of the exact topic and `api` read of `freedriver/v1/+/scheduled`. `pending: []` means the pending set is empty. The pending set survives a controller restart, and the start snapshot carries it.
 
 ```json
 {
@@ -166,9 +166,9 @@ A pending entry is `{id, target, state, dueAt}`. `id` is a canonical UUID, uniqu
 
 ## Grants (#636)
 
-This change leaves `mosquitto/acl.template`, `scripts/provision-mosquitto.sh`, `.github/workflows/ci.yml`, and the house topic attributes as they stand. #636 adds each grant as an extra line or attribute value. The appliances, commands, and metrics lines stay.
+`mosquitto/acl.template` keeps the appliances, commands, and metrics lines and adds the four grants below. `assert_acl_topics` accepts the new exact lines only for `autonomy` and only in the direction in the table. The new `api` lines are write `freedriver/v1/+/command-lists` and read `freedriver/v1/+/scheduled`. `apply_instance_acl` exempts those `api` lines from the instance-id check along with the three `api` lines already there. `.github/workflows/ci.yml` accepts `+` or `#` on the `api` grants and on autonomy `metrics/#`.
 
-Password ACL plane, in `mosquitto/acl.template`, beside the lines already there:
+Password ACL plane, in `mosquitto/acl.template`, beside the appliances, commands, and metrics lines:
 
 | User | Access | Filter |
 | --- | --- | --- |
@@ -179,13 +179,9 @@ Password ACL plane, in `mosquitto/acl.template`, beside the lines already there:
 
 `api` is the broker user with `freedriver.mqtt.username=api` and password file `api.pass`.
 
-Today `assert_acl_topics` in `scripts/provision-mosquitto.sh` allows `api` three lines: read `freedriver/v1/+/appliances`, write `freedriver/v1/+/commands`, and read `freedriver/v1/+/metrics/#`. It allows `autonomy` the exact appliances topic, the exact commands topic, and the exact `metrics/#` topic. `apply_instance_acl` exempts those three `api` lines from the instance-id check. `.github/workflows/ci.yml` accepts `+` or `#` on the `api` grants and on autonomy `metrics/#`, and fails every other topic line that contains `+` or `#`. #636 extends those allowlists with the four filters in the table above.
+Keycloak JWT plane, separate from the password ACL. `service-account-freedriver-mqtt` stays on the JWT path and in `portal-broker`. `scripts/provision-keycloak-freedriver.sh` sets `mqtt_publ_topic` to `[freedriver/v1/+/commands, freedriver/v1/+/command-lists]` and `mqtt_subs_topic` to `[freedriver/v1/+/appliances, freedriver/v1/+/scheduled]`. `ensure_instances_admin` and `ensure_mqtt_broker` mark those two attributes multivalued. `label` and `mqtt_superuser` stay single-valued, and `mqtt_superuser` stays false.
 
-Keycloak JWT plane, separate from the password ACL. `service-account-freedriver-mqtt` stays on the JWT path only. Its topics are assigned in the shell at `scripts/provision-keycloak-freedriver.sh` lines 2053-2054: `mqtt_publ_topic` is `[freedriver/v1/+/commands]` and `mqtt_subs_topic` is `[freedriver/v1/+/appliances]`. #636 replaces that assignment with `mqtt_publ_topic` `[freedriver/v1/+/commands, freedriver/v1/+/command-lists]` and `mqtt_subs_topic` `[freedriver/v1/+/appliances, freedriver/v1/+/scheduled]`.
-
-That assignment needs `mqtt_publ_topic` and `mqtt_subs_topic` multivalued. Both profile writers force `multivalued` false today: `ensure_instances_admin` (the profile write at lines 1499-1524, called at line 2130) and `ensure_mqtt_broker` (the profile write at lines 1845-1870, called at line 2133). #636 sets `multivalued` true at both writers.
-
-House users gain the two new exact topics as added values (kaze, 2026-11-19: "Add them now"). `mqtt_publ_topic` becomes `[appliancesTopic(id), scheduledTopic(id)]` and `mqtt_subs_topic` becomes `[commandsTopic(id), commandListsTopic(id)]`. All four values are exact for that house. #636 sets them for new houses in `HouseProvision`, updates existing houses once, and changes `KeycloakInstanceIdentity.requireHouse` so it accepts exactly that set. `one()` (line 267) today requires size 1 for these two attributes. #636 widens that check to this set. Any other value, or an extra value, still fails the house. `assertExactTopic` still rejects `+` and `#` on every house value. The `mqtt-instance` group and the `portal-broker` group keep their current membership. `mqtt_acl.superuser` stays false. The grant set stays these exact house topics plus the service-account patterns above.
+A new house receives `mqtt_publ_topic` `[appliancesTopic(id), scheduledTopic(id)]` and `mqtt_subs_topic` `[commandsTopic(id), commandListsTopic(id)]` from `KeycloakInstanceIdentity`, derived from the house uuid. Read-back accepts either order when each attribute is that pair. A shorter list, a longer list, a repeated value, or another house's topic deletes the new user. `MqttBrokers.assertExactTopic` rejects `+` and `#` on every house value. The same provision walks `mqtt-instance` and converts a house that still has the previous one-topic pair. A house with any other topic set stays as it is, and the script names that username when it exits. Groups `mqtt-instance` and `portal-broker` keep their membership, and their attribute maps omit topic keys.
 
 The v1 house also reaches the new topics through broker user `autonomy` on the password plane.
 
@@ -195,7 +191,7 @@ The v1 house also reaches the new topics through broker user `autonomy` on the p
 2. Autonomy applies the flip (or the latest-per-alias rule below).
 3. Autonomy publishes the next Topic A with `appliedCommandId` set to that same id.
 
-The portal POST completes when that Topic A arrives (wait and timeout: [appliances.md](appliances.md#lastupdated--stale--timeout)). Topic B's handshake stays on that command's `commandId`. The `listId` and entry-id echoes apply to a command-lists message. Autonomy subscribes to command-lists once #636 grants it.
+The portal POST completes when that Topic A arrives (wait and timeout: [appliances.md](appliances.md#lastupdated--stale--timeout)). Topic B's handshake stays on that command's `commandId`. The `listId` and entry-id echoes apply to a command-lists message. Autonomy subscribes to the exact command-lists topic.
 
 ## lastUpdated / stale
 

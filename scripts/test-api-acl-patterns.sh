@@ -75,6 +75,8 @@ if "autonomy" not in users:
 api = parse_grants(users["api"])
 appliances = f"freedriver/v1/{unlisted}/appliances"
 commands = f"freedriver/v1/{unlisted}/commands"
+command_lists = f"freedriver/v1/{unlisted}/command-lists"
+scheduled = f"freedriver/v1/{unlisted}/scheduled"
 if not allowed(api, appliances, "read"):
     raise SystemExit(f"api cannot read {appliances}")
 if allowed(api, appliances, "write"):
@@ -83,14 +85,38 @@ if not allowed(api, commands, "write"):
     raise SystemExit(f"api cannot write {commands}")
 if allowed(api, commands, "read"):
     raise SystemExit(f"api can read {commands}")
+if not allowed(api, command_lists, "write"):
+    raise SystemExit(f"api cannot write {command_lists}")
+if allowed(api, command_lists, "read"):
+    raise SystemExit(f"api can read {command_lists}")
+if not allowed(api, scheduled, "read"):
+    raise SystemExit(f"api cannot read {scheduled}")
+if allowed(api, scheduled, "write"):
+    raise SystemExit(f"api can write {scheduled}")
 print(f"api reads {appliances}")
 print(f"api writes {commands}")
+print(f"api writes {command_lists}")
+print(f"api reads {scheduled}")
 
 autonomy_block = users["autonomy"].replace("__INSTANCE_ID__", other)
 autonomy = parse_grants(autonomy_block)
+configured_lists = f"freedriver/v1/{other}/command-lists"
+configured_scheduled = f"freedriver/v1/{other}/scheduled"
+if not allowed(autonomy, configured_lists, "read"):
+    raise SystemExit(f"autonomy cannot read {configured_lists}")
+if allowed(autonomy, configured_lists, "write"):
+    raise SystemExit(f"autonomy can write {configured_lists}")
+if not allowed(autonomy, configured_scheduled, "write"):
+    raise SystemExit(f"autonomy cannot write {configured_scheduled}")
+if allowed(autonomy, configured_scheduled, "read"):
+    raise SystemExit(f"autonomy can read {configured_scheduled}")
+print(f"autonomy reads {configured_lists}")
+print(f"autonomy writes {configured_scheduled}")
 unlisted_topics = [
     appliances,
     commands,
+    command_lists,
+    scheduled,
     f"freedriver/v1/{unlisted}/metrics/x",
 ]
 for topic in unlisted_topics:

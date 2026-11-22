@@ -54,10 +54,13 @@ Usage: provision-mosquitto.sh [--instance-id UUID] [--acl-only] [--acl-template 
 
 Git is the template. Compose does not mount it as live. First-house apply
 is Techops + the secrets file: instance topics in, leftover
-freedriver/v1/home/... out, same write. Autonomy writes
-freedriver/v1/<id>/metrics/#. api reads freedriver/v1/+/appliances, writes
-freedriver/v1/+/commands, and reads freedriver/v1/+/metrics/#. House
-users receive exact instance topics. Do not open 1883.
+freedriver/v1/home/... out, same write. Autonomy reads
+freedriver/v1/<id>/command-lists, writes freedriver/v1/<id>/scheduled, and
+writes freedriver/v1/<id>/metrics/#. api writes
+freedriver/v1/+/command-lists, reads freedriver/v1/+/scheduled, reads
+freedriver/v1/+/appliances, writes freedriver/v1/+/commands, and reads
+freedriver/v1/+/metrics/#. House users receive exact instance topics.
+Do not open 1883.
 EOF
 }
 
@@ -111,9 +114,13 @@ assert_acl_topics() {
   local line access filter
   local exact_id="freedriver/v1/${instance_token}"
   local autonomy_metrics="${exact_id}/metrics/#"
+  local autonomy_lists="${exact_id}/command-lists"
+  local autonomy_scheduled="${exact_id}/scheduled"
   local api_appliances="freedriver/v1/+/appliances"
   local api_commands="freedriver/v1/+/commands"
   local api_metrics="freedriver/v1/+/metrics/#"
+  local api_lists="freedriver/v1/+/command-lists"
+  local api_scheduled="freedriver/v1/+/scheduled"
 
   while IFS= read -r line || [[ -n "$line" ]]; do
     if [[ "$line" =~ ^user[[:space:]]+([^[:space:]]+)[[:space:]]*$ ]]; then
@@ -145,10 +152,22 @@ assert_acl_topics() {
       if [[ "$access" == "read" && "$filter" == "$api_metrics" ]]; then
         continue
       fi
+      if [[ "$access" == "write" && "$filter" == "$api_lists" ]]; then
+        continue
+      fi
+      if [[ "$access" == "read" && "$filter" == "$api_scheduled" ]]; then
+        continue
+      fi
       echo "ACL topic not allowed for user ${current_user}: ${line}" >&2
       exit 1
     fi
     if [[ "$filter" == "${exact_id}/appliances" || "$filter" == "${exact_id}/commands" ]]; then
+      continue
+    fi
+    if [[ "$current_user" == "autonomy" && "$access" == "read" && "$filter" == "$autonomy_lists" ]]; then
+      continue
+    fi
+    if [[ "$current_user" == "autonomy" && "$access" == "write" && "$filter" == "$autonomy_scheduled" ]]; then
       continue
     fi
     if [[ "$current_user" == "autonomy" && "$access" == "write" && "$filter" == "$autonomy_metrics" ]]; then
@@ -177,6 +196,22 @@ assert_acl_topics() {
     echo "ACL must grant api read ${api_metrics}" >&2
     exit 1
   fi
+  if ! grep -Fxq "topic read ${autonomy_lists}" "$file"; then
+    echo "ACL must grant autonomy read ${autonomy_lists}" >&2
+    exit 1
+  fi
+  if ! grep -Fxq "topic write ${autonomy_scheduled}" "$file"; then
+    echo "ACL must grant autonomy write ${autonomy_scheduled}" >&2
+    exit 1
+  fi
+  if ! grep -Fxq "topic write ${api_lists}" "$file"; then
+    echo "ACL must grant api write ${api_lists}" >&2
+    exit 1
+  fi
+  if ! grep -Fxq "topic read ${api_scheduled}" "$file"; then
+    echo "ACL must grant api read ${api_scheduled}" >&2
+    exit 1
+  fi
 }
 
 # One write replaces the destination: instance topics in, leftover
@@ -190,6 +225,8 @@ apply_instance_acl() {
   local api_appliances="topic read freedriver/v1/+/appliances"
   local api_commands="topic write freedriver/v1/+/commands"
   local api_metrics="topic read freedriver/v1/+/metrics/#"
+  local api_lists="topic write freedriver/v1/+/command-lists"
+  local api_scheduled="topic read freedriver/v1/+/scheduled"
 
   if ! is_instance_id "$instance_id"; then
     echo "INSTANCE_ID must be a UUID (hex+hyphens). Do not enforce a version nibble. Do not invent a house id." >&2
@@ -230,6 +267,8 @@ apply_instance_acl() {
     | grep -Fvx "$api_appliances" \
     | grep -Fvx "$api_commands" \
     | grep -Fvx "$api_metrics" \
+    | grep -Fvx "$api_lists" \
+    | grep -Fvx "$api_scheduled" \
     | grep -Fv "/${instance_id}/"; then
     echo "ACL topic lines must include the applied instanceId (api + grants excepted)." >&2
     rm -f "$tmp"

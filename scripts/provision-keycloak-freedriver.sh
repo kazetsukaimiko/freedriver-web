@@ -1540,19 +1540,20 @@ attributes = profile.setdefault("attributes", [])
 wanted = {"view": ["admin"], "edit": ["admin"]}
 changed = False
 for name in ("label", "mqtt_publ_topic", "mqtt_subs_topic"):
+    multi = name != "label"
     found = next((item for item in attributes if item.get("name") == name), None)
     if found is None:
         attributes.append({
             "name": name,
             "displayName": name,
             "permissions": wanted,
-            "multivalued": False,
+            "multivalued": multi,
         })
         changed = True
         continue
-    if found.get("permissions") != wanted or found.get("multivalued") is True:
+    if found.get("permissions") != wanted or bool(found.get("multivalued")) != multi:
         found["permissions"] = wanted
-        found["multivalued"] = False
+        found["multivalued"] = multi
         changed = True
 if changed:
     json.dump(profile, open(path, "w", encoding="utf-8"))
@@ -1886,19 +1887,20 @@ attributes = profile.setdefault("attributes", [])
 wanted = {"view": ["admin"], "edit": ["admin"]}
 changed = False
 for name in ("label", "mqtt_publ_topic", "mqtt_subs_topic", "mqtt_superuser"):
+    multi = name in ("mqtt_publ_topic", "mqtt_subs_topic")
     found = next((item for item in attributes if item.get("name") == name), None)
     if found is None:
         attributes.append({
             "name": name,
             "displayName": name,
             "permissions": wanted,
-            "multivalued": False,
+            "multivalued": multi,
         })
         changed = True
         continue
-    if found.get("permissions") != wanted or found.get("multivalued") is True:
+    if found.get("permissions") != wanted or bool(found.get("multivalued")) != multi:
         found["permissions"] = wanted
-        found["multivalued"] = False
+        found["multivalued"] = multi
         changed = True
 if changed:
     json.dump(profile, open(path, "w", encoding="utf-8"))
@@ -2086,8 +2088,8 @@ user["firstName"] = "MQTT"
 user["lastName"] = "Broker"
 user["emailVerified"] = True
 attrs = user.setdefault("attributes", {})
-attrs["mqtt_publ_topic"] = ["freedriver/v1/+/commands"]
-attrs["mqtt_subs_topic"] = ["freedriver/v1/+/appliances"]
+attrs["mqtt_publ_topic"] = ["freedriver/v1/+/commands", "freedriver/v1/+/command-lists"]
+attrs["mqtt_subs_topic"] = ["freedriver/v1/+/appliances", "freedriver/v1/+/scheduled"]
 attrs["mqtt_superuser"] = ["false"]
 json.dump(user, open(path, "w", encoding="utf-8"))
 PY
@@ -2162,18 +2164,128 @@ PY
   unset secret sa_pass jwt_key
 }
 
+# After the topic attributes are multivalued, convert a house that still has the
+# one-topic pair. Any other set is left in place and named on the way out.
+migrate_house_topics() {
+  local group_id first=0 max=100 count id action
+  kcadm get groups -r "$REALM" -q search=mqtt-instance -q exact=true > "$work/mqtt-groups.json"
+  group_id="$(python3 - "$work/mqtt-groups.json" <<'PY'
+import json, sys
+groups = json.load(open(sys.argv[1], encoding="utf-8"))
+ids = [g["id"] for g in groups if g.get("name") == "mqtt-instance" and not g.get("parentId")]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+  if [[ -z "$group_id" ]]; then
+    echo "Failed to read mqtt-instance for the house topic walk." >&2
+    exit 1
+  fi
+  : > "$work/house-topic-unexpected.txt"
+  : > "$work/house-topic-seen.txt"
+  while true; do
+    kcadm get "groups/${group_id}/members" -r "$REALM" \
+      -q first="$first" -q max="$max" --fields id > "$work/house-members.json"
+    count="$(python3 - "$work/house-members.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+print(len(data) if isinstance(data, list) else 0)
+PY
+)"
+    if [[ "$count" -eq 0 ]]; then
+      break
+    fi
+    python3 - "$work/house-members.json" "$work/house-topic-seen.txt" > "$work/house-member-ids.txt" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+seen = set(open(sys.argv[2], encoding="utf-8").read().split())
+for item in data:
+    member = item.get("id") if isinstance(item, dict) else None
+    if member and member not in seen:
+        print(member)
+PY
+    if [[ ! -s "$work/house-member-ids.txt" ]]; then
+      break
+    fi
+    while IFS= read -r id; do
+      printf '%s\n' "$id" >> "$work/house-topic-seen.txt"
+      kcadm get "users/${id}" -r "$REALM" -q briefRepresentation=false > "$work/house-user.json"
+      action="$(python3 - "$work/house-user.json" <<'PY'
+import json, re, sys
+path = sys.argv[1]
+user = json.load(open(path, encoding="utf-8"))
+username = user.get("username") or ""
+if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", username):
+    print("skip")
+    sys.exit(0)
+attrs = user.setdefault("attributes", {})
+pub = list(attrs.get("mqtt_publ_topic") or [])
+sub = list(attrs.get("mqtt_subs_topic") or [])
+old_pub = [f"freedriver/v1/{username}/appliances"]
+old_sub = [f"freedriver/v1/{username}/commands"]
+new_pub = [f"freedriver/v1/{username}/appliances", f"freedriver/v1/{username}/scheduled"]
+new_sub = [f"freedriver/v1/{username}/commands", f"freedriver/v1/{username}/command-lists"]
+
+def same(got, want):
+    return len(got) == len(want) and set(got) == set(want)
+
+if pub == old_pub and sub == old_sub:
+    attrs["mqtt_publ_topic"] = new_pub
+    attrs["mqtt_subs_topic"] = new_sub
+    json.dump(user, open(path, "w", encoding="utf-8"))
+    print("convert")
+elif same(pub, new_pub) and same(sub, new_sub):
+    print("same")
+else:
+    print("unexpected " + username)
+PY
+)"
+      case "$action" in
+        convert)
+          kcadm_stdin update "users/${id}" -r "$REALM" -f - < "$work/house-user.json" >/dev/null
+          echo "Updated house ${id} topic attributes."
+          ;;
+        same|skip)
+          ;;
+        unexpected\ *)
+          printf '%s\n' "${action#unexpected }" | tee -a "$work/house-topic-unexpected.txt"
+          echo "House topic set left unchanged: ${action#unexpected }"
+          ;;
+        *)
+          echo "Could not classify house member ${id}." >&2
+          exit 1
+          ;;
+      esac
+    done < "$work/house-member-ids.txt"
+    if [[ "$count" -lt "$max" ]]; then
+      break
+    fi
+    first=$((first + count))
+  done
+}
+
+finish_provision() {
+  local status="${1:-0}"
+  if [[ -s "$work/house-topic-unexpected.txt" ]]; then
+    echo "House topic set left unchanged:" >&2
+    cat "$work/house-topic-unexpected.txt" >&2
+    exit 1
+  fi
+  exit "$status"
+}
+
 ensure_invite_service_account
 ensure_instances_admin
 ensure_portal_jobs_client
 ensure_grafana_client
 ensure_mqtt_broker
+migrate_house_topics
 
 # Phone sign-in user kaze (#169). Checks run before the phone attribute is written.
 seed_phone="$(sed -n 's/^FREEDRIVER_SEED_PHONE=//p' "$SECRETS_ENV" 2>/dev/null | tail -n 1 \
   | tr -d '\r' | sed "s/^[[:space:]]*//;s/[[:space:]]*\$//;s/^[\"']//;s/[\"']\$//" | tr -d ' ().-')"
 if [[ -z "$seed_phone" ]]; then
   echo "FREEDRIVER_SEED_PHONE is empty in ${SECRETS_ENV}; user ${PHONE_USER} is unchanged."
-  exit 0
+  finish_provision 0
 fi
 # The 2-9 rule is intentional: the router and sms accept a stored number whose
 # first national digit is 0 or 1, and this check refuses it for kaze's user.
@@ -2313,3 +2425,4 @@ echo "User ${PHONE_USER} has ${PHONE_GROUP}, ${PHONE_ROLE}, and no realm role ou
 
 assign_grafana_admin_users
 assign_mcp_user_to_kaze
+finish_provision 0

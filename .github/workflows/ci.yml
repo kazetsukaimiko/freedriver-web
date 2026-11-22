@@ -110,9 +110,13 @@ jobs:
           id_re = r"(?:__INSTANCE_ID__|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
           allowed = (
               re.compile(rf"^topic (?:read|write) freedriver/v1/{id_re}/(?:appliances|commands)$"),
+              re.compile(rf"^topic read freedriver/v1/{id_re}/command-lists$"),
+              re.compile(rf"^topic write freedriver/v1/{id_re}/scheduled$"),
               re.compile(rf"^topic write freedriver/v1/{id_re}/metrics/#$"),
               re.compile(r"^topic read freedriver/v1/\+/appliances$"),
               re.compile(r"^topic write freedriver/v1/\+/commands$"),
+              re.compile(r"^topic write freedriver/v1/\+/command-lists$"),
+              re.compile(r"^topic read freedriver/v1/\+/scheduled$"),
               re.compile(r"^topic read freedriver/v1/\+/metrics/#$"),
           )
           bad = []
@@ -156,6 +160,22 @@ jobs:
             echo "template must grant api read freedriver/v1/+/metrics/#"
             exit 1
           fi
+          if ! grep -Fxq 'topic read freedriver/v1/__INSTANCE_ID__/command-lists' mosquitto/acl.template; then
+            echo "template must grant autonomy read freedriver/v1/__INSTANCE_ID__/command-lists"
+            exit 1
+          fi
+          if ! grep -Fxq 'topic write freedriver/v1/__INSTANCE_ID__/scheduled' mosquitto/acl.template; then
+            echo "template must grant autonomy write freedriver/v1/__INSTANCE_ID__/scheduled"
+            exit 1
+          fi
+          if ! grep -Fxq 'topic write freedriver/v1/+/command-lists' mosquitto/acl.template; then
+            echo "template must grant api write freedriver/v1/+/command-lists"
+            exit 1
+          fi
+          if ! grep -Fxq 'topic read freedriver/v1/+/scheduled' mosquitto/acl.template; then
+            echo "template must grant api read freedriver/v1/+/scheduled"
+            exit 1
+          fi
           leftover="$(mktemp)"
           printf '%s\n' \
             'user autonomy' \
@@ -172,6 +192,10 @@ jobs:
           grep -Fxq 'topic read freedriver/v1/+/appliances' "$leftover"
           grep -Fxq 'topic write freedriver/v1/+/commands' "$leftover"
           grep -Fxq 'topic read freedriver/v1/+/metrics/#' "$leftover"
+          grep -Fxq 'topic read freedriver/v1/123e4567-e89b-12d3-a456-426614174000/command-lists' "$leftover"
+          grep -Fxq 'topic write freedriver/v1/123e4567-e89b-12d3-a456-426614174000/scheduled' "$leftover"
+          grep -Fxq 'topic write freedriver/v1/+/command-lists' "$leftover"
+          grep -Fxq 'topic read freedriver/v1/+/scheduled' "$leftover"
           if grep -E '^topic ' "$leftover" | grep -E 'home/|__INSTANCE_ID__'; then
             echo "apply must write instance topics and drop leftover home/ in the same step"
             exit 1
@@ -188,10 +212,61 @@ jobs:
             | grep -vFx 'topic write freedriver/v1/123e4567-e89b-12d3-a456-426614174000/metrics/#' \
             | grep -vFx 'topic read freedriver/v1/+/appliances' \
             | grep -vFx 'topic write freedriver/v1/+/commands' \
-            | grep -vFx 'topic read freedriver/v1/+/metrics/#'; then
+            | grep -vFx 'topic read freedriver/v1/+/metrics/#' \
+            | grep -vFx 'topic write freedriver/v1/+/command-lists' \
+            | grep -vFx 'topic read freedriver/v1/+/scheduled'; then
             echo "only api + grants and autonomy metrics/# may use + or #"
             exit 1
           fi
+          python3 - <<'PY'
+          from pathlib import Path
+          template = Path("mosquitto/acl.template").read_text(encoding="utf-8")
+          cases = {
+              "autonomy-write-command-lists": (
+                  "topic read freedriver/v1/__INSTANCE_ID__/command-lists",
+                  "topic write freedriver/v1/__INSTANCE_ID__/command-lists",
+              ),
+              "autonomy-read-scheduled": (
+                  "topic write freedriver/v1/__INSTANCE_ID__/scheduled",
+                  "topic read freedriver/v1/__INSTANCE_ID__/scheduled",
+              ),
+              "api-read-command-lists": (
+                  "topic write freedriver/v1/+/command-lists",
+                  "topic read freedriver/v1/+/command-lists",
+              ),
+              "api-write-scheduled": (
+                  "topic read freedriver/v1/+/scheduled",
+                  "topic write freedriver/v1/+/scheduled",
+              ),
+          }
+          out_dir = Path("mosquitto")
+          for name, (old, new) in cases.items():
+              if old not in template:
+                  raise SystemExit(f"template missing line for {name}")
+              path = out_dir / f".acl-mut-{name}"
+              path.write_text(template.replace(old, new, 1), encoding="utf-8")
+          moved = template.replace(
+              "topic read freedriver/v1/__INSTANCE_ID__/command-lists\n", "", 1)
+          (out_dir / ".acl-mut-command-lists-other-user").write_text(
+              moved + "\nuser other\ntopic read freedriver/v1/__INSTANCE_ID__/command-lists\n",
+              encoding="utf-8")
+          moved = template.replace(
+              "topic write freedriver/v1/__INSTANCE_ID__/scheduled\n", "", 1)
+          (out_dir / ".acl-mut-scheduled-other-user").write_text(
+              moved + "\nuser other\ntopic write freedriver/v1/__INSTANCE_ID__/scheduled\n",
+              encoding="utf-8")
+          PY
+          rejected_out="$(mktemp)"
+          for mutated in mosquitto/.acl-mut-*; do
+            if ./scripts/provision-mosquitto.sh --acl-only \
+              --instance-id 123e4567-e89b-12d3-a456-426614174000 \
+              --acl-template "$mutated" \
+              --acl-out "$rejected_out"; then
+              echo "provision accepted a misplaced grant: ${mutated}"
+              exit 1
+            fi
+          done
+          rm -f mosquitto/.acl-mut-* "$rejected_out"
           ./scripts/test-api-acl-patterns.sh
           if ./scripts/provision-mosquitto.sh --acl-only \
             --instance-id 123e4567-e89b-12d3-a456-426614174000 \

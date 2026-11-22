@@ -58,7 +58,7 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
   - Container port 8884 is published as host `8883`. That certificate is Let's Encrypt for `DNS:mqtt.freedriver.io` only.
 - Host port 8883 stays reachable from any address because the home IP is dynamic. Broker passwords and instance ACLs guard it. `allow_anonymous false`, the password file, and the ACL apply to both listeners. Do not set `listener_allow_anonymous true`. Port 1883 stays closed.
 - Sysadmin still needs `mqtt.freedriver.io` A → `138.197.90.42`.
-- Auth: every client logs in with a broker password (`allow_anonymous false`). v1 has one house, which shares broker users `autonomy` and `api`. The OAuth plugin is loaded. The dashboard service account `service-account-freedriver-mqtt` (group `portal-broker`) publishes `freedriver/v1/+/commands` and subscribes to `freedriver/v1/+/appliances` through the plugin. House users receive exact instance topics from JWT claims. `api` reads `freedriver/v1/+/appliances`, writes `freedriver/v1/+/commands`, and reads `freedriver/v1/+/metrics/#`.
+- Auth: every client logs in with a broker password (`allow_anonymous false`). v1 has one house, which shares broker users `autonomy` and `api`. The OAuth plugin is loaded. The dashboard service account `service-account-freedriver-mqtt` (group `portal-broker`) publishes `freedriver/v1/+/commands` and `freedriver/v1/+/command-lists`, and subscribes to `freedriver/v1/+/appliances` and `freedriver/v1/+/scheduled`, through the plugin. House users receive exact instance topics from JWT claims: publish appliances and scheduled, subscribe commands and command-lists. `api` reads `freedriver/v1/+/appliances` and `freedriver/v1/+/scheduled`, writes `freedriver/v1/+/commands` and `freedriver/v1/+/command-lists`, and reads `freedriver/v1/+/metrics/#`.
 - Persistence: `/opt/freedriver-storage/mosquitto`.
 - Command-live arrives with #27.
 
@@ -86,6 +86,8 @@ The live grants are in `mosquitto/acl.template`. The dashboard subscribes to the
 | --- | --- | --- |
 | `freedriver/v1/{instanceId}/appliances` | that instance's autonomy user | api via `freedriver/v1/+/appliances` |
 | `freedriver/v1/{instanceId}/commands` | api via `freedriver/v1/+/commands` | that instance's autonomy user |
+| `freedriver/v1/{instanceId}/command-lists` | api via `freedriver/v1/+/command-lists` | that instance's autonomy user |
+| `freedriver/v1/{instanceId}/scheduled` | that instance's autonomy user | api via `freedriver/v1/+/scheduled` |
 | `freedriver/v1/{instanceId}/metrics/#` | that instance's autonomy user | — |
 | `freedriver/v1/+/metrics/#` | — | api |
 
