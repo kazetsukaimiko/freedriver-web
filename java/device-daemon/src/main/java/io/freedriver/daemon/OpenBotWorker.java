@@ -28,10 +28,10 @@ import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 /**
- * The dispatch connector. It takes this host's jobs from the dispatcher ({@link HostJobs}), puts
+ * The Agent Bridge. It takes this host's jobs from the dispatcher ({@link HostJobs}), puts
  * each prompt into the named agent's queue ({@link AgentHost}), and watches the delivery. The agent
- * posts its own result with {@code finish_job}; the connector only fails a job that was refused or
- * whose turn ended with the job still open. It has no HTTP of its own.
+ * posts its own result with {@code finish_job}; {@code OpenBotWorker} only fails a job that was refused or
+ * whose turn ended with the job still open. It opens no port.
  */
 final class OpenBotWorker implements AutoCloseable {
 
