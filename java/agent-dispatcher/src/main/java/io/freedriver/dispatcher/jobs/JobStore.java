@@ -3,6 +3,7 @@ package io.freedriver.dispatcher.jobs;
 import io.freedriver.dispatcher.model.AgentRosterEntry;
 import io.freedriver.dispatcher.model.AssignmentPage;
 import io.freedriver.dispatcher.model.AssignmentView;
+import io.freedriver.dispatcher.model.DeviceListEntry;
 import io.freedriver.dispatcher.model.DeviceView;
 import io.freedriver.dispatcher.model.StartRequest;
 import io.freedriver.dispatcher.model.JobPage;
@@ -58,7 +59,8 @@ public interface JobStore {
 
     DeviceView heartbeat(String deviceId);
 
-    List<DeviceView> listDevices();
+    /** Same states and times as {@link #listAgents}. See {@code docs/device-dispatcher.md}. */
+    List<DeviceListEntry> listDevices();
 
     JobView submit(@NotBlank String dispatcherSubject, @Valid @NotNull SubmitJobRequest request, Duration wait);
 
