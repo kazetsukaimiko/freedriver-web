@@ -68,6 +68,8 @@ class SwitchAppliancesUnitTest {
     @Test
     void a_refused_entry_names_its_appliance() {
         assertEquals("Porch light: too many requests. Try again in a minute.", Spoken.refused("porch-light", 429));
+        assertEquals("Porch light: the pending cap is full until a stored switch fires or is given up "
+                + "after three failed attempts.", Spoken.pendingCap("porch-light"));
         assertEquals("Fridge: the house could not be reached.", Spoken.refused("fridge", 503));
         assertEquals("Fridge: that house is not in the list.", Spoken.refused("fridge", 404));
     }
