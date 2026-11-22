@@ -1,7 +1,10 @@
 package io.freedriver.dispatcher;
 
+import io.freedriver.dispatcher.jobs.service.TakePastTheWindow;
 import io.freedriver.dispatcher.store.Assignment;
 import io.freedriver.dispatcher.store.AssignmentRepository;
+import io.freedriver.dispatcher.store.DeviceRepository;
+import io.freedriver.dispatcher.store.SubmitLocks;
 import io.freedriver.dispatcher.jobs.JobStore;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -17,7 +20,6 @@ import io.freedriver.dispatcher.model.JobView;
 import io.freedriver.dispatcher.model.OnBusy;
 import io.freedriver.dispatcher.model.ReportedBot;
 import io.freedriver.dispatcher.model.SubmitJobRequest;
-import io.freedriver.dispatcher.model.UpdateAssignmentRequest;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import io.restassured.response.ValidatableResponse;
@@ -224,11 +226,10 @@ class McpResourceTest {
         UUID assignment = jobs.submitNow("grok-mcp-expired", new SubmitJobRequest(
                 List.of("pc-mcp-expired"), "yuni", "expired-prompt", Channel.TEXT))
                 .assignments().getFirst().assignmentId();
-        jobs.update("pc-mcp-expired", assignment,
-                new UpdateAssignmentRequest(AssignmentState.EXPIRED, null, "stored-expired-note"));
+        TakePastTheWindow.take(assignments, devices, locks, "pc-mcp-expired");
         Assignment before = assignments.findById(assignment.toString());
         assertEquals(AssignmentState.EXPIRED, before.status);
-        assertEquals("stored-expired-note", before.note);
+        assertEquals("no host took it", before.note);
 
         String session = initialize();
         call(session, """
@@ -433,11 +434,10 @@ class McpResourceTest {
         JsonNode submitted = mapper.readTree(submittedText);
         assertEquals("QUEUED", submitted.path("assignments").get(0).path("state").asText());
         String jobId = submitted.path("jobId").asText();
-        AssignmentView claimed = jobs.claim(
-                "pc-mcp-grok",
-                UUID.fromString(submitted.path("assignments").get(0).path("assignmentId").asText()));
-        assertEquals(AssignmentState.CLAIMED, claimed.state());
-        jobs.finish("pc-mcp-grok", claimed.assignmentId(), true, "done");
+        List<AssignmentView> taken = jobs.take("pc-mcp-grok", List.of(), Duration.ZERO);
+        assertEquals(1, taken.size());
+        assertEquals(AssignmentState.CLAIMED, taken.get(0).state());
+        jobs.finish("pc-mcp-grok", taken.get(0).assignmentId(), true, "done");
 
         String ownJob = call(session, getJob(jobId))
                 .statusCode(200)
@@ -859,6 +859,12 @@ class McpResourceTest {
 
     @Inject
     AssignmentRepository assignments;
+
+    @Inject
+    DeviceRepository devices;
+
+    @Inject
+    SubmitLocks locks;
 
     /** Distinct jobs stored. A rejected call writes none. */
     private int jobCount() {
