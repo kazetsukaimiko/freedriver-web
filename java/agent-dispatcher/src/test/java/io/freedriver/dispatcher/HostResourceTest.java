@@ -57,13 +57,17 @@ class HostResourceTest {
     @Test
     @TestSecurity(user = "pc-host-api", roles = "device")
     void a_device_reports_takes_starts_and_finishes_one_job() {
-        given().contentType("application/json")
+        Map<String, Object> reported = given().contentType("application/json")
                 .body("{\"hostname\":\"host-api.local\",\"bots\":[{\"name\":\"yuni\",\"state\":\"idle\",\"activity\":\"waiting\"}]}")
                 .post(REPORT)
                 .then()
                 .statusCode(200)
-                .body("deviceId", is("pc-host-api"))
-                .body("hostname", is("host-api.local"));
+                .extract()
+                .as(new TypeRef<>() {});
+        assertEquals(Set.of("deviceId", "hostname", "agents", "lastHeartbeat", "activity"), reported.keySet());
+        assertEquals("pc-host-api", reported.get("deviceId"));
+        assertEquals("host-api.local", reported.get("hostname"));
+        assertEquals(Map.of("yuni", "idle"), reported.get("activity"));
         String assignment = jobs.submitNow("grok-host-api", new SubmitJobRequest(
                 List.of("pc-host-api"), "yuni", "host-api-prompt", Channel.TEXT))
                 .assignments().getFirst().assignmentId().toString();

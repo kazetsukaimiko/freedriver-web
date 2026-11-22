@@ -65,7 +65,7 @@ Each `agent-devices` row stores two times: `lastHeartbeat`, the host's last `rep
 | `lastHeartbeat` missing or outside, `lastTake` inside | `UNKNOWN` | reaches it |
 | neither inside | `OFFLINE` | is stored, and expires after `take-within` unless the host takes it |
 
-`UNKNOWN` and `OFFLINE` keep the agent's last activity note. A row written before `lastTake` existed has none, so its host is `IDLE` or `BUSY` while it reports and `OFFLINE` once its last report is older than the window. `GET /api/dispatcher/devices` shows the stored roster.
+`UNKNOWN` and `OFFLINE` keep the agent's last activity note. A row written before `lastTake` existed has none, so its host is `IDLE` or `BUSY` while it reports and `OFFLINE` once its last report is older than the window. `GET /api/dispatcher/devices` uses the same states and the same `reportedAt` and `seenAt` as `list_agents`, from `host-silent-after`. A quiet host is `UNKNOWN` or `OFFLINE` rather than its last stored activity.
 
 ## Agent Bridge
 
