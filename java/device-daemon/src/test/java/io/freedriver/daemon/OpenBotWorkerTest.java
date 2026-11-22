@@ -464,6 +464,18 @@ class OpenBotWorkerTest {
     }
 
     @Test
+    void a_parsed_report_logs_nothing_and_a_failed_one_keeps_the_reason() {
+        OpenBotWorker worker = worker(List.of("techops"));
+        worker.reportQuietly();
+        assertEquals(1, host.reports.size());
+        assertTrue(log.isEmpty());
+
+        host.reportFails = true;
+        worker.reportQuietly();
+        assertEquals(List.of("report skipped: IllegalStateException"), log);
+    }
+
+    @Test
     void roster_reports_listed_configured_agents_under_openbot_spelling() {
         agents.listed = List.of(
                 new AgentHost.Agent("agent-1", "tech ops"),
@@ -614,9 +626,13 @@ class OpenBotWorkerTest {
         volatile Function<UUID, Optional<AssignmentView>> finishAnswer =
                 id -> Optional.of(view(id, "techops", AssignmentState.FAILED, "failed"));
         volatile boolean finishFails;
+        volatile boolean reportFails;
 
         @Override
         public DeviceView report(HostReport report) {
+            if (reportFails) {
+                throw new IllegalStateException("device response was not usable");
+            }
             reports.add(report);
             return new DeviceView(OpenBotWorker.DEVICE_ID, report.hostname(), List.of(), null, Map.of());
         }
