@@ -1307,6 +1307,93 @@ rm -f "$dcr_body"
 echo "ensure_dcr_one_year_tokens exits match the provider list"
 # hte-707-dcr-provider-checks-end
 
+python3 - <<'PY'
+import re
+from pathlib import Path
+
+def service(text, name):
+    match = re.search(rf"(?m)^  {re.escape(name)}:\n", text)
+    if match is None:
+        raise SystemExit(f"missing service {name}")
+    rest = text[match.start():]
+    nxt = re.search(r"(?m)^  [A-Za-z0-9_-]+:\n", rest[1:])
+    return rest if nxt is None else rest[: nxt.start() + 1]
+
+def function_body(script, name):
+    parts = script.split(name + "() {", 1)
+    if len(parts) != 2:
+        raise SystemExit(f"missing function {name}")
+    depth = 1
+    heredoc_tag = None
+    kept = []
+    for line in parts[1].splitlines():
+        if heredoc_tag is not None:
+            kept.append(line)
+            if line == heredoc_tag:
+                heredoc_tag = None
+            continue
+        opener = re.search(r"<<'?(\w+)'?\s*$", line)
+        if opener:
+            heredoc_tag = opener.group(1)
+        elif line.strip() == "{":
+            depth += 1
+        elif line.strip() == "}":
+            depth -= 1
+            if depth == 0:
+                break
+        kept.append(line)
+    return "\n".join(kept)
+
+compose = Path("docker-compose.yml").read_text()
+dashboard = service(compose, "dashboard")
+if "FREEDRIVER_KEYCLOAK_ADMIN_URL: http://keycloak:8080" not in dashboard:
+    raise SystemExit("dashboard FREEDRIVER_KEYCLOAK_ADMIN_URL is http://keycloak:8080")
+props = Path("java/dashboard/src/main/resources/application.properties").read_text()
+if "freedriver.keycloak.admin-url=${freedriver.keycloak.server-url}" not in props:
+    raise SystemExit("admin-url defaults to freedriver.keycloak.server-url")
+if "quarkus.keycloak.admin-client.server-url=${freedriver.keycloak.admin-url}" not in props:
+    raise SystemExit("the default admin client reads freedriver.keycloak.admin-url")
+if "%prod.freedriver.keycloak.admin-url" in props:
+    raise SystemExit("admin-url has a %prod address")
+for line in (
+    "quarkus.rest-client.keycloak-invite.url=${freedriver.keycloak.server-url}",
+    "quarkus.oidc-client.invite.auth-server-url=${freedriver.keycloak.server-url}/realms/${quarkus.keycloak.admin-client.realm}",
+    "quarkus.oidc-client.portal-jobs.auth-server-url=${freedriver.keycloak.server-url}/realms/${quarkus.keycloak.admin-client.realm}",
+):
+    if line not in props:
+        raise SystemExit(f"still on server-url: {line}")
+producer = Path("java/dashboard/src/main/java/io/freedriver/app/phones/InviteAdminProducer.java").read_text()
+if 'name = "freedriver.keycloak.admin-url"' not in producer:
+    raise SystemExit("InviteAdminProducer reads freedriver.keycloak.admin-url")
+provision = Path("scripts/provision-keycloak-freedriver.sh").read_text()
+instances = function_body(provision, "ensure_instances_admin")
+for needle in (
+    "scope-mappings/clients/",
+    "oidc-usermodel-client-role-mapper",
+    "resource_access.${client_id}.roles",
+    "usermodel.clientRoleMapping.clientId",
+    "fullScopeAllowed=false",
+):
+    if needle not in instances:
+        raise SystemExit(f"ensure_instances_admin missing {needle}")
+invite = Path("scripts/test-invite-service-account.sh").read_text()
+if "assert_instances_token() {" not in invite or "prove_instances_hostname() {" not in invite:
+    raise SystemExit("invite script defines assert_instances_token and prove_instances_hostname")
+calls = [line.strip() for line in invite.splitlines() if line.strip() == "assert_instances_token"]
+if len(calls) != 2:
+    raise SystemExit(f"assert_instances_token is called {len(calls)} times")
+for line in (
+    "-e KC_HOSTNAME=https://auth.freedriver.io",
+    "-e KC_HOSTNAME_ADMIN=http://127.0.0.1:8081",
+    "-e KC_HTTP_ENABLED=true",
+    "-e KC_PROXY_HEADERS=xforwarded",
+    "--max-redirs 0",
+):
+    if line not in invite:
+        raise SystemExit(f"invite script missing {line}")
+print("dashboard admin url, instances scope mapping, and hostname proof are pinned")
+PY
+
 if [[ "${FREEDRIVER_SCAFFOLD_TEXT_ONLY:-}" == "1" ]]; then
   echo "sms otp scaffold locks ok"
   exit 0

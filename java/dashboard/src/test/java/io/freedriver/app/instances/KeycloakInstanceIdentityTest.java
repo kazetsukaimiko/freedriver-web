@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.logging.Handler;
 import java.util.logging.Level;
@@ -76,7 +77,10 @@ class KeycloakInstanceIdentityTest {
         try (LogLines logs = LogLines.open()) {
             UUID id = UUID.randomUUID();
             KeycloakUser user = user(id, "porch");
-            assertThrows(BrokerRefusedException.class, () -> realm.client().create(user));
+            BrokerRefusedException refused = assertThrows(BrokerRefusedException.class, () -> realm.client().create(user));
+            assertEquals(BrokerRefusedException.Reason.HTTP, refused.reason().orElseThrow());
+            assertEquals(500, refused.status().orElse(-1));
+            assertEquals("broker refused", refused.getMessage());
             assertTrue(realm.calls.stream().anyMatch(call -> call.startsWith(
                     "DELETE /admin/realms/freedriver/users/kc-" + id)));
             assertTrue(realm.users.isEmpty());
@@ -172,6 +176,58 @@ class KeycloakInstanceIdentityTest {
     }
 
     @Test
+    void list_names_each_refusal() throws Exception {
+        KeycloakInstanceIdentity unconfigured = new KeycloakInstanceIdentity(
+                () -> {
+                    throw new AssertionError("admin client was built");
+                }, "freedriver", false);
+        BrokerRefusedException bare = assertThrows(BrokerRefusedException.class, unconfigured::list);
+        assertEquals(BrokerRefusedException.Reason.NOT_CONFIGURED, bare.reason().orElseThrow());
+        assertTrue(bare.status().isEmpty());
+        assertEquals("broker refused", bare.getMessage());
+
+        assertListRefusal(realm -> realm.groupsBody = "[]", BrokerRefusedException.Reason.GROUP_MISSING, null, null);
+        assertListRefusal(realm -> {
+            realm.groupsStatus = 404;
+            realm.groupsBody = "{\"leak\":\"token-body-secret\"}";
+        }, BrokerRefusedException.Reason.HTTP, 404, "token-body-secret");
+        assertListRefusal(realm -> realm.membersStatus = 401, BrokerRefusedException.Reason.HTTP, 401, null);
+        assertListRefusal(realm -> realm.membersStatus = 403, BrokerRefusedException.Reason.HTTP, 403, null);
+
+        Realm stopped = new Realm();
+        stopped.start();
+        KeycloakInstanceIdentity client = stopped.client();
+        stopped.stop();
+        BrokerRefusedException transport = assertThrows(BrokerRefusedException.class, client::list);
+        assertEquals(BrokerRefusedException.Reason.TRANSPORT, transport.reason().orElseThrow());
+        assertTrue(transport.status().isEmpty());
+        assertEquals("broker refused", transport.getMessage());
+    }
+
+    private static void assertListRefusal(Consumer<Realm> prepare, BrokerRefusedException.Reason reason,
+                                          Integer status, String absent) throws Exception {
+        Realm realm = new Realm();
+        prepare.accept(realm);
+        realm.start();
+        try {
+            BrokerRefusedException refused = assertThrows(BrokerRefusedException.class, () -> realm.client().list());
+            assertEquals(reason, refused.reason().orElseThrow());
+            if (status == null) {
+                assertTrue(refused.status().isEmpty());
+            } else {
+                assertEquals(status.intValue(), refused.status().orElse(-1));
+            }
+            assertEquals("broker refused", refused.getMessage());
+            if (absent != null) {
+                assertFalse(refused.getMessage().contains(absent));
+                assertFalse(String.valueOf(refused.getCause()).contains(absent));
+            }
+        } finally {
+            realm.stop();
+        }
+    }
+
+    @Test
     void a_blank_secret_does_not_call_keycloak() {
         KeycloakInstanceIdentity client = new KeycloakInstanceIdentity(
                 () -> {
@@ -203,6 +259,9 @@ class KeycloakInstanceIdentityTest {
         private boolean failJoin;
         private boolean stripTopics;
         private String stranger;
+        private Integer groupsStatus;
+        private String groupsBody;
+        private Integer membersStatus;
 
         void start() throws IOException {
             server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -264,6 +323,11 @@ class KeycloakInstanceIdentityTest {
                 return;
             }
             if ("GET".equals(method) && path.endsWith("/groups") && !path.contains("/users/")) {
+                if (groupsStatus != null || groupsBody != null) {
+                    send(exchange, groupsStatus == null ? 200 : groupsStatus,
+                            groupsBody == null ? "{}" : groupsBody, null);
+                    return;
+                }
                 send(exchange, 200,
                         "[{\"id\":\"child\",\"name\":\"mqtt-instance\",\"parentId\":\"parent-1\"},"
                                 + "{\"id\":\"group-1\",\"name\":\"mqtt-instance\"}]",
@@ -312,6 +376,10 @@ class KeycloakInstanceIdentityTest {
                 return;
             }
             if ("GET".equals(method) && path.contains("/members")) {
+                if (membersStatus != null) {
+                    send(exchange, membersStatus, "{\"leak\":\"token-body-secret\"}", null);
+                    return;
+                }
                 List<String> rows = new ArrayList<>();
                 for (User user : users.values()) {
                     if (user.inGroup) {

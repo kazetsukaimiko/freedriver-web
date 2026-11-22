@@ -24,14 +24,14 @@ public class InviteAdminProducer {
     @Singleton
     @InviteAdmin
     Keycloak inviteAdmin(
-            @ConfigProperty(name = "freedriver.keycloak.server-url") String serverUrl,
+            @ConfigProperty(name = "freedriver.keycloak.admin-url") String adminUrl,
             @ConfigProperty(name = "quarkus.keycloak.admin-client.realm") String realm,
             @ConfigProperty(name = "freedriver.invite.client-id") String clientId,
             @ConfigProperty(name = "freedriver.invite.client-secret") Optional<String> clientSecret) {
         String secret = clientSecret.map(String::strip).filter(value -> !value.isEmpty())
                 .orElseThrow(() -> new InviteUpstreamException("invite client secret is unset"));
         return KeycloakBuilder.builder()
-                .serverUrl(serverUrl)
+                .serverUrl(adminUrl)
                 .realm(realm)
                 .clientId(clientId)
                 .clientSecret(secret)

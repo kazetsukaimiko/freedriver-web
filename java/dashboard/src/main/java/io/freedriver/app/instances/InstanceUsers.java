@@ -90,8 +90,12 @@ final class InstanceUsers {
     private static <T> T refusing(Supplier<T> call) {
         try {
             return call.get();
-        } catch (WebApplicationException | ProcessingException failure) {
-            throw new BrokerRefusedException();
+        } catch (WebApplicationException failure) {
+            Response response = failure.getResponse();
+            int status = response == null ? 0 : response.getStatus();
+            throw BrokerRefusedException.http(status);
+        } catch (ProcessingException failure) {
+            throw BrokerRefusedException.transport();
         }
     }
 
