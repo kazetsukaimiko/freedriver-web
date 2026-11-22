@@ -25,6 +25,8 @@
         <freemarker.version>2.3.35</freemarker.version>
         <!-- Image build sets this from the deploy commit. Not a secret. -->
         <source.commit>unknown</source.commit>
+        <!-- keycloak/sms-otp-spi is outside the reactor scan of .github/scripts/cache_inputs_check.py. -->
+        <maven.build.cache.input.outside1>../../sms-model/src/test/resources/us-phone-shapes.json</maven.build.cache.input.outside1>
     </properties>
 
     <dependencies>
@@ -88,10 +90,22 @@
             <version>3.1.1</version>
             <scope>provided</scope>
         </dependency>
-        <!-- Built from this checkout by ./mvnw -C -pl sms-client -am package. Not a registry read. -->
+        <!-- Built from this checkout by ./mvnw -C -pl sms-client -am package. Not a registry read.
+             sms-model and sms-api are direct so their installed jars are in this build's cache key.
+             The shade already bundles all three. -->
         <dependency>
             <groupId>io.freedriver.sms</groupId>
             <artifactId>sms-client</artifactId>
+            <version>1.0.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>io.freedriver.sms</groupId>
+            <artifactId>sms-api</artifactId>
+            <version>1.0.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>io.freedriver.sms</groupId>
+            <artifactId>sms-model</artifactId>
             <version>1.0.0-SNAPSHOT</version>
         </dependency>
         <dependency>

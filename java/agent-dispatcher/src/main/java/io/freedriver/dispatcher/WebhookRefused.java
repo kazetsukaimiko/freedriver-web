@@ -6,7 +6,7 @@ import org.jmolecules.architecture.hexagonal.SecondaryAdapter;
 
 /** The webhook answered 400 or more. */
 @SecondaryAdapter
-final class WebhookRefused extends RuntimeException {
+public final class WebhookRefused extends RuntimeException {
 
     private final int status;
 
@@ -15,12 +15,12 @@ final class WebhookRefused extends RuntimeException {
         this.status = status;
     }
 
-    int status() {
+    public int status() {
         return status;
     }
 
     /** Maps a webhook status of 400 or more to {@link WebhookRefused}. The body is not read. */
-    static final class Mapper implements ResponseExceptionMapper<WebhookRefused> {
+    public static final class Mapper implements ResponseExceptionMapper<WebhookRefused> {
         @Override
         public WebhookRefused toThrowable(Response response) {
             return new WebhookRefused(response.getStatus());

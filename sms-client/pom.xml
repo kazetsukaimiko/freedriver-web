@@ -14,7 +14,11 @@
 
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
+        <!-- One instant so two installs of this jar hash the same. The provider's cache key is that hash. -->
+        <project.build.outputTimestamp>2026-01-01T00:00:00Z</project.build.outputTimestamp>
         <keycloak.dist.skip>false</keycloak.dist.skip>
+        <!-- SHA-256 of keycloak-quarkus-dist-26.7.5.zip at keycloak.version. A keycloak.version change needs a new digest. -->
+        <keycloak.dist.sha256>30ef87fb7101c43d29688d1ae80c0588ff4a151b3330e9f664bf9692d398658a</keycloak.dist.sha256>
     </properties>
 
     <dependencies>
@@ -96,6 +100,23 @@
                             </rules>
                         </configuration>
                     </execution>
+                    <execution>
+                        <id>verify-keycloak-dist-checksum</id>
+                        <phase>process-test-sources</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${keycloak.dist.skip}</skip>
+                            <rules>
+                                <requireFileChecksum>
+                                    <file>${project.build.directory}/keycloak-dist/keycloak-quarkus-dist.zip</file>
+                                    <checksum>${keycloak.dist.sha256}</checksum>
+                                    <type>sha256</type>
+                                </requireFileChecksum>
+                            </rules>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
             <plugin>
@@ -122,25 +143,47 @@
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>unzip-keycloak-dist</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${keycloak.dist.skip}</skip>
+                            <target>
+                                <unzip src="${project.build.directory}/keycloak-dist/keycloak-quarkus-dist.zip"
+                                       dest="${project.build.directory}/keycloak"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
                 <version>3.11.0</version>
                 <executions>
                     <execution>
-                        <id>unpack-keycloak-dist</id>
-                        <phase>generate-test-resources</phase>
+                        <id>copy-keycloak-dist</id>
+                        <phase>generate-test-sources</phase>
                         <goals>
-                            <goal>unpack</goal>
+                            <goal>copy</goal>
                         </goals>
                         <configuration>
                             <skip>${keycloak.dist.skip}</skip>
-                            <outputDirectory>${project.build.directory}/keycloak</outputDirectory>
-                            <markersDirectory>${project.build.directory}/keycloak/.markers</markersDirectory>
                             <artifactItems>
                                 <artifactItem>
                                     <groupId>org.keycloak</groupId>
                                     <artifactId>keycloak-quarkus-dist</artifactId>
                                     <version>${keycloak.version}</version>
                                     <type>zip</type>
+                                    <overWrite>true</overWrite>
+                                    <outputDirectory>${project.build.directory}/keycloak-dist</outputDirectory>
+                                    <destFileName>keycloak-quarkus-dist.zip</destFileName>
                                 </artifactItem>
                             </artifactItems>
                         </configuration>

@@ -1,5 +1,9 @@
 package io.freedriver.dispatcher;
 
+import io.freedriver.dispatcher.store.Assignment;
+import io.freedriver.dispatcher.store.AssignmentRepository;
+import io.freedriver.dispatcher.jobs.JobStore;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.freedriver.dispatcher.model.AgentRosterEntry;

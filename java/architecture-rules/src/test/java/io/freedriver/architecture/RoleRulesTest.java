@@ -68,6 +68,51 @@ class RoleRulesTest {
     void roles_from_the_package_and_from_the_class_pass() {
         assertPasses(RoleRules.everyClassHasOneRole(), "hexagon");
         assertPasses(RoleRules.everyClassHasOneRole(), "state");
+        assertPasses(RoleRules.everyClassHasOneRole(), "configport");
+    }
+
+    @Test
+    void a_package_of_checked_classes_with_no_package_role_fails_and_names_the_class() {
+        EvaluationResult result = evaluate(RoleRules.everyClassHasOneRole(), "missingpackagerole");
+        assertViolations(result, 1);
+        assertReports(result, "io.freedriver.architecture.fixtures.missingpackagerole.Placed is in package "
+                + "io.freedriver.architecture.fixtures.missingpackagerole, which carries no role");
+    }
+
+    @Test
+    void a_package_info_with_two_roles_fails_even_when_the_class_overrides_them() {
+        EvaluationResult result = evaluate(RoleRules.everyClassHasOneRole(), "packagetworoles");
+        assertViolations(result, 1);
+        assertReports(result, "package io.freedriver.architecture.fixtures.packagetworoles carries two roles: "
+                + "@Application, @PrimaryAdapter");
+        assertReports(result, "io.freedriver.architecture.fixtures.packagetworoles.Covered is in it");
+    }
+
+    @Test
+    void a_class_that_repeats_its_package_role_fails() {
+        EvaluationResult result = evaluate(RoleRules.everyClassHasOneRole(), "redundant");
+        assertViolations(result, 1);
+        assertReports(result, "io.freedriver.architecture.fixtures.redundant.Repeat repeats package "
+                + "io.freedriver.architecture.fixtures.redundant's role @SecondaryAdapter");
+    }
+
+    /**
+     * Probe for the dispatcher layout (#612). A {@code @SecondaryAdapter} in a {@code @Port} package
+     * calls a {@code @SecondaryAdapter} in another package. A port must not depend on an adapter, so
+     * a package-wide {@code @Port} names {@code PortCaller} in the violation. jMolecules 0.33.0 judges
+     * the class by its own role, and that call has no violation. An unrelated violation fails this
+     * test instead of choosing a layout.
+     */
+    @Test
+    void a_class_in_a_port_package_is_judged_by_its_own_role() {
+        JavaClasses classes = new ClassFileImporter().importPackages(FIXTURES + "portown", FIXTURES + "portpeer");
+        assertTrue(classes.contain(FIXTURES + "portown.PortCaller"));
+        assertTrue(classes.contain(FIXTURES + "portpeer.PortPeer"));
+        EvaluationResult result = RoleRules.hexagonal().evaluate(RoleRules.prodClasses(classes));
+        String details = String.join("\n", result.getFailureReport().getDetails());
+        assertFalse(details.contains("PortCaller"),
+                () -> "jMolecules put the package in the port:\n" + result.getFailureReport());
+        assertFalse(result.hasViolation(), () -> "unrelated violation:\n" + result.getFailureReport());
     }
 
     @Test

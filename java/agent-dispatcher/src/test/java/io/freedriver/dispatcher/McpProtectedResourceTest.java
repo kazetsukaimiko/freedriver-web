@@ -1,5 +1,8 @@
 package io.freedriver.dispatcher;
 
+import io.freedriver.dispatcher.store.AssignmentRepository;
+import io.freedriver.dispatcher.jobs.JobStore;
+
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
 import jakarta.inject.Inject;

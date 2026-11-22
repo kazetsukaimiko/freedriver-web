@@ -4,18 +4,16 @@ import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 import jakarta.validation.constraints.NotBlank;
 import org.hibernate.validator.constraints.time.DurationMin;
-import org.jmolecules.architecture.hexagonal.Port;
 
 import java.net.URI;
 import java.time.Duration;
 import java.util.Optional;
 
 /** Settings of the dispatcher under {@code freedriver.dispatcher}. */
-@Port
 @ConfigMapping(prefix = "freedriver.dispatcher")
 public interface DispatcherConfig {
 
-    /** The OIDC client ids {@link AllowedClientFilter} pairs with each role. */
+    /** The OIDC client ids {@link io.freedriver.dispatcher.web.AllowedClientFilter} pairs with each role. */
     Client client();
 
     /** How long a submit waits for a device to take the job. */
@@ -49,7 +47,7 @@ public interface DispatcherConfig {
 
     /**
      * {@code FREEDRIVER_DISPATCHER_OPENBOT_WEBHOOK_URL}: the whole address the OpenBot ping posts to,
-     * path included. Unset, empty or white space leaves {@link OpenBotJobPing#WEBHOOK} in use. Any
+     * path included. Unset, empty or white space leaves {@code WEBHOOK} in use. Any
      * other value is {@code https} with a host and without user-info, or start-up fails. A stopgap
      * that freedriver-web#540 removes with the relay path.
      */
