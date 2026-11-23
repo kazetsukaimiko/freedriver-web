@@ -1,0 +1,7 @@
+io.freedriver.sms.model.ErrorResponse depends on com.fasterxml.jackson.annotation.JsonInclude$Include is jackson-annotations-2.22.jar
+io.freedriver.sms.model.SendRequest depends on com.fasterxml.jackson.annotation.JsonTypeInfo$As is jackson-annotations-2.22.jar
+io.freedriver.sms.model.SendRequest depends on com.fasterxml.jackson.annotation.JsonTypeInfo$Id is jackson-annotations-2.22.jar
+io.freedriver.sms.model.SendRequest depends on com.fasterxml.jackson.annotation.OptBoolean is jackson-annotations-2.22.jar
+io.freedriver.sms.model.SendType depends on com.fasterxml.jackson.annotation.JsonProperty$Access is jackson-annotations-2.22.jar
+io.freedriver.sms.model.SendType depends on com.fasterxml.jackson.annotation.OptBoolean is jackson-annotations-2.22.jar
+io.freedriver.sms.validation.UsPhoneNumbers is a plain class; an API module allows a final constant holder with static final fields and a private constructor
