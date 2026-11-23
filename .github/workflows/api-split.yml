@@ -1,6 +1,8 @@
 name: api-split
 
 # Posts the api-split commit status on the pull request head (#748).
+# An API path is a file under an api package in src/main/java. Any other
+# src/main file is the other side. The script applies those patterns.
 # pull_request_target runs the base branch's workflow. The job checks out that
 # same base and reads the changed-file list and label history through the API.
 # It never checks out the head and never runs the pull request's code.
