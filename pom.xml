@@ -36,6 +36,8 @@
         <surefire-plugin.version>3.5.6</surefire-plugin.version>
         <jandex-plugin.version>3.6.0</jandex-plugin.version>
         <enforcer-plugin.version>3.5.0</enforcer-plugin.version>
+        <!-- Quality gate 1 (#742): only an impl module sets this, and only the ban-freedriver-impl-scope execution reads it. -->
+        <freedriver.impl-scope.skip>false</freedriver.impl-scope.skip>
         <!-- Versions Keycloak 26.7.5 puts on its runtime (Jackson, JAX-RS) or build (validation) classpath.
              keycloak.version pins the sms-client test unpack of that distribution only. -->
         <keycloak.version>26.7.5</keycloak.version>
@@ -104,6 +106,28 @@
                                     <excludes>
                                         <exclude>org.keycloak:keycloak-admin-client</exclude>
                                         <exclude>org.keycloak:keycloak-admin-client-jakarta</exclude>
+                                    </excludes>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                    <!-- Quality gate 1 (#742): an io.freedriver *-impl artifact is legal at runtime or test scope.
+                         searchTransitive stays on, so a compile-scoped impl jar brought in by another artifact fails too. -->
+                    <execution>
+                        <id>ban-freedriver-impl-scope</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${freedriver.impl-scope.skip}</skip>
+                            <rules>
+                                <bannedDependencies>
+                                    <message>An io.freedriver *-impl artifact is limited to runtime and test scope.</message>
+                                    <searchTransitive>true</searchTransitive>
+                                    <excludes>
+                                        <exclude>io.freedriver:*-impl:*:*:compile</exclude>
+                                        <exclude>io.freedriver:*-impl:*:*:provided</exclude>
+                                        <exclude>io.freedriver:*-impl:*:*:system</exclude>
                                     </excludes>
                                 </bannedDependencies>
                             </rules>
