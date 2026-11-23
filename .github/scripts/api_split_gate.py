@@ -11,12 +11,7 @@ The label `api-split-override` passes a mixed pull request only when it is prese
 and the latest `labeled` event for it is by kazetsukaimiko. A later `unlabeled`
 clears it. The pass message says the label is why it passed. An unreadable file
 list or, on a mixed pull request, an unreadable event history fails the gate.
-
-`.github/workflows/api-split.yml` runs this from the base branch
-(`pull_request_target`) and posts the commit status `api-split` on the head SHA.
-The workflow's own check run is attached to the base SHA, so the required result
-is that status. When the head moved between the read and the post, this posts
-nothing and the newer run decides.
+When the head SHA changes between the read and the post, live mode posts nothing.
 
 Usage:
   python3 .github/scripts/api_split_gate.py --self-test
