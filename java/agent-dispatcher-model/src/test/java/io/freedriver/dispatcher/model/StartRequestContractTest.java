@@ -48,10 +48,11 @@ class StartRequestContractTest {
     }
 
     @Test
-    void fireAndForget_false_round_trips() throws Exception {
+    void a_watch_mode_start_serializes_as_deliveryRef_alone() throws Exception {
         StartRequest request = new StartRequest("x", false);
 
-        assertEquals(JSON.readTree("{\"deliveryRef\":\"x\",\"fireAndForget\":false}"), JSON.valueToTree(request));
+        assertEquals("{\"deliveryRef\":\"x\"}", JSON.writeValueAsString(request));
+        assertEquals("{\"deliveryRef\":\"x\"}", JSON.writeValueAsString(new StartRequest("x")));
         assertEquals(request, JSON.readValue(JSON.writeValueAsString(request), StartRequest.class));
     }
 

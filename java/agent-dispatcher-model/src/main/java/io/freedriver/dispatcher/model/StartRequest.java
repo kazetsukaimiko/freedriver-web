@@ -1,6 +1,7 @@
 package io.freedriver.dispatcher.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -22,11 +23,12 @@ import jakarta.validation.constraints.Size;
  * repeated {@code fireAndForget} differs from the first or is omitted. A start with a different
  * {@code deliveryRef} is a conflict.
  *
- * <p>The JSON body is an object. A bare JSON string is rejected.
+ * <p>The JSON body is an object. A bare JSON string is rejected. A watch-mode start serializes
+ * as {@code {"deliveryRef":"…"}} alone: {@code fireAndForget} is written only when true.
  */
 public record StartRequest(
         @NotNull @Size(min = 1, max = 128) @Pattern(regexp = StartRequest.DELIVERY_REF) String deliveryRef,
-        boolean fireAndForget) {
+        @JsonInclude(JsonInclude.Include.NON_DEFAULT) boolean fireAndForget) {
 
     /** Printable ASCII, no space. */
     public static final String DELIVERY_REF = "[\\x21-\\x7E]+";
