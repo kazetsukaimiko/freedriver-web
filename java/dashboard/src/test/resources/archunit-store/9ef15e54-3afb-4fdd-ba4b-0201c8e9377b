@@ -1,92 +1,84 @@
-io.freedriver.app.account.PasskeyActionRedirectFilter depends on io.vertx.core.MultiMap is vertx-core-4.5.32.jar
-io.freedriver.app.account.PasskeyActionRedirectFilter depends on io.vertx.core.http.Cookie is vertx-core-4.5.32.jar
-io.freedriver.app.account.PasskeyActionRedirectFilter depends on io.vertx.core.http.HttpServerRequest is vertx-core-4.5.32.jar
-io.freedriver.app.account.PasskeyActionRedirectFilter depends on io.vertx.core.http.HttpServerResponse is vertx-core-4.5.32.jar
-io.freedriver.app.account.PasskeyActionRedirectFilter depends on io.vertx.ext.web.RoutingContext is vertx-web-4.5.32.jar
-io.freedriver.app.account.PasswordActionRedirectFilter depends on io.vertx.core.MultiMap is vertx-core-4.5.32.jar
-io.freedriver.app.account.PasswordActionRedirectFilter depends on io.vertx.core.http.Cookie is vertx-core-4.5.32.jar
-io.freedriver.app.account.PasswordActionRedirectFilter depends on io.vertx.core.http.HttpServerRequest is vertx-core-4.5.32.jar
-io.freedriver.app.account.PasswordActionRedirectFilter depends on io.vertx.core.http.HttpServerResponse is vertx-core-4.5.32.jar
-io.freedriver.app.account.PasswordActionRedirectFilter depends on io.vertx.ext.web.RoutingContext is vertx-web-4.5.32.jar
-io.freedriver.app.appliances.ApplianceAudit depends on org.slf4j.Logger is slf4j-api-2.0.18.jar
-io.freedriver.app.appliances.ApplianceAudit depends on org.slf4j.LoggerFactory is slf4j-api-2.0.18.jar
-io.freedriver.app.appliances.ApplianceRoster depends on com.mongodb.client.MongoCollection is mongodb-driver-sync-5.6.5.jar
-io.freedriver.app.appliances.ApplianceRoster depends on com.mongodb.client.model.Filters is mongodb-driver-core-5.6.5.jar
-io.freedriver.app.appliances.ApplianceRoster depends on com.mongodb.client.model.ReplaceOptions is mongodb-driver-core-5.6.5.jar
+io.freedriver.app.account.PasskeyActionRedirectFilter depends on io.vertx.core.MultiMap is a third-party library
+io.freedriver.app.account.PasskeyActionRedirectFilter depends on io.vertx.core.http.Cookie is a third-party library
+io.freedriver.app.account.PasskeyActionRedirectFilter depends on io.vertx.core.http.HttpServerRequest is a third-party library
+io.freedriver.app.account.PasskeyActionRedirectFilter depends on io.vertx.core.http.HttpServerResponse is a third-party library
+io.freedriver.app.account.PasskeyActionRedirectFilter depends on io.vertx.ext.web.RoutingContext is a third-party library
+io.freedriver.app.account.PasswordActionRedirectFilter depends on io.vertx.core.MultiMap is a third-party library
+io.freedriver.app.account.PasswordActionRedirectFilter depends on io.vertx.core.http.Cookie is a third-party library
+io.freedriver.app.account.PasswordActionRedirectFilter depends on io.vertx.core.http.HttpServerRequest is a third-party library
+io.freedriver.app.account.PasswordActionRedirectFilter depends on io.vertx.core.http.HttpServerResponse is a third-party library
+io.freedriver.app.account.PasswordActionRedirectFilter depends on io.vertx.ext.web.RoutingContext is a third-party library
+io.freedriver.app.appliances.ApplianceAudit depends on org.slf4j.Logger is a third-party library
+io.freedriver.app.appliances.ApplianceAudit depends on org.slf4j.LoggerFactory is a third-party library
+io.freedriver.app.appliances.ApplianceRoster depends on com.mongodb.client.MongoCollection is a third-party library
+io.freedriver.app.appliances.ApplianceRoster depends on com.mongodb.client.model.Filters is a third-party library
+io.freedriver.app.appliances.ApplianceRoster depends on com.mongodb.client.model.ReplaceOptions is a third-party library
 io.freedriver.app.appliances.ApplianceRoster depends on io.quarkus.mongodb.panache.PanacheMongoRepositoryBase is Panache
-io.freedriver.app.appliances.RosterRow depends on io.quarkus.mongodb.panache.common.MongoEntity is Panache
-io.freedriver.app.instances.InstanceFailure depends on com.fasterxml.jackson.annotation.JsonInclude$Include is jackson-annotations-2.19.2.jar
-io.freedriver.app.instances.InstanceList depends on com.fasterxml.jackson.annotation.JsonInclude$Include is jackson-annotations-2.19.2.jar
-io.freedriver.app.instances.InstanceSummary depends on com.fasterxml.jackson.annotation.JsonInclude$Include is jackson-annotations-2.19.2.jar
-io.freedriver.app.instances.InstanceUsers depends on org.keycloak.admin.client.Keycloak is keycloak-admin-client-26.0.12.jar
-io.freedriver.app.instances.InstanceUsers depends on org.keycloak.admin.client.resource.GroupResource is keycloak-admin-client-26.0.12.jar
-io.freedriver.app.instances.InstanceUsers depends on org.keycloak.admin.client.resource.GroupsResource is keycloak-admin-client-26.0.12.jar
-io.freedriver.app.instances.InstanceUsers depends on org.keycloak.admin.client.resource.RealmResource is keycloak-admin-client-26.0.12.jar
-io.freedriver.app.instances.InstanceUsers depends on org.keycloak.admin.client.resource.UserResource is keycloak-admin-client-26.0.12.jar
-io.freedriver.app.instances.InstanceUsers depends on org.keycloak.admin.client.resource.UsersResource is keycloak-admin-client-26.0.12.jar
-io.freedriver.app.instances.InstanceUsers depends on org.keycloak.representations.idm.CredentialRepresentation is keycloak-client-common-synced-26.0.12.jar
-io.freedriver.app.instances.InstanceUsers depends on org.keycloak.representations.idm.GroupRepresentation is keycloak-client-common-synced-26.0.12.jar
-io.freedriver.app.instances.InstanceUsers depends on org.keycloak.representations.idm.UserRepresentation is keycloak-client-common-synced-26.0.12.jar
-io.freedriver.app.instances.KeycloakInstanceIdentity depends on org.keycloak.admin.client.Keycloak is keycloak-admin-client-26.0.12.jar
-io.freedriver.app.instances.KeycloakInstanceIdentity depends on org.keycloak.representations.idm.CredentialRepresentation is keycloak-client-common-synced-26.0.12.jar
-io.freedriver.app.instances.KeycloakInstanceIdentity depends on org.keycloak.representations.idm.GroupRepresentation is keycloak-client-common-synced-26.0.12.jar
-io.freedriver.app.instances.KeycloakInstanceIdentity depends on org.keycloak.representations.idm.UserRepresentation is keycloak-client-common-synced-26.0.12.jar
-io.freedriver.app.instances.ProvisionedInstance depends on com.fasterxml.jackson.annotation.JsonInclude$Include is jackson-annotations-2.19.2.jar
-io.freedriver.app.invites.PhoneInviteCreate depends on org.jboss.logging.Logger is jboss-logging-3.6.3.Final.jar
-io.freedriver.app.jobs.DispatcherJobs depends on org.jboss.logging.Logger is jboss-logging-3.6.3.Final.jar
-io.freedriver.app.metrics.GrafanaMetricsEmitter depends on io.micrometer.core.instrument.Counter is micrometer-core-1.17.0.jar
-io.freedriver.app.metrics.GrafanaMetricsEmitter depends on io.micrometer.core.instrument.Counter$Builder is micrometer-core-1.17.0.jar
-io.freedriver.app.metrics.GrafanaMetricsEmitter depends on io.micrometer.core.instrument.Gauge is micrometer-core-1.17.0.jar
-io.freedriver.app.metrics.GrafanaMetricsEmitter depends on io.micrometer.core.instrument.Gauge$Builder is micrometer-core-1.17.0.jar
-io.freedriver.app.metrics.GrafanaMetricsEmitter depends on io.micrometer.core.instrument.MeterRegistry is micrometer-core-1.17.0.jar
-io.freedriver.app.metrics.GrafanaMetricsEmitter depends on io.micrometer.core.instrument.Tag is micrometer-core-1.17.0.jar
-io.freedriver.app.metrics.GrafanaMetricsEmitter depends on io.micrometer.core.instrument.Tags is micrometer-core-1.17.0.jar
-io.freedriver.app.metrics.MetricsPointJson depends on com.fasterxml.jackson.databind.DeserializationFeature is jackson-databind-2.19.2.jar
-io.freedriver.app.metrics.MetricsPointJson depends on com.fasterxml.jackson.databind.ObjectMapper is jackson-databind-2.19.2.jar
-io.freedriver.app.metrics.MetricsPointJson depends on com.fasterxml.jackson.databind.SerializationFeature is jackson-databind-2.19.2.jar
-io.freedriver.app.metrics.MetricsPointJson depends on com.fasterxml.jackson.databind.json.JsonMapper is jackson-databind-2.19.2.jar
-io.freedriver.app.metrics.MetricsPointJson depends on com.fasterxml.jackson.databind.json.JsonMapper$Builder is jackson-databind-2.19.2.jar
-io.freedriver.app.metrics.MetricsPointJson depends on com.fasterxml.jackson.datatype.jsr310.JavaTimeModule is jackson-datatype-jsr310-2.22.0.jar
-io.freedriver.app.metrics.MetricsPointPayload depends on com.fasterxml.jackson.annotation.JsonProperty$Access is jackson-annotations-2.19.2.jar
-io.freedriver.app.metrics.MetricsPointPayload depends on com.fasterxml.jackson.annotation.OptBoolean is jackson-annotations-2.19.2.jar
-io.freedriver.app.metrics.MqttHandlerTimer depends on io.micrometer.core.instrument.MeterRegistry is micrometer-core-1.17.0.jar
-io.freedriver.app.metrics.MqttHandlerTimer depends on io.micrometer.core.instrument.Timer is micrometer-core-1.17.0.jar
-io.freedriver.app.metrics.MqttHandlerTimer depends on io.micrometer.core.instrument.Timer$Builder is micrometer-core-1.17.0.jar
-io.freedriver.app.metrics.MqttHandlerTimer depends on io.micrometer.core.instrument.Timer$Sample is micrometer-core-1.17.0.jar
-io.freedriver.app.phones.InviteAdminProducer depends on org.keycloak.admin.client.Keycloak is keycloak-admin-client-26.0.12.jar
-io.freedriver.app.phones.InviteAdminProducer depends on org.keycloak.admin.client.KeycloakBuilder is keycloak-admin-client-26.0.12.jar
-io.freedriver.app.phones.InviteUsers depends on org.keycloak.admin.client.Keycloak is keycloak-admin-client-26.0.12.jar
-io.freedriver.app.phones.InviteUsers depends on org.keycloak.admin.client.resource.GroupsResource is keycloak-admin-client-26.0.12.jar
-io.freedriver.app.phones.InviteUsers depends on org.keycloak.admin.client.resource.RealmResource is keycloak-admin-client-26.0.12.jar
-io.freedriver.app.phones.InviteUsers depends on org.keycloak.admin.client.resource.UserResource is keycloak-admin-client-26.0.12.jar
-io.freedriver.app.phones.InviteUsers depends on org.keycloak.admin.client.resource.UsersResource is keycloak-admin-client-26.0.12.jar
-io.freedriver.app.phones.InviteUsers depends on org.keycloak.representations.idm.GroupRepresentation is keycloak-client-common-synced-26.0.12.jar
-io.freedriver.app.phones.InviteUsers depends on org.keycloak.representations.idm.UserRepresentation is keycloak-client-common-synced-26.0.12.jar
-io.freedriver.app.phones.KeycloakPhoneSignIn depends on org.keycloak.admin.client.Keycloak is keycloak-admin-client-26.0.12.jar
-io.freedriver.app.phones.KeycloakPhoneSignIn depends on org.keycloak.representations.idm.GroupRepresentation is keycloak-client-common-synced-26.0.12.jar
-io.freedriver.app.phones.KeycloakPhoneSignIn depends on org.keycloak.representations.idm.UserRepresentation is keycloak-client-common-synced-26.0.12.jar
-io.freedriver.app.schedule.ScheduledSwitch depends on io.quarkus.mongodb.panache.common.MongoEntity is Panache
-io.freedriver.app.schedule.ScheduledSwitchPoller depends on org.slf4j.Logger is slf4j-api-2.0.18.jar
-io.freedriver.app.schedule.ScheduledSwitchPoller depends on org.slf4j.LoggerFactory is slf4j-api-2.0.18.jar
-io.freedriver.app.schedule.ScheduledSwitchRepository depends on com.mongodb.client.MongoCollection is mongodb-driver-sync-5.6.5.jar
-io.freedriver.app.schedule.ScheduledSwitchRepository depends on com.mongodb.client.model.Filters is mongodb-driver-core-5.6.5.jar
-io.freedriver.app.schedule.ScheduledSwitchRepository depends on com.mongodb.client.model.FindOneAndUpdateOptions is mongodb-driver-core-5.6.5.jar
-io.freedriver.app.schedule.ScheduledSwitchRepository depends on com.mongodb.client.model.Indexes is mongodb-driver-core-5.6.5.jar
-io.freedriver.app.schedule.ScheduledSwitchRepository depends on com.mongodb.client.model.ReturnDocument is mongodb-driver-core-5.6.5.jar
-io.freedriver.app.schedule.ScheduledSwitchRepository depends on com.mongodb.client.model.Sorts is mongodb-driver-core-5.6.5.jar
-io.freedriver.app.schedule.ScheduledSwitchRepository depends on com.mongodb.client.model.Updates is mongodb-driver-core-5.6.5.jar
+io.freedriver.app.instances.InstanceUsers depends on org.keycloak.admin.client.Keycloak is a third-party library
+io.freedriver.app.instances.InstanceUsers depends on org.keycloak.admin.client.resource.GroupResource is a third-party library
+io.freedriver.app.instances.InstanceUsers depends on org.keycloak.admin.client.resource.GroupsResource is a third-party library
+io.freedriver.app.instances.InstanceUsers depends on org.keycloak.admin.client.resource.RealmResource is a third-party library
+io.freedriver.app.instances.InstanceUsers depends on org.keycloak.admin.client.resource.UserResource is a third-party library
+io.freedriver.app.instances.InstanceUsers depends on org.keycloak.admin.client.resource.UsersResource is a third-party library
+io.freedriver.app.instances.InstanceUsers depends on org.keycloak.representations.idm.CredentialRepresentation is a third-party library
+io.freedriver.app.instances.InstanceUsers depends on org.keycloak.representations.idm.GroupRepresentation is a third-party library
+io.freedriver.app.instances.InstanceUsers depends on org.keycloak.representations.idm.UserRepresentation is a third-party library
+io.freedriver.app.instances.KeycloakInstanceIdentity depends on org.keycloak.admin.client.Keycloak is a third-party library
+io.freedriver.app.instances.KeycloakInstanceIdentity depends on org.keycloak.representations.idm.CredentialRepresentation is a third-party library
+io.freedriver.app.instances.KeycloakInstanceIdentity depends on org.keycloak.representations.idm.GroupRepresentation is a third-party library
+io.freedriver.app.instances.KeycloakInstanceIdentity depends on org.keycloak.representations.idm.UserRepresentation is a third-party library
+io.freedriver.app.invites.PhoneInviteCreate depends on org.jboss.logging.Logger is a third-party library
+io.freedriver.app.jobs.DispatcherJobs depends on org.jboss.logging.Logger is a third-party library
+io.freedriver.app.metrics.GrafanaMetricsEmitter depends on io.micrometer.core.instrument.Counter is a third-party library
+io.freedriver.app.metrics.GrafanaMetricsEmitter depends on io.micrometer.core.instrument.Counter$Builder is a third-party library
+io.freedriver.app.metrics.GrafanaMetricsEmitter depends on io.micrometer.core.instrument.Gauge is a third-party library
+io.freedriver.app.metrics.GrafanaMetricsEmitter depends on io.micrometer.core.instrument.Gauge$Builder is a third-party library
+io.freedriver.app.metrics.GrafanaMetricsEmitter depends on io.micrometer.core.instrument.MeterRegistry is a third-party library
+io.freedriver.app.metrics.GrafanaMetricsEmitter depends on io.micrometer.core.instrument.Tag is a third-party library
+io.freedriver.app.metrics.GrafanaMetricsEmitter depends on io.micrometer.core.instrument.Tags is a third-party library
+io.freedriver.app.metrics.MetricsPointJson depends on com.fasterxml.jackson.databind.DeserializationFeature is a third-party library
+io.freedriver.app.metrics.MetricsPointJson depends on com.fasterxml.jackson.databind.ObjectMapper is a third-party library
+io.freedriver.app.metrics.MetricsPointJson depends on com.fasterxml.jackson.databind.SerializationFeature is a third-party library
+io.freedriver.app.metrics.MetricsPointJson depends on com.fasterxml.jackson.databind.json.JsonMapper is a third-party library
+io.freedriver.app.metrics.MetricsPointJson depends on com.fasterxml.jackson.databind.json.JsonMapper$Builder is a third-party library
+io.freedriver.app.metrics.MetricsPointJson depends on com.fasterxml.jackson.datatype.jsr310.JavaTimeModule is a third-party library
+io.freedriver.app.metrics.MqttHandlerTimer depends on io.micrometer.core.instrument.MeterRegistry is a third-party library
+io.freedriver.app.metrics.MqttHandlerTimer depends on io.micrometer.core.instrument.Timer is a third-party library
+io.freedriver.app.metrics.MqttHandlerTimer depends on io.micrometer.core.instrument.Timer$Builder is a third-party library
+io.freedriver.app.metrics.MqttHandlerTimer depends on io.micrometer.core.instrument.Timer$Sample is a third-party library
+io.freedriver.app.phones.InviteAdminProducer depends on org.keycloak.admin.client.Keycloak is a third-party library
+io.freedriver.app.phones.InviteAdminProducer depends on org.keycloak.admin.client.KeycloakBuilder is a third-party library
+io.freedriver.app.phones.InviteUsers depends on org.keycloak.admin.client.Keycloak is a third-party library
+io.freedriver.app.phones.InviteUsers depends on org.keycloak.admin.client.resource.GroupsResource is a third-party library
+io.freedriver.app.phones.InviteUsers depends on org.keycloak.admin.client.resource.RealmResource is a third-party library
+io.freedriver.app.phones.InviteUsers depends on org.keycloak.admin.client.resource.UserResource is a third-party library
+io.freedriver.app.phones.InviteUsers depends on org.keycloak.admin.client.resource.UsersResource is a third-party library
+io.freedriver.app.phones.InviteUsers depends on org.keycloak.representations.idm.GroupRepresentation is a third-party library
+io.freedriver.app.phones.InviteUsers depends on org.keycloak.representations.idm.UserRepresentation is a third-party library
+io.freedriver.app.phones.KeycloakPhoneSignIn depends on org.keycloak.admin.client.Keycloak is a third-party library
+io.freedriver.app.phones.KeycloakPhoneSignIn depends on org.keycloak.representations.idm.GroupRepresentation is a third-party library
+io.freedriver.app.phones.KeycloakPhoneSignIn depends on org.keycloak.representations.idm.UserRepresentation is a third-party library
+io.freedriver.app.schedule.ScheduledSwitchPoller depends on org.slf4j.Logger is a third-party library
+io.freedriver.app.schedule.ScheduledSwitchPoller depends on org.slf4j.LoggerFactory is a third-party library
+io.freedriver.app.schedule.ScheduledSwitchRepository depends on com.mongodb.client.MongoCollection is a third-party library
+io.freedriver.app.schedule.ScheduledSwitchRepository depends on com.mongodb.client.model.Filters is a third-party library
+io.freedriver.app.schedule.ScheduledSwitchRepository depends on com.mongodb.client.model.FindOneAndUpdateOptions is a third-party library
+io.freedriver.app.schedule.ScheduledSwitchRepository depends on com.mongodb.client.model.Indexes is a third-party library
+io.freedriver.app.schedule.ScheduledSwitchRepository depends on com.mongodb.client.model.ReturnDocument is a third-party library
+io.freedriver.app.schedule.ScheduledSwitchRepository depends on com.mongodb.client.model.Sorts is a third-party library
+io.freedriver.app.schedule.ScheduledSwitchRepository depends on com.mongodb.client.model.Updates is a third-party library
 io.freedriver.app.schedule.ScheduledSwitchRepository depends on io.quarkus.mongodb.panache.PanacheMongoRepositoryBase is Panache
-io.freedriver.app.security.AnonymousDocumentRedirect depends on io.vertx.core.http.HttpMethod is vertx-core-4.5.32.jar
-io.freedriver.app.security.AnonymousDocumentRedirect depends on io.vertx.core.http.HttpServerRequest is vertx-core-4.5.32.jar
-io.freedriver.app.security.AnonymousDocumentRedirect depends on io.vertx.core.http.HttpServerResponse is vertx-core-4.5.32.jar
-io.freedriver.app.security.AnonymousDocumentRedirect depends on io.vertx.ext.web.RoutingContext is vertx-web-4.5.32.jar
-io.freedriver.app.security.InternalTenant depends on io.vertx.core.http.HttpServerRequest is vertx-core-4.5.32.jar
-io.freedriver.app.security.InternalTenant depends on io.vertx.ext.web.RoutingContext is vertx-web-4.5.32.jar
-io.freedriver.app.security.McpBearerFilter depends on io.vertx.core.http.HttpServerRequest is vertx-core-4.5.32.jar
-io.freedriver.app.security.McpBearerFilter depends on io.vertx.core.http.HttpServerResponse is vertx-core-4.5.32.jar
-io.freedriver.app.security.McpBearerFilter depends on io.vertx.ext.web.RoutingContext is vertx-web-4.5.32.jar
-io.freedriver.app.security.PostLogoutReturnFilter depends on io.vertx.core.MultiMap is vertx-core-4.5.32.jar
-io.freedriver.app.security.PostLogoutReturnFilter depends on io.vertx.core.http.Cookie is vertx-core-4.5.32.jar
-io.freedriver.app.security.PostLogoutReturnFilter depends on io.vertx.core.http.HttpServerRequest is vertx-core-4.5.32.jar
-io.freedriver.app.security.PostLogoutReturnFilter depends on io.vertx.core.http.HttpServerResponse is vertx-core-4.5.32.jar
-io.freedriver.app.security.PostLogoutReturnFilter depends on io.vertx.ext.web.RoutingContext is vertx-web-4.5.32.jar
+io.freedriver.app.security.AnonymousDocumentRedirect depends on io.vertx.core.http.HttpMethod is a third-party library
+io.freedriver.app.security.AnonymousDocumentRedirect depends on io.vertx.core.http.HttpServerRequest is a third-party library
+io.freedriver.app.security.AnonymousDocumentRedirect depends on io.vertx.core.http.HttpServerResponse is a third-party library
+io.freedriver.app.security.AnonymousDocumentRedirect depends on io.vertx.ext.web.RoutingContext is a third-party library
+io.freedriver.app.security.InternalTenant depends on io.vertx.core.http.HttpServerRequest is a third-party library
+io.freedriver.app.security.InternalTenant depends on io.vertx.ext.web.RoutingContext is a third-party library
+io.freedriver.app.security.McpBearerFilter depends on io.vertx.core.http.HttpServerRequest is a third-party library
+io.freedriver.app.security.McpBearerFilter depends on io.vertx.core.http.HttpServerResponse is a third-party library
+io.freedriver.app.security.McpBearerFilter depends on io.vertx.ext.web.RoutingContext is a third-party library
+io.freedriver.app.security.PostLogoutReturnFilter depends on io.vertx.core.MultiMap is a third-party library
+io.freedriver.app.security.PostLogoutReturnFilter depends on io.vertx.core.http.Cookie is a third-party library
+io.freedriver.app.security.PostLogoutReturnFilter depends on io.vertx.core.http.HttpServerRequest is a third-party library
+io.freedriver.app.security.PostLogoutReturnFilter depends on io.vertx.core.http.HttpServerResponse is a third-party library
+io.freedriver.app.security.PostLogoutReturnFilter depends on io.vertx.ext.web.RoutingContext is a third-party library

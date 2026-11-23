@@ -89,13 +89,30 @@ class ApiQualityRulesTest {
             JavaClasses imported = new ClassFileImporter().importLocations(List.of(Location.of(classes), Location.of(jar)));
             EvaluationResult result = ApiQualityRules.serviceDependencies().evaluate(imported);
             assertTrue(result.hasViolation(), () -> "slf4j-api passed:\n" + result.getFailureReport());
-            assertTrue(result.getFailureReport().toString().contains("slf4j-api"),
-                    () -> result.getFailureReport().toString());
-            assertTrue(result.getFailureReport().toString().contains("UsesLogger"),
-                    () -> result.getFailureReport().toString());
+            String report = result.getFailureReport().toString();
+            assertTrue(report.contains("is a third-party library"), () -> report);
+            assertTrue(report.contains("org.slf4j.Logger"), () -> report);
+            assertTrue(report.contains("UsesLogger"), () -> report);
+            assertFalse(report.contains("slf4j-api-2.0.9"), () -> report);
         } finally {
             delete(root);
         }
+    }
+
+    @Test
+    void an_annotation_member_is_ignored_until_a_field_parameter_or_body_uses_it() {
+        assertPasses(ApiQualityRules.serviceDependencies(overlay(
+                ours(fix("AnnotationOnly"), "sample", ModuleOwnership.Role.SERVICE))),
+                "annotationonly");
+        assertFails(ApiQualityRules.serviceDependencies(overlay(
+                ours(fix("UsesModeField"), "sample", ModuleOwnership.Role.SERVICE))),
+                "modefield", fix("UsesModeField"));
+        assertFails(ApiQualityRules.serviceDependencies(overlay(
+                ours(fix("UsesModeParameter"), "sample", ModuleOwnership.Role.SERVICE))),
+                "modeparameter", fix("UsesModeParameter"));
+        assertFails(ApiQualityRules.serviceDependencies(overlay(
+                ours(fix("UsesModeBody"), "sample", ModuleOwnership.Role.SERVICE))),
+                "modebody", fix("UsesModeBody"));
     }
 
     @Test

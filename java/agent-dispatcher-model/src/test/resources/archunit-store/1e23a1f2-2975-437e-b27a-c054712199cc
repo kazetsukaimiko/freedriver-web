@@ -1,2 +1,0 @@
-io.freedriver.dispatcher.model.AssignmentView depends on com.fasterxml.jackson.annotation.JsonProperty$Access is jackson-annotations-2.19.2.jar
-io.freedriver.dispatcher.model.AssignmentView depends on com.fasterxml.jackson.annotation.OptBoolean is jackson-annotations-2.19.2.jar

@@ -1,64 +1,38 @@
-io.freedriver.mqtt.contract.Appliance depends on com.fasterxml.jackson.annotation.JsonProperty$Access is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.Appliance depends on com.fasterxml.jackson.annotation.OptBoolean is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceCommandEntry depends on com.fasterxml.jackson.annotation.JsonInclude$Include is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceCommandEntry depends on com.fasterxml.jackson.annotation.JsonProperty$Access is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceCommandEntry depends on com.fasterxml.jackson.annotation.OptBoolean is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceCommandList depends on com.fasterxml.jackson.annotation.JsonInclude$Include is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceCommandList depends on com.fasterxml.jackson.annotation.JsonProperty$Access is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceCommandList depends on com.fasterxml.jackson.annotation.OptBoolean is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceCommandMessage depends on com.fasterxml.jackson.annotation.JsonProperty$Access is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceCommandMessage depends on com.fasterxml.jackson.annotation.OptBoolean is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceJson depends on com.fasterxml.jackson.databind.DeserializationContext is jackson-databind-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceJson depends on com.fasterxml.jackson.databind.DeserializationFeature is jackson-databind-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceJson depends on com.fasterxml.jackson.databind.JsonMappingException is jackson-databind-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceJson depends on com.fasterxml.jackson.databind.MapperFeature is jackson-databind-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceJson depends on com.fasterxml.jackson.databind.ObjectMapper is jackson-databind-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceJson depends on com.fasterxml.jackson.databind.module.SimpleModule is jackson-databind-2.19.2.jar
+io.freedriver.mqtt.contract.ApplianceJson depends on com.fasterxml.jackson.databind.DeserializationContext is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson depends on com.fasterxml.jackson.databind.DeserializationFeature is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson depends on com.fasterxml.jackson.databind.JsonMappingException is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson depends on com.fasterxml.jackson.databind.MapperFeature is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson depends on com.fasterxml.jackson.databind.ObjectMapper is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson depends on com.fasterxml.jackson.databind.module.SimpleModule is a third-party library
 io.freedriver.mqtt.contract.ApplianceJson is a plain class; an API module allows a final constant holder with static final fields and a private constructor
-io.freedriver.mqtt.contract.ApplianceJson$DurationText depends on com.fasterxml.jackson.core.JsonGenerator is jackson-core-2.22.0.jar
-io.freedriver.mqtt.contract.ApplianceJson$DurationText depends on com.fasterxml.jackson.databind.JsonSerializer is jackson-databind-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceJson$DurationText depends on com.fasterxml.jackson.databind.SerializerProvider is jackson-databind-2.19.2.jar
+io.freedriver.mqtt.contract.ApplianceJson$DurationText depends on com.fasterxml.jackson.core.JsonGenerator is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$DurationText depends on com.fasterxml.jackson.databind.JsonSerializer is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$DurationText depends on com.fasterxml.jackson.databind.SerializerProvider is a third-party library
 io.freedriver.mqtt.contract.ApplianceJson$DurationText is a plain class; an API module allows a final constant holder with static final fields and a private constructor
-io.freedriver.mqtt.contract.ApplianceJson$DurationTextReader depends on com.fasterxml.jackson.core.JacksonException is jackson-core-2.22.0.jar
-io.freedriver.mqtt.contract.ApplianceJson$DurationTextReader depends on com.fasterxml.jackson.core.JsonParser is jackson-core-2.22.0.jar
-io.freedriver.mqtt.contract.ApplianceJson$DurationTextReader depends on com.fasterxml.jackson.core.JsonToken is jackson-core-2.22.0.jar
-io.freedriver.mqtt.contract.ApplianceJson$DurationTextReader depends on com.fasterxml.jackson.databind.DeserializationContext is jackson-databind-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceJson$DurationTextReader depends on com.fasterxml.jackson.databind.JsonDeserializer is jackson-databind-2.19.2.jar
+io.freedriver.mqtt.contract.ApplianceJson$DurationTextReader depends on com.fasterxml.jackson.core.JacksonException is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$DurationTextReader depends on com.fasterxml.jackson.core.JsonParser is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$DurationTextReader depends on com.fasterxml.jackson.core.JsonToken is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$DurationTextReader depends on com.fasterxml.jackson.databind.DeserializationContext is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$DurationTextReader depends on com.fasterxml.jackson.databind.JsonDeserializer is a third-party library
 io.freedriver.mqtt.contract.ApplianceJson$DurationTextReader is a plain class; an API module allows a final constant holder with static final fields and a private constructor
-io.freedriver.mqtt.contract.ApplianceJson$InstantText depends on com.fasterxml.jackson.core.JsonGenerator is jackson-core-2.22.0.jar
-io.freedriver.mqtt.contract.ApplianceJson$InstantText depends on com.fasterxml.jackson.databind.JsonSerializer is jackson-databind-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceJson$InstantText depends on com.fasterxml.jackson.databind.SerializerProvider is jackson-databind-2.19.2.jar
+io.freedriver.mqtt.contract.ApplianceJson$InstantText depends on com.fasterxml.jackson.core.JsonGenerator is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$InstantText depends on com.fasterxml.jackson.databind.JsonSerializer is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$InstantText depends on com.fasterxml.jackson.databind.SerializerProvider is a third-party library
 io.freedriver.mqtt.contract.ApplianceJson$InstantText is a plain class; an API module allows a final constant holder with static final fields and a private constructor
-io.freedriver.mqtt.contract.ApplianceJson$InstantTextReader depends on com.fasterxml.jackson.core.JacksonException is jackson-core-2.22.0.jar
-io.freedriver.mqtt.contract.ApplianceJson$InstantTextReader depends on com.fasterxml.jackson.core.JsonParser is jackson-core-2.22.0.jar
-io.freedriver.mqtt.contract.ApplianceJson$InstantTextReader depends on com.fasterxml.jackson.core.JsonToken is jackson-core-2.22.0.jar
-io.freedriver.mqtt.contract.ApplianceJson$InstantTextReader depends on com.fasterxml.jackson.databind.DeserializationContext is jackson-databind-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceJson$InstantTextReader depends on com.fasterxml.jackson.databind.JsonDeserializer is jackson-databind-2.19.2.jar
+io.freedriver.mqtt.contract.ApplianceJson$InstantTextReader depends on com.fasterxml.jackson.core.JacksonException is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$InstantTextReader depends on com.fasterxml.jackson.core.JsonParser is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$InstantTextReader depends on com.fasterxml.jackson.core.JsonToken is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$InstantTextReader depends on com.fasterxml.jackson.databind.DeserializationContext is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$InstantTextReader depends on com.fasterxml.jackson.databind.JsonDeserializer is a third-party library
 io.freedriver.mqtt.contract.ApplianceJson$InstantTextReader is a plain class; an API module allows a final constant holder with static final fields and a private constructor
-io.freedriver.mqtt.contract.ApplianceSchemas depends on com.fasterxml.jackson.databind.DeserializationFeature is jackson-databind-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceSchemas depends on com.fasterxml.jackson.databind.ObjectMapper is jackson-databind-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceSchemas depends on com.fasterxml.jackson.databind.json.JsonMapper is jackson-databind-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceSchemas depends on com.fasterxml.jackson.databind.json.JsonMapper$Builder is jackson-databind-2.19.2.jar
+io.freedriver.mqtt.contract.ApplianceSchemas depends on com.fasterxml.jackson.databind.DeserializationFeature is a third-party library
+io.freedriver.mqtt.contract.ApplianceSchemas depends on com.fasterxml.jackson.databind.ObjectMapper is a third-party library
+io.freedriver.mqtt.contract.ApplianceSchemas depends on com.fasterxml.jackson.databind.json.JsonMapper is a third-party library
+io.freedriver.mqtt.contract.ApplianceSchemas depends on com.fasterxml.jackson.databind.json.JsonMapper$Builder is a third-party library
 io.freedriver.mqtt.contract.ApplianceSchemas is a plain class; an API module allows a final constant holder with static final fields and a private constructor
-io.freedriver.mqtt.contract.ApplianceStateMessage depends on com.fasterxml.jackson.annotation.JsonProperty$Access is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.ApplianceStateMessage depends on com.fasterxml.jackson.annotation.OptBoolean is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.CancelCommandEntry depends on com.fasterxml.jackson.annotation.JsonInclude$Include is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.CancelCommandEntry depends on com.fasterxml.jackson.annotation.JsonProperty$Access is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.CancelCommandEntry depends on com.fasterxml.jackson.annotation.OptBoolean is jackson-annotations-2.19.2.jar
 io.freedriver.mqtt.contract.CanonicalUuidValidator is a plain class; an API module allows a final constant holder with static final fields and a private constructor
-io.freedriver.mqtt.contract.CommandEntryType depends on com.fasterxml.jackson.annotation.JsonProperty$Access is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.CommandEntryType depends on com.fasterxml.jackson.annotation.OptBoolean is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.CommandListEntry depends on com.fasterxml.jackson.annotation.JsonTypeInfo$As is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.CommandListEntry depends on com.fasterxml.jackson.annotation.JsonTypeInfo$Id is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.CommandListEntry depends on com.fasterxml.jackson.annotation.OptBoolean is jackson-annotations-2.19.2.jar
 io.freedriver.mqtt.contract.DelayWindowValidator is a plain class; an API module allows a final constant holder with static final fields and a private constructor
 io.freedriver.mqtt.contract.DistinctEntryIdsValidator is a plain class; an API module allows a final constant holder with static final fields and a private constructor
 io.freedriver.mqtt.contract.DistinctPendingIdsValidator is a plain class; an API module allows a final constant holder with static final fields and a private constructor
 io.freedriver.mqtt.contract.DistinctTargetDelayValidator is a plain class; an API module allows a final constant holder with static final fields and a private constructor
 io.freedriver.mqtt.contract.OneCancelSelectorValidator is a plain class; an API module allows a final constant holder with static final fields and a private constructor
-io.freedriver.mqtt.contract.PendingCommand depends on com.fasterxml.jackson.annotation.JsonInclude$Include is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.PendingCommand depends on com.fasterxml.jackson.annotation.JsonProperty$Access is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.PendingCommand depends on com.fasterxml.jackson.annotation.OptBoolean is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.ScheduledCommandsMessage depends on com.fasterxml.jackson.annotation.JsonInclude$Include is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.ScheduledCommandsMessage depends on com.fasterxml.jackson.annotation.JsonProperty$Access is jackson-annotations-2.19.2.jar
-io.freedriver.mqtt.contract.ScheduledCommandsMessage depends on com.fasterxml.jackson.annotation.OptBoolean is jackson-annotations-2.19.2.jar

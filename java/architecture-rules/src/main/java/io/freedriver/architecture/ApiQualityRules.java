@@ -162,15 +162,36 @@ public final class ApiQualityRules {
         }).orElse(false);
     }
 
+    /**
+     * Direct dependencies, except a type that appears only because an annotation names it: the
+     * annotation itself, or a member or default-value type ArchUnit imports with the annotation.
+     * A field, parameter or method body that uses the same type is kept.
+     */
     private static Set<JavaClass> dependencies(JavaClass type) {
-        java.util.LinkedHashSet<JavaClass> found = new java.util.LinkedHashSet<>();
+        java.util.Map<String, java.util.List<Dependency>> byName = new java.util.LinkedHashMap<>();
+        java.util.Map<String, JavaClass> targets = new java.util.LinkedHashMap<>();
         for (Dependency dependency : type.getDirectDependenciesFromSelf()) {
             JavaClass target = unwrap(dependency.getTargetClass());
-            if (!target.getName().equals(type.getName())) {
-                found.add(target);
+            if (target.getName().equals(type.getName())) {
+                continue;
             }
+            byName.computeIfAbsent(target.getName(), name -> new java.util.ArrayList<>()).add(dependency);
+            targets.putIfAbsent(target.getName(), target);
+        }
+        java.util.LinkedHashSet<JavaClass> found = new java.util.LinkedHashSet<>();
+        for (java.util.Map.Entry<String, java.util.List<Dependency>> entry : byName.entrySet()) {
+            if (entry.getValue().stream().allMatch(ApiQualityRules::fromAnnotationOnly)) {
+                continue;
+            }
+            found.add(targets.get(entry.getKey()));
         }
         return found;
+    }
+
+    /** ArchUnit's description for an annotation type or one of its member and default-value types. */
+    private static boolean fromAnnotationOnly(Dependency dependency) {
+        String description = dependency.getDescription();
+        return description.contains("is annotated with") || description.contains("has annotation member of type");
     }
 
     private static JavaClass unwrap(JavaClass type) {
@@ -224,6 +245,9 @@ public final class ApiQualityRules {
         if (utilityAllowed && owned.kind() == ModuleOwnership.Kind.OURS
                 && owned.role() == ModuleOwnership.Role.UTILITY) {
             return null;
+        }
+        if (owned.kind() == ModuleOwnership.Kind.THIRD_PARTY) {
+            return "is a third-party library";
         }
         return "is " + owned.detail();
     }

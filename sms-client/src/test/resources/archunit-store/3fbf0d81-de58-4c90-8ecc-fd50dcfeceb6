@@ -1,3 +1,3 @@
-io.freedriver.sms.client.SmsHttpHandler depends on com.fasterxml.jackson.annotation.JsonInclude$Include is jackson-annotations-2.22.jar
-io.freedriver.sms.client.SmsHttpHandler depends on com.fasterxml.jackson.databind.JsonNode is jackson-databind-2.22.0.jar
-io.freedriver.sms.client.SmsHttpHandler depends on com.fasterxml.jackson.databind.ObjectMapper is jackson-databind-2.22.0.jar
+io.freedriver.sms.client.SmsHttpHandler depends on com.fasterxml.jackson.annotation.JsonInclude$Include is a third-party library
+io.freedriver.sms.client.SmsHttpHandler depends on com.fasterxml.jackson.databind.JsonNode is a third-party library
+io.freedriver.sms.client.SmsHttpHandler depends on com.fasterxml.jackson.databind.ObjectMapper is a third-party library

@@ -1,11 +1,9 @@
-io.freedriver.autonomymcp.ApplianceList depends on com.fasterxml.jackson.core.JsonProcessingException is jackson-core-2.22.0.jar
-io.freedriver.autonomymcp.ApplianceList depends on com.fasterxml.jackson.databind.ObjectMapper is jackson-databind-2.19.2.jar
-io.freedriver.autonomymcp.ApplianceList depends on com.fasterxml.jackson.databind.node.ArrayNode is jackson-databind-2.19.2.jar
-io.freedriver.autonomymcp.ApplianceList depends on com.fasterxml.jackson.databind.node.ObjectNode is jackson-databind-2.19.2.jar
-io.freedriver.autonomymcp.AutonomyTools depends on com.fasterxml.jackson.databind.ObjectMapper is jackson-databind-2.19.2.jar
-io.freedriver.autonomymcp.AutonomyTools depends on io.quarkiverse.mcp.server.GlobalInputSchemaGenerator is quarkus-mcp-server-core-2.0.4.jar
-io.freedriver.autonomymcp.AutonomyTools depends on io.quarkiverse.mcp.server.GlobalOutputSchemaGenerator is quarkus-mcp-server-core-2.0.4.jar
-io.freedriver.autonomymcp.AutonomyTools depends on io.quarkiverse.mcp.server.ToolResponse is quarkus-mcp-server-core-2.0.4.jar
-io.freedriver.autonomymcp.McpEnabledFilter depends on io.vertx.core.http.HttpServerRequest is vertx-core-4.5.32.jar
-io.freedriver.autonomymcp.McpEnabledFilter depends on io.vertx.core.http.HttpServerResponse is vertx-core-4.5.32.jar
-io.freedriver.autonomymcp.McpEnabledFilter depends on io.vertx.ext.web.RoutingContext is vertx-web-4.5.32.jar
+io.freedriver.autonomymcp.ApplianceList depends on com.fasterxml.jackson.core.JsonProcessingException is a third-party library
+io.freedriver.autonomymcp.ApplianceList depends on com.fasterxml.jackson.databind.ObjectMapper is a third-party library
+io.freedriver.autonomymcp.ApplianceList depends on com.fasterxml.jackson.databind.node.ArrayNode is a third-party library
+io.freedriver.autonomymcp.ApplianceList depends on com.fasterxml.jackson.databind.node.ObjectNode is a third-party library
+io.freedriver.autonomymcp.AutonomyTools depends on com.fasterxml.jackson.databind.ObjectMapper is a third-party library
+io.freedriver.autonomymcp.AutonomyTools depends on io.quarkiverse.mcp.server.ToolResponse is a third-party library
+io.freedriver.autonomymcp.McpEnabledFilter depends on io.vertx.core.http.HttpServerRequest is a third-party library
+io.freedriver.autonomymcp.McpEnabledFilter depends on io.vertx.core.http.HttpServerResponse is a third-party library
+io.freedriver.autonomymcp.McpEnabledFilter depends on io.vertx.ext.web.RoutingContext is a third-party library
