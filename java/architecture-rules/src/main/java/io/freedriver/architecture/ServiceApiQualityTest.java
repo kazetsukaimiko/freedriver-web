@@ -4,7 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Rules 1 and 3 for one service module. The four modules that already extend {@link LayeringTest}
+ * Rules 1, 3 and 4 for one service module. The four modules that already extend {@link LayeringTest}
  * inherit these tests. A module with no layering rows extends this class directly.
  */
 public abstract class ServiceApiQualityTest {
@@ -22,5 +22,10 @@ public abstract class ServiceApiQualityTest {
     @Test
     void implementations_live_in_impl_modules() {
         ApiQuality.check(ApiQualityRules.implementationsLiveInImpl(), ApiQuality.main());
+    }
+
+    @Test
+    void implementation_packages_stay_private() {
+        ApiQuality.check(ApiQualityRules.implementationPackagesStayPrivate(), ApiQuality.main());
     }
 }
