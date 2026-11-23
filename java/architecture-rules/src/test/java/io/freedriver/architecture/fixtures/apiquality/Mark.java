@@ -1,5 +1,5 @@
 package io.freedriver.architecture.fixtures.apiquality;
 
-/** A same-module API interface. */
-public interface Mark {
+/** A sealed same-module API interface. */
+public sealed interface Mark permits SealedCase, PlainPermit, ServiceRecord {
 }

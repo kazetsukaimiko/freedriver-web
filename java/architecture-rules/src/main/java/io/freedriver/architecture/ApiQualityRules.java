@@ -28,9 +28,14 @@ public final class ApiQualityRules {
 
     private static final String SERVICE_BECAUSE = "service code depends only on java, javax, jakarta, "
             + "io.quarkus except io.quarkus.mongodb.panache and io.quarkus.hibernate.orm.panache, "
-            + "io.smallrye, org.eclipse.microprofile, annotation types, its own module, an API module "
-            + "(artifactId ending -api, -model or -contract) and the utility artifactIds stereotypes, "
-            + "mcp-support, hit-window and freedriver-mqtt";
+            + "io.smallrye, org.eclipse.microprofile, io.micrometer, annotation types, its own module, an API "
+            + "module (artifactId ending -api, -model or -contract) and the utility artifactIds stereotypes, "
+            + "mcp-support, hit-window and freedriver-mqtt. An HTTP edge class, one that observes "
+            + "io.quarkus.vertx.http.runtime.filters.Filters or io.vertx.ext.web.Router, has a method "
+            + "annotated @io.quarkus.vertx.web.Route or @io.quarkus.vertx.web.RouteFilter, or implements an "
+            + "io.quarkus.oidc interface, may also depend on io.vertx.core and io.vertx.ext.web. An MCP edge "
+            + "class, one with a method annotated from io.quarkiverse.mcp.server or that implements an "
+            + "interface from that package, may also depend on io.quarkiverse.mcp.server";
 
     private static final String API_BECAUSE = "an API module holds interfaces, records, enums, exceptions, "
             + "annotations and final constant holders (only static final fields and a private constructor), "
@@ -39,7 +44,8 @@ public final class ApiQualityRules {
 
     private static final String IMPL_BECAUSE = "a main class that implements an interface from an API module "
             + "lives in an artifactId ending -impl; a JAX-RS resource may implement its JAX-RS API interface, "
-            + "and a generated MicroProfile REST client is exempt";
+            + "a generated MicroProfile REST client is exempt, and a record, enum, interface, exception or "
+            + "permitted subtype of a sealed API interface in an API module may implement an API interface";
 
     private ApiQualityRules() {
     }
@@ -66,7 +72,7 @@ public final class ApiQualityRules {
                     public void check(JavaClass type, ConditionEvents events) {
                         ModuleOwnership.Owned self = ownership.classify(type);
                         for (JavaClass dependency : dependencies(type)) {
-                            String why = serviceDependency(dependency, self, ownership);
+                            String why = serviceDependency(type, dependency, self, ownership);
                             if (why != null) {
                                 events.add(SimpleConditionEvent.violated(type, type.getName()
                                         + " depends on " + dependency.getName() + " " + why));
@@ -115,6 +121,11 @@ public final class ApiQualityRules {
                         }
                         ModuleOwnership.Owned self = ownership.classify(type);
                         if (self.kind() == ModuleOwnership.Kind.OURS && self.artifactId().endsWith("-impl")) {
+                            return;
+                        }
+                        if (self.kind() == ModuleOwnership.Kind.OURS
+                                && self.role() == ModuleOwnership.Role.API
+                                && apiContractType(type)) {
                             return;
                         }
                         for (JavaClass iface : type.getAllRawInterfaces()) {
@@ -205,7 +216,8 @@ public final class ApiQualityRules {
     /**
      * @return why the dependency is refused, or null when the allowlist accepts it
      */
-    private static String serviceDependency(JavaClass dependency, ModuleOwnership.Owned self, ModuleOwnership ownership) {
+    private static String serviceDependency(JavaClass type, JavaClass dependency, ModuleOwnership.Owned self,
+                                            ModuleOwnership ownership) {
         if (dependency.isPrimitive()) {
             return null;
         }
@@ -213,10 +225,136 @@ public final class ApiQualityRules {
         if (panache(pkg)) {
             return "is Panache";
         }
-        if (dependency.isAnnotation() || servicePackage(pkg)) {
+        if (dependency.isAnnotation() || servicePackage(pkg) || under(pkg, "io.micrometer")) {
+            return null;
+        }
+        if (httpEdge(type) && (under(pkg, "io.vertx.core") || under(pkg, "io.vertx.ext.web"))) {
+            return null;
+        }
+        if (mcpEdge(type) && under(pkg, "io.quarkiverse.mcp.server")) {
             return null;
         }
         return ownedDependency(dependency, self, ownership, true);
+    }
+
+    /**
+     * The class's own markers. A nested class is judged on its own method, parameter or interface.
+     */
+    private static boolean httpEdge(JavaClass type) {
+        return observes(type, "io.quarkus.vertx.http.runtime.filters.Filters")
+                || observes(type, "io.vertx.ext.web.Router")
+                || methodAnnotated(type, "io.quarkus.vertx.web.Route")
+                || methodAnnotated(type, "io.quarkus.vertx.web.RouteFilter")
+                || implementsPackage(type, "io.quarkus.oidc");
+    }
+
+    private static boolean mcpEdge(JavaClass type) {
+        return methodAnnotatedFrom(type, "io.quarkiverse.mcp.server")
+                || implementsPackage(type, "io.quarkiverse.mcp.server");
+    }
+
+    private static boolean observes(JavaClass type, String parameterType) {
+        for (JavaMethod method : type.getMethods()) {
+            for (JavaParameter parameter : method.getParameters()) {
+                if (parameter.getRawType().getName().equals(parameterType) && observes(parameter)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean observes(JavaParameter parameter) {
+        for (JavaAnnotation<?> annotation : parameter.getAnnotations()) {
+            if ("jakarta.enterprise.event.Observes".equals(annotation.getRawType().getName())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean methodAnnotated(JavaClass type, String annotation) {
+        for (JavaMethod method : type.getMethods()) {
+            if (method.isAnnotatedWith(annotation)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean methodAnnotatedFrom(JavaClass type, String packageRoot) {
+        for (JavaMethod method : type.getMethods()) {
+            for (JavaAnnotation<?> annotation : method.getAnnotations()) {
+                if (under(annotation.getRawType().getPackageName(), packageRoot)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean implementsPackage(JavaClass type, String packageRoot) {
+        for (JavaClass iface : type.getAllRawInterfaces()) {
+            if (under(iface.getPackageName(), packageRoot)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A record, enum, interface, exception, or permitted subtype of a sealed interface. A constant
+     * holder stays out, so rule 3 still flags it.
+     */
+    private static boolean apiContractType(JavaClass type) {
+        if (type.isInterface() || type.isRecord() || type.isEnum() || type.isAssignableTo(Throwable.class)) {
+            return true;
+        }
+        return permittedSubtype(type);
+    }
+
+    /**
+     * ArchUnit's {@link JavaClass} has no sealed or permits query. One direct interface reflects to
+     * a {@link Class} whose {@link Class#isSealed()} is true and whose
+     * {@link Class#getPermittedSubclasses()} contains this type.
+     */
+    private static boolean permittedSubtype(JavaClass type) {
+        for (JavaClass iface : type.getRawInterfaces()) {
+            Class<?> reflected = reflect(iface);
+            if (reflected == null || !reflected.isSealed()) {
+                continue;
+            }
+            Class<?>[] permitted = reflected.getPermittedSubclasses();
+            if (permitted == null) {
+                continue;
+            }
+            for (Class<?> candidate : permitted) {
+                if (candidate.getName().equals(type.getName())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static Class<?> reflect(JavaClass type) {
+        ClassLoader context = Thread.currentThread().getContextClassLoader();
+        ClassLoader own = ApiQualityRules.class.getClassLoader();
+        for (ClassLoader loader : new ClassLoader[] {context, own}) {
+            if (loader == null) {
+                continue;
+            }
+            try {
+                return Class.forName(type.getName(), false, loader);
+            } catch (ClassNotFoundException | LinkageError ignored) {
+                // The next loader may be the one that defined the sealed interface.
+            }
+        }
+        try {
+            return type.reflect();
+        } catch (RuntimeException ignored) {
+            return null;
+        }
     }
 
     private static String apiDependency(JavaClass dependency, ModuleOwnership.Owned self, ModuleOwnership ownership) {
