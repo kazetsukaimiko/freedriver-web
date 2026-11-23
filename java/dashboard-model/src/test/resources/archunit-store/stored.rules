@@ -1,0 +1,4 @@
+#
+#Mon Nov 23 01:41:52 UTC 2026
+classes\ that\ are\ api\ main\ classes\ should\ be\ contract\ types,\ because\ an\ API\ module\ holds\ interfaces,\ records,\ enums,\ exceptions,\ annotations\ and\ final\ constant\ holders\ (only\ static\ final\ fields\ and\ a\ private\ constructor),\ carries\ no\ CDI\ scope,\ and\ depends\ only\ on\ java,\ javax,\ jakarta,\ org.eclipse.microprofile,\ annotation\ types\ and\ API\ modules=53eacbe4-28f5-4f88-80b3-d317b0db1a4e
+classes\ that\ are\ main\ classes\ of\ our\ modules\ should\ live\ in\ an\ -impl\ module\ when\ they\ implement\ an\ API\ interface,\ because\ a\ main\ class\ that\ implements\ an\ interface\ from\ an\ API\ module\ lives\ in\ an\ artifactId\ ending\ -impl;\ a\ JAX-RS\ resource\ may\ implement\ its\ JAX-RS\ API\ interface,\ and\ a\ generated\ MicroProfile\ REST\ client\ is\ exempt=5d78ea08-2c29-4d26-877e-a6b3a4d2a2d5
