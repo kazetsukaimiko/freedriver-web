@@ -39,7 +39,9 @@ public interface McpOpsApi {
      * window and a full pending cap are both an empty 429. The cap response carries
      * {@link PendingCapHeader#NAME} {@link PendingCapHeader#FULL}; the spent window leaves that
      * header off. Stored rows still fire.
+     * Callers move to {@link ApplianceCommandsApi}. This path stays.
      */
+    @Deprecated
     @POST
     @Path("/scheduled-switches")
     @Consumes(MediaType.APPLICATION_JSON)
