@@ -1,0 +1,38 @@
+io.freedriver.mqtt.contract.ApplianceJson depends on com.fasterxml.jackson.databind.DeserializationContext is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson depends on com.fasterxml.jackson.databind.DeserializationFeature is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson depends on com.fasterxml.jackson.databind.JsonMappingException is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson depends on com.fasterxml.jackson.databind.MapperFeature is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson depends on com.fasterxml.jackson.databind.ObjectMapper is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson depends on com.fasterxml.jackson.databind.module.SimpleModule is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.mqtt.contract.ApplianceJson$DurationText depends on com.fasterxml.jackson.core.JsonGenerator is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$DurationText depends on com.fasterxml.jackson.databind.JsonSerializer is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$DurationText depends on com.fasterxml.jackson.databind.SerializerProvider is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$DurationText is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.mqtt.contract.ApplianceJson$DurationTextReader depends on com.fasterxml.jackson.core.JacksonException is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$DurationTextReader depends on com.fasterxml.jackson.core.JsonParser is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$DurationTextReader depends on com.fasterxml.jackson.core.JsonToken is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$DurationTextReader depends on com.fasterxml.jackson.databind.DeserializationContext is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$DurationTextReader depends on com.fasterxml.jackson.databind.JsonDeserializer is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$DurationTextReader is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.mqtt.contract.ApplianceJson$InstantText depends on com.fasterxml.jackson.core.JsonGenerator is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$InstantText depends on com.fasterxml.jackson.databind.JsonSerializer is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$InstantText depends on com.fasterxml.jackson.databind.SerializerProvider is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$InstantText is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.mqtt.contract.ApplianceJson$InstantTextReader depends on com.fasterxml.jackson.core.JacksonException is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$InstantTextReader depends on com.fasterxml.jackson.core.JsonParser is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$InstantTextReader depends on com.fasterxml.jackson.core.JsonToken is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$InstantTextReader depends on com.fasterxml.jackson.databind.DeserializationContext is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$InstantTextReader depends on com.fasterxml.jackson.databind.JsonDeserializer is a third-party library
+io.freedriver.mqtt.contract.ApplianceJson$InstantTextReader is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.mqtt.contract.ApplianceSchemas depends on com.fasterxml.jackson.databind.DeserializationFeature is a third-party library
+io.freedriver.mqtt.contract.ApplianceSchemas depends on com.fasterxml.jackson.databind.ObjectMapper is a third-party library
+io.freedriver.mqtt.contract.ApplianceSchemas depends on com.fasterxml.jackson.databind.json.JsonMapper is a third-party library
+io.freedriver.mqtt.contract.ApplianceSchemas depends on com.fasterxml.jackson.databind.json.JsonMapper$Builder is a third-party library
+io.freedriver.mqtt.contract.ApplianceSchemas is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.mqtt.contract.CanonicalUuidValidator is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.mqtt.contract.DelayWindowValidator is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.mqtt.contract.DistinctEntryIdsValidator is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.mqtt.contract.DistinctPendingIdsValidator is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.mqtt.contract.DistinctTargetDelayValidator is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.mqtt.contract.OneCancelSelectorValidator is a plain class; an API module allows a final constant holder with static final fields and a private constructor

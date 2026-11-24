@@ -11,6 +11,14 @@
     <name>freedriver-web-architecture-rules</name>
     <description>The Java layering rules and the architecture-role rules as ArchUnit rules, and the tests each service module runs them from. Services depend on it with test scope.</description>
 
+    <properties>
+        <!-- Files this module's tests read outside the module (#582). Each enters this module's
+             build-cache key, so a change to one reruns these tests; .github/scripts/cache_inputs_check.py
+             fails when a test reads an outside path that is missing here. -->
+        <maven.build.cache.input.outside1>../stereotypes/src/test/resources/archunit-store</maven.build.cache.input.outside1>
+        <maven.build.cache.input.outside2>../stereotypes/target/classes</maven.build.cache.input.outside2>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>com.tngtech.archunit</groupId>

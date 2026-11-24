@@ -1,0 +1,13 @@
+io.freedriver.daemon.DaemonConfig depends on com.fasterxml.jackson.databind.JsonNode is a third-party library
+io.freedriver.daemon.DaemonConfig depends on com.fasterxml.jackson.databind.ObjectMapper is a third-party library
+io.freedriver.daemon.DeviceTransport depends on com.fasterxml.jackson.core.type.TypeReference is a third-party library
+io.freedriver.daemon.DeviceTransport depends on com.fasterxml.jackson.databind.DeserializationFeature is a third-party library
+io.freedriver.daemon.DeviceTransport depends on com.fasterxml.jackson.databind.JsonNode is a third-party library
+io.freedriver.daemon.DeviceTransport depends on com.fasterxml.jackson.databind.ObjectMapper is a third-party library
+io.freedriver.daemon.DeviceTransport depends on com.fasterxml.jackson.databind.SerializationFeature is a third-party library
+io.freedriver.daemon.DeviceTransport depends on com.fasterxml.jackson.databind.json.JsonMapper is a third-party library
+io.freedriver.daemon.DeviceTransport depends on com.fasterxml.jackson.databind.json.JsonMapper$Builder is a third-party library
+io.freedriver.daemon.DeviceTransport depends on com.fasterxml.jackson.datatype.jsr310.JavaTimeModule is a third-party library
+io.freedriver.daemon.DeviceTransport depends on com.fasterxml.jackson.module.paramnames.ParameterNamesModule is a third-party library
+io.freedriver.daemon.ScriptsAgentHost depends on com.fasterxml.jackson.databind.JsonNode is a third-party library
+io.freedriver.daemon.ScriptsAgentHost depends on com.fasterxml.jackson.databind.ObjectMapper is a third-party library

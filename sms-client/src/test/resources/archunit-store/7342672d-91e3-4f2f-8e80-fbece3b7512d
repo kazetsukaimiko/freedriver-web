@@ -1,0 +1,1 @@
+io.freedriver.sms.client.SmsClient implements io.freedriver.sms.api.SmsApi from API module sms-api

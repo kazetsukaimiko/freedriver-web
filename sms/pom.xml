@@ -18,6 +18,12 @@
         <quarkus.platform.version>3.38.2</quarkus.platform.version>
         <wiremock.version>3.13.2</wiremock.version>
         <skipITs>true</skipITs>
+        <!-- Files this module's tests read outside the module (#582). Each enters this module's
+             build-cache key, so a change to one reruns these tests; .github/scripts/cache_inputs_check.py
+             fails when a test reads an outside path that is missing here. -->
+        <maven.build.cache.input.outside1>../sms-api</maven.build.cache.input.outside1>
+        <maven.build.cache.input.outside2>../sms-client</maven.build.cache.input.outside2>
+        <maven.build.cache.input.outside3>../sms-model</maven.build.cache.input.outside3>
     </properties>
 
     <dependencyManagement>
