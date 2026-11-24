@@ -1,5 +1,6 @@
 package io.freedriver.dashboard.api;
 
+import io.freedriver.dashboard.model.InstanceView;
 import io.freedriver.dashboard.model.api.ApplianceCommandListRequest;
 import io.freedriver.dashboard.model.api.ApplianceCommandResult;
 import io.freedriver.dashboard.model.api.PendingApplianceCommand;
@@ -43,9 +44,20 @@ public interface ApplianceCommandsApi {
      * {@code confirmed} and {@code timeout} answer an immediate entry (absent or zero delay).
      * {@code scheduled} and {@code sent} answer an entry with a delay. {@code dueAt} is present
      * only on {@code scheduled}.
-     * 400 is an invalid body. 404 is a target missing from the house snapshot.
-     * 409 with an empty body is a house that has never sent a scheduled message.
-     * That 409 is separate from the stale-snapshot conflict on {@link AppliancesApi#command}.
+     * 400 is an invalid body.
+     * The house is then checked in this order. The first check that fails answers, and nothing is published:
+     * <ol>
+     * <li>404: the house is unknown (it has no roster row).</li>
+     * <li>409 with an {@code application/json} {@link InstanceView} body whose {@code stale} is true:
+     * the house's latest appliance snapshot is stale. The body is the house as it stands.
+     * This is the refusal {@link AppliancesApi#command} makes for a stale house.</li>
+     * <li>409 with no entity: the house has never sent a scheduled message.</li>
+     * <li>404: a target is missing from the house snapshot.</li>
+     * </ol>
+     * A caller tells the two 409s apart by body. The stale refusal has {@code Content-Type: application/json}
+     * and an {@link InstanceView} entity whose {@code stale} is true. The never-scheduled 409 has no entity.
+     * Stale is checked before never-scheduled because the never-scheduled 409 sends the caller to
+     * {@link AppliancesApi#command}, which refuses a stale house.
      * 429 with an empty body is a spent {@code appliances.commands} window, or a full pending cap.
      * The pending-cap response sets {@link PendingCapHeader#NAME} to {@link PendingCapHeader#FULL}.
      * The spent window leaves that header off.
@@ -60,9 +72,20 @@ public interface ApplianceCommandsApi {
                     content = @Content(mediaType = MediaType.APPLICATION_JSON,
                             schema = @Schema(type = SchemaType.ARRAY, implementation = ApplianceCommandResult.class))),
             @APIResponse(responseCode = "400", description = "The body failed validation."),
-            @APIResponse(responseCode = "404", description = "A target is missing from the house snapshot."),
+            @APIResponse(responseCode = "404",
+                    description = "Unknown house: the house has no roster row; checked first. "
+                            + "Missing target: a target is missing from the house snapshot; checked last, "
+                            + "after both 409 checks."),
             @APIResponse(responseCode = "409",
-                    description = "Empty body. The house has never sent a scheduled message."),
+                    description = "Only the stale-snapshot refusal carries the InstanceView body. "
+                            + "Stale snapshot: the house's latest appliance snapshot is stale; the body is "
+                            + "application/json, an InstanceView with stale true, and nothing is published. "
+                            + "Never scheduled: the house has never sent a scheduled message; "
+                            + "the response has no entity. "
+                            + "The stale check runs before the never-scheduled check, "
+                            + "and both run before the target 404.",
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON,
+                            schema = @Schema(implementation = InstanceView.class))),
             @APIResponse(responseCode = "429",
                     description = "Empty body. A spent appliances.commands window omits "
                             + PendingCapHeader.NAME + ". A full pending cap sets that header to "
