@@ -65,7 +65,10 @@ public record AssignmentView(
     /**
      * {@link #agentSessionId()} under its previous name. It keeps callers written before the
      * rename compiling until they move to {@code agentSessionId()}.
+     *
+     * @deprecated use {@link #agentSessionId()}.
      */
+    @Deprecated(forRemoval = true)
     public UUID grokSessionId() {
         return agentSessionId;
     }

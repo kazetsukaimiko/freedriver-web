@@ -63,7 +63,16 @@ class AssignmentViewContractTest {
         assertFalse(json.has("agentSessionId"));
         assertEquals(12, json.size());
         assertEquals(session, JSON.readValue(json.toString(), AssignmentView.class).agentSessionId());
-        assertEquals(session, view.grokSessionId());
+    }
+
+    @Test
+    @SuppressWarnings("removal")
+    void the_deprecated_grokSessionId_accessor_returns_agentSessionId() {
+        UUID session = UUID.fromString("00000000-0000-0000-0000-000000000003");
+        AssignmentView view = new AssignmentView(ASSIGNMENT, JOB, "device-1", "agent-1", Channel.TEXT, "hello",
+                AssignmentState.RUNNING, session, null, OnBusy.queue, "delivery-1", null);
+
+        assertEquals(view.agentSessionId(), view.grokSessionId());
     }
 
     @Test
