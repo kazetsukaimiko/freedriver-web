@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.stream.Stream;
@@ -25,12 +26,15 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Passing and failing fixtures for the four API quality rules, evaluated like {@link LayeringEdgeTest}.
- * The fixture supplies a module role. Directory names that differ from artifactIds are read from the
- * reactor poms, and a jar named slf4j-api stays third-party.
+ * Passing and failing fixtures for the four API quality rules, the two role rules and the
+ * split-package rule, evaluated like {@link LayeringEdgeTest}.
+ * A fixture names the module a class is compiled in; the class's package gives its role, and a
+ * package that names none leaves the module's artifact role. Directory names that differ from
+ * artifactIds are read from the reactor poms, and a jar named slf4j-api stays third-party.
  */
 class ApiQualityRulesTest {
 
@@ -45,17 +49,17 @@ class ApiQualityRulesTest {
         ModuleOwnership.Owned mqtt = ownership.classifyUri(
                 root.resolve("mqtt/target/classes/io/freedriver/mqtt/Marker.class").toUri());
         assertEquals("freedriver-mqtt", mqtt.artifactId());
-        assertEquals(ModuleOwnership.Role.UTILITY, mqtt.role());
+        assertEquals(ModuleOwnership.Role.UTILITY, mqtt.effectiveRole());
 
         ModuleOwnership.Owned sms = ownership.classifyUri(
                 root.resolve("sms/target/classes/io/freedriver/sms/Marker.class").toUri());
         assertEquals("sms-server", sms.artifactId());
-        assertEquals(ModuleOwnership.Role.SERVICE, sms.role());
+        assertEquals(ModuleOwnership.Role.SERVICE, sms.effectiveRole());
 
         ModuleOwnership.Owned contract = ownership.classifyUri(
                 root.resolve("mqtt-contract/target/classes/io/freedriver/mqtt/contract/Marker.class").toUri());
         assertEquals("freedriver-mqtt-contract", contract.artifactId());
-        assertEquals(ModuleOwnership.Role.API, contract.role());
+        assertEquals(ModuleOwnership.Role.API, contract.effectiveRole());
     }
 
     @Test
@@ -73,6 +77,10 @@ class ApiQualityRulesTest {
                     URI.create("jar:" + jar.toUri() + "!/org/slf4j/Logger.class"));
             assertEquals(ModuleOwnership.Kind.THIRD_PARTY, foreign.kind());
             assertTrue(foreign.detail().contains("slf4j-api"), foreign.detail());
+            ModuleOwnership.Owned inApiPackage = foreign.inPackage("io.freedriver.app.api");
+            assertEquals(ModuleOwnership.Kind.THIRD_PARTY, inApiPackage.kind());
+            assertEquals(Optional.empty(), inApiPackage.packageRole());
+            assertNull(inApiPackage.effectiveRole());
 
             Path module = root.resolve("sample-service");
             Path sources = module.resolve("src");
@@ -177,17 +185,6 @@ class ApiQualityRulesTest {
     }
 
     @Test
-    void a_record_that_implements_a_same_module_interface_passes_rule_2_and_fails_rule_3() {
-        Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
-        ModuleOwnership.Owned api = ModuleOwnership.Owned.ours("io.freedriver", "sample-api");
-        owners.put(fix("Mark"), api);
-        owners.put(fix("SealedCase"), api);
-        ModuleOwnership ownership = overlay(owners);
-        assertPasses(ApiQualityRules.apiContracts(ownership), "recordimpl");
-        assertFails(ApiQualityRules.implementationsLiveInImpl(ownership), "recordimpl", fix("SealedCase"));
-    }
-
-    @Test
     void service_code_accepts_the_allowlist_and_refuses_panache_another_service_and_an_unresolved_type() {
         Map<String, ModuleOwnership.Owned> pass = new LinkedHashMap<>();
         pass.put(fix("ServiceOk"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
@@ -197,6 +194,8 @@ class ApiQualityRulesTest {
         pass.put("io.smallrye.config.SmallRyeConfig", ModuleOwnership.Owned.thirdParty("smallrye-config"));
         pass.put("org.eclipse.microprofile.config.Config", ModuleOwnership.Owned.thirdParty("microprofile-config"));
         pass.put("javax.sql.DataSource", ModuleOwnership.Owned.thirdParty("java.sql"));
+        pass.put(fix("ServiceMetrics"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        pass.put("io.micrometer.core.instrument.MeterRegistry", ModuleOwnership.Owned.thirdParty("micrometer-core"));
         assertPasses(ApiQualityRules.serviceDependencies(overlay(pass)), "servicepass");
 
         Map<String, ModuleOwnership.Owned> panache = new LinkedHashMap<>();
@@ -221,6 +220,500 @@ class ApiQualityRulesTest {
         String missingReport = missingResult.getFailureReport().toString();
         assertTrue(missingResult.hasViolation(), missingReport);
         assertTrue(missingReport.contains("unresolved"), missingReport);
+
+        assertFails(ApiQualityRules.serviceDependencies(overlay(
+                ours(fix("ServiceMutiny"), "sample", ModuleOwnership.Role.SERVICE))),
+                "mutiny", "io.vertx.mutiny");
+    }
+
+    @Test
+    void an_http_or_mcp_edge_accepts_its_framework_and_a_plain_class_fails() {
+        assertPasses(service(fix("FiltersEdge")), "filtersedge");
+        assertPasses(service(fix("RouterEdge")), "routeredge");
+        assertPasses(service(fix("RouteEdge")), "routeedge");
+        assertPasses(service(fix("RouteFilterEdge")), "routefilteredge");
+        assertPasses(service(fix("OidcEdge")), "oidcedge");
+        assertPasses(service(fix("ToolEdge")), "tooledge");
+        assertPasses(service(fix("ToolFilterEdge")), "toolfilteredge");
+
+        assertFails(service(fix("PlainRouting")), "plainrouting", fix("PlainRouting"));
+        assertFails(service(fix("PlainTool")), "plaintool", fix("PlainTool"));
+
+        EvaluationResult jackson = evaluate(service(fix("EdgeUsesJackson")), "edgejackson");
+        String report = jackson.getFailureReport().toString();
+        assertTrue(jackson.hasViolation(), report);
+        assertTrue(report.contains("ObjectMapper"), report);
+        assertFalse(report.contains("RoutingContext"), report);
+    }
+
+    @Test
+    void a_record_subtype_of_a_sealed_api_interface_passes_rule_2_and_rule_3() {
+        Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
+        ModuleOwnership.Owned api = ModuleOwnership.Owned.ours("io.freedriver", "sample-api");
+        owners.put(fix("Mark"), api);
+        owners.put(fix("SealedCase"), api);
+        ModuleOwnership ownership = overlay(owners);
+        assertPasses(ApiQualityRules.apiContracts(ownership), "sealedrecord");
+        assertPasses(ApiQualityRules.implementationsLiveInImpl(ownership), "sealedrecord");
+    }
+
+    @Test
+    void a_plain_permitted_subtype_passes_rule_3_and_fails_rule_2() {
+        Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
+        ModuleOwnership.Owned api = ModuleOwnership.Owned.ours("io.freedriver", "sample-api");
+        owners.put(fix("Mark"), api);
+        owners.put(fix("PlainPermit"), api);
+        ModuleOwnership ownership = overlay(owners);
+        assertPasses(ApiQualityRules.implementationsLiveInImpl(ownership), "plainpermit");
+        assertFails(ApiQualityRules.apiContracts(ownership), "plainpermit", fix("PlainPermit"));
+    }
+
+    @Test
+    void a_service_module_record_and_a_plain_api_implementor_fail_rule_3() {
+        Map<String, ModuleOwnership.Owned> serviceRecord = new LinkedHashMap<>();
+        serviceRecord.put(fix("Mark"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        serviceRecord.put(fix("ServiceRecord"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        assertFails(ApiQualityRules.implementationsLiveInImpl(overlay(serviceRecord)),
+                "servicerecord", fix("ServiceRecord"));
+
+        Map<String, ModuleOwnership.Owned> open = new LinkedHashMap<>();
+        open.put(fix("OpenMark"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        open.put(fix("OpenImpl"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        assertFails(ApiQualityRules.implementationsLiveInImpl(overlay(open)), "openimpl", fix("OpenImpl"));
+    }
+
+    @Test
+    void a_package_names_a_role_by_the_grammar() {
+        record Case(String pkg, ModuleOwnership.Role role, String implementation) {
+        }
+        List<Case> cases = List.of(
+                new Case("io.freedriver.app.api", ModuleOwnership.Role.API, null),
+                new Case("io.freedriver.app.api.dto", ModuleOwnership.Role.API, null),
+                new Case("io.freedriver.app.orders.api", ModuleOwnership.Role.API, null),
+                new Case("io.freedriver.app.service", ModuleOwnership.Role.SERVICE, null),
+                new Case("io.freedriver.dispatcher.jobs.service", ModuleOwnership.Role.SERVICE, null),
+                new Case("io.freedriver.dispatcher.jobs.service.retry", ModuleOwnership.Role.SERVICE, null),
+                new Case("io.freedriver.x.impl.mongo", ModuleOwnership.Role.IMPL, "mongo"),
+                new Case("io.freedriver.x.impl.mongo.codec", ModuleOwnership.Role.IMPL, "mongo"),
+                new Case("io.freedriver.x.orders.impl.redis", ModuleOwnership.Role.IMPL, "redis"),
+                new Case("io.freedriver.sms.api", ModuleOwnership.Role.API, null),
+                new Case("io.freedriver.sms.api.rs.ext", ModuleOwnership.Role.API, null),
+                new Case("io.freedriver.sms.otp.service", ModuleOwnership.Role.SERVICE, null),
+                new Case("io.freedriver.sms.impl.twilio.http", ModuleOwnership.Role.IMPL, "twilio"),
+                new Case("io.freedriver.x.impl", null, null),
+                new Case("io.freedriver.x.orders.impl", null, null),
+                new Case("io.freedriver.a.b.c.api", null, null),
+                new Case("io.freedriver.a.b.c.impl.mongo", null, null),
+                new Case("io.freedriver.api", null, null),
+                new Case("io.freedriver.service", null, null),
+                new Case("io.freedriver", null, null),
+                new Case("io.freedriver.app", null, null),
+                new Case("io.freedriver.app.phones", null, null),
+                new Case("io.freedriver.mqtt.contract", null, null),
+                new Case("io.freedriver.dashboard.model", null, null),
+                new Case("io.freedriverx.app.api", null, null),
+                new Case("com.example.app.api", null, null),
+                new Case("io.quarkus.arc.impl.beans", null, null));
+        for (Case c : cases) {
+            assertEquals(Optional.ofNullable(c.role()), ModuleOwnership.packageRole(c.pkg()), c.pkg());
+            assertEquals(Optional.ofNullable(c.implementation()), ModuleOwnership.implementationName(c.pkg()), c.pkg());
+        }
+    }
+
+    @Test
+    void a_class_takes_its_package_role_and_falls_back_to_its_artifact_role() {
+        ModuleOwnership.Owned service = ModuleOwnership.Owned.ours("io.freedriver", "dashboard");
+        ModuleOwnership.Owned unmatched = service.inPackage("io.freedriver.app.phones");
+        assertEquals(Optional.empty(), unmatched.packageRole());
+        assertEquals(ModuleOwnership.Role.SERVICE, unmatched.effectiveRole());
+
+        ModuleOwnership.Owned apiInService = service.inPackage("io.freedriver.app.api");
+        assertEquals(Optional.of(ModuleOwnership.Role.API), apiInService.packageRole());
+        assertEquals(ModuleOwnership.Role.API, apiInService.effectiveRole());
+        assertEquals("dashboard", apiInService.artifactId());
+        assertTrue(apiInService.sameModule(unmatched));
+
+        for (String artifactId : List.of("dashboard-model", "sms-api", "freedriver-mqtt-contract")) {
+            assertEquals(ModuleOwnership.Role.API, ModuleOwnership.Owned.ours("io.freedriver", artifactId)
+                    .inPackage("io.freedriver.dashboard.model").effectiveRole(), artifactId);
+        }
+        assertEquals(ModuleOwnership.Role.IMPL, ModuleOwnership.Owned.ours("io.freedriver", "sample-impl")
+                .inPackage("io.freedriver.sample").effectiveRole());
+        assertEquals(ModuleOwnership.Role.UTILITY, ModuleOwnership.Owned.ours("io.freedriver", "hit-window")
+                .inPackage("io.freedriver.ratelimit").effectiveRole());
+
+        ModuleOwnership.Owned serviceInUtility = ModuleOwnership.Owned.ours("io.freedriver", "hit-window")
+                .inPackage("io.freedriver.ratelimit.service");
+        assertEquals(Optional.of(ModuleOwnership.Role.SERVICE), serviceInUtility.packageRole());
+        assertEquals(ModuleOwnership.Role.SERVICE, serviceInUtility.effectiveRole());
+
+        ModuleOwnership.Owned unresolved = ModuleOwnership.Owned.unresolved("gone").inPackage("io.freedriver.app.api");
+        assertEquals(Optional.empty(), unresolved.packageRole());
+        assertNull(unresolved.effectiveRole());
+    }
+
+    @Test
+    void every_gated_module_runs_all_six_rules() {
+        assertEquals(6, ApiQualityRules.all().size());
+        List<String> tests = Stream.of(ApiQualityTest.class.getDeclaredMethods())
+                .filter(method -> method.isAnnotationPresent(Test.class))
+                .map(java.lang.reflect.Method::getName).sorted().toList();
+        assertEquals(List.of("api_code_is_a_contract", "every_class_has_a_package_role",
+                "implementation_packages_stay_private", "implementations_are_implementation_code",
+                "service_code_depends_on_the_allowlist", "the_module_holds_one_role"), tests);
+        assertEquals(ApiQualityTest.class, LayeringTest.class.getSuperclass());
+    }
+
+    /**
+     * A service module on disk, judged by the rules its test runs. The class in its API package is
+     * a rule 2 subject, and the class in a package that names no role stays a rule 1 subject.
+     */
+    @Test
+    void a_service_module_judges_its_api_package_by_rule_2_and_its_other_code_by_rule_1() throws Exception {
+        Path root = Files.createTempDirectory("apiquality-roles");
+        try {
+            Path jarClasses = root.resolve("jar-classes");
+            writeJava(jarClasses, "org/library/Tool.java",
+                    "package org.library; public class Tool { public static void use() {} }");
+            compile(jarClasses, jarClasses, List.of());
+            Path jar = root.resolve("library-1.0.jar");
+            jar(jarClasses, jar);
+
+            Path module = root.resolve("sample-service");
+            Path sources = module.resolve("src");
+            writeJava(sources, "io/freedriver/samplesvc/api/NewPlain.java",
+                    "package io.freedriver.samplesvc.api; public class NewPlain { public int n() { return 1; } }");
+            writeJava(sources, "io/freedriver/samplesvc/api/NewShape.java",
+                    "package io.freedriver.samplesvc.api; public record NewShape(String name) {}");
+            writeJava(sources, "io/freedriver/samplesvc/orders/Unmatched.java",
+                    "package io.freedriver.samplesvc.orders; public class Unmatched { void m() { org.library.Tool.use(); } }");
+            Path classes = module.resolve("target/classes");
+            compile(sources, classes, List.of(jar));
+            Files.writeString(module.resolve("pom.xml"), """
+                    <project>
+                      <groupId>io.freedriver</groupId>
+                      <artifactId>sample-service</artifactId>
+                      <version>1.0.0-SNAPSHOT</version>
+                    </project>
+                    """);
+
+            JavaClasses imported = new ClassFileImporter().importLocations(List.of(
+                    Location.of(classes), Location.of(URI.create("jar:" + jar.toUri() + "!/"))));
+            List<ArchRule> rules = ApiQualityRules.all();
+            String rule1 = rules.get(0).evaluate(imported).getFailureReport().toString();
+            String rule2 = rules.get(1).evaluate(imported).getFailureReport().toString();
+
+            assertTrue(rule2.contains("io.freedriver.samplesvc.api.NewPlain is a plain class"), rule2);
+            assertFalse(rule2.contains("NewShape"), rule2);
+            assertFalse(rule2.contains("Unmatched"), rule2);
+
+            assertTrue(rule1.contains("io.freedriver.samplesvc.orders.Unmatched depends on org.library.Tool "
+                    + "is a third-party library"), rule1);
+            assertFalse(rule1.contains("NewPlain"), rule1);
+        } finally {
+            delete(root);
+        }
+    }
+
+    @Test
+    void an_api_package_class_inside_a_service_artifact_is_judged_by_rule_2_and_not_by_rule_1() {
+        ModuleOwnership ownership = roles(Map.of(role("api.PlainThing"), "sample"));
+        assertFailsIn(ApiQualityRules.apiContracts(ownership), role("api.PlainThing") + " is a plain class");
+        assertPassesIn(ApiQualityRules.serviceDependencies(ownership));
+    }
+
+    @Test
+    void service_code_uses_its_own_service_code_and_api_packages_of_any_module() {
+        Map<String, String> owners = new LinkedHashMap<>();
+        owners.put(role("service.Worker"), "sample");
+        owners.put(role("service.Helper"), "sample");
+        owners.put(role("api.Port"), "sample");
+        owners.put(other("api.RemoteContract"), "other-service");
+        assertPassesIn(ApiQualityRules.serviceDependencies(roles(owners)));
+    }
+
+    @Test
+    void service_code_that_uses_another_modules_service_package_fails_rule_1() {
+        Map<String, String> owners = new LinkedHashMap<>();
+        owners.put(role("service.UsesRemote"), "sample");
+        owners.put(other("service.Remote"), "other-service");
+        assertFailsIn(ApiQualityRules.serviceDependencies(roles(owners)),
+                role("service.UsesRemote") + " depends on " + other("service.Remote") + " is other-service");
+    }
+
+    @Test
+    void a_class_with_no_package_role_in_a_service_artifact_is_still_judged_by_rule_1() {
+        Map<String, String> owners = new LinkedHashMap<>();
+        owners.put(role("plain.Loose"), "sample");
+        owners.put(other("service.Remote"), "other-service");
+        assertFailsIn(ApiQualityRules.serviceDependencies(roles(owners)),
+                role("plain.Loose") + " depends on " + other("service.Remote") + " is other-service");
+    }
+
+    @Test
+    void service_code_that_uses_an_implementation_of_its_own_module_fails_rule_1() {
+        Map<String, String> owners = new LinkedHashMap<>();
+        owners.put(role("service.UsesImpl"), "sample");
+        owners.put(role("impl.mongo.MongoPort"), "sample");
+        assertFailsIn(ApiQualityRules.serviceDependencies(roles(owners)),
+                role("service.UsesImpl") + " depends on " + role("impl.mongo.MongoPort")
+                        + " is implementation code of its own module");
+    }
+
+    @Test
+    void an_api_class_uses_api_classes_of_its_module_and_never_its_service_code() {
+        Map<String, String> pass = new LinkedHashMap<>();
+        pass.put(role("api.UsesApi"), "sample");
+        pass.put(role("api.Port"), "sample");
+        assertPassesIn(ApiQualityRules.apiContracts(roles(pass)));
+
+        Map<String, String> fail = new LinkedHashMap<>();
+        fail.put(role("api.UsesService"), "sample");
+        fail.put(role("service.Helper"), "sample");
+        assertFailsIn(ApiQualityRules.apiContracts(roles(fail)),
+                role("api.UsesService") + " depends on " + role("service.Helper")
+                        + " is service code of its own module");
+    }
+
+    @Test
+    void an_implementor_in_an_impl_package_passes_rule_3_and_one_in_a_service_package_fails() {
+        Map<String, String> pass = new LinkedHashMap<>();
+        pass.put(role("api.Port"), "sample");
+        pass.put(role("impl.mongo.MongoPort"), "sample");
+        assertPassesIn(ApiQualityRules.implementationsLiveInImpl(roles(pass)));
+
+        Map<String, String> fail = new LinkedHashMap<>();
+        fail.put(role("api.Port"), "sample");
+        fail.put(role("service.HandPort"), "sample");
+        assertFailsIn(ApiQualityRules.implementationsLiveInImpl(roles(fail)),
+                role("service.HandPort") + " implements " + role("api.Port"));
+    }
+
+    @Test
+    void a_contract_subtype_below_an_api_package_passes_rule_3_in_a_service_artifact() {
+        Map<String, String> owners = new LinkedHashMap<>();
+        owners.put(role("api.Port"), "sample");
+        owners.put(role("api.dto.Shape"), "sample");
+        ModuleOwnership ownership = roles(owners);
+        assertPassesIn(ApiQualityRules.implementationsLiveInImpl(ownership));
+        assertPassesIn(ApiQualityRules.apiContracts(ownership));
+    }
+
+    @Test
+    void a_class_in_a_role_package_or_a_utility_module_has_a_role() {
+        assertPassesIn(ApiQualityRules.classesHaveAPackageRole(roles(Map.of(
+                role("service.Helper"), "sample",
+                role("api.Port"), "sample",
+                role("impl.mongo.MongoPort"), "sample",
+                role("plain.Loose"), "hit-window"))));
+    }
+
+    @Test
+    void an_unmatched_package_in_a_service_artifact_fails_the_role_check_while_rule_1_judges_it() {
+        Map<String, String> owners = new LinkedHashMap<>();
+        owners.put(role("plain.Loose"), "sample");
+        owners.put(other("service.Remote"), "other-service");
+        ModuleOwnership ownership = roles(owners);
+        assertFailsIn(ApiQualityRules.classesHaveAPackageRole(ownership),
+                role("plain.Loose") + " is in package io.freedriver.rolefixture.plain, which names no role");
+        assertFailsIn(ApiQualityRules.serviceDependencies(ownership),
+                role("plain.Loose") + " depends on " + other("service.Remote") + " is other-service");
+    }
+
+    @Test
+    void an_unmatched_package_in_an_api_artifact_fails_the_role_check() {
+        assertFailsIn(ApiQualityRules.classesHaveAPackageRole(roles(Map.of(role("plain.Loose"), "sample-api"))),
+                role("plain.Loose") + " is in package io.freedriver.rolefixture.plain, which names no role");
+    }
+
+    @Test
+    void a_module_whose_classes_share_one_role_passes() {
+        assertPassesIn(ApiQualityRules.modulesHoldOneRole(roles(Map.of(
+                role("service.Worker"), "sample",
+                role("service.Helper"), "sample",
+                role("plain.Loose"), "sample",
+                other("api.RemoteContract"), "other-api"))));
+    }
+
+    @Test
+    void a_module_with_two_roles_fails_and_names_each_class_outside_its_main_role() {
+        assertFailsIn(ApiQualityRules.modulesHoldOneRole(roles(Map.of(
+                role("service.Worker"), "sample",
+                role("service.Helper"), "sample",
+                role("api.PlainThing"), "sample"))),
+                role("api.PlainThing") + " is API code in module sample, where most classes are service code");
+    }
+
+    @Test
+    void a_role_package_inside_a_utility_module_fails_one_role_per_module() {
+        assertFailsIn(ApiQualityRules.modulesHoldOneRole(roles(Map.of(
+                role("plain.Loose"), "hit-window",
+                role("plain.Spare"), "hit-window",
+                role("service.Helper"), "hit-window"))),
+                role("service.Helper") + " is service code in module hit-window, where most classes are utility code");
+    }
+
+    /** The store compares lines, so the added class has to bring a line of its own. */
+    @Test
+    void an_implementation_added_to_an_already_mixed_module_is_a_new_violation_that_names_it() {
+        Map<String, String> mixed = new LinkedHashMap<>();
+        mixed.put(role("service.Worker"), "sample");
+        mixed.put(role("service.Helper"), "sample");
+        mixed.put(role("service.HandPort"), "sample");
+        mixed.put(role("api.PlainThing"), "sample");
+        List<String> frozen = lines(ApiQualityRules.modulesHoldOneRole(roles(mixed)));
+        assertEquals(List.of(role("api.PlainThing")
+                + " is API code in module sample, where most classes are service code"), frozen);
+
+        mixed.put(role("impl.mongo.MongoPort"), "sample");
+        List<String> after = new ArrayList<>(lines(ApiQualityRules.modulesHoldOneRole(roles(mixed))));
+        assertTrue(after.containsAll(frozen), after::toString);
+        after.removeAll(frozen);
+        assertEquals(List.of(role("impl.mongo.MongoPort")
+                + " is implementation code in module sample, where most classes are service code"), after);
+    }
+
+    private static List<String> lines(ArchRule rule) {
+        return evaluateRoles(rule).getFailureReport().getDetails().stream().sorted().toList();
+    }
+
+    @Test
+    void a_package_split_across_two_modules_fails() throws Exception {
+        Path root = Files.createTempDirectory("apiquality-split");
+        try {
+            Path a = module(root, "split-a", "io/freedriver/splitfix/shared/Left.java",
+                    "package io.freedriver.splitfix.shared; public class Left {}");
+            Path b = module(root, "split-b", "io/freedriver/splitfix/shared/Right.java",
+                    "package io.freedriver.splitfix.shared; public class Right {}");
+            List<String> lines = split(a.resolve("target/classes"), b.resolve("target/classes"));
+            assertEquals(List.of(
+                    "io.freedriver.splitfix.shared.Left is in package io.freedriver.splitfix.shared, "
+                            + "whose main classes come from reactor modules split-a and split-b",
+                    "io.freedriver.splitfix.shared.Right is in package io.freedriver.splitfix.shared, "
+                            + "whose main classes come from reactor modules split-a and split-b"), lines);
+        } finally {
+            delete(root);
+        }
+    }
+
+    @Test
+    void two_modules_with_their_own_packages_pass_the_split_check() throws Exception {
+        Path root = Files.createTempDirectory("apiquality-split");
+        try {
+            Path a = module(root, "own-a", "io/freedriver/splitfix/a/Left.java",
+                    "package io.freedriver.splitfix.a; public class Left {}");
+            Path b = module(root, "own-b", "io/freedriver/splitfix/b/Right.java",
+                    "package io.freedriver.splitfix.b; public class Right {}");
+            assertEquals(List.of(), split(a.resolve("target/classes"), b.resolve("target/classes")));
+        } finally {
+            delete(root);
+        }
+    }
+
+    @Test
+    void a_modules_classes_directory_and_its_own_jar_are_one_owner() throws Exception {
+        Path root = Files.createTempDirectory("apiquality-split");
+        try {
+            Path a = module(root, "jarred-a", "io/freedriver/splitfix/jarred/Left.java",
+                    "package io.freedriver.splitfix.jarred; public class Left {}");
+            Path jar = a.resolve("target/jarred-a-1.0.0-SNAPSHOT.jar");
+            jar(a.resolve("target/classes"), jar);
+            assertEquals(List.of(), split(a.resolve("target/classes"), jar));
+        } finally {
+            delete(root);
+        }
+    }
+
+    @Test
+    void one_class_name_compiled_in_two_modules_fails() throws Exception {
+        Path root = Files.createTempDirectory("apiquality-split");
+        try {
+            String source = "package io.freedriver.splitfix.twice; public class Same {}";
+            Path a = module(root, "twice-a", "io/freedriver/splitfix/twice/Same.java", source);
+            Path b = module(root, "twice-b", "io/freedriver/splitfix/twice/Same.java", source);
+            List<String> lines = split(a.resolve("target/classes"), b.resolve("target/classes"));
+            assertTrue(lines.contains("io.freedriver.splitfix.twice.Same is compiled in reactor modules "
+                    + "twice-a and twice-b"), lines::toString);
+        } finally {
+            delete(root);
+        }
+    }
+
+    @Test
+    void an_output_of_no_reactor_module_is_refused() throws Exception {
+        Path root = Files.createTempDirectory("apiquality-split");
+        try {
+            Path classes = root.resolve("stray/target/classes");
+            Files.createDirectories(classes);
+            assertThrows(IllegalArgumentException.class, () -> ReactorOutputs.of(List.of(classes)));
+            assertThrows(IllegalArgumentException.class,
+                    () -> ReactorOutputs.of(List.of(root.resolve("gone/target/classes"))));
+        } finally {
+            delete(root);
+        }
+    }
+
+    /** A module of ours on disk: a pom and one compiled class under target/classes. */
+    private static Path module(Path root, String artifactId, String relative, String source) throws IOException {
+        Path module = root.resolve(artifactId);
+        Path sources = module.resolve("src");
+        writeJava(sources, relative, source);
+        compile(sources, module.resolve("target/classes"), List.of());
+        Files.writeString(module.resolve("pom.xml"), """
+                <project>
+                  <groupId>io.freedriver</groupId>
+                  <artifactId>%s</artifactId>
+                  <version>1.0.0-SNAPSHOT</version>
+                </project>
+                """.formatted(artifactId));
+        return module;
+    }
+
+    private static List<String> split(Path... outputs) {
+        ReactorOutputs reactor = ReactorOutputs.of(List.of(outputs));
+        return reactor.packagesComeFromOneModule().evaluate(reactor.classes())
+                .getFailureReport().getDetails().stream().sorted().toList();
+    }
+
+    private static String role(String relative) {
+        return "io.freedriver.rolefixture." + relative;
+    }
+
+    private static String other(String relative) {
+        return "io.freedriver.otherfixture." + relative;
+    }
+
+    /** Class name to artifactId. The classes sit in role packages, so the package gives each its role. */
+    private static ModuleOwnership roles(Map<String, String> artifactIds) {
+        Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
+        artifactIds.forEach((name, artifactId) -> owners.put(name, ModuleOwnership.Owned.ours("io.freedriver", artifactId)));
+        return overlay(owners);
+    }
+
+    private static void assertPassesIn(ArchRule rule) {
+        EvaluationResult result = evaluateRoles(rule);
+        assertFalse(result.hasViolation(), () -> result.getFailureReport().toString());
+    }
+
+    private static void assertFailsIn(ArchRule rule, String line) {
+        EvaluationResult result = evaluateRoles(rule);
+        String report = result.getFailureReport().toString();
+        assertTrue(result.hasViolation(), () -> "passed, expected: " + line);
+        assertTrue(report.contains(line), () -> "expected \"" + line + "\" in:\n" + report);
+    }
+
+    /** The overlaid classes are the subjects: every other fixture is a test class and stays unjudged. */
+    private static EvaluationResult evaluateRoles(ArchRule rule) {
+        JavaClasses classes = new ClassFileImporter()
+                .importPackages("io.freedriver.rolefixture", "io.freedriver.otherfixture");
+        assertTrue(classes.stream().anyMatch(type -> type.getName().equals(role("api.Port"))),
+                "imported no role fixture");
+        return rule.evaluate(classes);
+    }
+
+    private static ArchRule service(String name) {
+        return ApiQualityRules.serviceDependencies(overlay(
+                ours(name, "sample", ModuleOwnership.Role.SERVICE)));
     }
 
     @Test
@@ -308,9 +801,11 @@ class ApiQualityRulesTest {
         return FIXTURES + simple;
     }
 
+    /** The fixture's module. The artifactId has to give {@code role}, since the fixture package names none. */
     private static Map.Entry<String, ModuleOwnership.Owned> ours(String name, String artifactId, ModuleOwnership.Role role) {
-        return Map.entry(name, new ModuleOwnership.Owned(
-                ModuleOwnership.Kind.OURS, "io.freedriver", artifactId, role, artifactId));
+        ModuleOwnership.Owned owned = ModuleOwnership.Owned.ours("io.freedriver", artifactId);
+        assertEquals(role, owned.effectiveRole(), artifactId);
+        return Map.entry(name, owned);
     }
 
     @SafeVarargs

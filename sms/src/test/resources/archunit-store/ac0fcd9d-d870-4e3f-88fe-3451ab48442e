@@ -1,4 +1,3 @@
-io.freedriver.sms.api.rs.ext.ErrorMappers depends on com.fasterxml.jackson.core.JsonProcessingException is a third-party library
 io.freedriver.sms.http.SmsResource depends on org.jboss.logging.Logger is a third-party library
 io.freedriver.sms.http.SmsResource depends on org.jboss.logging.MDC is a third-party library
 io.freedriver.sms.otp.ActiveSender depends on org.jboss.logging.Logger is a third-party library
