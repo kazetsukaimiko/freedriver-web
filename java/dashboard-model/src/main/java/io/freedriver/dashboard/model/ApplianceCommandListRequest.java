@@ -17,8 +17,8 @@ import java.util.Set;
  * The caller sends the commands only. The dashboard mints ids when it publishes the MQTT list.
  * <p>
  * One entry per appliance name and delay. An absent delay counts as zero, compared with
- * {@link Duration#equals(Object)}. Unknown JSON fields fail in the dashboard reader (#637),
- * configured like {@code ApplianceJson} (unknown properties fail, scalar coercion off).
+ * {@link Duration#equals(Object)}. Strict token decoding is the dashboard reader's (#637),
+ * configured like {@code ApplianceJson}; {@link ApplianceCommandEntryRequest} states that configuration.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ApplianceCommandListRequest(

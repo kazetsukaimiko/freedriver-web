@@ -11,11 +11,7 @@ import java.time.Instant;
 /**
  * One pending delayed command returned by the scheduled list.
  * JSON names are {@code applianceName} and {@code on}. {@code on} is a JSON boolean.
- * {@code dueAt} is an ISO-8601 string.
- * <p>
- * The dashboard reader (#637) rejects a string boolean and a numeric instant. That reader is
- * configured like {@code ApplianceJson}: scalar coercion off, unknown properties fail, and an
- * instant is read with {@link Instant#parse(CharSequence)} from a JSON string.
+ * {@code dueAt} is an ISO-8601 string. Strict tokens follow {@link ApplianceCommandEntryRequest}.
  */
 public record PendingApplianceCommand(
         @NotBlank @CanonicalUuid String id,

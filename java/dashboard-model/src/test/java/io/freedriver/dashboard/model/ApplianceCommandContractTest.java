@@ -35,11 +35,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The test mapper follows mqtt-contract {@code ApplianceJson.listMapper}: a copy of
- * {@link ApplianceSchemas#STRICT} with missing creator properties allowed, scalar coercion off,
- * and string-only {@link Duration} and {@link Instant} readers. Bean validation covers the
- * bounds and the one-entry-per-name-and-delay rule. The dashboard reader with this configuration
- * is #637.
+ * Bean validation covers the bounds and the one-entry-per-name-and-delay rule.
+ * The mapper follows mqtt-contract {@code ApplianceJson.listMapper}, the configuration
+ * {@link ApplianceCommandEntryRequest} documents. The dashboard reader is #637.
  */
 class ApplianceCommandContractTest {
 
