@@ -27,6 +27,7 @@
         <module>agent-dispatcher</module>
         <module>autonomy-mcp</module>
         <module>device-daemon</module>
+        <module>architecture-check</module>
     </modules>
 
     <properties>

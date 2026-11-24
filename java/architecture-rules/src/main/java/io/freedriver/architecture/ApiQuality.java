@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assumptions;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -70,7 +71,7 @@ public final class ApiQuality {
     }
 
     /**
-     * Rules 1 to 4 for a module judged from a downstream module's test. The caller names both
+     * Rules 1 to 4 and the two role rules for a module judged from a downstream module's test. The caller names both
      * directories, so each is a literal the build-cache input check can match to the running
      * module's {@code maven.build.cache.input} entries.
      *
@@ -82,6 +83,16 @@ public final class ApiQuality {
         for (ArchRule rule : ApiQualityRules.all()) {
             check(rule, imported, store);
         }
+    }
+
+    /**
+     * The split-package rule over the reactor's main outputs, frozen in the running module's store.
+     *
+     * @param outputs each module's {@code target/classes}, relative to the running module
+     */
+    public static void checkSplitPackages(List<Path> outputs) {
+        ReactorOutputs reactor = ReactorOutputs.of(outputs);
+        check(reactor.packagesComeFromOneModule(), reactor.classes());
     }
 
     public static JavaClasses main() {

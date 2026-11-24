@@ -26,10 +26,12 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Passing and failing fixtures for the four API quality rules, evaluated like {@link LayeringEdgeTest}.
+ * Passing and failing fixtures for the four API quality rules, the two role rules and the
+ * split-package rule, evaluated like {@link LayeringEdgeTest}.
  * A fixture names the module a class is compiled in; the class's package gives its role, and a
  * package that names none leaves the module's artifact role. Directory names that differ from
  * artifactIds are read from the reactor poms, and a jar named slf4j-api stays third-party.
@@ -351,13 +353,14 @@ class ApiQualityRulesTest {
     }
 
     @Test
-    void every_gated_module_runs_all_four_rules() {
-        assertEquals(4, ApiQualityRules.all().size());
+    void every_gated_module_runs_all_six_rules() {
+        assertEquals(6, ApiQualityRules.all().size());
         List<String> tests = Stream.of(ApiQualityTest.class.getDeclaredMethods())
                 .filter(method -> method.isAnnotationPresent(Test.class))
                 .map(java.lang.reflect.Method::getName).sorted().toList();
-        assertEquals(List.of("api_code_is_a_contract", "implementation_packages_stay_private",
-                "implementations_are_implementation_code", "service_code_depends_on_the_allowlist"), tests);
+        assertEquals(List.of("api_code_is_a_contract", "every_class_has_a_package_role",
+                "implementation_packages_stay_private", "implementations_are_implementation_code",
+                "service_code_depends_on_the_allowlist", "the_module_holds_one_role"), tests);
         assertEquals(ApiQualityTest.class, LayeringTest.class.getSuperclass());
     }
 
@@ -494,6 +497,182 @@ class ApiQualityRulesTest {
         ModuleOwnership ownership = roles(owners);
         assertPassesIn(ApiQualityRules.implementationsLiveInImpl(ownership));
         assertPassesIn(ApiQualityRules.apiContracts(ownership));
+    }
+
+    @Test
+    void a_class_in_a_role_package_or_a_utility_module_has_a_role() {
+        assertPassesIn(ApiQualityRules.classesHaveAPackageRole(roles(Map.of(
+                role("service.Helper"), "sample",
+                role("api.Port"), "sample",
+                role("impl.mongo.MongoPort"), "sample",
+                role("plain.Loose"), "hit-window"))));
+    }
+
+    @Test
+    void an_unmatched_package_in_a_service_artifact_fails_the_role_check_while_rule_1_judges_it() {
+        Map<String, String> owners = new LinkedHashMap<>();
+        owners.put(role("plain.Loose"), "sample");
+        owners.put(other("service.Remote"), "other-service");
+        ModuleOwnership ownership = roles(owners);
+        assertFailsIn(ApiQualityRules.classesHaveAPackageRole(ownership),
+                role("plain.Loose") + " is in package io.freedriver.rolefixture.plain, which names no role");
+        assertFailsIn(ApiQualityRules.serviceDependencies(ownership),
+                role("plain.Loose") + " depends on " + other("service.Remote") + " is other-service");
+    }
+
+    @Test
+    void an_unmatched_package_in_an_api_artifact_fails_the_role_check() {
+        assertFailsIn(ApiQualityRules.classesHaveAPackageRole(roles(Map.of(role("plain.Loose"), "sample-api"))),
+                role("plain.Loose") + " is in package io.freedriver.rolefixture.plain, which names no role");
+    }
+
+    @Test
+    void a_module_whose_classes_share_one_role_passes() {
+        assertPassesIn(ApiQualityRules.modulesHoldOneRole(roles(Map.of(
+                role("service.Worker"), "sample",
+                role("service.Helper"), "sample",
+                role("plain.Loose"), "sample",
+                other("api.RemoteContract"), "other-api"))));
+    }
+
+    @Test
+    void a_module_with_two_roles_fails_and_names_each_class_outside_its_main_role() {
+        assertFailsIn(ApiQualityRules.modulesHoldOneRole(roles(Map.of(
+                role("service.Worker"), "sample",
+                role("service.Helper"), "sample",
+                role("api.PlainThing"), "sample"))),
+                role("api.PlainThing") + " is API code in module sample, where most classes are service code");
+    }
+
+    @Test
+    void a_role_package_inside_a_utility_module_fails_one_role_per_module() {
+        assertFailsIn(ApiQualityRules.modulesHoldOneRole(roles(Map.of(
+                role("plain.Loose"), "hit-window",
+                role("plain.Spare"), "hit-window",
+                role("service.Helper"), "hit-window"))),
+                role("service.Helper") + " is service code in module hit-window, where most classes are utility code");
+    }
+
+    /** The store compares lines, so the added class has to bring a line of its own. */
+    @Test
+    void an_implementation_added_to_an_already_mixed_module_is_a_new_violation_that_names_it() {
+        Map<String, String> mixed = new LinkedHashMap<>();
+        mixed.put(role("service.Worker"), "sample");
+        mixed.put(role("service.Helper"), "sample");
+        mixed.put(role("service.HandPort"), "sample");
+        mixed.put(role("api.PlainThing"), "sample");
+        List<String> frozen = lines(ApiQualityRules.modulesHoldOneRole(roles(mixed)));
+        assertEquals(List.of(role("api.PlainThing")
+                + " is API code in module sample, where most classes are service code"), frozen);
+
+        mixed.put(role("impl.mongo.MongoPort"), "sample");
+        List<String> after = new ArrayList<>(lines(ApiQualityRules.modulesHoldOneRole(roles(mixed))));
+        assertTrue(after.containsAll(frozen), after::toString);
+        after.removeAll(frozen);
+        assertEquals(List.of(role("impl.mongo.MongoPort")
+                + " is implementation code in module sample, where most classes are service code"), after);
+    }
+
+    private static List<String> lines(ArchRule rule) {
+        return evaluateRoles(rule).getFailureReport().getDetails().stream().sorted().toList();
+    }
+
+    @Test
+    void a_package_split_across_two_modules_fails() throws Exception {
+        Path root = Files.createTempDirectory("apiquality-split");
+        try {
+            Path a = module(root, "split-a", "io/freedriver/splitfix/shared/Left.java",
+                    "package io.freedriver.splitfix.shared; public class Left {}");
+            Path b = module(root, "split-b", "io/freedriver/splitfix/shared/Right.java",
+                    "package io.freedriver.splitfix.shared; public class Right {}");
+            List<String> lines = split(a.resolve("target/classes"), b.resolve("target/classes"));
+            assertEquals(List.of(
+                    "io.freedriver.splitfix.shared.Left is in package io.freedriver.splitfix.shared, "
+                            + "whose main classes come from reactor modules split-a and split-b",
+                    "io.freedriver.splitfix.shared.Right is in package io.freedriver.splitfix.shared, "
+                            + "whose main classes come from reactor modules split-a and split-b"), lines);
+        } finally {
+            delete(root);
+        }
+    }
+
+    @Test
+    void two_modules_with_their_own_packages_pass_the_split_check() throws Exception {
+        Path root = Files.createTempDirectory("apiquality-split");
+        try {
+            Path a = module(root, "own-a", "io/freedriver/splitfix/a/Left.java",
+                    "package io.freedriver.splitfix.a; public class Left {}");
+            Path b = module(root, "own-b", "io/freedriver/splitfix/b/Right.java",
+                    "package io.freedriver.splitfix.b; public class Right {}");
+            assertEquals(List.of(), split(a.resolve("target/classes"), b.resolve("target/classes")));
+        } finally {
+            delete(root);
+        }
+    }
+
+    @Test
+    void a_modules_classes_directory_and_its_own_jar_are_one_owner() throws Exception {
+        Path root = Files.createTempDirectory("apiquality-split");
+        try {
+            Path a = module(root, "jarred-a", "io/freedriver/splitfix/jarred/Left.java",
+                    "package io.freedriver.splitfix.jarred; public class Left {}");
+            Path jar = a.resolve("target/jarred-a-1.0.0-SNAPSHOT.jar");
+            jar(a.resolve("target/classes"), jar);
+            assertEquals(List.of(), split(a.resolve("target/classes"), jar));
+        } finally {
+            delete(root);
+        }
+    }
+
+    @Test
+    void one_class_name_compiled_in_two_modules_fails() throws Exception {
+        Path root = Files.createTempDirectory("apiquality-split");
+        try {
+            String source = "package io.freedriver.splitfix.twice; public class Same {}";
+            Path a = module(root, "twice-a", "io/freedriver/splitfix/twice/Same.java", source);
+            Path b = module(root, "twice-b", "io/freedriver/splitfix/twice/Same.java", source);
+            List<String> lines = split(a.resolve("target/classes"), b.resolve("target/classes"));
+            assertTrue(lines.contains("io.freedriver.splitfix.twice.Same is compiled in reactor modules "
+                    + "twice-a and twice-b"), lines::toString);
+        } finally {
+            delete(root);
+        }
+    }
+
+    @Test
+    void an_output_of_no_reactor_module_is_refused() throws Exception {
+        Path root = Files.createTempDirectory("apiquality-split");
+        try {
+            Path classes = root.resolve("stray/target/classes");
+            Files.createDirectories(classes);
+            assertThrows(IllegalArgumentException.class, () -> ReactorOutputs.of(List.of(classes)));
+            assertThrows(IllegalArgumentException.class,
+                    () -> ReactorOutputs.of(List.of(root.resolve("gone/target/classes"))));
+        } finally {
+            delete(root);
+        }
+    }
+
+    /** A module of ours on disk: a pom and one compiled class under target/classes. */
+    private static Path module(Path root, String artifactId, String relative, String source) throws IOException {
+        Path module = root.resolve(artifactId);
+        Path sources = module.resolve("src");
+        writeJava(sources, relative, source);
+        compile(sources, module.resolve("target/classes"), List.of());
+        Files.writeString(module.resolve("pom.xml"), """
+                <project>
+                  <groupId>io.freedriver</groupId>
+                  <artifactId>%s</artifactId>
+                  <version>1.0.0-SNAPSHOT</version>
+                </project>
+                """.formatted(artifactId));
+        return module;
+    }
+
+    private static List<String> split(Path... outputs) {
+        ReactorOutputs reactor = ReactorOutputs.of(List.of(outputs));
+        return reactor.packagesComeFromOneModule().evaluate(reactor.classes())
+                .getFailureReport().getDetails().stream().sorted().toList();
     }
 
     private static String role(String relative) {
