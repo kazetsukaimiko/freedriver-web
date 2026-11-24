@@ -18,6 +18,8 @@ class ArchitectureTest {
 
     @Test
     void stereotypes_keep_the_api_quality_rules() {
-        ApiQuality.checkModule(Path.of("../stereotypes"));
+        ApiQuality.checkModule(
+                Path.of("../stereotypes/target/classes"),
+                Path.of("../stereotypes/src/test/resources/archunit-store"));
     }
 }

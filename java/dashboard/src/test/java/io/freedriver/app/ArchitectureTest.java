@@ -16,12 +16,16 @@ class ArchitectureTest extends LayeringTest {
     /** Rules 1 to 4 for mqtt-contract. That module stays off the mqtt-contract publish reactor. */
     @org.junit.jupiter.api.Test
     void mqtt_contract_keeps_the_api_quality_rules() {
-        io.freedriver.architecture.ApiQuality.checkModule(java.nio.file.Path.of("../../mqtt-contract"));
+        io.freedriver.architecture.ApiQuality.checkModule(
+                java.nio.file.Path.of("../../mqtt-contract/target/classes"),
+                java.nio.file.Path.of("../../mqtt-contract/src/test/resources/archunit-store"));
     }
 
     /** Rules 1 to 4 for freedriver-mqtt, judged from this downstream module. */
     @org.junit.jupiter.api.Test
     void freedriver_mqtt_keeps_the_api_quality_rules() {
-        io.freedriver.architecture.ApiQuality.checkModule(java.nio.file.Path.of("../../mqtt"));
+        io.freedriver.architecture.ApiQuality.checkModule(
+                java.nio.file.Path.of("../../mqtt/target/classes"),
+                java.nio.file.Path.of("../../mqtt/src/test/resources/archunit-store"));
     }
 }

@@ -70,16 +70,17 @@ public final class ApiQuality {
     }
 
     /**
-     * Rules 1 to 4 for a module judged from a downstream module's test: the classes are that
-     * module's {@code target/classes} and the store is its own {@code archunit-store}.
+     * Rules 1 to 4 for a module judged from a downstream module's test. The caller names both
+     * directories, so each is a literal the build-cache input check can match to the running
+     * module's {@code maven.build.cache.input} entries.
      *
-     * @param module the judged module's directory, relative to the running module
+     * @param classes the judged module's {@code target/classes}, relative to the running module
+     * @param store the judged module's own {@code src/test/resources/archunit-store}
      */
-    public static void checkModule(Path module) {
-        JavaClasses classes = importClasses(module.resolve(Path.of("target", "classes")));
-        Path store = module.resolve(Path.of("src", "test", "resources", "archunit-store"));
+    public static void checkModule(Path classes, Path store) {
+        JavaClasses imported = importClasses(classes);
         for (ArchRule rule : ApiQualityRules.all()) {
-            check(rule, classes, store);
+            check(rule, imported, store);
         }
     }
 
