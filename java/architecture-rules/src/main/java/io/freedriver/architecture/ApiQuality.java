@@ -15,7 +15,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Runs one API-quality rule against a module's {@code target/classes} and freezes the result.
+ * Runs the API-quality rules against a module's {@code target/classes} and freezes the result.
  * The store is recorded on Java {@link LayeringTest#RECORDED_JAVA}. On any other JDK the check is
  * skipped, and under CI it fails. The failure names {@code ArchitectureTest}, the test the
  * re-record command runs.
@@ -67,6 +67,21 @@ public final class ApiQuality {
             config.setProperty("freeze.store.default.allowStoreUpdate", update);
             freeze(rule, classes);
         });
+    }
+
+    /**
+     * Rules 1 to 4 for a module judged from a downstream module's test. The caller names both
+     * directories, so each is a literal the build-cache input check can match to the running
+     * module's {@code maven.build.cache.input} entries.
+     *
+     * @param classes the judged module's {@code target/classes}, relative to the running module
+     * @param store the judged module's own {@code src/test/resources/archunit-store}
+     */
+    public static void checkModule(Path classes, Path store) {
+        JavaClasses imported = importClasses(classes);
+        for (ArchRule rule : ApiQualityRules.all()) {
+            check(rule, imported, store);
+        }
     }
 
     public static JavaClasses main() {
