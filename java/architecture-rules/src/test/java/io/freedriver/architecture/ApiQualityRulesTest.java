@@ -177,17 +177,6 @@ class ApiQualityRulesTest {
     }
 
     @Test
-    void a_record_that_implements_a_same_module_interface_passes_rule_2_and_fails_rule_3() {
-        Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
-        ModuleOwnership.Owned api = ModuleOwnership.Owned.ours("io.freedriver", "sample-api");
-        owners.put(fix("Mark"), api);
-        owners.put(fix("SealedCase"), api);
-        ModuleOwnership ownership = overlay(owners);
-        assertPasses(ApiQualityRules.apiContracts(ownership), "recordimpl");
-        assertFails(ApiQualityRules.implementationsLiveInImpl(ownership), "recordimpl", fix("SealedCase"));
-    }
-
-    @Test
     void service_code_accepts_the_allowlist_and_refuses_panache_another_service_and_an_unresolved_type() {
         Map<String, ModuleOwnership.Owned> pass = new LinkedHashMap<>();
         pass.put(fix("ServiceOk"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
@@ -197,6 +186,8 @@ class ApiQualityRulesTest {
         pass.put("io.smallrye.config.SmallRyeConfig", ModuleOwnership.Owned.thirdParty("smallrye-config"));
         pass.put("org.eclipse.microprofile.config.Config", ModuleOwnership.Owned.thirdParty("microprofile-config"));
         pass.put("javax.sql.DataSource", ModuleOwnership.Owned.thirdParty("java.sql"));
+        pass.put(fix("ServiceMetrics"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        pass.put("io.micrometer.core.instrument.MeterRegistry", ModuleOwnership.Owned.thirdParty("micrometer-core"));
         assertPasses(ApiQualityRules.serviceDependencies(overlay(pass)), "servicepass");
 
         Map<String, ModuleOwnership.Owned> panache = new LinkedHashMap<>();
@@ -221,6 +212,71 @@ class ApiQualityRulesTest {
         String missingReport = missingResult.getFailureReport().toString();
         assertTrue(missingResult.hasViolation(), missingReport);
         assertTrue(missingReport.contains("unresolved"), missingReport);
+
+        assertFails(ApiQualityRules.serviceDependencies(overlay(
+                ours(fix("ServiceMutiny"), "sample", ModuleOwnership.Role.SERVICE))),
+                "mutiny", "io.vertx.mutiny");
+    }
+
+    @Test
+    void an_http_or_mcp_edge_accepts_its_framework_and_a_plain_class_fails() {
+        assertPasses(service(fix("FiltersEdge")), "filtersedge");
+        assertPasses(service(fix("RouterEdge")), "routeredge");
+        assertPasses(service(fix("RouteEdge")), "routeedge");
+        assertPasses(service(fix("RouteFilterEdge")), "routefilteredge");
+        assertPasses(service(fix("OidcEdge")), "oidcedge");
+        assertPasses(service(fix("ToolEdge")), "tooledge");
+        assertPasses(service(fix("ToolFilterEdge")), "toolfilteredge");
+
+        assertFails(service(fix("PlainRouting")), "plainrouting", fix("PlainRouting"));
+        assertFails(service(fix("PlainTool")), "plaintool", fix("PlainTool"));
+
+        EvaluationResult jackson = evaluate(service(fix("EdgeUsesJackson")), "edgejackson");
+        String report = jackson.getFailureReport().toString();
+        assertTrue(jackson.hasViolation(), report);
+        assertTrue(report.contains("ObjectMapper"), report);
+        assertFalse(report.contains("RoutingContext"), report);
+    }
+
+    @Test
+    void a_record_subtype_of_a_sealed_api_interface_passes_rule_2_and_rule_3() {
+        Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
+        ModuleOwnership.Owned api = ModuleOwnership.Owned.ours("io.freedriver", "sample-api");
+        owners.put(fix("Mark"), api);
+        owners.put(fix("SealedCase"), api);
+        ModuleOwnership ownership = overlay(owners);
+        assertPasses(ApiQualityRules.apiContracts(ownership), "sealedrecord");
+        assertPasses(ApiQualityRules.implementationsLiveInImpl(ownership), "sealedrecord");
+    }
+
+    @Test
+    void a_plain_permitted_subtype_passes_rule_3_and_fails_rule_2() {
+        Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
+        ModuleOwnership.Owned api = ModuleOwnership.Owned.ours("io.freedriver", "sample-api");
+        owners.put(fix("Mark"), api);
+        owners.put(fix("PlainPermit"), api);
+        ModuleOwnership ownership = overlay(owners);
+        assertPasses(ApiQualityRules.implementationsLiveInImpl(ownership), "plainpermit");
+        assertFails(ApiQualityRules.apiContracts(ownership), "plainpermit", fix("PlainPermit"));
+    }
+
+    @Test
+    void a_service_module_record_and_a_plain_api_implementor_fail_rule_3() {
+        Map<String, ModuleOwnership.Owned> serviceRecord = new LinkedHashMap<>();
+        serviceRecord.put(fix("Mark"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        serviceRecord.put(fix("ServiceRecord"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        assertFails(ApiQualityRules.implementationsLiveInImpl(overlay(serviceRecord)),
+                "servicerecord", fix("ServiceRecord"));
+
+        Map<String, ModuleOwnership.Owned> open = new LinkedHashMap<>();
+        open.put(fix("OpenMark"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        open.put(fix("OpenImpl"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        assertFails(ApiQualityRules.implementationsLiveInImpl(overlay(open)), "openimpl", fix("OpenImpl"));
+    }
+
+    private static ArchRule service(String name) {
+        return ApiQualityRules.serviceDependencies(overlay(
+                ours(name, "sample", ModuleOwnership.Role.SERVICE)));
     }
 
     @Test
