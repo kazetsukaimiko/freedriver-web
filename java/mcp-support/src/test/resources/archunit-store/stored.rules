@@ -1,3 +1,4 @@
 #
-#Mon Nov 23 01:41:56 UTC 2026
+#Mon Nov 23 23:58:45 UTC 2026
+classes\ that\ are\ main\ classes\ of\ our\ modules\ should\ keep\ implementation\ packages\ private,\ because\ an\ implementation\ is\ a\ package\ io.freedriver..impl.<name>\ and\ its\ subpackages;\ only\ its\ own\ classes\ depend\ on\ it,\ and\ it\ depends\ on\ no\ class\ in\ a\ package\ io.freedriver..service..\ and\ on\ no\ other\ implementation=aec0b6ed-06cf-4773-8c97-420c1b70c30f
 classes\ that\ are\ main\ classes\ of\ our\ modules\ should\ live\ in\ an\ -impl\ module\ when\ they\ implement\ an\ API\ interface,\ because\ a\ main\ class\ that\ implements\ an\ interface\ from\ an\ API\ module\ lives\ in\ an\ artifactId\ ending\ -impl;\ a\ JAX-RS\ resource\ may\ implement\ its\ JAX-RS\ API\ interface,\ a\ generated\ MicroProfile\ REST\ client\ is\ exempt,\ and\ a\ record,\ enum,\ interface,\ exception\ or\ permitted\ subtype\ of\ a\ sealed\ API\ interface\ in\ an\ API\ module\ may\ implement\ an\ API\ interface=6406d2a2-038a-41f2-990e-c78a5b24314d

@@ -24,16 +24,18 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Passing and failing fixtures for the three API quality rules, evaluated like {@link LayeringEdgeTest}.
+ * Passing and failing fixtures for the four API quality rules, evaluated like {@link LayeringEdgeTest}.
  * The fixture supplies a module role. Directory names that differ from artifactIds are read from the
  * reactor poms, and a jar named slf4j-api stays third-party.
  */
 class ApiQualityRulesTest {
 
     private static final String FIXTURES = "io.freedriver.architecture.fixtures.apiquality.";
+    private static final String IMPL_FIXTURES = "io.freedriver.architecture.fixtures.implpackage.";
 
     @Test
     void directory_names_differ_from_artifact_ids() {
@@ -275,6 +277,87 @@ class ApiQualityRulesTest {
     private static ArchRule service(String name) {
         return ApiQualityRules.serviceDependencies(overlay(
                 ours(name, "sample", ModuleOwnership.Role.SERVICE)));
+    }
+
+    @Test
+    void a_service_class_that_depends_on_an_implementation_fails_rule_4() {
+        assertFailsRule4("sample", impl("service.Wires"), "from outside it");
+    }
+
+    @Test
+    void an_api_class_that_depends_on_an_implementation_fails_rule_4() {
+        assertFailsRule4("sample-api", impl("api.Leaky"), "from outside it");
+    }
+
+    @Test
+    void an_implementation_that_depends_on_service_code_fails_rule_4() {
+        assertFailsRule4("sample", impl("impl.mongo.UsesService"), "in a service package");
+    }
+
+    @Test
+    void an_implementation_that_depends_on_another_implementation_fails_rule_4() {
+        assertFailsRule4("sample", impl("impl.redis.RedisPort"),
+                "from implementation " + IMPL_FIXTURES + "impl.redis");
+    }
+
+    @Test
+    void an_implementation_that_uses_its_own_api_and_its_own_classes_passes_rule_4() {
+        assertPassesRule4("sample", impl("impl.mongo.MongoPort"));
+        assertPassesRule4("sample", impl("impl.mongo.sub.Deep"));
+    }
+
+    @Test
+    void a_service_class_that_depends_on_an_api_passes_rule_4() {
+        assertPassesRule4("sample", impl("service.Orders"));
+    }
+
+    @Test
+    void a_class_directly_in_impl_is_in_no_implementation_for_rule_4() {
+        assertEquals(IMPL_FIXTURES + "impl.mongo", ApiQualityRules.implementation(IMPL_FIXTURES + "impl.mongo.sub"));
+        assertNull(ApiQualityRules.implementation(IMPL_FIXTURES + "impl"));
+        assertPassesRule4("sample", impl("impl.Bare"));
+        assertPassesRule4("sample", impl("service.UsesBare"));
+    }
+
+    @Test
+    void a_library_impl_package_is_outside_rule_4() {
+        assertNull(ApiQualityRules.implementation("io.quarkus.arc.impl.beans"));
+        assertNull(ApiQualityRules.implementation("com.fasterxml.jackson.databind.ser.impl"));
+        assertPassesRule4("sample", impl("service.UsesLibraryImpl"));
+    }
+
+    @Test
+    void a_test_class_is_outside_rule_4() {
+        EvaluationResult result = evaluateRule4(ModuleOwnership.reactor());
+        assertFalse(result.hasViolation(), () -> result.getFailureReport().toString());
+    }
+
+    private static String impl(String relative) {
+        return IMPL_FIXTURES + relative;
+    }
+
+    private static void assertPassesRule4(String artifactId, String subject) {
+        EvaluationResult result = evaluateRule4(overlay(Map.of(subject,
+                ModuleOwnership.Owned.ours("io.freedriver", artifactId))));
+        assertFalse(result.hasViolation(), () -> subject + ": " + result.getFailureReport());
+    }
+
+    private static void assertFailsRule4(String artifactId, String subject, String why) {
+        EvaluationResult result = evaluateRule4(overlay(Map.of(subject,
+                ModuleOwnership.Owned.ours("io.freedriver", artifactId))));
+        String report = result.getFailureReport().toString();
+        assertTrue(result.hasViolation(), () -> subject + " passed:\n" + report);
+        assertTrue(report.contains(subject + " depends on "), () -> "expected subject " + subject + " in:\n" + report);
+        assertTrue(report.contains(why), () -> "expected \"" + why + "\" in:\n" + report);
+    }
+
+    /** The overlaid class is the one subject: every other fixture is a test class and stays unjudged. */
+    private static EvaluationResult evaluateRule4(ModuleOwnership ownership) {
+        String pkg = IMPL_FIXTURES.substring(0, IMPL_FIXTURES.length() - 1);
+        JavaClasses classes = new ClassFileImporter().importPackages(pkg);
+        assertTrue(classes.stream().anyMatch(type -> type.getPackageName().startsWith(pkg)),
+                () -> "imported no class from " + pkg);
+        return ApiQualityRules.implementationPackagesStayPrivate(ownership).evaluate(classes);
     }
 
     private static String fix(String simple) {
