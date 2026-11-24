@@ -24,7 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>The stores are recorded on Java {@value #RECORDED_JAVA}, the CI JDK: ArchUnit reads a newer JDK's
  * classes differently, so on another JDK the rules are skipped rather than compared with the store.
  */
-public abstract class LayeringTest extends ServiceApiQualityTest {
+public abstract class LayeringTest extends ApiQualityTest {
 
     /** The Java feature version the stores under archunit-store are recorded on. */
     public static final int RECORDED_JAVA = 23;

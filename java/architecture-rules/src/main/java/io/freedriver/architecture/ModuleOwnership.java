@@ -20,10 +20,14 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Which reactor module a class was compiled in. The role comes from that module's artifactId, and
- * only after the class resolves to a module whose groupId is {@code io.freedriver} (sms publishes
- * under {@code io.freedriver.sms}). A jar that is not one of those modules is third-party, whatever
- * its file name. A class with no resolvable location stays unresolved.
+ * Which reactor module a class was compiled in, and the role that class plays. The module is the
+ * one whose groupId is {@code io.freedriver} (sms publishes under {@code io.freedriver.sms}) and
+ * whose output holds the class. A jar that is not one of those modules is third-party, whatever its
+ * file name. A class with no resolvable location stays unresolved.
+ *
+ * <p>The role comes from the class's package: {@code io.freedriver.<project>[.<area>]} followed by
+ * {@code api}, {@code impl.<name>} or {@code service}, and every package below that segment. A class
+ * whose package matches none of these takes its module's artifact role until the package renames.
  */
 final class ModuleOwnership {
 
@@ -39,18 +43,45 @@ final class ModuleOwnership {
         OURS, THIRD_PARTY, UNRESOLVED
     }
 
-    /** One resolved owner. {@code detail} is the artifactId, the jar file name, or why it stayed unresolved. */
-    record Owned(Kind kind, String groupId, String artifactId, Role role, String detail) {
+    /**
+     * One resolved owner. {@code kind}, {@code groupId} and {@code artifactId} identify the module.
+     * {@code packageRole} and {@code effectiveRole} describe the class. {@code detail} is the
+     * artifactId, the jar file name, or why it stayed unresolved.
+     *
+     * @param packageRole the role the class's package names, empty when it names none
+     * @param effectiveRole the package role, else the module's artifact role; null off our modules
+     */
+    record Owned(Kind kind, String groupId, String artifactId, String detail,
+                 Optional<Role> packageRole, Role effectiveRole) {
+
+        /** A module of ours, before a class's package is known: the artifact role stands. */
         static Owned ours(String groupId, String artifactId) {
-            return new Owned(Kind.OURS, groupId, artifactId, roleOf(artifactId), artifactId);
+            return new Owned(Kind.OURS, groupId, artifactId, artifactId, Optional.empty(), roleOf(artifactId));
         }
 
         static Owned thirdParty(String detail) {
-            return new Owned(Kind.THIRD_PARTY, "", "", null, detail);
+            return new Owned(Kind.THIRD_PARTY, "", "", detail, Optional.empty(), null);
         }
 
         static Owned unresolved(String detail) {
-            return new Owned(Kind.UNRESOLVED, "", "", null, detail);
+            return new Owned(Kind.UNRESOLVED, "", "", detail, Optional.empty(), null);
+        }
+
+        /** This module's owner for a class in {@code pkg}. */
+        Owned inPackage(String pkg) {
+            if (kind != Kind.OURS) {
+                return this;
+            }
+            Optional<Role> named = ModuleOwnership.packageRole(pkg);
+            return new Owned(kind, groupId, artifactId, detail, named, named.orElseGet(() -> roleOf(artifactId)));
+        }
+
+        boolean ours() {
+            return kind == Kind.OURS;
+        }
+
+        boolean is(Role role) {
+            return kind == Kind.OURS && effectiveRole == role;
         }
 
         boolean sameModule(Owned other) {
@@ -97,16 +128,19 @@ final class ModuleOwnership {
         return exact.containsKey(type.getName());
     }
 
+    /** The class's module, with the role its package gives it. A fixture's owner names the module only. */
     Owned classify(JavaClass type) {
         Owned over = exact.get(type.getName());
         if (over != null) {
-            return over;
+            return over.inPackage(type.getPackageName());
         }
         return cache.computeIfAbsent(type.getName(), name -> type.getSource()
                 .map(source -> classifyUri(source.getUri()))
-                .orElseGet(() -> Owned.unresolved(name)));
+                .orElseGet(() -> Owned.unresolved(name)))
+                .inPackage(type.getPackageName());
     }
 
+    /** The module that owns a location. The class role is added by {@link Owned#inPackage(String)}. */
     Owned classifyUri(URI uri) {
         if (uri == null) {
             return Owned.unresolved("no location");
@@ -178,6 +212,54 @@ final class ModuleOwnership {
         return Optional.of(read);
     }
 
+    /**
+     * The role a package names: {@code io.freedriver.<project>} or
+     * {@code io.freedriver.<project>.<area>}, then {@code api}, {@code service} or {@code impl.<name>}.
+     * Packages below the role segment take the same role. {@code impl} with no name segment, a second
+     * area segment, and a package with no project segment name no role.
+     */
+    static Optional<Role> packageRole(String pkg) {
+        int at = roleSegment(pkg);
+        if (at < 0) {
+            return Optional.empty();
+        }
+        return Optional.of(switch (pkg.split("\\.")[at]) {
+            case "api" -> Role.API;
+            case "service" -> Role.SERVICE;
+            default -> Role.IMPL;
+        });
+    }
+
+    /** The {@code <name>} of an implementation package, so {@code io.freedriver.x.impl.mongo.codec} gives mongo. */
+    static Optional<String> implementationName(String pkg) {
+        int at = roleSegment(pkg);
+        String[] segments = pkg.split("\\.");
+        return at >= 0 && "impl".equals(segments[at]) ? Optional.of(segments[at + 1]) : Optional.empty();
+    }
+
+    /** Index of the role segment, or -1. The project is segment 2, so the role is segment 3 or 4. */
+    private static int roleSegment(String pkg) {
+        String[] segments = pkg.split("\\.");
+        if (segments.length < 4 || !"io".equals(segments[0]) || !"freedriver".equals(segments[1])) {
+            return -1;
+        }
+        for (int at = 3; at <= 4 && at < segments.length; at++) {
+            switch (segments[at]) {
+                case "api", "service" -> {
+                    return at;
+                }
+                case "impl" -> {
+                    return at + 1 < segments.length ? at : -1;
+                }
+                default -> {
+                    // An area segment: the role may follow it.
+                }
+            }
+        }
+        return -1;
+    }
+
+    /** The artifact role: what a class takes when its package names none. */
     static Role roleOf(String artifactId) {
         if (artifactId.endsWith("-api") || artifactId.endsWith("-model") || artifactId.endsWith("-contract")) {
             return Role.API;
