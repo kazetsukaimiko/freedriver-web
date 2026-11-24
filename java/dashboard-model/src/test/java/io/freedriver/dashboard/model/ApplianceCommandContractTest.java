@@ -1,11 +1,18 @@
 package io.freedriver.dashboard.model;
 
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonDeserializer;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.JsonSerializer;
+import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.module.SimpleModule;
 import io.freedriver.mqtt.contract.ApplianceCommandList;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
 import jakarta.validation.ConstraintViolation;
@@ -16,6 +23,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -27,17 +35,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * JSON rules match the dashboard mapper: JavaTimeModule, unknown properties allowed on the mapper,
- * dates written as ISO-8601, durations written as timestamps unless a field asks for a string.
- * Strict boolean and duration fields reject coercion before bean validation.
+ * The test mapper follows mqtt-contract {@code ApplianceJson.listMapper}: a copy of
+ * {@link ApplianceSchemas#STRICT} with missing creator properties allowed, scalar coercion off,
+ * and string-only {@link Duration} and {@link Instant} readers. Bean validation covers the
+ * bounds and the one-entry-per-name-and-delay rule. The dashboard reader with this configuration
+ * is #637.
  */
 class ApplianceCommandContractTest {
 
-    private static final ObjectMapper JSON = JsonMapper.builder()
-            .addModule(new JavaTimeModule())
-            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
-            .build();
+    private static final ObjectMapper JSON = listMapper();
 
     private static final Validator VALIDATOR = Validation.buildDefaultValidatorFactory().getValidator();
 
@@ -62,19 +68,24 @@ class ApplianceCommandContractTest {
                   {"applianceName":"lamp","on":true,"delay":"PT5M"}
                 ]}""");
         assertTrue(VALIDATOR.validate(body).isEmpty());
-        assertTrue(body.getCommands().get(0).immediate());
-        assertNull(body.getCommands().get(0).getDelay());
-        assertTrue(body.getCommands().get(1).immediate());
-        assertEquals(Duration.ZERO, body.getCommands().get(1).getDelay());
-        assertFalse(body.getCommands().get(2).immediate());
-        assertEquals(Duration.ofMinutes(5), body.getCommands().get(2).getDelay());
+        assertTrue(body.commands().get(0).immediate());
+        assertNull(body.commands().get(0).delay());
+        assertTrue(body.commands().get(1).immediate());
+        assertEquals(Duration.ZERO, body.commands().get(1).delay());
+        assertFalse(body.commands().get(2).immediate());
+        assertEquals(Duration.ofMinutes(5), body.commands().get(2).delay());
         ApplianceCommandListRequest again = read(JSON.writeValueAsString(body));
-        assertEquals(Duration.ofMinutes(5), again.getCommands().get(2).getDelay());
+        assertEquals(Duration.ofMinutes(5), again.commands().get(2).delay());
         assertTrue(JSON.writeValueAsString(body).contains("\"delay\":\"PT5M\""));
+        ApplianceCommandListRequest nullDelay = read("""
+                {"commands":[{"applianceName":"hallway","on":true,"delay":null}]}""");
+        assertNull(nullDelay.commands().get(0).delay());
+        assertTrue(nullDelay.commands().get(0).immediate());
+        assertTrue(VALIDATOR.validate(nullDelay).isEmpty());
     }
 
     @Test
-    void stringBooleanAndNumericDelayFailWhileReading() {
+    void strictTokensFailWhileReading() {
         assertThrows(JsonProcessingException.class, () -> read("""
                 {"commands":[{"applianceName":"hallway","on":"true"}]}"""));
         assertThrows(JsonProcessingException.class, () -> read("""
@@ -82,7 +93,9 @@ class ApplianceCommandContractTest {
         assertThrows(JsonProcessingException.class, () -> read("""
                 {"commands":[{"applianceName":"hallway","on":1}]}"""));
         assertThrows(JsonProcessingException.class, () -> read("""
-                {"commands":[{"applianceName":"hallway","on":true,"delay":null}]}"""));
+                {"commands":[{"applianceName":"hallway","on":true,"extra":1}]}"""));
+        assertThrows(JsonProcessingException.class, () -> read("""
+                {"commands":[{"applianceName":"hallway","on":true}],"listId":"x"}"""));
     }
 
     @Test
@@ -105,10 +118,6 @@ class ApplianceCommandContractTest {
                 {"commands":[{"applianceName":"hallway","on":true,"delay":"PT86401S"}]}""").isEmpty());
         assertTrue(validate("""
                 {"commands":[{"applianceName":"hallway","on":true,"delay":"PT86400S"}]}""").isEmpty());
-        assertFalse(validate("""
-                {"commands":[{"applianceName":"hallway","on":true,"extra":1}]}""").isEmpty());
-        assertFalse(validate("""
-                {"commands":[{"applianceName":"hallway","on":true}],"listId":"x"}""").isEmpty());
         assertFalse(validate("""
                 {"commands":[
                   {"applianceName":"hallway","on":true},
@@ -191,5 +200,82 @@ class ApplianceCommandContractTest {
             entries.add("{\"applianceName\":\"a" + i + "\",\"on\":true}");
         }
         return "{\"commands\":[" + String.join(",", entries) + "]}";
+    }
+
+    /** Same construction as mqtt-contract {@code ApplianceJson.listMapper}. */
+    private static ObjectMapper listMapper() {
+        ObjectMapper mapper = ApplianceSchemas.STRICT.copy();
+        mapper.disable(DeserializationFeature.FAIL_ON_MISSING_CREATOR_PROPERTIES);
+        mapper.disable(MapperFeature.ALLOW_COERCION_OF_SCALARS);
+        SimpleModule time = new SimpleModule("dashboard-command-contract-time");
+        time.addSerializer(Duration.class, new DurationText());
+        time.addDeserializer(Duration.class, new DurationTextReader());
+        time.addSerializer(Instant.class, new InstantText());
+        time.addDeserializer(Instant.class, new InstantTextReader());
+        mapper.registerModule(time);
+        return mapper;
+    }
+
+    /** Writes a duration with {@link Duration#toString()}. */
+    private static final class DurationText extends JsonSerializer<Duration> {
+
+        @Override
+        public void serialize(Duration value, JsonGenerator generator, SerializerProvider serializers)
+                throws java.io.IOException {
+            generator.writeString(value.toString());
+        }
+    }
+
+    /** Reads a duration with {@link Duration#parse(CharSequence)}. */
+    private static final class DurationTextReader extends JsonDeserializer<Duration> {
+
+        @Override
+        public Duration deserialize(JsonParser parser, DeserializationContext context)
+                throws java.io.IOException {
+            if (parser.currentToken() != JsonToken.VALUE_STRING) {
+                throw context.wrongTokenException(
+                        parser, Duration.class, JsonToken.VALUE_STRING, "ISO-8601 duration");
+            }
+            String text = parser.getText();
+            try {
+                return Duration.parse(text);
+            } catch (DateTimeParseException ex) {
+                throw badText(context, text, Duration.class, "ISO-8601 duration");
+            }
+        }
+    }
+
+    /** Writes an instant with {@link Instant#toString()}. */
+    private static final class InstantText extends JsonSerializer<Instant> {
+
+        @Override
+        public void serialize(Instant value, JsonGenerator generator, SerializerProvider serializers)
+                throws java.io.IOException {
+            generator.writeString(value.toString());
+        }
+    }
+
+    /** Reads an instant with {@link Instant#parse(CharSequence)}. */
+    private static final class InstantTextReader extends JsonDeserializer<Instant> {
+
+        @Override
+        public Instant deserialize(JsonParser parser, DeserializationContext context)
+                throws java.io.IOException {
+            if (parser.currentToken() != JsonToken.VALUE_STRING) {
+                throw context.wrongTokenException(
+                        parser, Instant.class, JsonToken.VALUE_STRING, "ISO-8601 instant");
+            }
+            String text = parser.getText();
+            try {
+                return Instant.parse(text);
+            } catch (DateTimeParseException ex) {
+                throw badText(context, text, Instant.class, "ISO-8601 instant");
+            }
+        }
+    }
+
+    private static JsonMappingException badText(
+            DeserializationContext context, String text, Class<?> type, String why) {
+        return context.weirdStringException(text, type, why);
     }
 }
