@@ -1,4 +1,4 @@
-package io.freedriver.dashboard.model;
+package io.freedriver.dashboard.model.api;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 

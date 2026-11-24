@@ -1,4 +1,4 @@
-package io.freedriver.dashboard.model;
+package io.freedriver.dashboard.model.api;
 
 import io.freedriver.mqtt.contract.ApplianceSchemas;
 import io.freedriver.mqtt.contract.CanonicalUuid;

@@ -1,9 +1,9 @@
 package io.freedriver.dashboard.api;
 
-import io.freedriver.dashboard.model.ApplianceCommandListRequest;
 import io.freedriver.dashboard.model.ApplianceCommandRequest;
-import io.freedriver.dashboard.model.ApplianceCommandResult;
-import io.freedriver.dashboard.model.PendingApplianceCommand;
+import io.freedriver.dashboard.model.api.ApplianceCommandListRequest;
+import io.freedriver.dashboard.model.api.ApplianceCommandResult;
+import io.freedriver.dashboard.model.api.PendingApplianceCommand;
 import io.freedriver.dashboard.model.ScheduledSwitchRequest;
 import io.freedriver.mqtt.contract.ApplianceSchemas;
 import io.freedriver.mqtt.contract.CanonicalUuid;
