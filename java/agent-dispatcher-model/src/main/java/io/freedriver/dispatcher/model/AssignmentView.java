@@ -9,7 +9,11 @@ import java.util.UUID;
 /**
  * One device's assignment. {@code channel} and {@code prompt} belong to this
  * assignment only. Callers must already have scoped the device or the dispatcher.
- * {@code deliveryRef} is where the host runs it, set by the host's start; null until then.
+ * {@code deliveryRef} is the host's receipt for the delivery that carries the job, as
+ * {@link StartRequest} describes; it is set by the host's start and null until then.
+ *
+ * <p>{@code agentSessionId} is the session of the agent that works on the job, whichever agent
+ * that is. Its JSON property is {@code grokSessionId}.
  *
  * <p>{@code finishBy} is the job's finish deadline. It is set only for a job the host started with
  * {@link StartRequest#fireAndForget()} true, and is null otherwise: before the start, and for a
@@ -30,7 +34,7 @@ public record AssignmentView(
         Channel channel,
         String prompt,
         AssignmentState state,
-        UUID grokSessionId,
+        @JsonProperty("grokSessionId") UUID agentSessionId,
         String note,
         @JsonProperty("on_busy") OnBusy onBusy,
         String deliveryRef,
@@ -50,11 +54,19 @@ public record AssignmentView(
             Channel channel,
             String prompt,
             AssignmentState state,
-            UUID grokSessionId,
+            UUID agentSessionId,
             String note,
             OnBusy onBusy,
             String deliveryRef) {
-        this(assignmentId, jobId, deviceId, agentName, channel, prompt, state, grokSessionId, note, onBusy,
+        this(assignmentId, jobId, deviceId, agentName, channel, prompt, state, agentSessionId, note, onBusy,
                 deliveryRef, null);
+    }
+
+    /**
+     * {@link #agentSessionId()} under its previous name. It keeps callers written before the
+     * rename compiling until they move to {@code agentSessionId()}.
+     */
+    public UUID grokSessionId() {
+        return agentSessionId;
     }
 }

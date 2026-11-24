@@ -7,9 +7,15 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
- * A host's start of one job: where it runs the job, and whether it watches the job to its end.
+ * A host's report that one job has started: which delivery carries it, and whether the host
+ * watches the job to its end.
  *
- * <p>{@code deliveryRef} is where the host runs the job: 1 to 128 printable ASCII characters, no space.
+ * <p>{@code deliveryRef} is the host's receipt for the delivery. The host has already handed the
+ * job's message to the agent, and the agent's runtime answered with an id for that delivery; for
+ * an OpenBot agent it is OpenBot's delivery id. The host reports that id here once the delivery is
+ * running. The dispatcher only stores it and returns it as {@link AssignmentView#deliveryRef()}:
+ * a restarted host reads it there and goes on watching the same delivery, and it tells a repeated
+ * start from a second delivery of the same job. 1 to 128 printable ASCII characters, no space.
  *
  * <p>{@code fireAndForget} is optional. Absent or false is watch mode: the host follows the job
  * and reports its finish. True is fire-and-forget: the host delivers the job, starts it and keeps

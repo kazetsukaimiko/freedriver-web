@@ -2,6 +2,7 @@ package io.freedriver.dispatcher.model;
 
 import static io.freedriver.dispatcher.model.ContractJson.JSON;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -48,6 +49,21 @@ class AssignmentViewContractTest {
 
         assertNull(read.finishBy());
         assertEquals(view(null), read);
+    }
+
+    @Test
+    void agentSessionId_keeps_the_json_property_grokSessionId() throws Exception {
+        UUID session = UUID.fromString("00000000-0000-0000-0000-000000000003");
+        AssignmentView view = new AssignmentView(ASSIGNMENT, JOB, "device-1", "agent-1", Channel.TEXT, "hello",
+                AssignmentState.RUNNING, session, null, OnBusy.queue, "delivery-1", null);
+
+        JsonNode json = JSON.valueToTree(view);
+
+        assertEquals(session.toString(), json.get("grokSessionId").asText());
+        assertFalse(json.has("agentSessionId"));
+        assertEquals(12, json.size());
+        assertEquals(session, JSON.readValue(json.toString(), AssignmentView.class).agentSessionId());
+        assertEquals(session, view.grokSessionId());
     }
 
     @Test
