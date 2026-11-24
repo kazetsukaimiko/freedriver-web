@@ -19,7 +19,7 @@ import java.util.Set;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 
 /**
- * Rules 1 to 3 of the API quality gate. Each rule judges main classes only. {@link ApiQuality}
+ * Rules 1 to 4 of the API quality gate. Each rule judges main classes only. {@link ApiQuality}
  * freezes them per module.
  */
 public final class ApiQualityRules {
@@ -41,6 +41,12 @@ public final class ApiQualityRules {
             + "lives in an artifactId ending -impl; a JAX-RS resource may implement its JAX-RS API interface, "
             + "and a generated MicroProfile REST client is exempt";
 
+    private static final String IMPL_PACKAGE_BECAUSE = "an implementation is a package "
+            + "io.freedriver..impl.<name> and its subpackages; only its own classes depend on it, and it "
+            + "depends on no class in a package io.freedriver..service.. and on no other implementation";
+
+    private static final String OURS = "io.freedriver";
+
     private ApiQualityRules() {
     }
 
@@ -57,6 +63,14 @@ public final class ApiQualityRules {
     /** Rule 3. A class that implements an API interface lives in an {@code -impl} module. */
     public static ArchRule implementationsLiveInImpl() {
         return implementationsLiveInImpl(ModuleOwnership.reactor());
+    }
+
+    /**
+     * Rule 4. No class outside an implementation package depends on one inside it, and an
+     * implementation depends on no service code and no other implementation.
+     */
+    public static ArchRule implementationPackagesStayPrivate() {
+        return implementationPackagesStayPrivate(ModuleOwnership.reactor());
     }
 
     static ArchRule serviceDependencies(ModuleOwnership ownership) {
@@ -133,6 +147,67 @@ public final class ApiQualityRules {
                 })
                 .because(IMPL_BECAUSE)
                 .allowEmptyShould(true);
+    }
+
+    static ArchRule implementationPackagesStayPrivate(ModuleOwnership ownership) {
+        return classes().that(mainClasses(ownership))
+                .should(new ArchCondition<>("keep implementation packages private") {
+                    @Override
+                    public void check(JavaClass type, ConditionEvents events) {
+                        String self = implementation(type.getPackageName());
+                        for (JavaClass dependency : dependencies(type)) {
+                            String why = implementationDependency(self, dependency.getPackageName());
+                            if (why != null) {
+                                events.add(SimpleConditionEvent.violated(type, type.getName()
+                                        + " depends on " + dependency.getName() + " " + why));
+                            }
+                        }
+                    }
+                })
+                .because(IMPL_PACKAGE_BECAUSE)
+                .allowEmptyShould(true);
+    }
+
+    /**
+     * @param self the implementation the depending class is in, or null outside one
+     * @return why rule 4 refuses the dependency, or null when it accepts it
+     */
+    private static String implementationDependency(String self, String dependencyPackage) {
+        String target = implementation(dependencyPackage);
+        if (target != null && !target.equals(self)) {
+            return self == null
+                    ? "in implementation " + target + " from outside it"
+                    : "in implementation " + target + " from implementation " + self;
+        }
+        if (self != null && target == null && servicePackageOfOurs(dependencyPackage)) {
+            return "in a service package from implementation " + self;
+        }
+        return null;
+    }
+
+    /**
+     * The implementation a package belongs to: the package through the segment after the first
+     * {@code impl} segment under {@code io.freedriver}, so {@code io.freedriver.sms.impl.twilio.http}
+     * gives {@code io.freedriver.sms.impl.twilio}. A package that ends at {@code impl} names no
+     * implementation, and neither does a package outside {@code io.freedriver}.
+     *
+     * @return the implementation's package, or null
+     */
+    static String implementation(String pkg) {
+        if (!under(pkg, OURS)) {
+            return null;
+        }
+        String[] segments = pkg.split("\\.");
+        for (int i = 2; i < segments.length - 1; i++) {
+            if ("impl".equals(segments[i])) {
+                return String.join(".", java.util.Arrays.copyOfRange(segments, 0, i + 2));
+            }
+        }
+        return null;
+    }
+
+    private static boolean servicePackageOfOurs(String pkg) {
+        return under(pkg, OURS) && java.util.Arrays.asList(pkg.split("\\.")).contains("service");
     }
 
     private static DescribedPredicate<JavaClass> subjects(ModuleOwnership ownership, ModuleOwnership.Role role) {
