@@ -1,0 +1,8 @@
+io.freedriver.sms.api.rs.ext.ErrorMappers carries a CDI scope
+io.freedriver.sms.api.rs.ext.ErrorMappers depends on com.fasterxml.jackson.core.JsonProcessingException is a third-party library
+io.freedriver.sms.api.rs.ext.ErrorMappers depends on io.freedriver.sms.otp.CodeRejectedException is service code of its own module
+io.freedriver.sms.api.rs.ext.ErrorMappers depends on io.freedriver.sms.otp.SenderUnavailableException is service code of its own module
+io.freedriver.sms.api.rs.ext.ErrorMappers depends on io.freedriver.sms.otp.TooManyAttemptsException is service code of its own module
+io.freedriver.sms.api.rs.ext.ErrorMappers depends on io.freedriver.sms.security.RateLimitedException is service code of its own module
+io.freedriver.sms.api.rs.ext.ErrorMappers depends on io.freedriver.sms.security.UnauthorizedCallerException is service code of its own module
+io.freedriver.sms.api.rs.ext.ErrorMappers is a plain class; an API module allows a final constant holder with static final fields and a private constructor

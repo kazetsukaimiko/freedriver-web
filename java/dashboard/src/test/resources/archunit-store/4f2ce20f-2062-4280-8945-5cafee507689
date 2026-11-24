@@ -1,0 +1,53 @@
+io.freedriver.app.api.AppliancesResource carries a CDI scope
+io.freedriver.app.api.AppliancesResource depends on io.freedriver.app.appliances.ApplianceService is service code of its own module
+io.freedriver.app.api.AppliancesResource depends on io.freedriver.app.security.OidcSubjects is service code of its own module
+io.freedriver.app.api.AppliancesResource depends on io.quarkus.security.identity.SecurityIdentity is a third-party library
+io.freedriver.app.api.AppliancesResource is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.app.api.BuildResource carries a CDI scope
+io.freedriver.app.api.BuildResource is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.app.api.ChangelogResource depends on io.freedriver.app.changelog.Changelog is service code of its own module
+io.freedriver.app.api.ChangelogResource is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.app.api.ErrorMappers carries a CDI scope
+io.freedriver.app.api.ErrorMappers depends on io.freedriver.app.appliances.ApplianceControl is service code of its own module
+io.freedriver.app.api.ErrorMappers depends on io.freedriver.app.appliances.ApplianceInstanceNotFoundException is service code of its own module
+io.freedriver.app.api.ErrorMappers depends on io.freedriver.app.appliances.ApplianceNotFoundException is service code of its own module
+io.freedriver.app.api.ErrorMappers depends on io.freedriver.app.appliances.ApplianceService is service code of its own module
+io.freedriver.app.api.ErrorMappers depends on io.freedriver.app.appliances.ApplianceSnapshot is service code of its own module
+io.freedriver.app.api.ErrorMappers depends on io.freedriver.app.appliances.ApplianceStaleException is service code of its own module
+io.freedriver.app.api.ErrorMappers depends on io.freedriver.app.errors.PendingCapException is service code of its own module
+io.freedriver.app.api.ErrorMappers depends on io.freedriver.app.instances.BrokerRefusedException is service code of its own module
+io.freedriver.app.api.ErrorMappers depends on io.freedriver.app.instances.InstanceFailure is service code of its own module
+io.freedriver.app.api.ErrorMappers depends on io.freedriver.app.instances.InstanceNotFoundException is service code of its own module
+io.freedriver.app.api.ErrorMappers depends on io.freedriver.app.instances.InvalidLabelException is service code of its own module
+io.freedriver.app.api.ErrorMappers depends on io.freedriver.app.invites.InviteUpstreamException is service code of its own module
+io.freedriver.app.api.ErrorMappers depends on io.freedriver.app.jobs.DispatcherUnavailable is service code of its own module
+io.freedriver.app.api.ErrorMappers depends on io.freedriver.app.security.RateLimitedException is service code of its own module
+io.freedriver.app.api.ErrorMappers depends on io.quarkus.security.ForbiddenException is a third-party library
+io.freedriver.app.api.ErrorMappers depends on io.quarkus.security.UnauthorizedException is a third-party library
+io.freedriver.app.api.ErrorMappers is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.app.api.HealthResource carries a CDI scope
+io.freedriver.app.api.HealthResource is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.app.api.HelloResource carries a CDI scope
+io.freedriver.app.api.HelloResource is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.app.api.LoginLinks carries a CDI scope
+io.freedriver.app.api.LoginLinks is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.app.api.LoginResource carries a CDI scope
+io.freedriver.app.api.LoginResource is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.app.api.McpOpsResource carries a CDI scope
+io.freedriver.app.api.McpOpsResource depends on io.freedriver.app.appliances.ApplianceService is service code of its own module
+io.freedriver.app.api.McpOpsResource depends on io.freedriver.app.appliances.MqttLiveClient is service code of its own module
+io.freedriver.app.api.McpOpsResource depends on io.freedriver.app.errors.PendingCapException is service code of its own module
+io.freedriver.app.api.McpOpsResource depends on io.freedriver.app.schedule.ScheduledSwitch is service code of its own module
+io.freedriver.app.api.McpOpsResource depends on io.freedriver.app.schedule.ScheduledSwitchRepository is service code of its own module
+io.freedriver.app.api.McpOpsResource depends on io.freedriver.app.schedule.ScheduledSwitchRules is service code of its own module
+io.freedriver.app.api.McpOpsResource depends on io.freedriver.app.schedule.ScheduledSwitchesConfig is service code of its own module
+io.freedriver.app.api.McpOpsResource depends on io.freedriver.app.security.OidcSubjects is service code of its own module
+io.freedriver.app.api.McpOpsResource depends on io.quarkus.security.identity.SecurityIdentity is a third-party library
+io.freedriver.app.api.McpOpsResource is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.app.api.MqttCommandActor carries a CDI scope
+io.freedriver.app.api.MqttCommandActor depends on io.freedriver.app.appliances.ApplianceCommandRouted is service code of its own module
+io.freedriver.app.api.MqttCommandActor depends on io.freedriver.app.appliances.MqttLiveClient is service code of its own module
+io.freedriver.app.api.MqttCommandActor depends on io.quarkus.security.identity.SecurityIdentity is a third-party library
+io.freedriver.app.api.MqttCommandActor is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.app.api.SignInLink is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.app.api.SignInLinkResource is a plain class; an API module allows a final constant holder with static final fields and a private constructor

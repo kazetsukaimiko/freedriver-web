@@ -3,7 +3,3 @@ io.freedriver.autonomymcp.ApplianceList depends on com.fasterxml.jackson.databin
 io.freedriver.autonomymcp.ApplianceList depends on com.fasterxml.jackson.databind.node.ArrayNode is a third-party library
 io.freedriver.autonomymcp.ApplianceList depends on com.fasterxml.jackson.databind.node.ObjectNode is a third-party library
 io.freedriver.autonomymcp.AutonomyTools depends on com.fasterxml.jackson.databind.ObjectMapper is a third-party library
-io.freedriver.autonomymcp.AutonomyTools depends on io.quarkiverse.mcp.server.ToolResponse is a third-party library
-io.freedriver.autonomymcp.McpEnabledFilter depends on io.vertx.core.http.HttpServerRequest is a third-party library
-io.freedriver.autonomymcp.McpEnabledFilter depends on io.vertx.core.http.HttpServerResponse is a third-party library
-io.freedriver.autonomymcp.McpEnabledFilter depends on io.vertx.ext.web.RoutingContext is a third-party library

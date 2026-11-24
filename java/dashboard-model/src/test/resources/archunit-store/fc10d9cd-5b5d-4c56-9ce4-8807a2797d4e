@@ -1,0 +1,12 @@
+io.freedriver.dashboard.model.ApplianceCommandRequest is in package io.freedriver.dashboard.model, which names no role
+io.freedriver.dashboard.model.ApplianceMapResponse is in package io.freedriver.dashboard.model, which names no role
+io.freedriver.dashboard.model.ApplianceStatus is in package io.freedriver.dashboard.model, which names no role
+io.freedriver.dashboard.model.BuildResponse is in package io.freedriver.dashboard.model, which names no role
+io.freedriver.dashboard.model.HealthResponse is in package io.freedriver.dashboard.model, which names no role
+io.freedriver.dashboard.model.HelloResponse is in package io.freedriver.dashboard.model, which names no role
+io.freedriver.dashboard.model.HomeStatusResponse is in package io.freedriver.dashboard.model, which names no role
+io.freedriver.dashboard.model.InstanceView is in package io.freedriver.dashboard.model, which names no role
+io.freedriver.dashboard.model.McpDebugResponse is in package io.freedriver.dashboard.model, which names no role
+io.freedriver.dashboard.model.PasskeyActionView is in package io.freedriver.dashboard.model, which names no role
+io.freedriver.dashboard.model.PasswordActionView is in package io.freedriver.dashboard.model, which names no role
+io.freedriver.dashboard.model.ScheduledSwitchRequest is in package io.freedriver.dashboard.model, which names no role
