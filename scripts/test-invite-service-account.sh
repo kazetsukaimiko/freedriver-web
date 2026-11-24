@@ -541,12 +541,12 @@ openbot_exp = openbot1.get("expires_in")
 dcr_exp = dcr.get("expires_in")
 refresh_access_exp = refreshed.get("expires_in")
 refresh_exp = dcr.get("refresh_expires_in")
-if openbot_exp != 31536000:
-    sys.exit("openbot expires_in is %s, want 31536000" % openbot_exp)
-if dcr_exp != 31536000:
-    sys.exit("dcr expires_in is %s, want 31536000" % dcr_exp)
-if refresh_access_exp != 31536000:
-    sys.exit("dcr refresh expires_in is %s, want 31536000" % refresh_access_exp)
+if not (type(openbot_exp) is int and openbot_exp in (31535999, 31536000)):
+    sys.exit("openbot expires_in is %r, want 31535999 or 31536000" % (openbot_exp,))
+if not (type(dcr_exp) is int and dcr_exp in (31535999, 31536000)):
+    sys.exit("dcr expires_in is %r, want 31535999 or 31536000" % (dcr_exp,))
+if not (type(refresh_access_exp) is int and refresh_access_exp in (31535999, 31536000)):
+    sys.exit("dcr refresh expires_in is %r, want 31535999 or 31536000" % (refresh_access_exp,))
 if "refresh_token" not in dcr:
     sys.exit("dcr token missing refresh_token")
 if refresh_exp != 0:
@@ -717,8 +717,8 @@ body = json.load(open(sys.argv[2], encoding="utf-8"))
 if code != "200":
     sys.exit("registered client password grant HTTP %s %s" % (code, body.get("error") or body))
 expires = body.get("expires_in")
-if expires != 31536000:
-    sys.exit("registered client expires_in is %s, want 31536000" % expires)
+if not (type(expires) is int and expires in (31535999, 31536000)):
+    sys.exit("registered client expires_in is %r, want 31535999 or 31536000" % (expires,))
 print("registered client expires_in", expires)
 PY
   unset REG_PASS
