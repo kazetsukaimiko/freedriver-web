@@ -1,0 +1,2 @@
+io.freedriver.mqtt.contract.ApplianceCommandEntry implements io.freedriver.mqtt.contract.CommandListEntry from API module freedriver-mqtt-contract
+io.freedriver.mqtt.contract.CancelCommandEntry implements io.freedriver.mqtt.contract.CommandListEntry from API module freedriver-mqtt-contract

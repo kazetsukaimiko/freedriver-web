@@ -18,6 +18,10 @@
         <maven.build.cache.input.outside3>../../scripts/provision-keycloak-freedriver.sh</maven.build.cache.input.outside3>
         <maven.build.cache.input.outside4>../../Caddyfile</maven.build.cache.input.outside4>
         <maven.build.cache.input.outside5>../autonomy-mcp/src/main</maven.build.cache.input.outside5>
+        <maven.build.cache.input.outside6>../../mqtt/src/test/resources/archunit-store</maven.build.cache.input.outside6>
+        <maven.build.cache.input.outside7>../../mqtt/target/classes</maven.build.cache.input.outside7>
+        <maven.build.cache.input.outside8>../../mqtt-contract/src/test/resources/archunit-store</maven.build.cache.input.outside8>
+        <maven.build.cache.input.outside9>../../mqtt-contract/target/classes</maven.build.cache.input.outside9>
     </properties>
 
     <dependencyManagement>

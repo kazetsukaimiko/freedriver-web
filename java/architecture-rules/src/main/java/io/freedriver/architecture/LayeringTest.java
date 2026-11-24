@@ -24,7 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>The stores are recorded on Java {@value #RECORDED_JAVA}, the CI JDK: ArchUnit reads a newer JDK's
  * classes differently, so on another JDK the rules are skipped rather than compared with the store.
  */
-public abstract class LayeringTest {
+public abstract class LayeringTest extends ServiceApiQualityTest {
 
     /** The Java feature version the stores under archunit-store are recorded on. */
     public static final int RECORDED_JAVA = 23;
@@ -124,16 +124,33 @@ public abstract class LayeringTest {
     static String command(boolean record) {
         Path here = Path.of("").toAbsolutePath();
         Path root = here;
-        while (root != null && !Files.exists(root.resolve("mvnw"))) {
+        while (root != null && !repoRoot(root)) {
             root = root.getParent();
         }
         String module = root == null ? here.getFileName().toString() : root.relativize(here).toString();
+        if (module.isEmpty()) {
+            module = ".";
+        }
         return "docker run --rm --user \"$(id -u):$(id -g)\" -e HOME=/tmp -v \"$PWD\":/src -v \"$HOME/.m2\":/tmp/.m2 "
                 + "-w /src maven:3.9-eclipse-temurin-" + RECORDED_JAVA + " mvn -q -Dmaven.repo.local=/tmp/.m2/repository -pl "
                 + module + " -am test -Dtest=ArchitectureTest "
                 + "-Dsurefire.failIfNoSpecifiedTests=false"
                 + (record ? " -Darchunit.freeze.store.default.allowStoreUpdate=true "
                         + "-Darchunit.freeze.store.default.allowStoreCreation=true" : "");
+    }
+
+    /** The repository root holds {@code mvnw} and the aggregator pom, not a nested module copy of {@code mvnw}. */
+    private static boolean repoRoot(Path dir) {
+        if (!Files.isRegularFile(dir.resolve("pom.xml")) || !Files.exists(dir.resolve("mvnw"))) {
+            return false;
+        }
+        try {
+            String text = Files.readString(dir.resolve("pom.xml"));
+            return text.contains("<artifactId>freedriver-web</artifactId>")
+                    && text.contains("<module>mqtt-contract</module>");
+        } catch (java.io.IOException e) {
+            return false;
+        }
     }
 
     private static JavaClasses main() {

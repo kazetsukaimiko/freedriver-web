@@ -204,9 +204,16 @@ public final class LayeringRules {
                 || subject.endsWith("Mapper") || subject.endsWith("Mappers") || subject.endsWith("Feature"));
     }
 
+    /**
+     * A top-level class whose simple name ends in {@code Resource}. API quality rule 3 uses the same
+     * predicate for the JAX-RS resource exception.
+     */
+    static boolean resourceClass(JavaClass c) {
+        return !c.isInterface() && c.getEnclosingClass().isEmpty() && c.getSimpleName().endsWith("Resource");
+    }
+
     private static DescribedPredicate<JavaClass> resourceClasses() {
-        return DescribedPredicate.describe("are XxxResource classes",
-                c -> !c.isInterface() && c.getEnclosingClass().isEmpty() && c.getSimpleName().endsWith("Resource"));
+        return DescribedPredicate.describe("are XxxResource classes", LayeringRules::resourceClass);
     }
 
     private static DescribedPredicate<JavaClass> enclosedBy(Predicate<JavaClass> test, String description) {

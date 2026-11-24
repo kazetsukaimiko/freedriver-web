@@ -1,0 +1,1 @@
+io.freedriver.sms.model.OtpSendRequest implements io.freedriver.sms.model.SendRequest from API module sms-model

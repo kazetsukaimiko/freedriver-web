@@ -1,0 +1,2 @@
+io.freedriver.dashboard.model.ApplianceCommandRequest is a plain class; an API module allows a final constant holder with static final fields and a private constructor
+io.freedriver.dashboard.model.ScheduledSwitchRequest is a plain class; an API module allows a final constant holder with static final fields and a private constructor
