@@ -27,6 +27,11 @@ public interface AppliancesApi {
     @RolesAllowed({"dashboard", "portal-admin"})
     ApplianceMapResponse list();
 
+    /**
+     * One appliance command. Callers move to {@link ApplianceCommandsApi}. This path stays,
+     * including for an appliance named {@code command-lists} or {@code scheduled}.
+     */
+    @Deprecated
     @POST
     @Path("/{instanceId}/{applianceName}")
     @Consumes(MediaType.APPLICATION_JSON)
