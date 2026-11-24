@@ -1,0 +1,7 @@
+io.freedriver.sms.client.SmsCallContext is in package io.freedriver.sms.client, which names no role
+io.freedriver.sms.client.SmsClient is in package io.freedriver.sms.client, which names no role
+io.freedriver.sms.client.SmsClientConfig is in package io.freedriver.sms.client, which names no role
+io.freedriver.sms.client.SmsClientException is in package io.freedriver.sms.client, which names no role
+io.freedriver.sms.client.SmsClients is in package io.freedriver.sms.client, which names no role
+io.freedriver.sms.client.SmsHttpHandler is in package io.freedriver.sms.client, which names no role
+io.freedriver.sms.client.SmsHttpHandler$SmsApiPaths is in package io.freedriver.sms.client, which names no role

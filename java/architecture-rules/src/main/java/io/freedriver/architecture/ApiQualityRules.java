@@ -14,13 +14,19 @@ import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 
 /**
- * Rules 1 to 4 of the API quality gate. Each rule judges main classes only, and rules 1 to 3 pick
+ * Rules 1 to 4 of the API quality gate and its two role rules: every class has a package role, and
+ * a module holds one role. Each rule judges main classes only, and rules 1 to 3 pick
  * their subjects by {@link ModuleOwnership.Owned#effectiveRole()}: the role the class's package
  * names, else its module's artifact role. Every gated module runs all four, so a class is judged by
  * its role wherever it is compiled. {@link ApiQuality} freezes them per module.
@@ -61,15 +67,37 @@ public final class ApiQualityRules {
             + "io.freedriver..impl.<name> and its subpackages; only its own classes depend on it, and it "
             + "depends on no class in a package io.freedriver..service.. and on no other implementation";
 
-    private static final String OURS = "io.freedriver";
+    private static final String PACKAGE_ROLE_BECAUSE = "a main class under io.freedriver is in a package "
+            + "io.freedriver.<project> or io.freedriver.<project>.<area>, then api, impl.<name> or service, "
+            + "or below one; the utility artifactIds stereotypes, mcp-support, hit-window and "
+            + "freedriver-mqtt are exempt";
+
+    private static final String ONE_ROLE_BECAUSE = "a module holds one role: API, implementation, service "
+            + "or utility. " + ROLES;
+
+    static final String OURS = "io.freedriver";
 
     private ApiQualityRules() {
     }
 
-    /** Rules 1 to 4, in order: what every gated module runs on its main classes. */
+    /**
+     * What every gated module runs on its main classes, in order: rules 1 to 4, then the two role
+     * rules. The split-package rule needs every module's output at once and runs from
+     * {@link ReactorOutputs}.
+     */
     public static List<ArchRule> all() {
         return List.of(serviceDependencies(), apiContracts(), implementationsLiveInImpl(),
-                implementationPackagesStayPrivate());
+                implementationPackagesStayPrivate(), classesHaveAPackageRole(), modulesHoldOneRole());
+    }
+
+    /** Every main class sits in a package that names a role, or in a utility module. */
+    public static ArchRule classesHaveAPackageRole() {
+        return classesHaveAPackageRole(ModuleOwnership.reactor());
+    }
+
+    /** A module's main classes share one role. */
+    public static ArchRule modulesHoldOneRole() {
+        return modulesHoldOneRole(ModuleOwnership.reactor());
     }
 
     /** Rule 1. Service code depends on the allowlist. */
@@ -173,6 +201,76 @@ public final class ApiQualityRules {
                 .allowEmptyShould(true);
     }
 
+    static ArchRule classesHaveAPackageRole(ModuleOwnership ownership) {
+        return classes().that(mainClasses(ownership))
+                .should(new ArchCondition<>("be in a package that names a role") {
+                    @Override
+                    public void check(JavaClass type, ConditionEvents events) {
+                        ModuleOwnership.Owned self = ownership.classify(type);
+                        if (self.packageRole().isPresent()
+                                || ModuleOwnership.UTILITY_ARTIFACTS.contains(self.artifactId())
+                                || !under(type.getPackageName(), OURS)) {
+                            return;
+                        }
+                        events.add(SimpleConditionEvent.violated(type, type.getName() + " is in package "
+                                + type.getPackageName() + ", which names no role"));
+                    }
+                })
+                .because(PACKAGE_ROLE_BECAUSE)
+                .allowEmptyShould(true);
+    }
+
+    /**
+     * A module's role is the one most of its main classes have. Each class with another role is
+     * its own violation, so a class added to a module that already mixes roles is a new line.
+     */
+    static ArchRule modulesHoldOneRole(ModuleOwnership ownership) {
+        Map<String, ModuleOwnership.Role> held = new HashMap<>();
+        return classes().that(mainClasses(ownership))
+                .should(new ArchCondition<>("share their module's one role") {
+                    @Override
+                    public void init(Collection<JavaClass> all) {
+                        Map<String, Map<ModuleOwnership.Role, Integer>> counts = new HashMap<>();
+                        for (JavaClass type : all) {
+                            ModuleOwnership.Owned owned = ownership.classify(type);
+                            counts.computeIfAbsent(module(owned), key -> new EnumMap<>(ModuleOwnership.Role.class))
+                                    .merge(owned.effectiveRole(), 1, Integer::sum);
+                        }
+                        held.clear();
+                        counts.forEach((module, roles) -> held.put(module, roles.entrySet().stream()
+                                .max(Map.Entry.<ModuleOwnership.Role, Integer>comparingByValue()
+                                        .thenComparing(Map.Entry.comparingByKey(Comparator.reverseOrder())))
+                                .orElseThrow().getKey()));
+                    }
+
+                    @Override
+                    public void check(JavaClass type, ConditionEvents events) {
+                        ModuleOwnership.Owned self = ownership.classify(type);
+                        ModuleOwnership.Role module = held.get(module(self));
+                        if (self.effectiveRole() != module) {
+                            events.add(SimpleConditionEvent.violated(type, type.getName() + " is "
+                                    + named(self.effectiveRole()) + " code in module " + self.artifactId()
+                                    + ", where most classes are " + named(module) + " code"));
+                        }
+                    }
+                })
+                .because(ONE_ROLE_BECAUSE)
+                .allowEmptyShould(true);
+    }
+
+    private static String module(ModuleOwnership.Owned owned) {
+        return owned.groupId() + ":" + owned.artifactId();
+    }
+
+    private static String named(ModuleOwnership.Role role) {
+        return switch (role) {
+            case API -> "API";
+            case IMPL -> "implementation";
+            case UTILITY -> "utility";
+            case SERVICE -> "service";
+        };
+    }
+
     static ArchRule implementationPackagesStayPrivate(ModuleOwnership ownership) {
         return classes().that(mainClasses(ownership))
                 .should(new ArchCondition<>("keep implementation packages private") {
@@ -243,7 +341,7 @@ public final class ApiQualityRules {
         return DescribedPredicate.describe("are main classes of our modules", type -> judged(type, ownership));
     }
 
-    private static boolean judged(JavaClass type, ModuleOwnership ownership) {
+    static boolean judged(JavaClass type, ModuleOwnership ownership) {
         if ("package-info".equals(type.getSimpleName()) || type.isAnonymousClass()) {
             return false;
         }

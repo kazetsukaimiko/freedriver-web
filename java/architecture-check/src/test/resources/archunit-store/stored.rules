@@ -1,0 +1,3 @@
+#
+#Tue Nov 24 03:09:00 UTC 2026
+classes\ that\ are\ main\ classes\ of\ the\ reactor's\ modules\ should\ be\ in\ a\ package\ that\ one\ reactor\ module\ holds,\ because\ a\ package's\ main\ classes\ come\ from\ one\ reactor\ module;\ two\ modules\ that\ share\ a\ package\ cannot\ both\ be\ on\ a\ module\ path,\ and\ a\ class\ name\ that\ two\ modules\ compile\ resolves\ to\ whichever\ comes\ first\ on\ the\ classpath=9596c983-9a19-41db-8156-2a8abece2056

@@ -4,8 +4,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Rules 1 to 4 for one module. Each rule picks its own subjects by role, so an API module, a utility
- * module and a service module all extend this class and run the same four. A module with layering
+ * Rules 1 to 4 and the two role rules for one module. Each rule picks its own subjects by role, so
+ * an API module, a utility module and a service module all extend this class and run the same six. A module with layering
  * rows extends {@link LayeringTest}, which inherits these tests.
  */
 public abstract class ApiQualityTest {
@@ -33,5 +33,15 @@ public abstract class ApiQualityTest {
     @Test
     void implementation_packages_stay_private() {
         ApiQuality.check(ApiQualityRules.implementationPackagesStayPrivate(), ApiQuality.main());
+    }
+
+    @Test
+    void every_class_has_a_package_role() {
+        ApiQuality.check(ApiQualityRules.classesHaveAPackageRole(), ApiQuality.main());
+    }
+
+    @Test
+    void the_module_holds_one_role() {
+        ApiQuality.check(ApiQualityRules.modulesHoldOneRole(), ApiQuality.main());
     }
 }
