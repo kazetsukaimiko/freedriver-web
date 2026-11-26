@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class LatestScheduledContractTest {
 
     @Test
-    void storesAStrictlyNewerSnapshot() throws Exception {
+    void signaturesAreReplaceIfNewerAndLatest() throws Exception {
         Method replace = LatestScheduled.class.getMethod(
                 "replaceIfNewer", UUID.class, ScheduledCommandsMessage.class);
         assertEquals(boolean.class, replace.getReturnType());

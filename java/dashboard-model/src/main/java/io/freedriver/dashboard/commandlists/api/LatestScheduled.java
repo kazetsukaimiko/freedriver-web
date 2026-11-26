@@ -13,6 +13,11 @@ import java.util.UUID;
  * {@code publishedAt}. An older or equal {@code publishedAt} leaves the stored snapshot unchanged.
  * A snapshot whose pending list is empty is stored the same way as one that lists commands.
  * <p>
+ * {@link #replaceIfNewer} is atomic per house across every process that shares the store: the
+ * compare and the write are one step, so concurrent calls for one house from any dashboard replica
+ * never leave an older snapshot in place of a newer one, and of two calls with the same
+ * {@code publishedAt} at most one stores. A store local to one process does not meet this contract.
+ * <p>
  * {@code instanceId} and {@code message} are non-null, and {@code message.publishedAt()} is non-null.
  * A null is a caller error.
  */
