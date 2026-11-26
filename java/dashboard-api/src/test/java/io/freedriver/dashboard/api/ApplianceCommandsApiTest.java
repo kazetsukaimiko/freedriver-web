@@ -1,6 +1,7 @@
 package io.freedriver.dashboard.api;
 
 import io.freedriver.dashboard.model.ApplianceCommandRequest;
+import io.freedriver.dashboard.model.InstanceView;
 import io.freedriver.dashboard.model.api.ApplianceCommandListRequest;
 import io.freedriver.dashboard.model.api.ApplianceCommandResult;
 import io.freedriver.dashboard.model.api.PendingApplianceCommand;
@@ -17,8 +18,10 @@ import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.headers.Header;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.junit.jupiter.api.Test;
@@ -106,6 +109,43 @@ class ApplianceCommandsApiTest {
         assertEquals(PendingApplianceCommand.class, listElement(scheduled));
         assertEquals(void.class, byName.getReturnType());
         assertEquals(void.class, byId.getReturnType());
+    }
+
+    @Test
+    void listConflictsAreToldApartByBodyAndStaleIsCheckedFirst() {
+        Method commands = method("commands");
+        APIResponse conflict = response(commands, "409");
+        assertEquals(1, conflict.content().length);
+        Content body = conflict.content()[0];
+        assertEquals(MediaType.APPLICATION_JSON, body.mediaType());
+        assertEquals(InstanceView.class, body.schema().implementation());
+
+        String described = conflict.description();
+        assertTrue(described.startsWith("Only the stale-snapshot refusal carries the InstanceView body."), described);
+        int stale = described.indexOf("Stale snapshot:");
+        int neverScheduled = described.indexOf("Never scheduled:");
+        int target = described.indexOf("target 404");
+        assertTrue(stale >= 0, described);
+        assertTrue(stale < neverScheduled, described);
+        assertTrue(neverScheduled < target, described);
+        String staleCase = described.substring(stale, neverScheduled);
+        assertTrue(staleCase.contains("application/json"), staleCase);
+        assertTrue(staleCase.contains("InstanceView with stale true"), staleCase);
+        assertTrue(staleCase.contains("nothing is published"), staleCase);
+        String neverScheduledCase = described.substring(neverScheduled, target);
+        assertTrue(neverScheduledCase.contains("never sent a scheduled message"), neverScheduledCase);
+        assertTrue(neverScheduledCase.contains("no entity"), neverScheduledCase);
+        assertTrue(described.contains("The stale check runs before the never-scheduled check, "
+                + "and both run before the target 404."), described);
+
+        String notFound = description(commands, "404");
+        int unknownHouse = notFound.indexOf("Unknown house:");
+        int missingTarget = notFound.indexOf("Missing target:");
+        assertTrue(unknownHouse >= 0, notFound);
+        assertTrue(unknownHouse < missingTarget, notFound);
+        assertTrue(notFound.substring(unknownHouse, missingTarget).contains("checked first"), notFound);
+        assertTrue(notFound.substring(missingTarget).contains("checked last, after both 409 checks"), notFound);
+        assertEquals(0, response(commands, "404").content().length);
     }
 
     @Test
@@ -219,6 +259,13 @@ class ApplianceCommandsApiTest {
                 .map(APIResponse::description)
                 .findFirst()
                 .orElse("");
+    }
+
+    private static APIResponse response(Method method, String code) {
+        return Arrays.stream(method.getAnnotation(APIResponses.class).value())
+                .filter(response -> code.equals(response.responseCode()))
+                .findFirst()
+                .orElseThrow();
     }
 
     private static <T> Set<ConstraintViolation<T>> parameters(T target, Method method, Object... args) {
