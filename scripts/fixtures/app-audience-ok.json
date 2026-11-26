@@ -1,0 +1,361 @@
+{
+  "clients": [
+    {
+      "clientId": "freedriver-ios",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "audience-freedriver-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "freedriver-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ],
+      "defaultClientScopes": ["basic", "profile", "email", "roles", "web-origins", "acr"],
+      "optionalClientScopes": ["address", "phone", "microprofile-jwt"]
+    },
+    {
+      "clientId": "freedriver-autonomy-mcp",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "audience-freedriver-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "freedriver-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "audience-autonomy-mcp-client",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "freedriver-autonomy-mcp",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ],
+      "defaultClientScopes": ["basic", "roles"],
+      "optionalClientScopes": []
+    },
+    {
+      "clientId": "freedriver-api",
+      "protocol": "openid-connect",
+      "protocolMappers": [],
+      "defaultClientScopes": ["basic", "service_account"],
+      "optionalClientScopes": []
+    },
+    {
+      "clientId": "freedriver-dispatcher",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "actor-dispatcher",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "claim.name": "actor",
+            "claim.value": "dispatcher"
+          }
+        },
+        {
+          "name": "role-dispatcher",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-role-mapper",
+          "config": {
+            "role": "dispatcher"
+          }
+        }
+      ],
+      "defaultClientScopes": ["basic", "profile", "roles"],
+      "optionalClientScopes": ["offline_access"]
+    },
+    {
+      "clientId": "freedriver-mqtt",
+      "protocol": "openid-connect",
+      "protocolMappers": [],
+      "defaultClientScopes": ["basic"],
+      "optionalClientScopes": ["mqtt-acl"]
+    },
+    {
+      "clientId": "account-console",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "audience resolve",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-resolve-mapper",
+          "config": {}
+        }
+      ],
+      "defaultClientScopes": ["basic"],
+      "optionalClientScopes": []
+    }
+  ],
+  "clientScopes": [
+    {
+      "name": "basic",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "sub",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "config": {}
+        },
+        {
+          "name": "pairwise-sub",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sha256-pairwise-sub-mapper",
+          "config": {}
+        }
+      ]
+    },
+    {
+      "name": "profile",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "full name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-full-name-mapper",
+          "config": {}
+        },
+        {
+          "name": "given name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "claim.name": "given_name"
+          }
+        },
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": {
+            "claim.name": "preferred_username"
+          }
+        }
+      ]
+    },
+    {
+      "name": "email",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "claim.name": "email"
+          }
+        }
+      ]
+    },
+    {
+      "name": "roles",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "audience resolve",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-resolve-mapper",
+          "config": {}
+        },
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "realm_access.roles"
+          }
+        },
+        {
+          "name": "client roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "config": {
+            "claim.name": "resource_access.${client_id}.roles"
+          }
+        }
+      ]
+    },
+    {
+      "name": "web-origins",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "allowed origins",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-allowed-origins-mapper",
+          "config": {}
+        }
+      ]
+    },
+    {
+      "name": "acr",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "acr",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-acr-mapper",
+          "config": {}
+        }
+      ]
+    },
+    {
+      "name": "address",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "address",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-address-mapper",
+          "config": {}
+        }
+      ]
+    },
+    {
+      "name": "phone",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "phone number",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "claim.name": "phone_number"
+          }
+        }
+      ]
+    },
+    {
+      "name": "microprofile-jwt",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "groups"
+          }
+        }
+      ]
+    },
+    {
+      "name": "service_account",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "client roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "config": {
+            "claim.name": "resource_access.${client_id}.roles"
+          }
+        }
+      ]
+    },
+    {
+      "name": "organization",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "organization",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-organization-membership-mapper",
+          "config": {
+            "claim.name": "organization"
+          }
+        }
+      ]
+    },
+    {
+      "name": "offline_access",
+      "protocol": "openid-connect",
+      "protocolMappers": []
+    },
+    {
+      "name": "autonomy-mcp",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "audience-autonomy-mcp",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "https://app.freedriver.io/autonomy/mcp",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "name": "mqtt-acl",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "mqtt-acl-publish",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "claim.name": "mqtt_acl.publish"
+          }
+        },
+        {
+          "name": "mqtt-acl-subscribe",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "claim.name": "mqtt_acl.subscribe"
+          }
+        },
+        {
+          "name": "mqtt-acl-superuser",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "claim.name": "mqtt_acl.superuser"
+          }
+        }
+      ]
+    }
+  ],
+  "realmDefaultDefaultClientScopes": [
+    "basic",
+    "profile",
+    "email",
+    "roles",
+    "web-origins",
+    "acr",
+    "autonomy-mcp"
+  ],
+  "realmDefaultOptionalClientScopes": [
+    "address",
+    "phone",
+    "offline_access",
+    "microprofile-jwt",
+    "organization"
+  ],
+  "anonymousAllowedProtocolMapperTypes": [
+    "oidc-full-name-mapper",
+    "oidc-sha256-pairwise-sub-mapper",
+    "oidc-address-mapper",
+    "saml-user-property-mapper",
+    "saml-user-attribute-mapper",
+    "saml-role-list-mapper"
+  ],
+  "freedriverApiClientRoles": []
+}
