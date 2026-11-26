@@ -1402,7 +1402,8 @@ assert_house_topics "empty-seed"
 printf 'FREEDRIVER_SEED_PHONE=+15555550143\n' > "$work/secrets.env"
 
 # A failed role check must not replace the phone number.
-admin add-roles -r freedriver --uusername kaze --rolename portal-admin >/dev/null
+# dispatcher is created by the provision script and stays outside the allow-list.
+admin add-roles -r freedriver --uusername kaze --rolename dispatcher >/dev/null
 printf 'FREEDRIVER_SEED_PHONE=+15555550999\n' > "$work/secrets.env"
 set +e
 PROVISION_ALLOW_NON_ROOT=1 \
@@ -1421,7 +1422,7 @@ PROVISION_ALLOW_NON_ROOT=1 \
 second=$?
 set -e
 if [[ "$second" -eq 0 ]]; then
-  echo "second provision should stop when kaze has portal-admin" >&2
+  echo "second provision should stop when kaze has dispatcher" >&2
   exit 1
 fi
 if ! grep -q 'phone attribute was not changed' "$work/second.out"; then

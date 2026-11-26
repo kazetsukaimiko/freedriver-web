@@ -12,8 +12,8 @@
 # member of phone-sign-in with the realm role dashboard. Group and role checks
 # run before that write. Effective realm roles must be inside dashboard,
 # default-roles-freedriver, offline_access, uma_authorization, grafana-viewer,
-# grafana-editor, grafana-admin, and mcp-user. Any client role stops the script. A +1
-# number is ten digits whose first digit is 2-9.
+# grafana-editor, grafana-admin, mcp-user, and portal-admin. Any client role
+# stops the script. A +1 number is ten digits whose first digit is 2-9.
 # Run scripts/provision-keycloak-sms-otp.sh first; it creates the group and
 # the attribute.
 #
