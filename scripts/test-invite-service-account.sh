@@ -285,6 +285,31 @@ PROVISION_ALLOW_NON_ROOT=1 \
   SECRETS_ENV="$work/secrets.env" \
   bash scripts/provision-keycloak-freedriver.sh
 
+# After a seeded provision, kaze holds the phone, the group, and these realm roles.
+kaze_id="$(admin get users -r freedriver -q username=kaze -q exact=true --fields id --format csv --noquotes | csv_id)"
+admin get "users/${kaze_id}" -r freedriver > "$work/kaze-grant.json"
+admin get "users/${kaze_id}/groups" -r freedriver > "$work/kaze-groups.json"
+admin get "users/${kaze_id}/role-mappings/realm" -r freedriver > "$work/kaze-roles.json"
+python3 - "$work/kaze-grant.json" "$work/kaze-groups.json" "$work/kaze-roles.json" <<'PY'
+import json, sys
+user = json.load(open(sys.argv[1], encoding="utf-8"))
+groups = json.load(open(sys.argv[2], encoding="utf-8"))
+roles = json.load(open(sys.argv[3], encoding="utf-8"))
+phone = (user.get("attributes") or {}).get("phone")
+if phone != ["+15555550143"]:
+    sys.exit("kaze phone attribute is %s" % phone)
+names = {g.get("name") for g in groups if isinstance(g, dict)}
+if "phone-sign-in" not in names:
+    sys.exit("kaze is not a direct member of phone-sign-in: %s" % sorted(names))
+mappings = roles.get("realmMappings") if isinstance(roles, dict) else roles
+held = {r.get("name") for r in mappings if isinstance(r, dict)}
+wanted = {"dashboard", "grafana-admin", "mcp-user", "portal-admin"}
+missing = wanted - held
+if missing:
+    sys.exit("kaze realm roles lack %s; held %s" % (sorted(missing), sorted(held)))
+print("kaze holds phone, phone-sign-in, dashboard, grafana-admin, mcp-user, and portal-admin")
+PY
+
 if ! grep -q '^FREEDRIVER_INVITE_CLIENT_SECRET=.\+' "$work/secrets/invite.env"; then
   echo "invite env file is missing a secret value" >&2
   exit 1
@@ -963,6 +988,7 @@ chmod 600 "$work/token"
 rm -f "$work/token.json"
 
 widen_group_permission
+set +e
 PROVISION_ALLOW_NON_ROOT=1 \
   KEYCLOAK_CONTAINER="$CONTAINER" \
   TECHOPS_PASS_FILE="$work/techops.pass" \
@@ -975,7 +1001,20 @@ PROVISION_ALLOW_NON_ROOT=1 \
   MQTT_OAUTH_DIR="$work/secrets/mqtt-oauth.d" \
   AUTONOMY_MCP_ENV_FILE="$work/secrets/autonomy-mcp.env" \
   SECRETS_ENV="$work/secrets.env" \
-  bash scripts/provision-keycloak-freedriver.sh
+  bash scripts/provision-keycloak-freedriver.sh >"$work/reseed.out" 2>&1
+reseed=$?
+set -e
+if [[ "$reseed" -ne 0 ]]; then
+  echo "second seeded provision should exit 0" >&2
+  grep -v 'SECRET\|password\|token' "$work/reseed.out" | tail -n 30 >&2 || true
+  exit 1
+fi
+if grep -q 'The phone attribute was not changed' "$work/reseed.out" \
+    || grep -q 'The phone attribute was removed' "$work/reseed.out"; then
+  echo "second seeded provision printed a phone refusal" >&2
+  exit 1
+fi
+echo "second seeded provision exited 0 without a phone refusal"
 assert_invite_scopes
 assert_portal_jobs_token
 assert_instances_token
@@ -1003,6 +1042,40 @@ http() {
       "$url"
   fi
 }
+
+# Invite path grants dashboard only. The admin API create below stays 403.
+printf '%s\n' '{"phone":"+15555550177"}' > "$work/invite-body.json"
+invite_code="$(http POST "${BASE}/realms/freedriver/freedriver-invite/users" "$work/invite-body.json")"
+if [[ "$invite_code" != "200" ]]; then
+  echo "invite path returned ${invite_code}" >&2
+  python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text()[:500])' "$work/http.out" >&2 || true
+  exit 1
+fi
+python3 - "$work/http.out" "$work/invite-user" <<'PY'
+import json, sys
+body = json.load(open(sys.argv[1], encoding="utf-8"))
+username = body.get("username") or ""
+if not username.startswith("inv"):
+    sys.exit("invite path username is %s" % username)
+if body.get("groups") != ["phone-sign-in"]:
+    sys.exit("invite path groups are %s" % body.get("groups"))
+if body.get("adminRoles"):
+    sys.exit("invite path admin roles are %s" % body.get("adminRoles"))
+open(sys.argv[2], "w", encoding="utf-8").write(username + "\n")
+PY
+invite_user="$(cat "$work/invite-user")"
+invite_id="$(admin get users -r freedriver -q "username=${invite_user}" -q exact=true --fields id --format csv --noquotes | csv_id)"
+admin get "users/${invite_id}/role-mappings/realm" -r freedriver > "$work/invite-roles.json"
+python3 - "$work/invite-roles.json" <<'PY'
+import json, sys
+roles = json.load(open(sys.argv[1], encoding="utf-8"))
+mappings = roles.get("realmMappings") if isinstance(roles, dict) else roles
+held = {r.get("name") for r in mappings if isinstance(r, dict)}
+extra = held - {"dashboard", "default-roles-freedriver"}
+if "dashboard" not in held or "portal-admin" in held or extra:
+    sys.exit("invite user direct realm roles are %s" % sorted(held))
+print("invite path user holds dashboard only")
+PY
 
 dump_invite_perms() {
   local admin_client perm_id
@@ -1515,23 +1588,129 @@ json.dump(profile, open(path, "w", encoding="utf-8"))
 PY
   docker exec -i "$HOST_CONTAINER" /opt/keycloak/bin/kcadm.sh update users/profile -r freedriver \
     --config /tmp/kcadm-admin.config -f - < "$host_work/profile.json" >/dev/null
-  printf 'FREEDRIVER_SEED_PHONE=+15555550143\n' > "$host_work/secrets.env"
-  chmod 600 "$host_work/secrets.env"
+  host_kcadm() {
+    local verb="$1"
+    shift
+    docker exec "$HOST_CONTAINER" /opt/keycloak/bin/kcadm.sh "$verb" \
+      --config /tmp/kcadm-admin.config "$@"
+  }
+  run_host_provision() {
+    local out="$1" status
+    set +e
+    PROVISION_ALLOW_NON_ROOT=1 \
+      KEYCLOAK_CONTAINER="$HOST_CONTAINER" \
+      TECHOPS_PASS_FILE="$host_work/techops.pass" \
+      SECRET_FILE="$host_work/secrets/api.secret" \
+      INVITE_ENV_FILE="$host_work/secrets/invite.env" \
+      INSTANCES_ENV_FILE="$host_work/secrets/instances.env" \
+      PORTAL_JOBS_ENV_FILE="$host_work/secrets/portal-jobs.env" \
+      GRAFANA_ENV_FILE="$host_work/secrets/grafana.env" \
+      MQTT_ENV_FILE="$host_work/secrets/mqtt.env" \
+      MQTT_OAUTH_DIR="$host_work/secrets/mqtt-oauth.d" \
+      AUTONOMY_MCP_ENV_FILE="$host_work/secrets/autonomy-mcp.env" \
+      SECRETS_ENV="$host_work/secrets.env" \
+      bash scripts/provision-keycloak-freedriver.sh >"$out" 2>&1
+    status=$?
+    set -e
+    return "$status"
+  }
+  assert_host_portal_admin() {
+    local expected="$1" id
+    host_kcadm get roles/portal-admin/users -r freedriver -q max=1000 > "$host_work/pa-users.json"
+    host_kcadm get roles/portal-admin/groups -r freedriver > "$host_work/pa-groups.json"
+    host_kcadm get roles/default-roles-freedriver/composites -r freedriver > "$host_work/pa-composites.json"
+    host_kcadm get users -r freedriver -q max=1000 > "$host_work/pa-all.json"
+    rm -rf "$host_work/eff"
+    mkdir -p "$host_work/eff"
+    while IFS=$'\t' read -r id _; do
+      [[ -n "$id" ]] || continue
+      host_kcadm get "users/${id}/role-mappings/realm/composite" -r freedriver > "$host_work/eff/${id}.json"
+    done < <(python3 - "$host_work/pa-all.json" <<'PY'
+import json, sys
+users = json.load(open(sys.argv[1], encoding="utf-8"))
+if isinstance(users, dict):
+    users = users.get("users") or []
+for user in users:
+    print((user.get("id") or "") + "\t" + (user.get("username") or ""))
+PY
+)
+    python3 - "$expected" "$host_work/pa-users.json" "$host_work/pa-groups.json" \
+      "$host_work/pa-composites.json" "$host_work/pa-all.json" "$host_work/eff" <<'PY'
+import json, sys
+from pathlib import Path
+expected = {name for name in sys.argv[1].split(",") if name}
+fixture = "inv9263cb3bac06f0b0a42f2f038c98a0c1"
+
+def as_list(data):
+    if isinstance(data, dict):
+        for key in ("users", "groups", "realmMappings", "results"):
+            if isinstance(data.get(key), list):
+                return data[key]
+        return []
+    return data if isinstance(data, list) else []
+
+direct = {item.get("username") for item in as_list(json.load(open(sys.argv[2], encoding="utf-8"))) if item.get("username")}
+groups = as_list(json.load(open(sys.argv[3], encoding="utf-8")))
+composites = {item.get("name") for item in as_list(json.load(open(sys.argv[4], encoding="utf-8")))}
+users = as_list(json.load(open(sys.argv[5], encoding="utf-8")))
+names = [item.get("username") for item in users]
+if direct != expected:
+    sys.exit("portal-admin users %s != %s" % (sorted(direct), sorted(expected)))
+if groups:
+    sys.exit("portal-admin groups are not empty")
+if "portal-admin" in composites:
+    sys.exit("default-roles-freedriver composites include portal-admin")
+if fixture not in names:
+    sys.exit("invite fixture missing from the user list")
+if not any(name and name.startswith("service-account-") for name in names):
+    sys.exit("service-account users missing from the effective-role scan")
+eff_dir = Path(sys.argv[6])
+effective = set()
+for item in users:
+    eff = json.load(open(eff_dir / (item["id"] + ".json"), encoding="utf-8"))
+    held = {role.get("name") for role in as_list(eff)}
+    if "portal-admin" in held:
+        effective.add(item.get("username"))
+if effective != expected:
+    sys.exit("effective portal-admin %s != %s" % (sorted(effective), sorted(expected)))
+print("portal-admin users exactly %s" % ",".join(sorted(expected)))
+PY
+  }
   mkdir -p "$host_work/secrets"
   chmod 700 "$host_work/secrets"
-  PROVISION_ALLOW_NON_ROOT=1 \
-    KEYCLOAK_CONTAINER="$HOST_CONTAINER" \
-    TECHOPS_PASS_FILE="$host_work/techops.pass" \
-    SECRET_FILE="$host_work/secrets/api.secret" \
-    INVITE_ENV_FILE="$host_work/secrets/invite.env" \
-    INSTANCES_ENV_FILE="$host_work/secrets/instances.env" \
-    PORTAL_JOBS_ENV_FILE="$host_work/secrets/portal-jobs.env" \
-    GRAFANA_ENV_FILE="$host_work/secrets/grafana.env" \
-    MQTT_ENV_FILE="$host_work/secrets/mqtt.env" \
-    MQTT_OAUTH_DIR="$host_work/secrets/mqtt-oauth.d" \
-    AUTONOMY_MCP_ENV_FILE="$host_work/secrets/autonomy-mcp.env" \
-    SECRETS_ENV="$host_work/secrets.env" \
-    bash scripts/provision-keycloak-freedriver.sh
+  host_kcadm create users -r freedriver \
+    -s username=inv9263cb3bac06f0b0a42f2f038c98a0c1 -s enabled=true >/dev/null
+  printf 'FREEDRIVER_SEED_PHONE=\n' > "$host_work/secrets.env"
+  chmod 600 "$host_work/secrets.env"
+  if ! run_host_provision "$host_work/empty-before.out"; then
+    echo "empty-seed provision before kaze should exit 0" >&2
+    grep -v 'SECRET\|password\|token' "$host_work/empty-before.out" | tail -n 30 >&2 || true
+    exit 1
+  fi
+  assert_host_portal_admin kazetsukai
+  host_kcadm create users -r freedriver -s username=kaze -s enabled=true >/dev/null
+  host_kcadm add-roles -r freedriver --uusername kaze --rolename dispatcher >/dev/null
+  printf 'FREEDRIVER_SEED_PHONE=+15555550143\n' > "$host_work/secrets.env"
+  if run_host_provision "$host_work/dispatcher-seed.out"; then
+    echo "seeded provision should stop while kaze holds dispatcher" >&2
+    exit 1
+  fi
+  assert_host_portal_admin kazetsukai
+  printf 'FREEDRIVER_SEED_PHONE=\n' > "$host_work/secrets.env"
+  if ! run_host_provision "$host_work/empty-with-kaze.out"; then
+    echo "empty-seed provision with dispatcher on kaze should exit 0" >&2
+    grep -v 'SECRET\|password\|token' "$host_work/empty-with-kaze.out" | tail -n 30 >&2 || true
+    exit 1
+  fi
+  assert_host_portal_admin kazetsukai
+  host_kcadm remove-roles -r freedriver --uusername kaze --rolename dispatcher >/dev/null
+  printf 'FREEDRIVER_SEED_PHONE=+15555550143\n' > "$host_work/secrets.env"
+  if ! run_host_provision "$host_work/seed-after.out"; then
+    echo "seeded provision after removing dispatcher should exit 0" >&2
+    grep -v 'SECRET\|password\|token' "$host_work/seed-after.out" | tail -n 30 >&2 || true
+    exit 1
+  fi
+  assert_host_portal_admin "kazetsukai,kaze"
   instances_admin_probe "$HOST_BASE" "$host_work/secrets/instances.env" "$host_work" \
     "https://auth.freedriver.io/realms/freedriver"
   rm -rf "$host_work"
