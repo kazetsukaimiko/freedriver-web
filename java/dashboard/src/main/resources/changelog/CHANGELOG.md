@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.9.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.8.0...v1.9.0) (2026-11-24)
+
+
+### Features
+
+* **dashboard:** define the command-list HTTP contract ([#755](https://github.com/kazetsukaimiko/freedriver-web/issues/755)) ([faa5a22](https://github.com/kazetsukaimiko/freedriver-web/commit/faa5a22c968a458cdc618f2a927cbc93b73c4da0))
+* **dashboard:** document the stale-snapshot refusal on the command-list route ([#812](https://github.com/kazetsukaimiko/freedriver-web/issues/812)) ([ed0b31e](https://github.com/kazetsukaimiko/freedriver-web/commit/ed0b31e7e89e5303b789f45aa27a8c20c59e43c5)), closes [#807](https://github.com/kazetsukaimiko/freedriver-web/issues/807)
+* **dashboard:** reach Keycloak admin on the internal address ([#730](https://github.com/kazetsukaimiko/freedriver-web/issues/730)) ([a209c32](https://github.com/kazetsukaimiko/freedriver-web/commit/a209c322fe5424ac8e733c3365b7608a0837edd0))
+* **dashboard:** speak a full pending cap apart from the rate window ([#727](https://github.com/kazetsukaimiko/freedriver-web/issues/727)) ([d15b928](https://github.com/kazetsukaimiko/freedriver-web/commit/d15b92831864b7bbd3ec4de746da7814346073e9))
+* **dispatcher:** share list_agents state on listDevices ([#726](https://github.com/kazetsukaimiko/freedriver-web/issues/726)) ([218831f](https://github.com/kazetsukaimiko/freedriver-web/commit/218831f69e1e49575a5a0e359820aae22b063fda))
+* **mqtt:** grant command-lists and scheduled topics ([#722](https://github.com/kazetsukaimiko/freedriver-web/issues/722)) ([0b7dbee](https://github.com/kazetsukaimiko/freedriver-web/commit/0b7dbee23dacfea80c2492994405a66fc8018ad8))
+
+
+### Bug Fixes
+
+* **dispatcher:** parse the roster report answer ([#739](https://github.com/kazetsukaimiko/freedriver-web/issues/739)) ([cdba152](https://github.com/kazetsukaimiko/freedriver-web/commit/cdba152989dd46b7859687d8daaf53df30253eb0)), closes [#735](https://github.com/kazetsukaimiko/freedriver-web/issues/735)
+* **keycloak:** share one connector redirect URI ([#731](https://github.com/kazetsukaimiko/freedriver-web/issues/731)) ([bcd71ec](https://github.com/kazetsukaimiko/freedriver-web/commit/bcd71ec3708d351aa9d129cd6339a1d9ee52d3dd))
+
+
+### Refactors
+
+* **dispatcher:** refuse a retired daemon mode ([#734](https://github.com/kazetsukaimiko/freedriver-web/issues/734)) ([d4e6e62](https://github.com/kazetsukaimiko/freedriver-web/commit/d4e6e6276037cde006b9b16bdf657bc4ca26a8a1))
+
 ## [1.8.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.7.0...v1.8.0) (2026-11-21)
 
 
