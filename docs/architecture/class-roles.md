@@ -4,7 +4,7 @@ Issue #555 asked for one architecture rule that an agent can check. It landed in
 
 The review prompt re-checked imports on every pull request (#560). Principled Engineering Review reads the files a diff touches and flags JAX-RS, `SecurityIdentity`, and HTTP clients that have wandered out of the edge. That check is prose: it runs when a reviewer model reads the prompt, and a later edit can put the same import back.
 
-ArchUnit then checked the same layering by class name, with a frozen store per rule (#560). A violation recorded under `src/test/resources/archunit-store` passes. A new line fails. The store can only shrink: `.github/scripts/archunit_store_check.py` rejects a line the base branch did not already have, unless kazetsukaimiko adds the `freeze-new-violation` label (#585).
+ArchUnit then checked the same layering by class name, with a frozen store per rule (#560). A violation recorded under `src/test/resources/archunit-store` passes. A new line fails. The store can only shrink. `.github/scripts/archunit_store_check.py` accepts a new frozen line when kazetsukaimiko adds the `freeze-new-violation` label and the pull request body has a `Freeze-followup:` line naming an open issue (#585, #782).
 
 Roles replaced the class-name guess (#608, and the package move here). Each main package carries one jMolecules role on `package-info.java`. A class with no annotation is judged as that package's role, so a new class shows its role as the directory it was added to. A class carries its own role only when that role differs from the package. `RoleRules.noStateInProcessMemory` rejects state in process memory on an application or adapter class unless the field or the class carries `@ProcessLocal` with a reason.
 
