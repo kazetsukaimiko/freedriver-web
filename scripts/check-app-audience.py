@@ -25,12 +25,14 @@ A missing protocol, or any protocol other than openid-connect and saml, fails
 and names that protocol.
 
 `--collect --realm REALM --out FILE -- <kcadm prefix>` writes this snapshot.
-The prefix is kcadm without a subcommand. Collect runs only `kcadm get`. It
-pages clients and client scopes so a later dynamic client registration is
-included, and it reads protocol mappers, scope names, freedriver-api client
-roles, and the anonymous allowed-protocol-mappers component from their own
-endpoints. scripts/test-invite-service-account.sh and the VPS check use that
-command unchanged.
+The prefix is kcadm without a subcommand. Keycloak 26 reads `--config` after
+`get`, and collect inserts `get` before those options. Collect runs only
+`kcadm get`. It
+pages clients, and pages freedriver-api's client roles, so a later dynamic
+client registration is included. Keycloak 26.7.5 ignores first/max on
+client-scopes, protocol-mappers, the default and optional scope lists, and
+components, so those are one plain get. scripts/test-invite-service-account.sh
+and the VPS check use that command unchanged.
 
 Exit 0 when the snapshot passes. Exit 1 prints each failure on stderr.
 """
@@ -539,6 +541,17 @@ POLICY_TYPE = "org.keycloak.services.clientregistration.policy.ClientRegistratio
 PAGE_CAP = 100000
 
 
+def listed(fetch, path: str, realm: str, queries: list[str] | None = None) -> list:
+    """One kcadm get. These Keycloak 26.7.5 lists ignore first/max."""
+    args = ["get", path, "-r", realm]
+    for query in queries or []:
+        args.extend(["-q", query])
+    batch = fetch(args)
+    if not isinstance(batch, list):
+        raise CollectError(f"{path} is unreadable")
+    return batch
+
+
 def paged(fetch, path: str, realm: str, page_size: int, queries: list[str] | None = None) -> list:
     offset = 0
     collected: list = []
@@ -617,9 +630,9 @@ def collect_snapshot(fetch, realm: str, page_size: int = 100) -> dict:
             raise CollectError("client entry is unreadable")
         if client_id == "freedriver-api":
             api_ids.append(client_uuid)
-        mappers = paged(fetch, f"clients/{client_uuid}/protocol-mappers/models", realm, page_size)
-        default_scopes = paged(fetch, f"clients/{client_uuid}/default-client-scopes", realm, page_size)
-        optional_scopes = paged(fetch, f"clients/{client_uuid}/optional-client-scopes", realm, page_size)
+        mappers = listed(fetch, f"clients/{client_uuid}/protocol-mappers/models", realm)
+        default_scopes = listed(fetch, f"clients/{client_uuid}/default-client-scopes", realm)
+        optional_scopes = listed(fetch, f"clients/{client_uuid}/optional-client-scopes", realm)
         client_rows.append(
             {
                 "clientId": client_id,
@@ -638,7 +651,7 @@ def collect_snapshot(fetch, realm: str, page_size: int = 100) -> dict:
             raise CollectError("freedriver-api client role is unreadable")
         role_names.append(role["name"])
 
-    scopes = paged(fetch, "client-scopes", realm, page_size)
+    scopes = listed(fetch, "client-scopes", realm)
     scope_rows = []
     for scope in scopes:
         if not isinstance(scope, dict):
@@ -647,7 +660,7 @@ def collect_snapshot(fetch, realm: str, page_size: int = 100) -> dict:
         scope_id = scope.get("id")
         if not isinstance(name, str) or not name or not isinstance(scope_id, str) or not scope_id:
             raise CollectError("client scope entry is unreadable")
-        mappers = paged(fetch, f"client-scopes/{scope_id}/protocol-mappers/models", realm, page_size)
+        mappers = listed(fetch, f"client-scopes/{scope_id}/protocol-mappers/models", realm)
         scope_rows.append(
             {
                 "name": name,
@@ -656,13 +669,12 @@ def collect_snapshot(fetch, realm: str, page_size: int = 100) -> dict:
             }
         )
 
-    defaults = paged(fetch, "default-default-client-scopes", realm, page_size)
-    optional = paged(fetch, "default-optional-client-scopes", realm, page_size)
-    components = paged(
+    defaults = listed(fetch, "default-default-client-scopes", realm)
+    optional = listed(fetch, "default-optional-client-scopes", realm)
+    components = listed(
         fetch,
         "components",
         realm,
-        page_size,
         [f"type={POLICY_TYPE}"],
     )
     return {
@@ -675,10 +687,20 @@ def collect_snapshot(fetch, realm: str, page_size: int = 100) -> dict:
     }
 
 
-def run_kcadm(prefix: list[str], get_args: list[str]) -> object:
+def command_with_get(prefix: list[str], get_args: list[str]) -> list[str]:
+    """Keycloak 26 reads kcadm --config after the subcommand."""
     if not get_args or get_args[0] != "get":
         raise CollectError("collect only runs kcadm get")
-    proc = subprocess.run(prefix + get_args, check=False, capture_output=True, text=True)
+    split = len(prefix)
+    for index, arg in enumerate(prefix):
+        if arg.startswith("-"):
+            split = index
+            break
+    return prefix[:split] + ["get"] + prefix[split:] + get_args[1:]
+
+
+def run_kcadm(prefix: list[str], get_args: list[str]) -> object:
+    proc = subprocess.run(command_with_get(prefix, get_args), check=False, capture_output=True, text=True)
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout).strip()
         raise CollectError(detail or "kcadm get failed")
@@ -765,6 +787,7 @@ def self_test_collect() -> None:
         "c-api": [],
         "c-saml": [audience],
     }
+    api_roles: list = []
     scope_mappers = {
         "s-basic": [],
         "s-role": [audience],
@@ -798,10 +821,17 @@ def self_test_collect() -> None:
             else:
                 raise CollectError("collect only runs kcadm get")
             index += 2
-        if values.get("-r") != "freedriver" or "--offset" not in values or "--limit" not in values:
+        if values.get("-r") != "freedriver":
             raise CollectError("kcadm get arguments are unreadable")
-        offset = int(values["--offset"])
-        limit = int(values["--limit"])
+        parts = path.split("/")
+        paged_path = path == "clients" or (len(parts) == 3 and parts[0] == "clients" and parts[2] == "roles")
+        if paged_path:
+            if "--offset" not in values or "--limit" not in values:
+                raise CollectError("kcadm get arguments are unreadable")
+            offset = int(values["--offset"])
+            limit = int(values["--limit"])
+        elif "--offset" in values or "--limit" in values:
+            raise CollectError(f"paging is not supported on {path}")
 
         def cut(items: list) -> list:
             return items[offset : offset + limit]
@@ -809,26 +839,25 @@ def self_test_collect() -> None:
         if path == "clients":
             return cut(clients)
         if path == "client-scopes":
-            return cut(scopes)
+            return scopes
         if path == "default-default-client-scopes":
-            return cut(defaults)
+            return defaults
         if path == "default-optional-client-scopes":
-            return cut([])
+            return []
         if path == "components":
             if f"type={POLICY_TYPE}" not in queries:
                 raise CollectError("component type query is missing")
-            return cut(components)
-        parts = path.split("/")
+            return components
         if len(parts) == 4 and parts[0] == "clients" and parts[2] == "protocol-mappers":
-            return cut(client_mappers[parts[1]])
+            return client_mappers[parts[1]]
         if len(parts) == 3 and parts[0] == "clients" and parts[2] == "default-client-scopes":
-            return cut([{"id": "s-basic", "name": "basic", "protocol": "openid-connect"}])
+            return [{"id": "s-basic", "name": "basic", "protocol": "openid-connect"}]
         if len(parts) == 3 and parts[0] == "clients" and parts[2] == "optional-client-scopes":
-            return cut([])
+            return []
         if len(parts) == 3 and parts[0] == "clients" and parts[2] == "roles":
-            return cut([])
+            return cut(api_roles if parts[1] == "c-api" else [])
         if len(parts) == 4 and parts[0] == "client-scopes" and parts[2] == "protocol-mappers":
-            return cut(scope_mappers[parts[1]])
+            return scope_mappers[parts[1]]
         raise CollectError(f"unexpected get {path}")
 
     snapshot = collect_snapshot(fake, "freedriver", page_size=1)
@@ -839,12 +868,29 @@ def self_test_collect() -> None:
         raise SystemExit("collect dropped the second client page")
     if not any(call[1] == "clients" and "--offset" in call and call[call.index("--offset") + 1] == "1" for call in calls):
         raise SystemExit("collect did not read a second client page")
-    if not any(
-        call[1] == "components" and "--offset" in call and call[call.index("--offset") + 1] == "2" for call in calls
-    ):
-        raise SystemExit("collect did not page to the anonymous component")
+    if not any(call[1].endswith("/roles") and "--offset" in call and "--limit" in call for call in calls):
+        raise SystemExit("collect did not page freedriver-api client roles")
+    if any("--offset" in call and call[1] not in ("clients",) and not call[1].endswith("/roles") for call in calls):
+        raise SystemExit("collect paged a list Keycloak 26.7.5 returns whole")
     if any(call[0] != "get" for call in calls):
         raise SystemExit("collect ran a kcadm command other than get")
+    built = command_with_get(
+        ["docker", "exec", "kc", "/opt/keycloak/bin/kcadm.sh", "--config", "/tmp/kcadm-admin.config"],
+        ["get", "clients", "-r", "freedriver"],
+    )
+    if built != [
+        "docker",
+        "exec",
+        "kc",
+        "/opt/keycloak/bin/kcadm.sh",
+        "get",
+        "--config",
+        "/tmp/kcadm-admin.config",
+        "clients",
+        "-r",
+        "freedriver",
+    ]:
+        raise SystemExit("collect put kcadm --config before get")
     expect_ok(snapshot, "collected snapshot")
 
 
@@ -855,21 +901,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--collect", action="store_true")
     parser.add_argument("--realm", default="freedriver")
     parser.add_argument("--out")
-    args, rest = parser.parse_known_args(argv)
+    raw = list(sys.argv[1:] if argv is None else argv)
+    prefix: list[str] = []
+    if "--" in raw:
+        cut = raw.index("--")
+        prefix = raw[cut + 1 :]
+        raw = raw[:cut]
+    args, rest = parser.parse_known_args(raw)
     if args.self_test:
-        if args.collect or args.out or rest:
+        if args.collect or args.out or rest or prefix:
             print("self-test takes no other arguments", file=sys.stderr)
             return 1
         self_test()
         return 0
     if args.collect:
-        if rest[:1] == ["--"]:
-            rest = rest[1:]
-        if args.path or not args.out or not rest:
+        if rest or args.path or not args.out or not prefix:
             print("collect expects --out and a kcadm prefix after --", file=sys.stderr)
             return 1
         try:
-            snapshot = collect_snapshot(lambda get_args: run_kcadm(rest, get_args), args.realm)
+            snapshot = collect_snapshot(lambda get_args: run_kcadm(prefix, get_args), args.realm)
         except CollectError as exc:
             print(str(exc), file=sys.stderr)
             return 1
