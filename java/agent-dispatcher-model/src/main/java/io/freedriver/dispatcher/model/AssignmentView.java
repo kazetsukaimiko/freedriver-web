@@ -13,7 +13,7 @@ import java.util.UUID;
  * {@link StartRequest} describes; it is set by the host's start and null until then.
  *
  * <p>{@code agentSessionId} is the session of the agent that works on the job, whichever agent
- * that is. Its JSON property is {@code grokSessionId}.
+ * that is. Its JSON property is {@code agentSessionId}, the same name.
  *
  * <p>{@code finishBy} is the job's finish deadline. It is set only for a job the host started with
  * {@link StartRequest#fireAndForget()} true, and is null otherwise: before the start, and for a
@@ -34,7 +34,7 @@ public record AssignmentView(
         Channel channel,
         String prompt,
         AssignmentState state,
-        @JsonProperty("grokSessionId") UUID agentSessionId,
+        UUID agentSessionId,
         String note,
         @JsonProperty("on_busy") OnBusy onBusy,
         String deliveryRef,

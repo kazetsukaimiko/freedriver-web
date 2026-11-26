@@ -43,7 +43,7 @@ class AssignmentViewContractTest {
     void json_without_finishBy_reads_as_null() throws Exception {
         String before = "{\"assignmentId\":\"" + ASSIGNMENT + "\",\"jobId\":\"" + JOB + "\",\"deviceId\":\"device-1\","
                 + "\"agentName\":\"agent-1\",\"channel\":\"TEXT\",\"prompt\":\"hello\",\"state\":\"RUNNING\","
-                + "\"grokSessionId\":null,\"note\":null,\"on_busy\":\"queue\",\"deliveryRef\":\"delivery-1\"}";
+                + "\"agentSessionId\":null,\"note\":null,\"on_busy\":\"queue\",\"deliveryRef\":\"delivery-1\"}";
 
         AssignmentView read = JSON.readValue(before, AssignmentView.class);
 
@@ -52,15 +52,15 @@ class AssignmentViewContractTest {
     }
 
     @Test
-    void agentSessionId_keeps_the_json_property_grokSessionId() throws Exception {
+    void agentSessionId_serializes_as_the_json_property_agentSessionId() throws Exception {
         UUID session = UUID.fromString("00000000-0000-0000-0000-000000000003");
         AssignmentView view = new AssignmentView(ASSIGNMENT, JOB, "device-1", "agent-1", Channel.TEXT, "hello",
                 AssignmentState.RUNNING, session, null, OnBusy.queue, "delivery-1", null);
 
         JsonNode json = JSON.valueToTree(view);
 
-        assertEquals(session.toString(), json.get("grokSessionId").asText());
-        assertFalse(json.has("agentSessionId"));
+        assertEquals(session.toString(), json.get("agentSessionId").asText());
+        assertFalse(json.has("grokSessionId"));
         assertEquals(12, json.size());
         assertEquals(session, JSON.readValue(json.toString(), AssignmentView.class).agentSessionId());
     }
