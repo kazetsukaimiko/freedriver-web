@@ -331,6 +331,32 @@
           }
         }
       ]
+    },
+    {
+      "name": "role_list",
+      "protocol": "saml",
+      "protocolMappers": [
+        {
+          "name": "audience-freedriver-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "freedriver-api"
+          }
+        }
+      ]
+    },
+    {
+      "name": "saml_organization",
+      "protocol": "saml",
+      "protocolMappers": [
+        {
+          "name": "organization",
+          "protocol": "saml",
+          "protocolMapper": "saml-user-attribute-mapper",
+          "config": {}
+        }
+      ]
     }
   ],
   "realmDefaultDefaultClientScopes": [
@@ -340,7 +366,9 @@
     "roles",
     "web-origins",
     "acr",
-    "autonomy-mcp"
+    "autonomy-mcp",
+    "role_list",
+    "saml_organization"
   ],
   "realmDefaultOptionalClientScopes": [
     "address",
