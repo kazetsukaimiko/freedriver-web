@@ -653,12 +653,13 @@ allowed = [
     {"name": "grafana-editor"},
     {"name": "grafana-admin"},
     {"name": "mcp-user"},
+    {"name": "portal-admin"},
 ]
 run(allowed, {}, True)
 run([{"name": "dashboard"}, {"name": "default-roles-freedriver"}], {}, True)
 run([{"name": "grafana-admin"}], {}, True)
 run([{"name": "mcp-user"}], {}, True)
-run([{"name": "portal-admin"}], {}, False)
+run([{"name": "portal-admin"}], {}, True)
 run([{"name": "changelog"}], {}, False)
 run(allowed + [{"name": "extra"}], {}, False)
 run(allowed, {"clientMappings": {"account": {"mappings": [{"name": "view-profile"}]}}}, False)
