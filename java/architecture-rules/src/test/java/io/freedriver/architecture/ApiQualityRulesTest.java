@@ -853,17 +853,65 @@ class ApiQualityRulesTest {
     }
 
     @Test
-    void an_anonymous_class_is_not_a_subject_of_rule_3() {
+    void an_anonymous_class_implementing_an_api_fails_rule_3_on_the_holding_class() {
         JavaClasses classes = new ClassFileImporter().importPackages("io.freedriver.architecture.fixtures.apiquality");
         JavaClass anonymous = classes.stream()
                 .filter(type -> type.isAnonymousClass() && type.getName().startsWith(fix("AnonImplements")))
                 .findFirst()
                 .orElseThrow();
         assertFalse(ApiQualityRules.judged(anonymous, ModuleOwnership.reactor()));
-        Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
-        owners.put(fix("Ordinary"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
-        owners.put(fix("AnonImplements"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
-        assertPasses(ApiQualityRules.implementationsLiveInImpl(overlay(owners)), "anonimplements");
+        String line = implementsOrdinary(fix("AnonImplements"));
+        assertEquals(List.of(line), rule3Lines(ordinaryOwners(fix("AnonImplements")), "anonimplements"));
+        assertFalse(rule3Report(ordinaryOwners(fix("AnonImplements")), "anonimplements").matches("(?s).*\\$\\d.*"));
+    }
+
+    @Test
+    void an_anonymous_api_inside_a_member_or_local_class_is_reported_on_that_class() {
+        String member = fix("AnonImplMember") + "$Inner";
+        assertEquals(List.of(implementsOrdinary(member)), rule3Lines(ordinaryOwners(member), "anonimplmember"));
+        assertFalse(rule3Report(ordinaryOwners(member), "anonimplmember").contains(member + "$"));
+
+        String local = fix("AnonImplLocal") + "$1Holder";
+        assertEquals(List.of(implementsOrdinary(local)), rule3Lines(ordinaryOwners(local), "anonimpllocal"));
+        assertFalse(rule3Report(ordinaryOwners(local), "anonimpllocal").contains(local + "$"));
+    }
+
+    @Test
+    void one_holding_class_and_one_api_interface_give_one_rule_3_line() {
+        assertEquals(List.of(implementsOrdinary(fix("AnonImplNested"))),
+                rule3Lines(ordinaryOwners(fix("AnonImplNested")), "anonimplnested"));
+        assertFalse(rule3Report(ordinaryOwners(fix("AnonImplNested")), "anonimplnested").matches("(?s).*\\$\\d.*"));
+
+        assertEquals(List.of(implementsOrdinary(fix("AnonImplPlaces"))),
+                rule3Lines(ordinaryOwners(fix("AnonImplPlaces")), "anonimplplaces"));
+        assertEquals(List.of(implementsOrdinary(fix("AnonImplAgain"))),
+                rule3Lines(ordinaryOwners(fix("AnonImplAgain")), "anonimplagain"));
+        assertEquals(List.of(implementsOrdinary(fix("AnonImplEnum"))),
+                rule3Lines(ordinaryOwners(fix("AnonImplEnum")), "anonimplenum"));
+        assertFalse(rule3Report(ordinaryOwners(fix("AnonImplEnum")), "anonimplenum").contains("$"));
+
+        Map<String, ModuleOwnership.Owned> base = ordinaryOwners(fix("AnonImplBase"));
+        base.put(fix("NamedImpl"), ModuleOwnership.Owned.ours("io.freedriver", "sample-impl"));
+        assertEquals(List.of(implementsOrdinary(fix("AnonImplBase"))), rule3Lines(base, "anonimplbase"));
+    }
+
+    @Test
+    void an_anonymous_api_passes_rule_3_in_an_implementation_package_and_on_a_jax_rs_resource() {
+        Map<String, String> impl = new LinkedHashMap<>();
+        impl.put(role("api.Port"), "sample");
+        impl.put(role("impl.mongo.AnonPort"), "sample");
+        assertPassesIn(ApiQualityRules.implementationsLiveInImpl(roles(impl)));
+
+        Map<String, ModuleOwnership.Owned> resource = new LinkedHashMap<>();
+        resource.put(fix("WidgetsApi"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        resource.put(fix("AnonWidgetsResource"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        assertEquals(List.of(), rule3Lines(resource, "anonwidgetsresource"));
+    }
+
+    @Test
+    void a_jax_rs_resource_holding_an_anonymous_non_jax_rs_api_fails_rule_3() {
+        assertEquals(List.of(implementsOrdinary(fix("AnonOrdinaryResource"))),
+                rule3Lines(ordinaryOwners(fix("AnonOrdinaryResource")), "anonordinaryresource"));
     }
 
     @Test
@@ -1068,6 +1116,30 @@ class ApiQualityRulesTest {
 
     private static String fix(String simple) {
         return FIXTURES + simple;
+    }
+
+    private static String implementsOrdinary(String className) {
+        return className + " implements " + fix("Ordinary") + " from API module sample-api";
+    }
+
+    /** Ordinary is the API interface. Each subject is service code in the sample module. */
+    private static Map<String, ModuleOwnership.Owned> ordinaryOwners(String... subjects) {
+        Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
+        owners.put(fix("Ordinary"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        for (String subject : subjects) {
+            owners.put(subject, ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        }
+        return owners;
+    }
+
+    private static List<String> rule3Lines(Map<String, ModuleOwnership.Owned> owners, String fixture) {
+        return evaluate(ApiQualityRules.implementationsLiveInImpl(overlay(owners)), fixture)
+                .getFailureReport().getDetails().stream().sorted().toList();
+    }
+
+    private static String rule3Report(Map<String, ModuleOwnership.Owned> owners, String fixture) {
+        return evaluate(ApiQualityRules.implementationsLiveInImpl(overlay(owners)), fixture)
+                .getFailureReport().toString();
     }
 
     /** The fixture's module. The artifactId has to give {@code role}, since the fixture package names none. */
