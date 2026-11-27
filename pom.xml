@@ -29,6 +29,9 @@
         <jakarta.validation.version>3.1.1</jakarta.validation.version>
         <junit.version>5.13.4</junit.version>
         <archunit.version>1.4.1</archunit.version>
+        <!-- ASM that reads the Java 23 class files this build produces. quarkus-bom 3.38.2 manages the same version.
+             architecture-rules uses it to read lambda call sites, which ArchUnit drops. -->
+        <asm.version>9.10.1</asm.version>
         <!-- jMolecules architecture roles (#608). The ArchUnit integration 0.33.0 is built against jMolecules 1.10.0
              and ArchUnit 1.4.1; its 1.6.0 on Maven Central is an older 2022 release. -->
         <jmolecules.version>1.10.0</jmolecules.version>
