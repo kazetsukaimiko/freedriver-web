@@ -102,7 +102,7 @@ final class ApiValues {
             }
         }
         for (JavaCodeUnit unit : roots(type)) {
-            for (JavaCodeUnit body : withLambdas(type, unit)) {
+            for (JavaCodeUnit body : withBodies(type, unit)) {
                 valueCode(type, unit, body, events, lines, ownership);
             }
         }
@@ -114,7 +114,7 @@ final class ApiValues {
             return;
         }
         JavaCodeUnit initializer = type.getStaticInitializer().get();
-        List<JavaCodeUnit> bodies = withLambdas(type, initializer);
+        List<JavaCodeUnit> bodies = withBodies(type, initializer);
         for (JavaCodeUnit body : bodies) {
             for (JavaClass constructed : constructions(body)) {
                 if (mutableConstruction(constructed)) {
@@ -127,7 +127,7 @@ final class ApiValues {
             sameClassCallees(type, body, callees);
         }
         for (JavaCodeUnit callee : callees) {
-            for (JavaCodeUnit body : withLambdas(type, callee)) {
+            for (JavaCodeUnit body : withBodies(type, callee)) {
                 for (JavaClass constructed : constructions(body)) {
                     if (!mutableConstruction(constructed)) {
                         continue;
@@ -340,6 +340,63 @@ final class ApiValues {
         }
         type.getStaticInitializer().ifPresent(units::add);
         return units;
+    }
+
+    /**
+     * The member, the lambdas it holds, and the bodies of the anonymous classes it holds. An
+     * anonymous class inside a lambda stays with that lambda's member. The reported member is the
+     * one passed in, so a line never names the anonymous class.
+     */
+    private static List<JavaCodeUnit> withBodies(JavaClass type, JavaCodeUnit unit) {
+        List<JavaCodeUnit> bodies = withLambdas(type, unit);
+        for (JavaClass anonymous : ApiQualityRules.anonymousClasses(type)) {
+            if (!heldBy(type, anonymous, unit)) {
+                continue;
+            }
+            for (JavaCodeUnit code : anonymous.getCodeUnits()) {
+                if (!generated(code)) {
+                    bodies.add(code);
+                }
+            }
+        }
+        return bodies;
+    }
+
+    /**
+     * The outermost anonymous class is declared in {@code unit}, or in a lambda {@code unit} holds.
+     * ArchUnit leaves the enclosing code unit empty for an anonymous class written in a field or
+     * static initializer, so those are found by the constructor call that creates the class.
+     */
+    private static boolean heldBy(JavaClass type, JavaClass anonymous, JavaCodeUnit unit) {
+        JavaCodeUnit member = holdingMember(type, anonymous);
+        return member != null && unit.getFullName().equals(member.getFullName())
+                && unit.getOwner().getName().equals(member.getOwner().getName());
+    }
+
+    private static JavaCodeUnit holdingMember(JavaClass type, JavaClass anonymous) {
+        JavaClass outer = anonymous;
+        while (outer.getEnclosingClass().isPresent() && outer.getEnclosingClass().get().isAnonymousClass()) {
+            outer = outer.getEnclosingClass().get();
+        }
+        JavaCodeUnit enclosing = outer.getEnclosingCodeUnit().orElse(null);
+        if (enclosing == null) {
+            enclosing = constructingUnit(type, outer);
+        }
+        if (enclosing == null) {
+            return null;
+        }
+        return enclosing.getName().startsWith("lambda$") ? holder(type, enclosing) : enclosing;
+    }
+
+    private static JavaCodeUnit constructingUnit(JavaClass type, JavaClass anonymous) {
+        for (JavaCodeUnit unit : type.getCodeUnits()) {
+            for (JavaConstructorCall call : unit.getConstructorCallsFromSelf()) {
+                if (anonymous.getName().equals(call.getTarget().getOwner().getName())) {
+                    return unit;
+                }
+            }
+        }
+        return null;
     }
 
     /** The member plus the lambdas whose holding member it is. Nested lambdas stay with that member. */
