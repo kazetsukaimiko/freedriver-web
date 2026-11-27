@@ -16,7 +16,7 @@ The Watch app signs in through the Keycloak app registration (OAuth client `free
 
 ## Watch offline session
 
-The watch requests `offline_access` in its authorization request. That scope is optional on `freedriver-watchos` and stays off the default scopes. The offline session for `freedriver-watchos` alone is capped at 30 days idle (`client.offline.session.idle.timeout` `2592000`) and 90 days maximum (`client.offline.session.max.lifespan` `7776000`). Other registrations keep the realm's own offline settings. The watch access token uses the realm's short default lifetime of 300 seconds. `freedriver-watchos` sets its access-token lifespan from that realm default.
+The watch requests `offline_access` in its authorization request. That scope is optional on `freedriver-watchos` and stays off the default scopes. The offline session for `freedriver-watchos` alone is capped at 30 days idle (`client.offline.session.idle.timeout` `2592000`) and 90 days maximum (`client.offline.session.max.lifespan` `7776000`). Other registrations keep the realm's own offline settings. The watch access token uses the realm's short default lifetime of 300 seconds. `freedriver-watchos` sets no access-token lifespan of its own.
 
 The watch ends that session by revoking the refresh token on sign-out, and when the session is removed in Keycloak. Signing in again after an explicit sign-out on the watch requires fresh user authentication.
 
