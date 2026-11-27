@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.10.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.9.0...v1.10.0) (2026-11-27)
+
+
+### Features
+
+* **ci:** count a lambda as its holding class ([#864](https://github.com/kazetsukaimiko/freedriver-web/issues/864)) ([6e25531](https://github.com/kazetsukaimiko/freedriver-web/commit/6e25531c19d9825e776d4fb77586b92a95138eda)), closes [#848](https://github.com/kazetsukaimiko/freedriver-web/issues/848)
+* **dashboard:** add the latest scheduled snapshot store ([#815](https://github.com/kazetsukaimiko/freedriver-web/issues/815)) ([da61170](https://github.com/kazetsukaimiko/freedriver-web/commit/da611700baf9df83f19a33c67c7545e6ab851877))
+* **dashboard:** declare GET /api/me for the signed-in caller ([#856](https://github.com/kazetsukaimiko/freedriver-web/issues/856)) ([6d0cf84](https://github.com/kazetsukaimiko/freedriver-web/commit/6d0cf847cc51358bc99ac53a7dd65032f83a0ebb)), closes [#831](https://github.com/kazetsukaimiko/freedriver-web/issues/831)
+* **dispatcher:** mark fire-and-forget starts and carry the finish deadline in the host contract ([#795](https://github.com/kazetsukaimiko/freedriver-web/issues/795)) ([a445ee8](https://github.com/kazetsukaimiko/freedriver-web/commit/a445ee835164466423031141082c90a982b46fb7))
+* **keycloak:** allow portal-admin on the kaze phone check ([#844](https://github.com/kazetsukaimiko/freedriver-web/issues/844)) ([3a6106a](https://github.com/kazetsukaimiko/freedriver-web/commit/3a6106a0c850770f56e03e5f2682481f3334e68b))
+
+
+### Bug Fixes
+
+* **ci:** count an anonymous API implementation on its holder ([#862](https://github.com/kazetsukaimiko/freedriver-web/issues/862)) ([2d1ad9c](https://github.com/kazetsukaimiko/freedriver-web/commit/2d1ad9cac19deb3875411f0da8ae3fad7fa22609)), closes [#840](https://github.com/kazetsukaimiko/freedriver-web/issues/840)
+* **ci:** report an anonymous API implementation held by a contract type ([#863](https://github.com/kazetsukaimiko/freedriver-web/issues/863)) ([76dad9c](https://github.com/kazetsukaimiko/freedriver-web/commit/76dad9cf8e18fc4a6dc1f4459a90c54348fd5d71)), closes [#847](https://github.com/kazetsukaimiko/freedriver-web/issues/847)
+* **ci:** report refused dependencies inside anonymous classes ([#859](https://github.com/kazetsukaimiko/freedriver-web/issues/859)) ([85a2c6e](https://github.com/kazetsukaimiko/freedriver-web/commit/85a2c6effa94946a6591fb86789b25df1395511d))
+
 ## [1.9.0](https://github.com/kazetsukaimiko/freedriver-web/compare/v1.8.0...v1.9.0) (2026-11-24)
 
 
