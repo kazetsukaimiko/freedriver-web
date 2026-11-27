@@ -26,6 +26,11 @@
             <version>${archunit.version}</version>
         </dependency>
         <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm</artifactId>
+            <version>${asm.version}</version>
+        </dependency>
+        <dependency>
             <groupId>org.jmolecules.integrations</groupId>
             <artifactId>jmolecules-archunit</artifactId>
             <version>${jmolecules-archunit.version}</version>
