@@ -123,6 +123,7 @@ The BFF (web-app, HTTP-only cookie, `freedriver-api` confidential client) is wir
 - Web origins: `https://app.freedriver.io`, `http://localhost:8080`
 - Client secret file: `/opt/freedriver-secrets/keycloak-freedriver-api.secret` (mode 640, `root:lonewatt-techops`)
 - Realm roles: `dashboard`, `portal-admin`
-- Users: `kazetsukai` (dashboard + portal-admin), placeholder `second` (dashboard only)
+- Users: `kazetsukai` (dashboard + portal-admin), `kaze` (holds `portal-admin`), placeholder `second` (dashboard only)
+- Phone-user allow-list for `kaze`: `dashboard`, `default-roles-freedriver`, `offline_access`, `uma_authorization`, `grafana-viewer`, `grafana-editor`, `grafana-admin`, `mcp-user`, `portal-admin`
 
 Provision on the VPS with `scripts/provision-keycloak-freedriver.sh`. It is idempotent: it keeps an existing client secret file, and user passwords are managed in Keycloak.
