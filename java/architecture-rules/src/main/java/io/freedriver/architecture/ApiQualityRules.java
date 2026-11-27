@@ -14,10 +14,13 @@ import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -364,29 +367,90 @@ public final class ApiQualityRules {
     }
 
     /**
-     * Direct dependencies, except a type that appears only because an annotation names it: the
-     * annotation itself, or a member or default-value type ArchUnit imports with the annotation.
-     * A field, parameter or method body that uses the same type is kept.
+     * Direct dependencies of the class and of the anonymous classes it holds, except a type that
+     * appears only because an annotation names it: the annotation itself, or a member or
+     * default-value type ArchUnit imports with the annotation. A field, parameter or method body
+     * that uses the same type is kept. One line per target name. The class's own anonymous
+     * classes, and an anonymous class's reference to the class that holds it, are left out: an
+     * anonymous class is part of its holder.
      */
     private static Set<JavaClass> dependencies(JavaClass type) {
-        java.util.Map<String, java.util.List<Dependency>> byName = new java.util.LinkedHashMap<>();
-        java.util.Map<String, JavaClass> targets = new java.util.LinkedHashMap<>();
-        for (Dependency dependency : type.getDirectDependenciesFromSelf()) {
-            JavaClass target = unwrap(dependency.getTargetClass());
-            if (target.getName().equals(type.getName())) {
-                continue;
+        Map<String, List<Dependency>> byName = new LinkedHashMap<>();
+        Map<String, JavaClass> targets = new LinkedHashMap<>();
+        for (JavaClass source : withAnonymous(type)) {
+            for (Dependency dependency : source.getDirectDependenciesFromSelf()) {
+                JavaClass target = unwrap(dependency.getTargetClass());
+                if (target.getName().equals(type.getName()) || anonymousOf(type, target)) {
+                    continue;
+                }
+                byName.computeIfAbsent(target.getName(), name -> new ArrayList<>()).add(dependency);
+                targets.putIfAbsent(target.getName(), target);
             }
-            byName.computeIfAbsent(target.getName(), name -> new java.util.ArrayList<>()).add(dependency);
-            targets.putIfAbsent(target.getName(), target);
         }
-        java.util.LinkedHashSet<JavaClass> found = new java.util.LinkedHashSet<>();
-        for (java.util.Map.Entry<String, java.util.List<Dependency>> entry : byName.entrySet()) {
+        Set<JavaClass> found = new java.util.LinkedHashSet<>();
+        for (Map.Entry<String, List<Dependency>> entry : byName.entrySet()) {
             if (entry.getValue().stream().allMatch(ApiQualityRules::fromAnnotationOnly)) {
                 continue;
             }
             found.add(targets.get(entry.getKey()));
         }
         return found;
+    }
+
+    /** The class plus each anonymous class whose nearest non-anonymous encloser it is. */
+    private static List<JavaClass> withAnonymous(JavaClass type) {
+        List<JavaClass> sources = new ArrayList<>();
+        sources.add(type);
+        sources.addAll(anonymousClasses(type));
+        return sources;
+    }
+
+    /**
+     * Anonymous classes whose holding class is {@code type}: the nearest enclosing class that is
+     * not itself anonymous. A member or local class keeps the anonymous classes written inside it.
+     */
+    static List<JavaClass> anonymousClasses(JavaClass type) {
+        Map<String, JavaClass> found = new LinkedHashMap<>();
+        String name = type.getName();
+        for (JavaClass candidate : type.getPackage().getClasses()) {
+            if (candidate.isAnonymousClass() && name.equals(holdingClass(candidate).getName())) {
+                found.put(candidate.getName(), candidate);
+            }
+        }
+        walkAnonymous(type, type, found, new HashSet<>());
+        return new ArrayList<>(found.values());
+    }
+
+    /** Follows anonymous-class targets so a nested one is kept when the package scan misses it. */
+    private static void walkAnonymous(JavaClass holder, JavaClass source, Map<String, JavaClass> found,
+                                      Set<String> seen) {
+        if (!seen.add(source.getName())) {
+            return;
+        }
+        for (Dependency dependency : source.getDirectDependenciesFromSelf()) {
+            JavaClass target = dependency.getTargetClass();
+            if (!target.isAnonymousClass() || !holder.getName().equals(holdingClass(target).getName())) {
+                continue;
+            }
+            found.putIfAbsent(target.getName(), target);
+            walkAnonymous(holder, target, found, seen);
+        }
+    }
+
+    /** The nearest enclosing class that is not anonymous, or {@code type} when it is that class. */
+    static JavaClass holdingClass(JavaClass type) {
+        JavaClass current = type;
+        while (current.isAnonymousClass()) {
+            if (current.getEnclosingClass().isEmpty()) {
+                return current;
+            }
+            current = current.getEnclosingClass().get();
+        }
+        return current;
+    }
+
+    private static boolean anonymousOf(JavaClass holder, JavaClass target) {
+        return target.isAnonymousClass() && holder.getName().equals(holdingClass(target).getName());
     }
 
     /** ArchUnit's description for an annotation type or one of its member and default-value types. */
