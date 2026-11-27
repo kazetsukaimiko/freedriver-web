@@ -9,11 +9,12 @@
 #
 # User kaze signs in by phone (#169). The script sets its "phone" attribute to
 # FREEDRIVER_SEED_PHONE from /opt/freedriver-secrets/.env and makes it a direct
-# member of phone-sign-in with the realm role dashboard. Group and role checks
-# run before that write. Effective realm roles must be inside dashboard,
-# default-roles-freedriver, offline_access, uma_authorization, grafana-viewer,
-# grafana-editor, grafana-admin, and mcp-user. Any client role stops the script. A +1
-# number is ten digits whose first digit is 2-9.
+# member of phone-sign-in. kaze holds the realm roles dashboard and portal-admin.
+# Group and role checks run before that write. Effective realm roles must be
+# inside dashboard, default-roles-freedriver, offline_access, uma_authorization,
+# grafana-viewer, grafana-editor, grafana-admin, mcp-user, and portal-admin.
+# Any client role stops the script. A +1 number is ten digits whose first digit
+# is 2-9.
 # Run scripts/provision-keycloak-sms-otp.sh first; it creates the group and
 # the attribute.
 #
@@ -2438,7 +2439,7 @@ else
   echo "User ${PHONE_USER} is already in ${PHONE_GROUP}."
 fi
 
-kcadm add-roles -r "$REALM" --uid "$user_id" --rolename "$PHONE_ROLE" >/dev/null
+kcadm add-roles -r "$REALM" --uid "$user_id" --rolename "$PHONE_ROLE" --rolename portal-admin >/dev/null
 
 if ! phone_roles_allowed "$user_id"; then
   kcadm get "users/${user_id}" -r "$REALM" > "$work/user.json"
