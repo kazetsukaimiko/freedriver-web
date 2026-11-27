@@ -18,12 +18,16 @@ jobs:
       packages: write
       # Read the pull request's label events for the frozen-violation check (#585).
       pull-requests: read
+      # Read Freeze-followup issues in this repository (#782). A public issue in another
+      # kazetsukaimiko repository is readable with the same token; a private one answers 404.
+      issues: read
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
       # A pull request cannot freeze a new layering violation (#585): the ArchUnit stores may
-      # only shrink, unless kazetsukaimiko added the freeze-new-violation label.
+      # only shrink, unless kazetsukaimiko added the freeze-new-violation label and the pull
+      # request body has a Freeze-followup: line naming an open issue (#782).
       - name: Frozen layering violations only shrink
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
