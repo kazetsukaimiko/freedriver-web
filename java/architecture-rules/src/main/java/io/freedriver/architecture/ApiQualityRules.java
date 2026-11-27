@@ -56,7 +56,8 @@ public final class ApiQualityRules {
     private static final String API_BECAUSE = "API code holds interfaces, records, enums, exceptions, "
             + "annotations and final constant holders (only static final fields and a private constructor), "
             + "carries no CDI scope, and depends only on java, javax, jakarta, org.eclipse.microprofile, "
-            + "annotation types and API code. " + ROLES;
+            + "annotation types and API code. " + ROLES + " "
+            + ApiValues.BECAUSE;
 
     private static final String IMPL_BECAUSE = "a main class that implements an API interface is "
             + "implementation code; a JAX-RS resource may implement its JAX-RS API interface, a generated "
@@ -162,6 +163,9 @@ public final class ApiQualityRules {
                                 events.add(SimpleConditionEvent.violated(type, type.getName()
                                         + " depends on " + dependency.getName() + " " + why));
                             }
+                        }
+                        if (contractShape(type)) {
+                            ApiValues.check(type, events, ownership);
                         }
                     }
                 })
@@ -523,7 +527,7 @@ public final class ApiQualityRules {
         return false;
     }
 
-    private static Class<?> reflect(JavaClass type) {
+    static Class<?> reflect(JavaClass type) {
         ClassLoader context = Thread.currentThread().getContextClassLoader();
         ClassLoader own = ApiQualityRules.class.getClassLoader();
         for (ClassLoader loader : new ClassLoader[] {context, own}) {
@@ -599,7 +603,7 @@ public final class ApiQualityRules {
                 || under(pkg, "org.eclipse.microprofile");
     }
 
-    private static boolean under(String pkg, String root) {
+    static boolean under(String pkg, String root) {
         return pkg.equals(root) || pkg.startsWith(root + ".");
     }
 
@@ -611,10 +615,31 @@ public final class ApiQualityRules {
         if (type.isAnnotation() || type.isInterface() || type.isRecord() || type.isEnum()) {
             return true;
         }
-        if (type.isAssignableTo(Throwable.class)) {
+        if (throwableType(type)) {
             return true;
         }
         return constantHolder(type);
+    }
+
+    /**
+     * An exception is a contract shape. ArchUnit's {@code isAssignableTo(Throwable)} is false when
+     * the JDK hierarchy was not imported, so the superclass name and, failing that, reflection decide.
+     */
+    static boolean throwableType(JavaClass type) {
+        if (type.isAssignableTo(Throwable.class)) {
+            return true;
+        }
+        JavaClass current = type;
+        for (int hop = 0; hop < 8 && current != null; hop++) {
+            String name = current.getName();
+            if ("java.lang.Throwable".equals(name) || "java.lang.Exception".equals(name)
+                    || "java.lang.Error".equals(name) || "java.lang.RuntimeException".equals(name)) {
+                return true;
+            }
+            current = current.getRawSuperclass().orElse(null);
+        }
+        Class<?> reflected = reflect(type);
+        return reflected != null && Throwable.class.isAssignableFrom(reflected);
     }
 
     /** The PendingCapHeader and VerifyFailure shape: static final fields and one private constructor. */
