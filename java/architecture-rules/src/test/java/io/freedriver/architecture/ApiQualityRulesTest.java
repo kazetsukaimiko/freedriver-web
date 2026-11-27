@@ -7,6 +7,10 @@ import com.tngtech.archunit.core.importer.Location;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.EvaluationResult;
 import org.junit.jupiter.api.Test;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Handle;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
 
 import javax.tools.JavaCompiler;
 import javax.tools.ToolProvider;
@@ -21,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
 import java.util.stream.Stream;
 
@@ -915,6 +920,178 @@ class ApiQualityRulesTest {
     }
 
     @Test
+    void a_service_lambda_and_method_reference_fail_rule_3_on_the_holding_class() {
+        assertEquals(List.of(implementsCallback(fix("LambdaOnly"))),
+                rule3Lines(callbackOwners(fix("LambdaOnly")), "lambdaonly"));
+        String lambdaReport = rule3Report(callbackOwners(fix("LambdaOnly")), "lambdaonly");
+        assertFalse(lambdaReport.contains("lambda$"), lambdaReport);
+        assertFalse(lambdaReport.matches("(?s).*\\$\\d.*"), lambdaReport);
+
+        assertEquals(List.of(implementsCallback(fix("RefOnly"))),
+                rule3Lines(callbackOwners(fix("RefOnly")), "refonly"));
+        String refReport = rule3Report(callbackOwners(fix("RefOnly")), "refonly");
+        assertFalse(refReport.contains("lambda$"), refReport);
+        assertFalse(refReport.matches("(?s).*\\$\\d.*"), refReport);
+    }
+
+    @Test
+    void a_lambda_counts_wherever_it_is_written_and_several_sites_are_one_line() {
+        assertEquals(List.of(implementsCallback(fix("LambdaPlaces"))),
+                rule3Lines(callbackOwners(fix("LambdaPlaces")), "lambdaplaces"));
+        assertEquals(List.of(implementsCallback(fix("ImplementsAndLambda"))),
+                rule3Lines(callbackOwners(fix("ImplementsAndLambda")), "implementsandlambda"));
+    }
+
+    @Test
+    void each_method_reference_form_fails_rule_3_once_per_api_interface() {
+        Map<String, ModuleOwnership.Owned> owners = callbackOwners(fix("RefForms"));
+        owners.put(fix("Pick"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        owners.put(fix("Make"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        assertEquals(List.of(
+                implementsCallback(fix("RefForms")),
+                implementsApi(fix("RefForms"), fix("Make")),
+                implementsApi(fix("RefForms"), fix("Pick"))),
+                rule3Lines(owners, "refforms"));
+    }
+
+    @Test
+    void a_lambda_and_a_method_reference_in_an_implementation_package_pass_rule_3() {
+        Map<String, String> owners = new LinkedHashMap<>();
+        owners.put(role("api.Port"), "sample");
+        owners.put(role("impl.mongo.LambdaPort"), "sample");
+        owners.put(role("impl.mongo.RefPort"), "sample");
+        assertPassesIn(ApiQualityRules.implementationsLiveInImpl(roles(owners)));
+    }
+
+    @Test
+    void a_lambda_inside_an_anonymous_member_or_local_class_names_the_holding_class() {
+        assertEquals(List.of(implementsCallback(fix("AnonHolds"))),
+                rule3Lines(callbackOwners(fix("AnonHolds")), "anonholds"));
+        assertFalse(rule3Report(callbackOwners(fix("AnonHolds")), "anonholds").matches("(?s).*\\$\\d.*"));
+
+        String member = fix("MemberHolds") + "$Inner";
+        assertEquals(List.of(implementsCallback(member)), rule3Lines(callbackOwners(member), "memberholds"));
+        assertFalse(rule3Report(callbackOwners(member), "memberholds").contains("lambda$"));
+
+        JavaClasses classes = new ClassFileImporter()
+                .importPackages("io.freedriver.architecture.fixtures.apiquality");
+        String local = classes.stream()
+                .map(JavaClass::getName)
+                .filter(name -> name.startsWith(fix("LocalHolds") + "$"))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(List.of(implementsCallback(local)), rule3Lines(callbackOwners(local), "localholds"));
+        assertFalse(rule3Report(callbackOwners(local), "localholds").contains("lambda$"));
+    }
+
+    @Test
+    void an_intersection_cast_counts_the_api_interface_it_adds() {
+        Map<String, ModuleOwnership.Owned> cast = new LinkedHashMap<>();
+        cast.put(fix("RunApi"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        cast.put(fix("CastHolds"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        assertEquals(List.of(implementsApi(fix("CastHolds"), fix("RunApi"))), rule3Lines(cast, "castholds"));
+
+        Map<String, ModuleOwnership.Owned> marker = new LinkedHashMap<>();
+        marker.put(fix("ApiTag"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        marker.put(fix("MarkerHolds"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        assertEquals(List.of(implementsApi(fix("MarkerHolds"), fix("ApiTag"))), rule3Lines(marker, "markerholds"));
+    }
+
+    @Test
+    void a_target_type_that_extends_an_api_interface_fails_rule_3_on_that_interface() {
+        assertEquals(List.of(implementsCallback(fix("ExtendsHold"))),
+                rule3Lines(callbackOwners(fix("ExtendsHold")), "extendshold"));
+    }
+
+    @Test
+    void a_lambda_whose_target_type_is_not_an_api_interface_adds_no_line() {
+        assertEquals(List.of(), rule3Lines(callbackOwners(fix("CallsThrough")), "callsthrough"));
+        assertEquals(List.of(), rule3Lines(callbackOwners(fix("ServiceFnHold")), "servicefnhold"));
+        assertEquals(List.of(), rule3Lines(callbackOwners(fix("ConcatHolds")), "concatholds"));
+    }
+
+    @Test
+    void rule_3_exemptions_hold_for_a_lambda_on_the_holding_class() {
+        Map<String, ModuleOwnership.Owned> resource = new LinkedHashMap<>();
+        resource.put(fix("OneApi"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        resource.put(fix("OneResource"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        assertEquals(List.of(), rule3Lines(resource, "oneresource"));
+
+        assertEquals(List.of(implementsCallback(fix("PlainResource"))),
+                rule3Lines(callbackOwners(fix("PlainResource")), "plainresource"));
+
+        Map<String, ModuleOwnership.Owned> client = callbackOwners(fix("ClientHolds"));
+        assertEquals(List.of(), rule3Lines(client, "clientholds"));
+
+        Map<String, ModuleOwnership.Owned> api = new LinkedHashMap<>();
+        api.put(fix("Callback"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        api.put(fix("ApiCallbackHolder"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        assertEquals(List.of(), rule3Lines(api, "apicallbackholder"));
+    }
+
+    @Test
+    void an_unreadable_class_file_or_a_lambda_bootstrap_fails_rule_3_with_the_holding_class() throws Exception {
+        Path root = Files.createTempDirectory("rule3-read");
+        try {
+            String name = "io.freedriver.unreadfixture.UnreadHold";
+            Path sources = root.resolve("src");
+            writeJava(sources, "io/freedriver/unreadfixture/UnreadHold.java",
+                    "package io.freedriver.unreadfixture; public class UnreadHold { void go() {} }");
+            Path classes = root.resolve("out");
+            compile(sources, classes, List.of());
+            JavaClasses imported = new ClassFileImporter().importPath(classes);
+            Files.delete(classes.resolve("io/freedriver/unreadfixture/UnreadHold.class"));
+            assertReadFails(imported, name, "cannot be read");
+
+            String badName = "io.freedriver.badlambda.BadHold";
+            Path badSrc = root.resolve("bad-src");
+            writeJava(badSrc, "io/freedriver/badlambda/BadHold.java",
+                    "package io.freedriver.badlambda; public class BadHold { void go() {} }");
+            Path badDir = root.resolve("bad");
+            compile(badSrc, badDir, List.of());
+            JavaClasses bad = new ClassFileImporter().importPath(badDir);
+            Files.write(badDir.resolve("io/freedriver/badlambda/BadHold.class"),
+                    badBootstrap("io/freedriver/badlambda/BadHold"));
+            assertReadFails(bad, badName, "cannot be decoded");
+        } finally {
+            delete(root);
+        }
+    }
+
+    @Test
+    void a_lambda_in_a_jar_fails_rule_3_on_the_holding_class() throws Exception {
+        Path root = Files.createTempDirectory("rule3-jar");
+        try {
+            Path sources = root.resolve("src");
+            writeJava(sources, "io/freedriver/jarlambda/JarApi.java",
+                    "package io.freedriver.jarlambda; public interface JarApi { String apply(String id); }");
+            writeJava(sources, "io/freedriver/jarlambda/JarHold.java",
+                    "package io.freedriver.jarlambda; public class JarHold { JarApi held = id -> id; }");
+            Path classes = root.resolve("classes");
+            compile(sources, classes, List.of());
+            Path jar = root.resolve("jarlambda.jar");
+            jar(classes, jar);
+            JavaClasses imported;
+            try (JarFile jarFile = new JarFile(jar.toFile())) {
+                imported = new ClassFileImporter().importJar(jarFile);
+            }
+            Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
+            owners.put("io.freedriver.jarlambda.JarApi", ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+            owners.put("io.freedriver.jarlambda.JarHold", ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+            List<String> lines = ApiQualityRules.implementationsLiveInImpl(overlay(owners)).evaluate(imported)
+                    .getFailureReport().getDetails().stream().sorted().toList();
+            String seen = imported.stream()
+                    .map(type -> type.getName() + " source=" + type.getSource().map(Object::toString).orElse("none"))
+                    .toList()
+                    .toString();
+            assertEquals(List.of("io.freedriver.jarlambda.JarHold implements io.freedriver.jarlambda.JarApi"
+                    + " from API module sample-api"), lines, seen);
+        } finally {
+            delete(root);
+        }
+    }
+
+    @Test
     void a_refused_type_inside_an_anonymous_class_fails_rule_2_on_the_holding_class() {
         Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
         owners.put(fix("AnonMapper"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
@@ -1120,6 +1297,63 @@ class ApiQualityRulesTest {
 
     private static String implementsOrdinary(String className) {
         return className + " implements " + fix("Ordinary") + " from API module sample-api";
+    }
+
+    private static String implementsCallback(String className) {
+        return implementsApi(className, fix("Callback"));
+    }
+
+    private static String implementsApi(String className, String iface) {
+        return className + " implements " + iface + " from API module sample-api";
+    }
+
+    /** Callback is the functional API interface. Each subject is service code in the sample module. */
+    private static Map<String, ModuleOwnership.Owned> callbackOwners(String... subjects) {
+        Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
+        owners.put(fix("Callback"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        for (String subject : subjects) {
+            owners.put(subject, ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        }
+        return owners;
+    }
+
+    private static void assertReadFails(JavaClasses classes, String holder, String reason) {
+        Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
+        owners.put(holder, ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        Throwable thrown = assertThrows(Throwable.class,
+                () -> ApiQualityRules.implementationsLiveInImpl(overlay(owners)).evaluate(classes));
+        String messages = thrown.toString();
+        for (Throwable cause = thrown.getCause(); cause != null; cause = cause.getCause()) {
+            messages = messages + "\n" + cause;
+        }
+        assertTrue(messages.contains(holder), messages);
+        assertTrue(messages.contains(reason), messages);
+    }
+
+    /** A class file whose altMetafactory arguments are not the bootstrap the reader decodes. */
+    private static byte[] badBootstrap(String internalName) {
+        ClassWriter writer = new ClassWriter(0);
+        writer.visit(Opcodes.V23, Opcodes.ACC_PUBLIC | Opcodes.ACC_SUPER,
+                internalName, null, "java/lang/Object", null);
+        MethodVisitor init = writer.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+        init.visitCode();
+        init.visitVarInsn(Opcodes.ALOAD, 0);
+        init.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+        init.visitInsn(Opcodes.RETURN);
+        init.visitMaxs(1, 1);
+        init.visitEnd();
+        MethodVisitor go = writer.visitMethod(Opcodes.ACC_PUBLIC, "go", "()V", null, null);
+        go.visitCode();
+        Handle bootstrap = new Handle(Opcodes.H_INVOKESTATIC, "java/lang/invoke/LambdaMetafactory", "altMetafactory",
+                "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;"
+                        + "[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;",
+                false);
+        go.visitInvokeDynamicInsn("run", "()Ljava/lang/Runnable;", bootstrap, "broken");
+        go.visitInsn(Opcodes.RETURN);
+        go.visitMaxs(1, 1);
+        go.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
     }
 
     /** Ordinary is the API interface. Each subject is service code in the sample module. */
