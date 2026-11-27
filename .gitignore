@@ -17,3 +17,4 @@ keycloak/sms-otp-spi/target/
 keycloak/providers/*.jar
 __pycache__/
 *.pyc
+site-build/

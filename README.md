@@ -2,6 +2,8 @@
 
 Public site for [freedriver.io](https://freedriver.io). Caddy terminates TLS and reverse-proxies apps. This repo is the proving-ground deploy; Lonewatt will copy the same pattern.
 
+Designs are published at the [Freedriver docs site](https://kazetsukaimiko.github.io/freedriver-web/).
+
 ## VPS layout
 
 ```
