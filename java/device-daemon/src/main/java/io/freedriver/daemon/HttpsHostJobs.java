@@ -1,5 +1,6 @@
 package io.freedriver.daemon;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import io.freedriver.dispatcher.model.AssignmentView;
 import io.freedriver.dispatcher.model.DeviceView;
 import io.freedriver.dispatcher.model.FinishRequest;
@@ -76,7 +77,8 @@ final class HttpsHostJobs implements HostJobs {
         HttpResponse<String> response = transport.exchange(token -> transport.json(
                 "POST", HostPaths.ROOT + HostPaths.TAKE, token, request, timeout));
         requireSuccess(response);
-        List<AssignmentView> views = DeviceTransport.readList(response.body(), AssignmentView.class);
+        List<AssignmentView> views = DeviceTransport.read(response.body(), new TypeReference<List<AssignmentView>>() {
+        });
         return views == null ? List.of() : views;
     }
 

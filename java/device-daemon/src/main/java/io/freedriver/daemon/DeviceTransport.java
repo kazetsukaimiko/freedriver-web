@@ -24,7 +24,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -224,12 +223,6 @@ final class DeviceTransport {
         } catch (IOException failed) {
             throw new IllegalStateException("device response was not usable");
         }
-    }
-
-    static <T> List<T> readList(String body, Class<T> element) {
-        Objects.requireNonNull(element);
-        return read(body, new TypeReference<List<T>>() {
-        });
     }
 
     private synchronized String bearer(boolean force) {
