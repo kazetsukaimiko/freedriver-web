@@ -30,8 +30,11 @@ stores of the pull request with those of its base, so the stores can only shrink
 
 An intended new frozen violation passes only with the label `freeze-new-violation`, and only
 when kazetsukaimiko added it: the check reads who added it from the pull request's issue events,
-because every agent account can add a label. The check says when it passes on the label. After
-adding the label, re-run the failed `test` job. The check does not run ArchUnit.
+because every agent account can add a label. The label also needs one or more body lines
+`Freeze-followup: <owner/repo>#<n>`, each naming an open issue in a kazetsukaimiko repository.
+The check reads the pull request body and those issues when the job runs, so a re-run of the
+failed `test` job sees a line added after the run started. It says when it passes on the label
+and names each follow-up issue. ArchUnit stays with the layering tests.
 
 Usage:
   python3 .github/scripts/archunit_store_check.py --self-test
@@ -46,6 +49,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 from collections import Counter
 from pathlib import Path
@@ -54,7 +58,14 @@ STORE = "src/test/resources/archunit-store"
 RULES = "stored.rules"
 LABEL = "freeze-new-violation"
 LABEL_OWNER = "kazetsukaimiko"
+FOLLOWUP_FORMAT = "Freeze-followup: <owner/repo>#<n>"
+FOLLOWUP_LINE = re.compile(r"^Freeze-followup:\s*(.*)$")
+FOLLOWUP_REF = re.compile(r"^([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)#([1-9]\d*)$")
 LINE_NUMBER = re.compile(r"\(([^()\s:]+\.java):\d+\)")
+GITHUB_HEADERS = {
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+}
 
 
 def normalized(line: str) -> str:
@@ -246,22 +257,121 @@ def label_added_by_owner(events: list[dict]) -> tuple[bool, str]:
     return on and by == LABEL_OWNER, by
 
 
+class IssueLookupError(Exception):
+    """A follow-up issue request failed. status 404 is the missing issue; any other status is an error."""
+
+    def __init__(self, status: int | None, detail: str):
+        super().__init__(detail)
+        self.status = status
+        self.detail = detail
+
+
+def github_json(url: str, token: str):
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}", **GITHUB_HEADERS})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.load(resp)
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = e.read().decode("utf-8", "replace")[:200]
+        except Exception:
+            detail = ""
+        raise IssueLookupError(e.code, f"HTTP {e.code} {detail}".strip()) from e
+    except urllib.error.URLError as e:
+        raise IssueLookupError(None, str(e.reason)) from e
+
+
 def issue_events(repo: str, number: str, token: str) -> list[dict]:
     events, page = [], 1
     while True:
-        req = urllib.request.Request(
+        batch = github_json(
             f"https://api.github.com/repos/{repo}/issues/{number}/events?per_page=100&page={page}",
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
-                     "X-GitHub-Api-Version": "2022-11-28"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            batch = json.load(resp)
+            token)
         events += batch
         if len(batch) < 100:
             return events
         page += 1
 
 
-def check(repo: Path, base: str, events_of=None, say=print) -> int:
+def pull_body(repo: str, number: str, token: str) -> str:
+    """The pull request body as it is now. A re-run reads a line added after the workflow started."""
+    data = github_json(f"https://api.github.com/repos/{repo}/pulls/{number}", token)
+    return data.get("body") or ""
+
+
+def fetch_issue(owner: str, name: str, number: str, token: str) -> dict:
+    return github_json(f"https://api.github.com/repos/{owner}/{name}/issues/{number}", token)
+
+
+def followup_refs(body: str) -> tuple[bool, list[tuple[str, str, str]], list[str]]:
+    """Freeze-followup lines. Returns (present, refs, tokens that are not owner/repo#n)."""
+    present = False
+    refs: list[tuple[str, str, str]] = []
+    bad: list[str] = []
+    for raw in (body or "").splitlines():
+        match = FOLLOWUP_LINE.match(raw.strip())
+        if not match:
+            continue
+        present = True
+        tokens = [token.strip() for token in re.split(r"[\s,]+", match.group(1).strip()) if token.strip()]
+        if not tokens:
+            bad.append(raw.strip())
+            continue
+        for token in tokens:
+            parsed = FOLLOWUP_REF.match(token)
+            if parsed:
+                refs.append((parsed.group(1), parsed.group(2), parsed.group(3)))
+            else:
+                bad.append(token)
+    return present, refs, bad
+
+
+def _repo_name(issue: dict) -> tuple[str, str]:
+    parts = (issue.get("repository_url") or "").rstrip("/").split("/")
+    if len(parts) < 2:
+        return "", ""
+    return parts[-2], parts[-1]
+
+
+def followup_failures(refs: list[tuple[str, str, str]], bad: list[str], issue_of) -> tuple[list[str], list[str]]:
+    """Failure messages for the named follow-ups, and the canonical names of the ones that pass."""
+    failures = [f"{token} is not `{FOLLOWUP_FORMAT}`" for token in bad]
+    accepted: list[str] = []
+    for owner, name, number in refs:
+        ref = f"{owner}/{name}#{number}"
+        try:
+            issue = issue_of(owner, name, number)
+        except IssueLookupError as e:
+            if e.status == 404:
+                failures.append(
+                    f"{ref} is missing. The follow-up must be an issue the job's token can read, "
+                    "in a public kazetsukaimiko repository (lonewatt-ops is private and reads as missing).")
+            else:
+                failures.append(f"{ref}: the lookup failed: {e.detail}")
+            continue
+        except Exception as e:
+            failures.append(f"{ref}: the lookup failed: {e}")
+            continue
+        if not isinstance(issue, dict):
+            failures.append(f"{ref}: the lookup failed: the issue response was empty")
+            continue
+        if "pull_request" in issue:
+            failures.append(f"{ref} is a pull request, not an issue")
+            continue
+        live_owner, live_name = _repo_name(issue)
+        if live_owner.casefold() != LABEL_OWNER.casefold() or not live_name:
+            failures.append(f"{ref} is outside kazetsukaimiko")
+            continue
+        if issue.get("state") != "open":
+            failures.append(f"{ref} is closed")
+            continue
+        live_number = issue.get("number", number)
+        accepted.append(f"{live_owner}/{live_name}#{live_number}")
+    return failures, accepted
+
+
+def check(repo: Path, base: str, events_of=None, say=print, body_of=None, issue_of=None) -> int:
     lines = added_lines(repo, base)
     if not lines:
         say("no store under archunit-store gains a frozen violation")
@@ -269,7 +379,27 @@ def check(repo: Path, base: str, events_of=None, say=print) -> int:
     events = events_of() if events_of else []
     accepted, by = label_added_by_owner(events)
     if accepted:
-        say(f"{len(lines)} new frozen violation(s), accepted: {LABEL_OWNER} added the {LABEL} label")
+        if body_of is None or issue_of is None:
+            say("the follow-up could not be checked")
+            return 1
+        try:
+            body = body_of() or ""
+        except Exception as e:
+            say(f"the follow-up could not be checked: {e}")
+            return 1
+        present, refs, bad = followup_refs(body)
+        if not present:
+            say(f"a follow-up issue is needed. Add a body line `{FOLLOWUP_FORMAT}`.")
+            return 1
+        failures, names = followup_failures(refs, bad, issue_of)
+        if failures:
+            for failure in failures:
+                say(f"::error::{failure}")
+            say(f"Name each open follow-up issue with `{FOLLOWUP_FORMAT}`.")
+            return 1
+        named = ", ".join(names)
+        say(f"{len(lines)} new frozen violation(s), accepted: {LABEL_OWNER} added the {LABEL} label; "
+            f"passed on the label with follow-up {named}")
         for line in lines:
             say(f"  {line}")
         return 0
@@ -508,17 +638,148 @@ def self_test() -> int:
         quiet = lambda *a: None
         lab = lambda event, who: {"event": event, "label": {"name": LABEL}, "actor": {"login": who}}
         other = {"event": "labeled", "label": {"name": "manual-review"}, "actor": {"login": LABEL_OWNER}}
-        checks.append(("the check fails without the label", check(repo, base, lambda: [other], say=quiet) == 1))
+        def open_issue(owner="kazetsukaimiko", name="freedriver-web", number=1, state="open", pull=False):
+            issue = {
+                "number": int(number),
+                "state": state,
+                "repository_url": f"https://api.github.com/repos/{owner}/{name}",
+            }
+            if pull:
+                issue["pull_request"] = {"url": f"https://api.github.com/repos/{owner}/{name}/pulls/{number}"}
+            return issue
+
+        def lookup_of(answers: dict):
+            def lookup(owner, name, number):
+                key = (owner.casefold(), name, str(number))
+                found = answers[key]
+                if isinstance(found, Exception):
+                    raise found
+                return found
+            return lookup
+
+        owner_label = [lab("labeled", LABEL_OWNER)]
+        open_body = "Freeze-followup: KazetsukaiMiko/freedriver-web#782\r\n"
+        open_answers = {("kazetsukaimiko", "freedriver-web", "782"): open_issue(number=782)}
+        said: list[str] = []
+        passed = check(repo, base, lambda: owner_label, say=said.append,
+                       body_of=lambda: open_body, issue_of=lookup_of(open_answers))
         checks.append(("the label from kazetsukaimiko passes",
-                       check(repo, base, lambda: [lab("labeled", LABEL_OWNER)], say=quiet) == 0))
+                       passed == 0 and any("passed on the label" in line
+                                           and "kazetsukaimiko/freedriver-web#782" in line
+                                           for line in said)))
+
+        needed: list[str] = []
+        checks.append(("label without the line fails",
+                       check(repo, base, lambda: owner_label, say=needed.append,
+                             body_of=lambda: "stores grow\n", issue_of=lookup_of(open_answers)) == 1
+                       and any("a follow-up issue is needed" in line and FOLLOWUP_FORMAT in line
+                               for line in needed)))
+
+        closed_said: list[str] = []
+        closed_body = "Freeze-followup: kazetsukaimiko/freedriver-web#3\n"
+        closed_answers = {("kazetsukaimiko", "freedriver-web", "3"): open_issue(number=3, state="closed")}
+        checks.append(("a closed issue fails",
+                       check(repo, base, lambda: owner_label, say=closed_said.append,
+                             body_of=lambda: closed_body, issue_of=lookup_of(closed_answers)) == 1
+                       and any("kazetsukaimiko/freedriver-web#3 is closed" in line for line in closed_said)))
+
+        missing_said: list[str] = []
+        missing_body = "Freeze-followup: kazetsukaimiko/lonewatt-ops#9\n"
+        missing_answers = {("kazetsukaimiko", "lonewatt-ops", "9"): IssueLookupError(404, "HTTP 404")}
+        checks.append(("a missing issue fails",
+                       check(repo, base, lambda: owner_label, say=missing_said.append,
+                             body_of=lambda: missing_body, issue_of=lookup_of(missing_answers)) == 1
+                       and any("is missing" in line and "public kazetsukaimiko repository" in line
+                               for line in missing_said)
+                       and not any("the lookup failed" in line for line in missing_said)))
+
+        outside_said: list[str] = []
+        outside_body = "Freeze-followup: kazetsukaimiko/freedriver-web#4\n"
+        outside_answers = {("kazetsukaimiko", "freedriver-web", "4"):
+                           open_issue(owner="other-org", name="freedriver-web", number=4)}
+        checks.append(("an issue outside kazetsukaimiko fails",
+                       check(repo, base, lambda: owner_label, say=outside_said.append,
+                             body_of=lambda: outside_body, issue_of=lookup_of(outside_answers)) == 1
+                       and any("is outside kazetsukaimiko" in line for line in outside_said)))
+
+        pr_said: list[str] = []
+        pr_body = "Freeze-followup: kazetsukaimiko/freedriver-web#100\n"
+        pr_answers = {("kazetsukaimiko", "freedriver-web", "100"):
+                      open_issue(number=100, pull=True)}
+        checks.append(("a follow-up naming another open pull request fails as a pull request",
+                       check(repo, base, lambda: owner_label, say=pr_said.append,
+                             body_of=lambda: pr_body, issue_of=lookup_of(pr_answers)) == 1
+                       and any("#100 is a pull request, not an issue" in line for line in pr_said)))
+
+        own_said: list[str] = []
+        own_body = "Freeze-followup: kazetsukaimiko/freedriver-web#782\n"
+        own_answers = {("kazetsukaimiko", "freedriver-web", "782"): open_issue(number=782, pull=True)}
+        checks.append(("a follow-up naming the pull request's own number fails as a pull request",
+                       check(repo, base, lambda: owner_label, say=own_said.append,
+                             body_of=lambda: own_body, issue_of=lookup_of(own_answers)) == 1
+                       and any("#782 is a pull request, not an issue" in line for line in own_said)))
+
+        http_said: list[str] = []
+        http_body = "Freeze-followup: kazetsukaimiko/freedriver-web#8\n"
+        http_answers = {("kazetsukaimiko", "freedriver-web", "8"): IssueLookupError(503, "HTTP 503 unavailable")}
+        checks.append(("a non-404 HTTP error on the issue lookup fails",
+                       check(repo, base, lambda: owner_label, say=http_said.append,
+                             body_of=lambda: http_body, issue_of=lookup_of(http_answers)) == 1
+                       and any("the lookup failed" in line and "503" in line for line in http_said)
+                       and not any("is missing" in line for line in http_said)))
+
+        pair_said: list[str] = []
+        pair_body = ("Freeze-followup: kazetsukaimiko/freedriver-web#1\n"
+                     "Freeze-followup: kazetsukaimiko/autonomy#2\n")
+        pair_answers = {
+            ("kazetsukaimiko", "freedriver-web", "1"): open_issue(name="freedriver-web", number=1),
+            ("kazetsukaimiko", "autonomy", "2"): open_issue(name="autonomy", number=2, state="closed"),
+        }
+        checks.append(("two follow-ups with one closed fail and name the closed one",
+                       check(repo, base, lambda: owner_label, say=pair_said.append,
+                             body_of=lambda: pair_body, issue_of=lookup_of(pair_answers)) == 1
+                       and any("kazetsukaimiko/autonomy#2 is closed" in line for line in pair_said)
+                       and not any("freedriver-web#1 is closed" in line for line in pair_said)))
+
+        unwired: list[str] = []
+        checks.append(("the label accepted with no body or issue lookup wired fails",
+                       check(repo, base, lambda: owner_label, say=unwired.append) == 1
+                       and any(line == "the follow-up could not be checked" for line in unwired)))
+
+        skipped: list[str] = []
+
+        def refuse(*_args):
+            skipped.append("called")
+            raise AssertionError("follow-up lookup")
+
+        checks.append(("the check fails without the label",
+                       check(repo, base, lambda: [other], say=quiet, body_of=refuse, issue_of=refuse) == 1
+                       and skipped == []))
         checks.append(("the label from an agent account fails",
-                       check(repo, base, lambda: [lab("labeled", "lonewatt-architect")], say=quiet) == 1))
+                       check(repo, base, lambda: [lab("labeled", "lonewatt-architect")], say=quiet,
+                             body_of=refuse, issue_of=refuse) == 1
+                       and skipped == []))
         checks.append(("a label removed after kazetsukaimiko added it fails",
                        check(repo, base, lambda: [lab("labeled", LABEL_OWNER),
-                                                  lab("unlabeled", LABEL_OWNER)], say=quiet) == 1))
+                                                  lab("unlabeled", LABEL_OWNER)], say=quiet,
+                             body_of=refuse, issue_of=refuse) == 1
+                       and skipped == []))
         checks.append(("the latest adding counts", check(repo, base, lambda: [
             lab("labeled", LABEL_OWNER), lab("unlabeled", "kazetsukaiyuni"),
-            lab("labeled", "kazetsukaiyuni")], say=quiet) == 1))
+            lab("labeled", "kazetsukaiyuni")], say=quiet, body_of=refuse, issue_of=refuse) == 1
+                       and skipped == []))
+
+        write({"java/svc": {rule: [a]}, "sms": {}})
+        shrink_calls: list[str] = []
+
+        def shrink_refuse(*_args):
+            shrink_calls.append("called")
+            raise AssertionError("shrink lookup")
+
+        checks.append(("a shrink-only store passes with neither label nor line",
+                       check(repo, base, shrink_refuse, say=quiet, body_of=shrink_refuse,
+                             issue_of=shrink_refuse) == 0
+                       and shrink_calls == []))
     failed = [name for name, ok in checks if not ok]
     for name in failed:
         print(f"FAIL: {name}")
@@ -534,8 +795,12 @@ def main() -> int:
         return 2
     repo = Path(__file__).resolve().parents[2]
     gh_repo, number, token = (os.environ.get(k, "") for k in ("GITHUB_REPOSITORY", "PR_NUMBER", "GH_TOKEN"))
-    events_of = (lambda: issue_events(gh_repo, number, token)) if gh_repo and number and token else None
-    return check(repo, sys.argv[1], events_of)
+    events_of = body_of = issue_of = None
+    if gh_repo and number and token:
+        events_of = lambda: issue_events(gh_repo, number, token)
+        body_of = lambda: pull_body(gh_repo, number, token)
+        issue_of = lambda owner, name, num: fetch_issue(owner, name, num, token)
+    return check(repo, sys.argv[1], events_of, body_of=body_of, issue_of=issue_of)
 
 
 if __name__ == "__main__":

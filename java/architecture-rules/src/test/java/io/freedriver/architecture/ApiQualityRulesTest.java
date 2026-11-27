@@ -1,11 +1,16 @@
 package io.freedriver.architecture;
 
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.Location;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.EvaluationResult;
 import org.junit.jupiter.api.Test;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Handle;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
 
 import javax.tools.JavaCompiler;
 import javax.tools.ToolProvider;
@@ -20,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
 import java.util.stream.Stream;
 
@@ -797,8 +803,666 @@ class ApiQualityRulesTest {
         return ApiQualityRules.implementationPackagesStayPrivate(ownership).evaluate(classes);
     }
 
+    private static final String JSON_NODE = "com.fasterxml.jackson.databind.JsonNode is a third-party library";
+
+    @Test
+    void a_refused_type_inside_an_anonymous_class_fails_rule_1_on_the_holding_class() {
+        assertAnonDepends("AnonRefused");
+        assertAnonDepends("AnonNested");
+        assertAnonDepends("AnonInLambda");
+        assertAnonDepends("AnonField");
+        assertPasses(service(fix("AnonAllowed")), "anonallowed");
+        assertEquals(1, countDepends(reportOf(serviceFixture("AnonTwice"), "anontwice")), "one line for one pair");
+        assertTrue(reportOf(serviceFixture("AnonTwice"), "anontwice").contains(fix("AnonTwice") + " depends on " + JSON_NODE));
+    }
+
+    @Test
+    void an_anonymous_class_inside_a_member_or_local_class_is_reported_on_that_class() {
+        String member = fix("AnonMember") + "$Inner";
+        String memberReport = reportOf(serviceOwners(member), "anonmember");
+        assertTrue(memberReport.contains(member + " depends on " + JSON_NODE), memberReport);
+        assertFalse(memberReport.contains(member + "$"), memberReport);
+
+        String local = fix("AnonLocal") + "$1Holder";
+        String localReport = reportOf(serviceOwners(local), "anonlocal");
+        assertTrue(localReport.contains(local + " depends on " + JSON_NODE), localReport);
+        assertFalse(localReport.contains(local + "$"), localReport);
+    }
+
+    @Test
+    void an_annotation_on_an_anonymous_class_is_ignored_and_a_body_use_is_not() {
+        assertPasses(service(fix("AnonMarked")), "anonmarked");
+        assertFails(service(fix("AnonMode")), "anonmode", fix("AnonMode"));
+    }
+
+    @Test
+    void edge_allowances_follow_the_holding_class_when_the_use_is_inside_an_anonymous_class() {
+        Map<String, ModuleOwnership.Owned> plainOidcOwners = new LinkedHashMap<>();
+        plainOidcOwners.put(fix("PlainAnonOidc"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        plainOidcOwners.put("io.vertx.ext.web.RoutingContext", ModuleOwnership.Owned.thirdParty("vertx-web"));
+        String plainOidc = reportOf(plainOidcOwners, "plainanonoidc");
+        assertTrue(plainOidc.contains(fix("PlainAnonOidc")
+                + " depends on io.vertx.ext.web.RoutingContext is a third-party library"), plainOidc);
+        assertFalse(plainOidc.contains("$1"), plainOidc);
+        assertPasses(service(fix("OidcAnonBody")), "oidcanonbody");
+
+        Map<String, ModuleOwnership.Owned> plainToolOwners = new LinkedHashMap<>();
+        plainToolOwners.put(fix("PlainAnonTool"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        plainToolOwners.put("io.quarkiverse.mcp.server.ToolResponse",
+                ModuleOwnership.Owned.thirdParty("quarkus-mcp-server"));
+        String plainTool = reportOf(plainToolOwners, "plainanontool");
+        assertTrue(plainTool.contains(fix("PlainAnonTool")
+                + " depends on io.quarkiverse.mcp.server.ToolResponse is a third-party library"), plainTool);
+        assertFalse(plainTool.contains("$1"), plainTool);
+        assertPasses(service(fix("ToolAnonBody")), "toolanonbody");
+    }
+
+    @Test
+    void an_anonymous_class_implementing_an_api_fails_rule_3_on_the_holding_class() {
+        JavaClasses classes = new ClassFileImporter().importPackages("io.freedriver.architecture.fixtures.apiquality");
+        JavaClass anonymous = classes.stream()
+                .filter(type -> type.isAnonymousClass() && type.getName().startsWith(fix("AnonImplements")))
+                .findFirst()
+                .orElseThrow();
+        assertFalse(ApiQualityRules.judged(anonymous, ModuleOwnership.reactor()));
+        String line = implementsOrdinary(fix("AnonImplements"));
+        assertEquals(List.of(line), rule3Lines(ordinaryOwners(fix("AnonImplements")), "anonimplements"));
+        assertFalse(rule3Report(ordinaryOwners(fix("AnonImplements")), "anonimplements").matches("(?s).*\\$\\d.*"));
+    }
+
+    @Test
+    void an_anonymous_api_inside_a_member_or_local_class_is_reported_on_that_class() {
+        String member = fix("AnonImplMember") + "$Inner";
+        assertEquals(List.of(implementsOrdinary(member)), rule3Lines(ordinaryOwners(member), "anonimplmember"));
+        assertFalse(rule3Report(ordinaryOwners(member), "anonimplmember").contains(member + "$"));
+
+        String local = fix("AnonImplLocal") + "$1Holder";
+        assertEquals(List.of(implementsOrdinary(local)), rule3Lines(ordinaryOwners(local), "anonimpllocal"));
+        assertFalse(rule3Report(ordinaryOwners(local), "anonimpllocal").contains(local + "$"));
+    }
+
+    @Test
+    void one_holding_class_and_one_api_interface_give_one_rule_3_line() {
+        assertEquals(List.of(implementsOrdinary(fix("AnonImplNested"))),
+                rule3Lines(ordinaryOwners(fix("AnonImplNested")), "anonimplnested"));
+        assertFalse(rule3Report(ordinaryOwners(fix("AnonImplNested")), "anonimplnested").matches("(?s).*\\$\\d.*"));
+
+        assertEquals(List.of(implementsOrdinary(fix("AnonImplPlaces"))),
+                rule3Lines(ordinaryOwners(fix("AnonImplPlaces")), "anonimplplaces"));
+        assertEquals(List.of(implementsOrdinary(fix("AnonImplAgain"))),
+                rule3Lines(ordinaryOwners(fix("AnonImplAgain")), "anonimplagain"));
+        assertEquals(List.of(implementsOrdinary(fix("AnonImplEnum"))),
+                rule3Lines(ordinaryOwners(fix("AnonImplEnum")), "anonimplenum"));
+        assertFalse(rule3Report(ordinaryOwners(fix("AnonImplEnum")), "anonimplenum").contains("$"));
+
+        Map<String, ModuleOwnership.Owned> base = ordinaryOwners(fix("AnonImplBase"));
+        base.put(fix("NamedImpl"), ModuleOwnership.Owned.ours("io.freedriver", "sample-impl"));
+        assertEquals(List.of(implementsOrdinary(fix("AnonImplBase"))), rule3Lines(base, "anonimplbase"));
+    }
+
+    @Test
+    void an_anonymous_api_passes_rule_3_in_an_implementation_package_and_on_a_jax_rs_resource() {
+        Map<String, String> impl = new LinkedHashMap<>();
+        impl.put(role("api.Port"), "sample");
+        impl.put(role("impl.mongo.AnonPort"), "sample");
+        assertPassesIn(ApiQualityRules.implementationsLiveInImpl(roles(impl)));
+
+        Map<String, ModuleOwnership.Owned> resource = new LinkedHashMap<>();
+        resource.put(fix("WidgetsApi"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        resource.put(fix("AnonWidgetsResource"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        assertEquals(List.of(), rule3Lines(resource, "anonwidgetsresource"));
+    }
+
+    @Test
+    void a_jax_rs_resource_holding_an_anonymous_non_jax_rs_api_fails_rule_3() {
+        assertEquals(List.of(implementsOrdinary(fix("AnonOrdinaryResource"))),
+                rule3Lines(ordinaryOwners(fix("AnonOrdinaryResource")), "anonordinaryresource"));
+    }
+
+    @Test
+    void a_service_lambda_and_method_reference_fail_rule_3_on_the_holding_class() {
+        assertEquals(List.of(implementsCallback(fix("LambdaOnly"))),
+                rule3Lines(callbackOwners(fix("LambdaOnly")), "lambdaonly"));
+        String lambdaReport = rule3Report(callbackOwners(fix("LambdaOnly")), "lambdaonly");
+        assertFalse(lambdaReport.contains("lambda$"), lambdaReport);
+        assertFalse(lambdaReport.matches("(?s).*\\$\\d.*"), lambdaReport);
+
+        assertEquals(List.of(implementsCallback(fix("RefOnly"))),
+                rule3Lines(callbackOwners(fix("RefOnly")), "refonly"));
+        String refReport = rule3Report(callbackOwners(fix("RefOnly")), "refonly");
+        assertFalse(refReport.contains("lambda$"), refReport);
+        assertFalse(refReport.matches("(?s).*\\$\\d.*"), refReport);
+    }
+
+    @Test
+    void a_lambda_counts_wherever_it_is_written_and_several_sites_are_one_line() {
+        assertEquals(List.of(implementsCallback(fix("LambdaPlaces"))),
+                rule3Lines(callbackOwners(fix("LambdaPlaces")), "lambdaplaces"));
+        assertEquals(List.of(implementsCallback(fix("ImplementsAndLambda"))),
+                rule3Lines(callbackOwners(fix("ImplementsAndLambda")), "implementsandlambda"));
+    }
+
+    @Test
+    void each_method_reference_form_fails_rule_3_once_per_api_interface() {
+        Map<String, ModuleOwnership.Owned> owners = callbackOwners(fix("RefForms"));
+        owners.put(fix("Pick"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        owners.put(fix("Make"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        assertEquals(List.of(
+                implementsCallback(fix("RefForms")),
+                implementsApi(fix("RefForms"), fix("Make")),
+                implementsApi(fix("RefForms"), fix("Pick"))),
+                rule3Lines(owners, "refforms"));
+    }
+
+    @Test
+    void a_lambda_and_a_method_reference_in_an_implementation_package_pass_rule_3() {
+        Map<String, String> owners = new LinkedHashMap<>();
+        owners.put(role("api.Port"), "sample");
+        owners.put(role("impl.mongo.LambdaPort"), "sample");
+        owners.put(role("impl.mongo.RefPort"), "sample");
+        assertPassesIn(ApiQualityRules.implementationsLiveInImpl(roles(owners)));
+    }
+
+    @Test
+    void a_lambda_inside_an_anonymous_member_or_local_class_names_the_holding_class() {
+        assertEquals(List.of(implementsCallback(fix("AnonHolds"))),
+                rule3Lines(callbackOwners(fix("AnonHolds")), "anonholds"));
+        assertFalse(rule3Report(callbackOwners(fix("AnonHolds")), "anonholds").matches("(?s).*\\$\\d.*"));
+
+        String member = fix("MemberHolds") + "$Inner";
+        assertEquals(List.of(implementsCallback(member)), rule3Lines(callbackOwners(member), "memberholds"));
+        assertFalse(rule3Report(callbackOwners(member), "memberholds").contains("lambda$"));
+
+        JavaClasses classes = new ClassFileImporter()
+                .importPackages("io.freedriver.architecture.fixtures.apiquality");
+        String local = classes.stream()
+                .map(JavaClass::getName)
+                .filter(name -> name.startsWith(fix("LocalHolds") + "$"))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(List.of(implementsCallback(local)), rule3Lines(callbackOwners(local), "localholds"));
+        assertFalse(rule3Report(callbackOwners(local), "localholds").contains("lambda$"));
+    }
+
+    @Test
+    void an_intersection_cast_counts_the_api_interface_it_adds() {
+        Map<String, ModuleOwnership.Owned> cast = new LinkedHashMap<>();
+        cast.put(fix("RunApi"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        cast.put(fix("CastHolds"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        assertEquals(List.of(implementsApi(fix("CastHolds"), fix("RunApi"))), rule3Lines(cast, "castholds"));
+
+        Map<String, ModuleOwnership.Owned> marker = new LinkedHashMap<>();
+        marker.put(fix("ApiTag"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        marker.put(fix("MarkerHolds"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        assertEquals(List.of(implementsApi(fix("MarkerHolds"), fix("ApiTag"))), rule3Lines(marker, "markerholds"));
+    }
+
+    @Test
+    void a_target_type_that_extends_an_api_interface_fails_rule_3_on_that_interface() {
+        assertEquals(List.of(implementsCallback(fix("ExtendsHold"))),
+                rule3Lines(callbackOwners(fix("ExtendsHold")), "extendshold"));
+    }
+
+    @Test
+    void a_lambda_whose_target_type_is_not_an_api_interface_adds_no_line() {
+        assertEquals(List.of(), rule3Lines(callbackOwners(fix("CallsThrough")), "callsthrough"));
+        assertEquals(List.of(), rule3Lines(callbackOwners(fix("ServiceFnHold")), "servicefnhold"));
+        assertEquals(List.of(), rule3Lines(callbackOwners(fix("ConcatHolds")), "concatholds"));
+    }
+
+    @Test
+    void rule_3_exemptions_hold_for_a_lambda_on_the_holding_class() {
+        Map<String, ModuleOwnership.Owned> resource = new LinkedHashMap<>();
+        resource.put(fix("OneApi"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        resource.put(fix("OneResource"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        assertEquals(List.of(), rule3Lines(resource, "oneresource"));
+
+        assertEquals(List.of(implementsCallback(fix("PlainResource"))),
+                rule3Lines(callbackOwners(fix("PlainResource")), "plainresource"));
+
+        Map<String, ModuleOwnership.Owned> client = callbackOwners(fix("ClientHolds"));
+        assertEquals(List.of(), rule3Lines(client, "clientholds"));
+
+        Map<String, ModuleOwnership.Owned> api = new LinkedHashMap<>();
+        api.put(fix("Callback"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        api.put(fix("ApiCallbackHolder"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        assertEquals(List.of(), rule3Lines(api, "apicallbackholder"));
+    }
+
+    @Test
+    void an_unreadable_class_file_or_a_lambda_bootstrap_fails_rule_3_with_the_holding_class() throws Exception {
+        Path root = Files.createTempDirectory("rule3-read");
+        try {
+            String name = "io.freedriver.unreadfixture.UnreadHold";
+            Path sources = root.resolve("src");
+            writeJava(sources, "io/freedriver/unreadfixture/UnreadHold.java",
+                    "package io.freedriver.unreadfixture; public class UnreadHold { void go() {} }");
+            Path classes = root.resolve("out");
+            compile(sources, classes, List.of());
+            JavaClasses imported = new ClassFileImporter().importPath(classes);
+            Files.delete(classes.resolve("io/freedriver/unreadfixture/UnreadHold.class"));
+            assertReadFails(imported, name, "cannot be read");
+
+            String badName = "io.freedriver.badlambda.BadHold";
+            Path badSrc = root.resolve("bad-src");
+            writeJava(badSrc, "io/freedriver/badlambda/BadHold.java",
+                    "package io.freedriver.badlambda; public class BadHold { void go() {} }");
+            Path badDir = root.resolve("bad");
+            compile(badSrc, badDir, List.of());
+            JavaClasses bad = new ClassFileImporter().importPath(badDir);
+            Files.write(badDir.resolve("io/freedriver/badlambda/BadHold.class"),
+                    badBootstrap("io/freedriver/badlambda/BadHold"));
+            assertReadFails(bad, badName, "cannot be decoded");
+        } finally {
+            delete(root);
+        }
+    }
+
+    @Test
+    void an_api_interface_constant_holding_an_anonymous_implementation_fails_rule_3() {
+        String holder = role("api.HeldPort");
+        JavaClasses classes = new ClassFileImporter().importPackages("io.freedriver.rolefixture");
+        long anonymous = classes.stream()
+                .filter(type -> type.isAnonymousClass() && type.getName().startsWith(holder + "$"))
+                .count();
+        assertEquals(2, anonymous);
+        Map<String, String> owners = new LinkedHashMap<>();
+        owners.put(holder, "sample-api");
+        ModuleOwnership ownership = roles(owners);
+        String line = holder + " contains an anonymous implementation of " + holder
+                + " from API module sample-api";
+        EvaluationResult rule3 = evaluateRoles(ApiQualityRules.implementationsLiveInImpl(ownership));
+        assertEquals(List.of(line), rule3.getFailureReport().getDetails().stream().sorted().toList());
+        String report = rule3.getFailureReport().toString();
+        assertFalse(report.matches("(?s).*\\$\\d.*"), report);
+        assertFalse(report.matches("(?s).*\\([^()\\s]+\\.java:\\d+\\).*"), report);
+        for (ArchRule rule : List.of(
+                ApiQualityRules.serviceDependencies(ownership),
+                ApiQualityRules.apiContracts(ownership),
+                ApiQualityRules.implementationPackagesStayPrivate(ownership),
+                ApiQualityRules.classesHaveAPackageRole(ownership),
+                ApiQualityRules.modulesHoldOneRole(ownership))) {
+            EvaluationResult result = evaluateRoles(rule);
+            assertFalse(result.hasViolation(), () -> rule.getDescription() + "\n" + result.getFailureReport());
+        }
+    }
+
+    @Test
+    void a_lambda_in_a_jar_fails_rule_3_on_the_holding_class() throws Exception {
+        Path root = Files.createTempDirectory("rule3-jar");
+        try {
+            Path sources = root.resolve("src");
+            writeJava(sources, "io/freedriver/jarlambda/JarApi.java",
+                    "package io.freedriver.jarlambda; public interface JarApi { String apply(String id); }");
+            writeJava(sources, "io/freedriver/jarlambda/JarHold.java",
+                    "package io.freedriver.jarlambda; public class JarHold { JarApi held = id -> id; }");
+            Path classes = root.resolve("classes");
+            compile(sources, classes, List.of());
+            Path jar = root.resolve("jarlambda.jar");
+            jar(classes, jar);
+            JavaClasses imported;
+            try (JarFile jarFile = new JarFile(jar.toFile())) {
+                imported = new ClassFileImporter().importJar(jarFile);
+            }
+            Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
+            owners.put("io.freedriver.jarlambda.JarApi", ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+            owners.put("io.freedriver.jarlambda.JarHold", ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+            List<String> lines = ApiQualityRules.implementationsLiveInImpl(overlay(owners)).evaluate(imported)
+                    .getFailureReport().getDetails().stream().sorted().toList();
+            String seen = imported.stream()
+                    .map(type -> type.getName() + " source=" + type.getSource().map(Object::toString).orElse("none"))
+                    .toList()
+                    .toString();
+            assertEquals(List.of("io.freedriver.jarlambda.JarHold implements io.freedriver.jarlambda.JarApi"
+                    + " from API module sample-api"), lines, seen);
+        } finally {
+            delete(root);
+        }
+    }
+
+    @Test
+    void an_anonymous_api_fails_rule_3_wherever_an_api_contract_type_holds_it() {
+        assertAnonymousHolder("HeldFactory", "HeldApi");
+        assertAnonymousHolder("HeldDefault", "HeldApi");
+        assertAnonymousHolder("HeldLambda", "HeldApi");
+        assertAnonymousHolder("HeldRecord", "HeldApi");
+        assertAnonymousHolder("HeldEnum", "HeldApi");
+    }
+
+    @Test
+    void an_inherited_api_interface_on_an_anonymous_class_fails_rule_3_on_the_holder() {
+        String holder = role("api.HeldInherited");
+        String base = role("api.HeldBase");
+        String port = role("api.Port");
+        Map<String, String> owners = new LinkedHashMap<>();
+        owners.put(holder, "sample-api");
+        owners.put(base, "sample-api");
+        owners.put(port, "sample-api");
+        assertEquals(List.of(
+                base + " implements " + port + " from API module sample-api",
+                holder + " contains an anonymous implementation of " + port + " from API module sample-api"),
+                rule3RoleLines(roles(owners)));
+    }
+
+    @Test
+    void an_enum_constant_body_and_a_non_api_anonymous_class_pass_rule_3() {
+        Map<String, String> passing = new LinkedHashMap<>();
+        passing.put(role("api.HeldKind"), "sample-api");
+        passing.put(role("api.HeldValues"), "sample-api");
+        passing.put(role("api.HeldBox"), "sample-api");
+        passing.put(role("api.HeldMark"), "sample-api");
+        assertRule3Passes(passing);
+
+        Map<String, String> order = new LinkedHashMap<>();
+        order.put(role("api.HeldOrder"), "sample-api");
+        ModuleOwnership ownership = roles(order);
+        assertFalse(evaluateRoles(ApiQualityRules.implementationsLiveInImpl(ownership)).hasViolation());
+        assertFalse(evaluateRoles(ApiQualityRules.apiContracts(ownership)).hasViolation());
+    }
+
+    private static void assertAnonymousHolder(String holder, String iface) {
+        String holderName = role("api." + holder);
+        String ifaceName = role("api." + iface);
+        Map<String, String> owners = new LinkedHashMap<>();
+        owners.put(holderName, "sample-api");
+        owners.put(ifaceName, "sample-api");
+        assertEquals(List.of(holderName + " contains an anonymous implementation of " + ifaceName
+                + " from API module sample-api"), rule3RoleLines(roles(owners)));
+    }
+
+    private static void assertRule3Passes(Map<String, String> artifactIds) {
+        EvaluationResult result = evaluateRoles(ApiQualityRules.implementationsLiveInImpl(roles(artifactIds)));
+        assertFalse(result.hasViolation(), () -> result.getFailureReport().toString());
+    }
+
+    private static List<String> rule3RoleLines(ModuleOwnership ownership) {
+        return evaluateRoles(ApiQualityRules.implementationsLiveInImpl(ownership))
+                .getFailureReport().getDetails().stream().sorted().toList();
+    }
+
+    @Test
+    void a_refused_type_inside_an_anonymous_class_fails_rule_2_on_the_holding_class() {
+        Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
+        owners.put(fix("AnonMapper"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        owners.put("com.fasterxml.jackson.databind.JsonNode", ModuleOwnership.Owned.thirdParty("jackson-databind"));
+        String report = evaluate(ApiQualityRules.apiContracts(overlay(owners)), "anonmapper")
+                .getFailureReport().toString();
+        assertEquals(1, countDepends(report), report);
+        assertTrue(report.contains(fix("AnonMapper") + " depends on " + JSON_NODE), report);
+        assertFalse(report.contains("$1"), report);
+        assertPasses(api("AnonValue"), "anonvalue");
+    }
+
+    @Test
+    void an_anonymous_class_that_opens_a_file_fails_rule_2_on_the_holding_member() {
+        assertValue("OpenAnon", "method text calls java.nio.file.Files.readString");
+        assertValue("OpenAnonNested", "method text calls java.nio.file.Files.readString");
+        assertValue("OpenAnonStatic", "static initializer calls java.nio.file.Files.readString");
+        assertValue("OpenAnonLambda", "method text calls java.nio.file.Files.readString");
+        EvaluationResult anon = evaluate(api("OpenAnon"), "openanon");
+        String anonReport = anon.getFailureReport().toString();
+        assertFalse(anonReport.contains("$1"), anonReport);
+        assertFalse(anonReport.contains("lambda$"), anonReport);
+        assertFalse(anonReport.matches("(?s).*\\([^()\\s]+\\.java:\\d+\\).*"), anonReport);
+        EvaluationResult enumerated = evaluate(api("OpenAnonEnum"), "openanonenum");
+        String enumReport = enumerated.getFailureReport().toString();
+        assertTrue(enumReport.contains("calls java.nio.file.Files.readString"), enumReport);
+        assertTrue(enumReport.contains("constructor("), enumReport);
+        assertFalse(enumReport.contains("$1"), enumReport);
+    }
+
+    @Test
+    void a_refused_type_inside_an_anonymous_class_fails_rule_4_on_the_holding_class() {
+        assertAnonRule4("sample", impl("service.AnonWires"), "from outside it");
+        assertAnonRule4("sample", impl("impl.mongo.AnonUsesService"), "in a service package");
+        assertAnonRule4("sample", impl("impl.mongo.AnonUsesRedis"),
+                "in implementation " + IMPL_FIXTURES + "impl.redis from implementation " + IMPL_FIXTURES + "impl.mongo");
+        assertPassesRule4("sample", impl("service.AnonOrders"));
+        assertPassesRule4("sample", impl("impl.mongo.AnonUsesOwn"));
+    }
+
+    private static void assertAnonDepends(String simple) {
+        String report = reportOf(serviceFixture(simple), simple.toLowerCase());
+        assertEquals(1, countDepends(report), report);
+        assertTrue(report.contains(fix(simple) + " depends on " + JSON_NODE), report);
+        assertFalse(report.contains("$1"), report);
+    }
+
+    private static String reportOf(Map<String, ModuleOwnership.Owned> owners, String fixture) {
+        return evaluate(ApiQualityRules.serviceDependencies(overlay(owners)), fixture).getFailureReport().toString();
+    }
+
+    private static Map<String, ModuleOwnership.Owned> serviceFixture(String simple) {
+        return serviceOwners(fix(simple));
+    }
+
+    private static Map<String, ModuleOwnership.Owned> serviceOwners(String name) {
+        Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
+        owners.put(name, ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        owners.put("com.fasterxml.jackson.databind.JsonNode", ModuleOwnership.Owned.thirdParty("jackson-databind"));
+        return owners;
+    }
+
+    private static void assertAnonRule4(String artifactId, String subject, String why) {
+        EvaluationResult result = evaluateRule4(overlay(Map.of(subject,
+                ModuleOwnership.Owned.ours("io.freedriver", artifactId))));
+        String report = result.getFailureReport().toString();
+        assertTrue(result.hasViolation(), () -> subject + " passed:\n" + report);
+        assertTrue(report.contains(subject + " depends on "), () -> report);
+        assertTrue(report.contains(why), () -> "expected \"" + why + "\" in:\n" + report);
+        assertFalse(report.contains("$1"), () -> report);
+    }
+
+    @Test
+    void rule_2_accepts_values() {
+        assertPasses(api("RecordWithers"), "recordwithers");
+        assertPasses(api("OrdinaryEnum"), "ordinaryenum");
+        assertPasses(api("ValueLambda"), "valuelambda");
+        assertPasses(api("ResponseApi"), "responseapi");
+        assertPasses(api("MappedConstant"), "mappedconstant");
+        assertPasses(api("VarargsEnum"), "varargsenum");
+        assertPasses(api("ElevenList"), "elevenlist");
+        assertPasses(api("SchemeValue"), "schemevalue");
+        assertPasses(api("Copied"), "copied");
+        assertPasses(api("LocalSet"), "localset");
+        Map<String, ModuleOwnership.Owned> sealed = new LinkedHashMap<>();
+        ModuleOwnership.Owned sample = ModuleOwnership.Owned.ours("io.freedriver", "sample-api");
+        sealed.put(fix("Item"), sample);
+        sealed.put(fix("ItemOne"), sample);
+        sealed.put(fix("ItemBox"), sample);
+        assertPasses(ApiQualityRules.apiContracts(overlay(sealed)), "itembox");
+    }
+
+    @Test
+    void an_ordinary_enum_has_no_line_for_compiler_generated_members() {
+        EvaluationResult result = evaluate(api("OrdinaryEnum"), "ordinaryenum");
+        String report = violations(result.getFailureReport().toString());
+        assertFalse(result.hasViolation(), result.getFailureReport().toString());
+        assertFalse(report.contains("$VALUES"), report);
+        assertFalse(report.contains("method values"), report);
+        assertFalse(report.contains("method valueOf"), report);
+    }
+
+    @Test
+    void rule_2_refuses_mutable_statics_and_value_code() {
+        assertValue("StaticArray", "field LABELS is a static array");
+        assertValue("Held", "static initializer constructs java.util.ArrayList",
+                "constructor(java.util.List) constructs java.util.ArrayList");
+        assertValue("Handles", "method find calls java.lang.invoke.MethodHandles.lookup");
+        assertValue("Fetch", "method load calls jakarta.ws.rs.client.ClientBuilder.newClient");
+        assertValue("RestFetch", "method build calls org.eclipse.microprofile.rest.client.RestClientBuilder.newBuilder");
+        assertValue("ConcurrentConstant", "static initializer constructs java.util.concurrent.ConcurrentHashMap");
+        assertValue("MutableStatics", "static initializer constructs java.util.HashMap",
+                "static initializer constructs java.util.ArrayList");
+        assertValue("CompiledPattern", "static initializer calls java.util.regex.Pattern.compile");
+        assertValue("LooseEnum", "field n is not final");
+        Map<String, ModuleOwnership.Owned> caller = new LinkedHashMap<>();
+        ModuleOwnership.Owned sample = ModuleOwnership.Owned.ours("io.freedriver", "sample-api");
+        caller.put(fix("Caller"), sample);
+        caller.put(fix("OtherApi"), sample);
+        EvaluationResult called = evaluate(ApiQualityRules.apiContracts(overlay(caller)), "caller");
+        String calledReport = called.getFailureReport().toString();
+        assertTrue(called.hasViolation(), calledReport);
+        assertTrue(calledReport.contains("method go calls non-sealed API interface " + fix("OtherApi")), calledReport);
+        assertValue("Loud", "constructor(java.lang.String) calls java.util.logging.Logger.getLogger");
+        assertValue("ReadFile", "method text calls java.nio.file.Files.readString");
+        assertValue("Reflects", "method find calls java.lang.Class.forName",
+                "method find calls java.lang.Class.getDeclaredMethod");
+        assertValue("Loaded", "method load calls java.util.ServiceLoader.load");
+        EvaluationResult lambda = evaluate(api("OpenLambda"), "openlambda");
+        String lambdaReport = lambda.getFailureReport().toString();
+        assertTrue(lambda.hasViolation(), lambdaReport);
+        assertTrue(lambdaReport.contains("method text calls java.nio.file.Files.readString"), lambdaReport);
+        assertFalse(lambdaReport.contains("lambda$"), lambdaReport);
+        assertFalse(lambdaReport.matches("(?s).*\\([^()\\s]+\\.java:\\d+\\).*"), lambdaReport);
+    }
+
+    @Test
+    void a_plain_class_with_a_mutable_static_field_keeps_only_its_plain_class_line() {
+        EvaluationResult result = evaluate(api("MutablePlain"), "mutableplain");
+        String report = violations(result.getFailureReport().toString());
+        assertEquals(fix("MutablePlain")
+                + " is a plain class; an API module allows a final constant holder with static final fields "
+                + "and a private constructor", report.trim());
+        assertFalse(report.contains("HashMap"), report);
+    }
+
+    @Test
+    void rule_1_reports_one_line_per_refused_class() {
+        Map<String, ModuleOwnership.Owned> one = new LinkedHashMap<>();
+        one.put(fix("UsesOneTwice"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        one.put("com.fasterxml.jackson.databind.ObjectMapper", ModuleOwnership.Owned.thirdParty("jackson-databind"));
+        String oneReport = evaluate(ApiQualityRules.serviceDependencies(overlay(one)), "usesonetwice")
+                .getFailureReport().toString();
+        assertEquals(1, countDepends(oneReport), oneReport);
+
+        Map<String, ModuleOwnership.Owned> two = new LinkedHashMap<>();
+        two.put(fix("UsesTwo"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        two.put("com.fasterxml.jackson.databind.ObjectMapper", ModuleOwnership.Owned.thirdParty("jackson-databind"));
+        two.put("com.fasterxml.jackson.databind.JsonNode", ModuleOwnership.Owned.thirdParty("jackson-databind"));
+        String twoReport = evaluate(ApiQualityRules.serviceDependencies(overlay(two)), "usestwo")
+                .getFailureReport().toString();
+        assertEquals(2, countDepends(twoReport), twoReport);
+    }
+
+    /** The violation lines, without the rule description that precedes them. */
+    private static String violations(String report) {
+        int header = report.indexOf("was violated");
+        if (header < 0) {
+            return report;
+        }
+        int newline = report.indexOf('\n', header);
+        return newline < 0 ? "" : report.substring(newline + 1);
+    }
+
+    private static int countDepends(String report) {
+        int count = 0;
+        for (String line : report.split("\n")) {
+            if (line.contains(" depends on ")) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static ArchRule api(String simple) {
+        return ApiQualityRules.apiContracts(overlay(ours(fix(simple), "sample-api", ModuleOwnership.Role.API)));
+    }
+
+    private static void assertValue(String simple, String... snippets) {
+        EvaluationResult result = evaluate(api(simple), simple.toLowerCase());
+        String report = result.getFailureReport().toString();
+        assertTrue(result.hasViolation(), () -> simple + " passed:\n" + report);
+        for (String snippet : snippets) {
+            assertTrue(report.contains(fix(simple) + " " + snippet),
+                    () -> "expected \"" + snippet + "\" in:\n" + report);
+        }
+        assertFalse(report.matches("(?s).*\\([^()\\s]+\\.java:\\d+\\).*"), () -> report);
+    }
+
     private static String fix(String simple) {
         return FIXTURES + simple;
+    }
+
+    private static String implementsOrdinary(String className) {
+        return className + " implements " + fix("Ordinary") + " from API module sample-api";
+    }
+
+    private static String implementsCallback(String className) {
+        return implementsApi(className, fix("Callback"));
+    }
+
+    private static String implementsApi(String className, String iface) {
+        return className + " implements " + iface + " from API module sample-api";
+    }
+
+    /** Callback is the functional API interface. Each subject is service code in the sample module. */
+    private static Map<String, ModuleOwnership.Owned> callbackOwners(String... subjects) {
+        Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
+        owners.put(fix("Callback"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        for (String subject : subjects) {
+            owners.put(subject, ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        }
+        return owners;
+    }
+
+    private static void assertReadFails(JavaClasses classes, String holder, String reason) {
+        Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
+        owners.put(holder, ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        Throwable thrown = assertThrows(Throwable.class,
+                () -> ApiQualityRules.implementationsLiveInImpl(overlay(owners)).evaluate(classes));
+        String messages = thrown.toString();
+        for (Throwable cause = thrown.getCause(); cause != null; cause = cause.getCause()) {
+            messages = messages + "\n" + cause;
+        }
+        assertTrue(messages.contains(holder), messages);
+        assertTrue(messages.contains(reason), messages);
+    }
+
+    /** A class file whose altMetafactory arguments are not the bootstrap the reader decodes. */
+    private static byte[] badBootstrap(String internalName) {
+        ClassWriter writer = new ClassWriter(0);
+        writer.visit(Opcodes.V23, Opcodes.ACC_PUBLIC | Opcodes.ACC_SUPER,
+                internalName, null, "java/lang/Object", null);
+        MethodVisitor init = writer.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+        init.visitCode();
+        init.visitVarInsn(Opcodes.ALOAD, 0);
+        init.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+        init.visitInsn(Opcodes.RETURN);
+        init.visitMaxs(1, 1);
+        init.visitEnd();
+        MethodVisitor go = writer.visitMethod(Opcodes.ACC_PUBLIC, "go", "()V", null, null);
+        go.visitCode();
+        Handle bootstrap = new Handle(Opcodes.H_INVOKESTATIC, "java/lang/invoke/LambdaMetafactory", "altMetafactory",
+                "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;"
+                        + "[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;",
+                false);
+        go.visitInvokeDynamicInsn("run", "()Ljava/lang/Runnable;", bootstrap, "broken");
+        go.visitInsn(Opcodes.RETURN);
+        go.visitMaxs(1, 1);
+        go.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    /** Ordinary is the API interface. Each subject is service code in the sample module. */
+    private static Map<String, ModuleOwnership.Owned> ordinaryOwners(String... subjects) {
+        Map<String, ModuleOwnership.Owned> owners = new LinkedHashMap<>();
+        owners.put(fix("Ordinary"), ModuleOwnership.Owned.ours("io.freedriver", "sample-api"));
+        for (String subject : subjects) {
+            owners.put(subject, ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        }
+        return owners;
+    }
+
+    private static List<String> rule3Lines(Map<String, ModuleOwnership.Owned> owners, String fixture) {
+        return evaluate(ApiQualityRules.implementationsLiveInImpl(overlay(owners)), fixture)
+                .getFailureReport().getDetails().stream().sorted().toList();
+    }
+
+    private static String rule3Report(Map<String, ModuleOwnership.Owned> owners, String fixture) {
+        return evaluate(ApiQualityRules.implementationsLiveInImpl(overlay(owners)), fixture)
+                .getFailureReport().toString();
     }
 
     /** The fixture's module. The artifactId has to give {@code role}, since the fixture package names none. */

@@ -9,18 +9,37 @@ import com.tngtech.archunit.core.domain.JavaField;
 import com.tngtech.archunit.core.domain.JavaMethod;
 import com.tngtech.archunit.core.domain.JavaModifier;
 import com.tngtech.archunit.core.domain.JavaParameter;
+import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassVisitor;
+import org.objectweb.asm.Handle;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.lang.invoke.LambdaMetafactory;
+import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 
@@ -56,7 +75,8 @@ public final class ApiQualityRules {
     private static final String API_BECAUSE = "API code holds interfaces, records, enums, exceptions, "
             + "annotations and final constant holders (only static final fields and a private constructor), "
             + "carries no CDI scope, and depends only on java, javax, jakarta, org.eclipse.microprofile, "
-            + "annotation types and API code. " + ROLES;
+            + "annotation types and API code. " + ROLES + " "
+            + ApiValues.BECAUSE;
 
     private static final String IMPL_BECAUSE = "a main class that implements an API interface is "
             + "implementation code; a JAX-RS resource may implement its JAX-RS API interface, a generated "
@@ -163,6 +183,9 @@ public final class ApiQualityRules {
                                         + " depends on " + dependency.getName() + " " + why));
                             }
                         }
+                        if (contractShape(type)) {
+                            ApiValues.check(type, events, ownership);
+                        }
                     }
                 })
                 .because(API_BECAUSE)
@@ -172,6 +195,16 @@ public final class ApiQualityRules {
     static ArchRule implementationsLiveInImpl(ModuleOwnership ownership) {
         return classes().that(mainClasses(ownership))
                 .should(new ArchCondition<>("be implementation code when they implement an API interface") {
+                    private final Map<String, JavaClass> resolved = new HashMap<>();
+
+                    @Override
+                    public void init(Collection<JavaClass> all) {
+                        resolved.clear();
+                        for (JavaClass type : all) {
+                            resolved.put(type.getName(), type);
+                        }
+                    }
+
                     @Override
                     public void check(JavaClass type, ConditionEvents events) {
                         if (type.isAnnotatedWith(REGISTER_REST_CLIENT)) {
@@ -182,9 +215,20 @@ public final class ApiQualityRules {
                             return;
                         }
                         if (self.is(ModuleOwnership.Role.API) && apiContractType(type)) {
+                            // The contract type may implement an API interface. An anonymous
+                            // class it holds may not: the line names the contract type.
+                            for (JavaClass iface : anonymousImplementations(type)) {
+                                ModuleOwnership.Owned owner = ownership.classify(iface);
+                                if (!owner.is(ModuleOwnership.Role.API)) {
+                                    continue;
+                                }
+                                events.add(SimpleConditionEvent.violated(type, type.getName()
+                                        + " contains an anonymous implementation of " + iface.getName()
+                                        + " from API module " + owner.artifactId()));
+                            }
                             return;
                         }
-                        for (JavaClass iface : type.getAllRawInterfaces()) {
+                        for (JavaClass iface : implementedInterfaces(type, resolved)) {
                             ModuleOwnership.Owned owner = ownership.classify(iface);
                             if (!owner.is(ModuleOwnership.Role.API)) {
                                 continue;
@@ -360,29 +404,176 @@ public final class ApiQualityRules {
     }
 
     /**
-     * Direct dependencies, except a type that appears only because an annotation names it: the
-     * annotation itself, or a member or default-value type ArchUnit imports with the annotation.
-     * A field, parameter or method body that uses the same type is kept.
+     * Direct dependencies of the class and of the anonymous classes it holds, except a type that
+     * appears only because an annotation names it: the annotation itself, or a member or
+     * default-value type ArchUnit imports with the annotation. A field, parameter or method body
+     * that uses the same type is kept. One line per target name. The class's own anonymous
+     * classes, and an anonymous class's reference to the class that holds it, are left out: an
+     * anonymous class is part of its holder.
      */
     private static Set<JavaClass> dependencies(JavaClass type) {
-        java.util.Map<String, java.util.List<Dependency>> byName = new java.util.LinkedHashMap<>();
-        java.util.Map<String, JavaClass> targets = new java.util.LinkedHashMap<>();
-        for (Dependency dependency : type.getDirectDependenciesFromSelf()) {
-            JavaClass target = unwrap(dependency.getTargetClass());
-            if (target.getName().equals(type.getName())) {
-                continue;
+        Map<String, List<Dependency>> byName = new LinkedHashMap<>();
+        Map<String, JavaClass> targets = new LinkedHashMap<>();
+        for (JavaClass source : withAnonymous(type)) {
+            for (Dependency dependency : source.getDirectDependenciesFromSelf()) {
+                JavaClass target = unwrap(dependency.getTargetClass());
+                if (target.getName().equals(type.getName()) || anonymousOf(type, target)) {
+                    continue;
+                }
+                byName.computeIfAbsent(target.getName(), name -> new ArrayList<>()).add(dependency);
+                targets.putIfAbsent(target.getName(), target);
             }
-            byName.computeIfAbsent(target.getName(), name -> new java.util.ArrayList<>()).add(dependency);
-            targets.putIfAbsent(target.getName(), target);
         }
-        java.util.LinkedHashSet<JavaClass> found = new java.util.LinkedHashSet<>();
-        for (java.util.Map.Entry<String, java.util.List<Dependency>> entry : byName.entrySet()) {
+        Set<JavaClass> found = new java.util.LinkedHashSet<>();
+        for (Map.Entry<String, List<Dependency>> entry : byName.entrySet()) {
             if (entry.getValue().stream().allMatch(ApiQualityRules::fromAnnotationOnly)) {
                 continue;
             }
             found.add(targets.get(entry.getKey()));
         }
         return found;
+    }
+
+    /**
+     * API interfaces implemented by anonymous classes this contract type holds, one entry per
+     * name. An enum constant body is an anonymous class whose superclass is an enum, and it is
+     * left out: the enum may implement the interface. The line names this class.
+     */
+    private static List<JavaClass> anonymousImplementations(JavaClass type) {
+        Map<String, JavaClass> found = new LinkedHashMap<>();
+        for (JavaClass anonymous : anonymousClasses(type)) {
+            if (enumConstantBody(anonymous)) {
+                continue;
+            }
+            for (JavaClass iface : anonymous.getAllRawInterfaces()) {
+                found.putIfAbsent(iface.getName(), iface);
+            }
+        }
+        return new ArrayList<>(found.values());
+    }
+
+    /** An enum constant body: an anonymous class whose superclass is an enum. */
+    private static boolean enumConstantBody(JavaClass type) {
+        return type.getRawSuperclass().filter(JavaClass::isEnum).isPresent();
+    }
+
+    /**
+     * Raw interfaces of the class and of the anonymous classes it holds, one entry per name,
+     * plus each functional interface a lambda or method reference in those class files targets.
+     * The line names this class. An anonymous class stays out of the subjects, and a second
+     * implementation of the same interface, including an enum constant body or another lambda,
+     * adds no second line.
+     *
+     * <p>A lambda or method reference that cannot be read fails the check with {@code type}'s name.
+     * The failure is an error, so a frozen store cannot store it as a line.
+     */
+    private static List<JavaClass> implementedInterfaces(JavaClass type, Map<String, JavaClass> resolved) {
+        Map<String, JavaClass> found = new LinkedHashMap<>();
+        for (JavaClass source : withAnonymous(type)) {
+            for (JavaClass iface : source.getAllRawInterfaces()) {
+                found.putIfAbsent(iface.getName(), iface);
+            }
+            for (String name : LambdaSites.interfacesOf(type, source)) {
+                if (platform(name)) {
+                    continue;
+                }
+                JavaClass target = resolveInterface(type, name, resolved);
+                found.putIfAbsent(target.getName(), target);
+                for (JavaClass raw : target.getAllRawInterfaces()) {
+                    if (!platform(raw.getName())) {
+                        found.putIfAbsent(raw.getName(), raw);
+                    }
+                }
+            }
+        }
+        return new ArrayList<>(found.values());
+    }
+
+    /** A JDK interface does not extend an API interface, and ArchUnit cannot import a {@code jrt} class. */
+    private static boolean platform(String name) {
+        return name.startsWith("java.") || name.startsWith("javax.") || name.startsWith("jakarta.")
+                || name.startsWith("jdk.");
+    }
+
+    /** The functional interface named by a lambda call site, imported when this evaluation has not seen it. */
+    private static JavaClass resolveInterface(JavaClass holder, String name, Map<String, JavaClass> resolved) {
+        JavaClass known = resolved.get(name);
+        if (known != null) {
+            return known;
+        }
+        try {
+            Class<?> reflected = Class.forName(name, false, classLoader());
+            JavaClass imported = new ClassFileImporter().importClass(reflected);
+            resolved.put(name, imported);
+            return imported;
+        } catch (ClassNotFoundException | LinkageError | RuntimeException e) {
+            throw new IllegalStateException(holder.getName()
+                    + " has a lambda bootstrap that cannot be decoded to " + name, e);
+        }
+    }
+
+    private static ClassLoader classLoader() {
+        ClassLoader context = Thread.currentThread().getContextClassLoader();
+        if (context != null) {
+            return context;
+        }
+        return ApiQualityRules.class.getClassLoader();
+    }
+
+    /** The class plus each anonymous class whose nearest non-anonymous encloser it is. */
+    private static List<JavaClass> withAnonymous(JavaClass type) {
+        List<JavaClass> sources = new ArrayList<>();
+        sources.add(type);
+        sources.addAll(anonymousClasses(type));
+        return sources;
+    }
+
+    /**
+     * Anonymous classes whose holding class is {@code type}: the nearest enclosing class that is
+     * not itself anonymous. A member or local class keeps the anonymous classes written inside it.
+     */
+    static List<JavaClass> anonymousClasses(JavaClass type) {
+        Map<String, JavaClass> found = new LinkedHashMap<>();
+        String name = type.getName();
+        for (JavaClass candidate : type.getPackage().getClasses()) {
+            if (candidate.isAnonymousClass() && name.equals(holdingClass(candidate).getName())) {
+                found.put(candidate.getName(), candidate);
+            }
+        }
+        walkAnonymous(type, type, found, new HashSet<>());
+        return new ArrayList<>(found.values());
+    }
+
+    /** Follows anonymous-class targets so a nested one is kept when the package scan misses it. */
+    private static void walkAnonymous(JavaClass holder, JavaClass source, Map<String, JavaClass> found,
+                                      Set<String> seen) {
+        if (!seen.add(source.getName())) {
+            return;
+        }
+        for (Dependency dependency : source.getDirectDependenciesFromSelf()) {
+            JavaClass target = dependency.getTargetClass();
+            if (!target.isAnonymousClass() || !holder.getName().equals(holdingClass(target).getName())) {
+                continue;
+            }
+            found.putIfAbsent(target.getName(), target);
+            walkAnonymous(holder, target, found, seen);
+        }
+    }
+
+    /** The nearest enclosing class that is not anonymous, or {@code type} when it is that class. */
+    static JavaClass holdingClass(JavaClass type) {
+        JavaClass current = type;
+        while (current.isAnonymousClass()) {
+            if (current.getEnclosingClass().isEmpty()) {
+                return current;
+            }
+            current = current.getEnclosingClass().get();
+        }
+        return current;
+    }
+
+    private static boolean anonymousOf(JavaClass holder, JavaClass target) {
+        return target.isAnonymousClass() && holder.getName().equals(holdingClass(target).getName());
     }
 
     /** ArchUnit's description for an annotation type or one of its member and default-value types. */
@@ -523,7 +714,7 @@ public final class ApiQualityRules {
         return false;
     }
 
-    private static Class<?> reflect(JavaClass type) {
+    static Class<?> reflect(JavaClass type) {
         ClassLoader context = Thread.currentThread().getContextClassLoader();
         ClassLoader own = ApiQualityRules.class.getClassLoader();
         for (ClassLoader loader : new ClassLoader[] {context, own}) {
@@ -599,7 +790,7 @@ public final class ApiQualityRules {
                 || under(pkg, "org.eclipse.microprofile");
     }
 
-    private static boolean under(String pkg, String root) {
+    static boolean under(String pkg, String root) {
         return pkg.equals(root) || pkg.startsWith(root + ".");
     }
 
@@ -611,10 +802,31 @@ public final class ApiQualityRules {
         if (type.isAnnotation() || type.isInterface() || type.isRecord() || type.isEnum()) {
             return true;
         }
-        if (type.isAssignableTo(Throwable.class)) {
+        if (throwableType(type)) {
             return true;
         }
         return constantHolder(type);
+    }
+
+    /**
+     * An exception is a contract shape. ArchUnit's {@code isAssignableTo(Throwable)} is false when
+     * the JDK hierarchy was not imported, so the superclass name and, failing that, reflection decide.
+     */
+    static boolean throwableType(JavaClass type) {
+        if (type.isAssignableTo(Throwable.class)) {
+            return true;
+        }
+        JavaClass current = type;
+        for (int hop = 0; hop < 8 && current != null; hop++) {
+            String name = current.getName();
+            if ("java.lang.Throwable".equals(name) || "java.lang.Exception".equals(name)
+                    || "java.lang.Error".equals(name) || "java.lang.RuntimeException".equals(name)) {
+                return true;
+            }
+            current = current.getRawSuperclass().orElse(null);
+        }
+        Class<?> reflected = reflect(type);
+        return reflected != null && Throwable.class.isAssignableFrom(reflected);
     }
 
     /** The PendingCapHeader and VerifyFailure shape: static final fields and one private constructor. */
@@ -671,5 +883,205 @@ public final class ApiQualityRules {
             }
         }
         return false;
+    }
+
+    /**
+     * Functional interfaces implemented by a lambda or a method reference in one class file.
+     * ArchUnit keeps the implementation handle of an invokedynamic and drops the call-site
+     * descriptor, so the interface is read here from the class file with ASM.
+     * {@code holder} is the class the line names. {@code source} is that class or an anonymous
+     * class it holds. A class file that cannot be read, or a lambda bootstrap that cannot be
+     * decoded, fails with {@code holder}'s name.
+     */
+    private static final class LambdaSites extends ClassVisitor {
+
+        private static final String FACTORY = "java/lang/invoke/LambdaMetafactory";
+        private static final String METAFACTORY = "metafactory";
+        private static final String ALT_METAFACTORY = "altMetafactory";
+        private static final String METAFACTORY_DESC = "(Ljava/lang/invoke/MethodHandles$Lookup;"
+                + "Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;"
+                + "Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;";
+        private static final String ALT_DESC = "(Ljava/lang/invoke/MethodHandles$Lookup;"
+                + "Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)"
+                + "Ljava/lang/invoke/CallSite;";
+
+        private final Set<String> names = new LinkedHashSet<>();
+
+        private LambdaSites() {
+            super(Opcodes.ASM9);
+        }
+
+        static List<String> interfacesOf(JavaClass holder, JavaClass source) {
+            byte[] bytes;
+            try {
+                bytes = bytesOf(source);
+            } catch (IOException | RuntimeException e) {
+                throw unreadable(holder, e);
+            }
+            try {
+                LambdaSites sites = new LambdaSites();
+                new ClassReader(bytes).accept(sites, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+                return List.copyOf(sites.names);
+            } catch (DecodeFailure e) {
+                throw new IllegalStateException(holder.getName()
+                        + " has a lambda bootstrap that cannot be decoded: " + e.getMessage(), e);
+            } catch (RuntimeException e) {
+                throw unreadable(holder, e);
+            }
+        }
+
+        @Override
+        public MethodVisitor visitMethod(int access, String name, String descriptor, String signature,
+                                          String[] exceptions) {
+            return new MethodVisitor(Opcodes.ASM9) {
+                @Override
+                public void visitInvokeDynamicInsn(String invokeName, String invokeDescriptor, Handle bootstrap,
+                                                    Object... bootstrapArguments) {
+                    if (!FACTORY.equals(bootstrap.getOwner())) {
+                        return;
+                    }
+                    if (METAFACTORY.equals(bootstrap.getName())) {
+                        if (!METAFACTORY_DESC.equals(bootstrap.getDesc())) {
+                            throw new DecodeFailure("metafactory descriptor");
+                        }
+                        metafactory(invokeDescriptor, bootstrapArguments);
+                        return;
+                    }
+                    if (ALT_METAFACTORY.equals(bootstrap.getName())) {
+                        if (!ALT_DESC.equals(bootstrap.getDesc())) {
+                            throw new DecodeFailure("altMetafactory descriptor");
+                        }
+                        altMetafactory(invokeDescriptor, bootstrapArguments);
+                    }
+                }
+            };
+        }
+
+        private void metafactory(String descriptor, Object[] arguments) {
+            if (arguments.length != 3 || !(arguments[0] instanceof Type) || !(arguments[1] instanceof Handle)
+                    || !(arguments[2] instanceof Type)) {
+                throw new DecodeFailure("metafactory arguments");
+            }
+            names.add(returnInterface(descriptor));
+        }
+
+        private void altMetafactory(String descriptor, Object[] arguments) {
+            if (arguments.length < 4 || !(arguments[0] instanceof Type) || !(arguments[1] instanceof Handle)
+                    || !(arguments[2] instanceof Type) || !(arguments[3] instanceof Integer)) {
+                throw new DecodeFailure("altMetafactory arguments");
+            }
+            names.add(returnInterface(descriptor));
+            int flags = (Integer) arguments[3];
+            int index = 4;
+            if ((flags & LambdaMetafactory.FLAG_MARKERS) != 0) {
+                index = markers(arguments, index);
+            }
+            if ((flags & LambdaMetafactory.FLAG_BRIDGES) != 0) {
+                index = bridges(arguments, index);
+            }
+            if (index != arguments.length) {
+                throw new DecodeFailure("altMetafactory arguments");
+            }
+        }
+
+        private int markers(Object[] arguments, int index) {
+            if (index >= arguments.length || !(arguments[index] instanceof Integer)) {
+                throw new DecodeFailure("marker interfaces");
+            }
+            int count = (Integer) arguments[index];
+            index++;
+            if (count < 0 || index + count > arguments.length) {
+                throw new DecodeFailure("marker interfaces");
+            }
+            for (int i = 0; i < count; i++) {
+                names.add(interfaceName(arguments[index]));
+                index++;
+            }
+            return index;
+        }
+
+        private static int bridges(Object[] arguments, int index) {
+            if (index >= arguments.length || !(arguments[index] instanceof Integer)) {
+                throw new DecodeFailure("bridge methods");
+            }
+            int count = (Integer) arguments[index];
+            index++;
+            if (count < 0 || index + count > arguments.length) {
+                throw new DecodeFailure("bridge methods");
+            }
+            return index + count;
+        }
+
+        private static String returnInterface(String descriptor) {
+            Type returned;
+            try {
+                returned = Type.getReturnType(descriptor);
+            } catch (RuntimeException e) {
+                throw new DecodeFailure("call site descriptor");
+            }
+            if (returned.getSort() != Type.OBJECT) {
+                throw new DecodeFailure("call site return type");
+            }
+            return returned.getClassName();
+        }
+
+        private static String interfaceName(Object argument) {
+            if (argument instanceof Type type && type.getSort() == Type.OBJECT) {
+                return type.getClassName();
+            }
+            throw new DecodeFailure("marker interface");
+        }
+
+        private static byte[] bytesOf(JavaClass source) throws IOException {
+            if (source.getSource().isEmpty()) {
+                throw new IOException("class file has no source");
+            }
+            return bytes(source.getSource().get().getUri());
+        }
+
+        private static byte[] bytes(URI uri) throws IOException {
+            if (uri == null) {
+                throw new IOException("class file has no source");
+            }
+            if ("jar".equalsIgnoreCase(uri.getScheme())) {
+                return jarBytes(uri);
+            }
+            if ("file".equalsIgnoreCase(uri.getScheme())) {
+                return Files.readAllBytes(Path.of(uri));
+            }
+            throw new IOException("unsupported class file source");
+        }
+
+        private static byte[] jarBytes(URI uri) throws IOException {
+            String specific = uri.getSchemeSpecificPart();
+            int bang = specific.indexOf('!');
+            if (bang < 0) {
+                throw new IOException("jar source has no entry");
+            }
+            String entry = specific.substring(bang + 1);
+            if (entry.startsWith("/")) {
+                entry = entry.substring(1);
+            }
+            try (JarFile jar = new JarFile(Path.of(URI.create(specific.substring(0, bang))).toFile())) {
+                JarEntry found = jar.getJarEntry(entry);
+                if (found == null) {
+                    throw new IOException("jar entry is missing");
+                }
+                try (InputStream in = jar.getInputStream(found)) {
+                    return in.readAllBytes();
+                }
+            }
+        }
+
+        private static IllegalStateException unreadable(JavaClass holder, Exception cause) {
+            return new IllegalStateException(holder.getName() + " cannot be read: " + cause.getClass().getSimpleName(),
+                    cause);
+        }
+
+        private static final class DecodeFailure extends IllegalStateException {
+            private DecodeFailure(String reason) {
+                super(reason);
+            }
+        }
     }
 }
