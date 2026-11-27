@@ -191,7 +191,7 @@ public final class ApiQualityRules {
                         if (self.is(ModuleOwnership.Role.API) && apiContractType(type)) {
                             return;
                         }
-                        for (JavaClass iface : type.getAllRawInterfaces()) {
+                        for (JavaClass iface : implementedInterfaces(type)) {
                             ModuleOwnership.Owned owner = ownership.classify(iface);
                             if (!owner.is(ModuleOwnership.Role.API)) {
                                 continue;
@@ -395,6 +395,21 @@ public final class ApiQualityRules {
             found.add(targets.get(entry.getKey()));
         }
         return found;
+    }
+
+    /**
+     * Raw interfaces of the class and of the anonymous classes it holds, one entry per name.
+     * The line names this class. An anonymous class stays out of the subjects, and a second
+     * implementation of the same interface, including an enum constant body, adds no second line.
+     */
+    private static List<JavaClass> implementedInterfaces(JavaClass type) {
+        Map<String, JavaClass> found = new LinkedHashMap<>();
+        for (JavaClass source : withAnonymous(type)) {
+            for (JavaClass iface : source.getAllRawInterfaces()) {
+                found.putIfAbsent(iface.getName(), iface);
+            }
+        }
+        return new ArrayList<>(found.values());
     }
 
     /** The class plus each anonymous class whose nearest non-anonymous encloser it is. */
