@@ -75,7 +75,7 @@ On the portal side:
 
 - `instanceId` is the topic segment and the REST path key. `instanceName` is the dashboard tab label.
 - `appliedCommandId` completes the POST waiter.
-- kaze owns reconnect / latest-per-alias behavior.
+- The portal owns reconnect / latest-per-alias behavior.
 
 ## BFF / session
 

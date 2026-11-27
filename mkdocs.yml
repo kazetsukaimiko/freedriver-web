@@ -1,0 +1,60 @@
+site_name: Freedriver
+site_description: Freedriver designs
+site_url: https://kazetsukaimiko.github.io/freedriver-web/
+repo_url: https://github.com/kazetsukaimiko/freedriver-web
+docs_dir: docs
+site_dir: site-build
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - search.suggest
+    - search.highlight
+
+plugins:
+  - search
+
+markdown_extensions:
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.snippets:
+      base_path:
+        - .
+      check_paths: true
+
+validation:
+  nav:
+    omitted_files: warn
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: ignore
+    unrecognized_links: ignore
+
+nav:
+  - Home: index.md
+  - System map: system-map.md
+  - Dashboard:
+      - Appliances: appliances.md
+      - Changelog API: changelog.md
+      - SMS sign-in: sms-otp.md
+      - Provisioning interfaces: design/dashboard-provisioning/01-interfaces.md
+      - Provisioning implementation: design/dashboard-provisioning/02-implementation.md
+  - MQTT:
+      - Connect: mqtt-connect.md
+      - Contract: mqtt-contract-consume.md
+  - Autonomy:
+      - MQTT: autonomy-mqtt.md
+      - MCP: autonomy-mcp.md
+  - Dispatcher:
+      - Device dispatcher and Agent Bridge: device-dispatcher.md
+  - iPhone and Watch:
+      - Sign-in: design/mobile/iphone-watch-sign-in.md
+  - Architecture rules:
+      - Overview: architecture/index.md
+      - Class roles: architecture/class-roles.md
+  - What changed: what-changed.md

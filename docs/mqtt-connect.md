@@ -2,7 +2,7 @@
 
 Agent-followable first-house provisioning. Broker/Keycloak wiring is #24; product MQTT is #21; command-live is #27. File shape for instance ACLs is on main (PR #87). Live VPS apply is [#59](https://github.com/kazetsukaimiko/freedriver-web/issues/59); #59 stays open until that apply runs on the VPS.
 
-On GitHub: kaze / [@kazetsukaimiko](https://github.com/kazetsukaimiko).
+On GitHub: [@kazetsukaimiko](https://github.com/kazetsukaimiko).
 
 ## Locks (read before any VPS or client work)
 
@@ -57,7 +57,7 @@ Autonomy (home) host, TLS, user, topics, retain, QoS, and JSON: [autonomy-mqtt.m
   - Container port 8883 is not published. The API dials hostname `mosquitto` on that port. The certificate SAN is `DNS:mosquitto` only, signed by `/opt/freedriver-secrets/mqtt-internal/ca.crt`.
   - Container port 8884 is published as host `8883`. That certificate is Let's Encrypt for `DNS:mqtt.freedriver.io` only.
 - Host port 8883 stays reachable from any address because the home IP is dynamic. Broker passwords and instance ACLs guard it. `allow_anonymous false`, the password file, and the ACL apply to both listeners. Do not set `listener_allow_anonymous true`. Port 1883 stays closed.
-- Sysadmin still needs `mqtt.freedriver.io` A → `138.197.90.42`.
+- Sysadmin still needs the `mqtt.freedriver.io` A record pointed at the VPS.
 - Auth: every client logs in with a broker password (`allow_anonymous false`). v1 has one house, which shares broker users `autonomy` and `api`. The OAuth plugin is loaded. The dashboard service account `service-account-freedriver-mqtt` (group `portal-broker`) publishes `freedriver/v1/+/commands` and `freedriver/v1/+/command-lists`, and subscribes to `freedriver/v1/+/appliances` and `freedriver/v1/+/scheduled`, through the plugin. House users receive exact instance topics from JWT claims: publish appliances and scheduled, subscribe commands and command-lists. `api` reads `freedriver/v1/+/appliances` and `freedriver/v1/+/scheduled`, writes `freedriver/v1/+/commands` and `freedriver/v1/+/command-lists`, and reads `freedriver/v1/+/metrics/#`.
 - Persistence: `/opt/freedriver-storage/mosquitto`.
 - Command-live arrives with #27.
@@ -123,7 +123,7 @@ The BFF (web-app, HTTP-only cookie, `freedriver-api` confidential client) is wir
 - Web origins: `https://app.freedriver.io`, `http://localhost:8080`
 - Client secret file: `/opt/freedriver-secrets/keycloak-freedriver-api.secret` (mode 640, `root:lonewatt-techops`)
 - Realm roles: `dashboard`, `portal-admin`
-- Users: `kazetsukai` (dashboard + portal-admin), `kaze` (holds `portal-admin`), placeholder `second` (dashboard only)
-- Phone-user allow-list for `kaze`: `dashboard`, `default-roles-freedriver`, `offline_access`, `uma_authorization`, `grafana-viewer`, `grafana-editor`, `grafana-admin`, `mcp-user`, `portal-admin`
+- Users: illustrative account `house-operator` (dashboard + portal-admin), illustrative account `house-admin` (holds `portal-admin`), placeholder `second` (dashboard only)
+- Phone-user allow-list for `house-admin`: `dashboard`, `default-roles-freedriver`, `offline_access`, `uma_authorization`, `grafana-viewer`, `grafana-editor`, `grafana-admin`, `mcp-user`, `portal-admin`
 
 Provision on the VPS with `scripts/provision-keycloak-freedriver.sh`. It is idempotent: it keeps an existing client secret file, and user passwords are managed in Keycloak.
