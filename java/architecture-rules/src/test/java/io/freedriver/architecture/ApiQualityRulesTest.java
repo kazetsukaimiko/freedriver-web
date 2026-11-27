@@ -1059,6 +1059,35 @@ class ApiQualityRulesTest {
     }
 
     @Test
+    void an_api_interface_constant_holding_an_anonymous_implementation_fails_rule_3() {
+        String holder = role("api.HeldPort");
+        JavaClasses classes = new ClassFileImporter().importPackages("io.freedriver.rolefixture");
+        long anonymous = classes.stream()
+                .filter(type -> type.isAnonymousClass() && type.getName().startsWith(holder + "$"))
+                .count();
+        assertEquals(2, anonymous);
+        Map<String, String> owners = new LinkedHashMap<>();
+        owners.put(holder, "sample-api");
+        ModuleOwnership ownership = roles(owners);
+        String line = holder + " contains an anonymous implementation of " + holder
+                + " from API module sample-api";
+        EvaluationResult rule3 = evaluateRoles(ApiQualityRules.implementationsLiveInImpl(ownership));
+        assertEquals(List.of(line), rule3.getFailureReport().getDetails().stream().sorted().toList());
+        String report = rule3.getFailureReport().toString();
+        assertFalse(report.matches("(?s).*\\$\\d.*"), report);
+        assertFalse(report.matches("(?s).*\\([^()\\s]+\\.java:\\d+\\).*"), report);
+        for (ArchRule rule : List.of(
+                ApiQualityRules.serviceDependencies(ownership),
+                ApiQualityRules.apiContracts(ownership),
+                ApiQualityRules.implementationPackagesStayPrivate(ownership),
+                ApiQualityRules.classesHaveAPackageRole(ownership),
+                ApiQualityRules.modulesHoldOneRole(ownership))) {
+            EvaluationResult result = evaluateRoles(rule);
+            assertFalse(result.hasViolation(), () -> rule.getDescription() + "\n" + result.getFailureReport());
+        }
+    }
+
+    @Test
     void a_lambda_in_a_jar_fails_rule_3_on_the_holding_class() throws Exception {
         Path root = Files.createTempDirectory("rule3-jar");
         try {
@@ -1089,6 +1118,66 @@ class ApiQualityRulesTest {
         } finally {
             delete(root);
         }
+    }
+
+    @Test
+    void an_anonymous_api_fails_rule_3_wherever_an_api_contract_type_holds_it() {
+        assertAnonymousHolder("HeldFactory", "HeldApi");
+        assertAnonymousHolder("HeldDefault", "HeldApi");
+        assertAnonymousHolder("HeldLambda", "HeldApi");
+        assertAnonymousHolder("HeldRecord", "HeldApi");
+        assertAnonymousHolder("HeldEnum", "HeldApi");
+    }
+
+    @Test
+    void an_inherited_api_interface_on_an_anonymous_class_fails_rule_3_on_the_holder() {
+        String holder = role("api.HeldInherited");
+        String base = role("api.HeldBase");
+        String port = role("api.Port");
+        Map<String, String> owners = new LinkedHashMap<>();
+        owners.put(holder, "sample-api");
+        owners.put(base, "sample-api");
+        owners.put(port, "sample-api");
+        assertEquals(List.of(
+                base + " implements " + port + " from API module sample-api",
+                holder + " contains an anonymous implementation of " + port + " from API module sample-api"),
+                rule3RoleLines(roles(owners)));
+    }
+
+    @Test
+    void an_enum_constant_body_and_a_non_api_anonymous_class_pass_rule_3() {
+        Map<String, String> passing = new LinkedHashMap<>();
+        passing.put(role("api.HeldKind"), "sample-api");
+        passing.put(role("api.HeldValues"), "sample-api");
+        passing.put(role("api.HeldBox"), "sample-api");
+        passing.put(role("api.HeldMark"), "sample-api");
+        assertRule3Passes(passing);
+
+        Map<String, String> order = new LinkedHashMap<>();
+        order.put(role("api.HeldOrder"), "sample-api");
+        ModuleOwnership ownership = roles(order);
+        assertFalse(evaluateRoles(ApiQualityRules.implementationsLiveInImpl(ownership)).hasViolation());
+        assertFalse(evaluateRoles(ApiQualityRules.apiContracts(ownership)).hasViolation());
+    }
+
+    private static void assertAnonymousHolder(String holder, String iface) {
+        String holderName = role("api." + holder);
+        String ifaceName = role("api." + iface);
+        Map<String, String> owners = new LinkedHashMap<>();
+        owners.put(holderName, "sample-api");
+        owners.put(ifaceName, "sample-api");
+        assertEquals(List.of(holderName + " contains an anonymous implementation of " + ifaceName
+                + " from API module sample-api"), rule3RoleLines(roles(owners)));
+    }
+
+    private static void assertRule3Passes(Map<String, String> artifactIds) {
+        EvaluationResult result = evaluateRoles(ApiQualityRules.implementationsLiveInImpl(roles(artifactIds)));
+        assertFalse(result.hasViolation(), () -> result.getFailureReport().toString());
+    }
+
+    private static List<String> rule3RoleLines(ModuleOwnership ownership) {
+        return evaluateRoles(ApiQualityRules.implementationsLiveInImpl(ownership))
+                .getFailureReport().getDetails().stream().sorted().toList();
     }
 
     @Test

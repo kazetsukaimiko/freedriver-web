@@ -215,6 +215,17 @@ public final class ApiQualityRules {
                             return;
                         }
                         if (self.is(ModuleOwnership.Role.API) && apiContractType(type)) {
+                            // The contract type may implement an API interface. An anonymous
+                            // class it holds may not: the line names the contract type.
+                            for (JavaClass iface : anonymousImplementations(type)) {
+                                ModuleOwnership.Owned owner = ownership.classify(iface);
+                                if (!owner.is(ModuleOwnership.Role.API)) {
+                                    continue;
+                                }
+                                events.add(SimpleConditionEvent.violated(type, type.getName()
+                                        + " contains an anonymous implementation of " + iface.getName()
+                                        + " from API module " + owner.artifactId()));
+                            }
                             return;
                         }
                         for (JavaClass iface : implementedInterfaces(type, resolved)) {
@@ -421,6 +432,29 @@ public final class ApiQualityRules {
             found.add(targets.get(entry.getKey()));
         }
         return found;
+    }
+
+    /**
+     * API interfaces implemented by anonymous classes this contract type holds, one entry per
+     * name. An enum constant body is an anonymous class whose superclass is an enum, and it is
+     * left out: the enum may implement the interface. The line names this class.
+     */
+    private static List<JavaClass> anonymousImplementations(JavaClass type) {
+        Map<String, JavaClass> found = new LinkedHashMap<>();
+        for (JavaClass anonymous : anonymousClasses(type)) {
+            if (enumConstantBody(anonymous)) {
+                continue;
+            }
+            for (JavaClass iface : anonymous.getAllRawInterfaces()) {
+                found.putIfAbsent(iface.getName(), iface);
+            }
+        }
+        return new ArrayList<>(found.values());
+    }
+
+    /** An enum constant body: an anonymous class whose superclass is an enum. */
+    private static boolean enumConstantBody(JavaClass type) {
+        return type.getRawSuperclass().filter(JavaClass::isEnum).isPresent();
     }
 
     /**
