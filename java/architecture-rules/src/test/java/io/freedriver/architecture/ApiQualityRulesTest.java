@@ -797,6 +797,133 @@ class ApiQualityRulesTest {
         return ApiQualityRules.implementationPackagesStayPrivate(ownership).evaluate(classes);
     }
 
+    @Test
+    void rule_2_accepts_values() {
+        assertPasses(api("RecordWithers"), "recordwithers");
+        assertPasses(api("OrdinaryEnum"), "ordinaryenum");
+        assertPasses(api("ValueLambda"), "valuelambda");
+        assertPasses(api("ResponseApi"), "responseapi");
+        assertPasses(api("MappedConstant"), "mappedconstant");
+        assertPasses(api("VarargsEnum"), "varargsenum");
+        assertPasses(api("ElevenList"), "elevenlist");
+        assertPasses(api("SchemeValue"), "schemevalue");
+        assertPasses(api("Copied"), "copied");
+        assertPasses(api("LocalSet"), "localset");
+        Map<String, ModuleOwnership.Owned> sealed = new LinkedHashMap<>();
+        ModuleOwnership.Owned sample = ModuleOwnership.Owned.ours("io.freedriver", "sample-api");
+        sealed.put(fix("Item"), sample);
+        sealed.put(fix("ItemOne"), sample);
+        sealed.put(fix("ItemBox"), sample);
+        assertPasses(ApiQualityRules.apiContracts(overlay(sealed)), "itembox");
+    }
+
+    @Test
+    void an_ordinary_enum_has_no_line_for_compiler_generated_members() {
+        EvaluationResult result = evaluate(api("OrdinaryEnum"), "ordinaryenum");
+        String report = violations(result.getFailureReport().toString());
+        assertFalse(result.hasViolation(), result.getFailureReport().toString());
+        assertFalse(report.contains("$VALUES"), report);
+        assertFalse(report.contains("method values"), report);
+        assertFalse(report.contains("method valueOf"), report);
+    }
+
+    @Test
+    void rule_2_refuses_mutable_statics_and_value_code() {
+        assertValue("StaticArray", "field LABELS is a static array");
+        assertValue("Held", "static initializer constructs java.util.ArrayList",
+                "constructor(java.util.List) constructs java.util.ArrayList");
+        assertValue("Handles", "method find calls java.lang.invoke.MethodHandles.lookup");
+        assertValue("Fetch", "method load calls jakarta.ws.rs.client.ClientBuilder.newClient");
+        assertValue("RestFetch", "method build calls org.eclipse.microprofile.rest.client.RestClientBuilder.newBuilder");
+        assertValue("ConcurrentConstant", "static initializer constructs java.util.concurrent.ConcurrentHashMap");
+        assertValue("MutableStatics", "static initializer constructs java.util.HashMap",
+                "static initializer constructs java.util.ArrayList");
+        assertValue("CompiledPattern", "static initializer calls java.util.regex.Pattern.compile");
+        assertValue("LooseEnum", "field n is not final");
+        Map<String, ModuleOwnership.Owned> caller = new LinkedHashMap<>();
+        ModuleOwnership.Owned sample = ModuleOwnership.Owned.ours("io.freedriver", "sample-api");
+        caller.put(fix("Caller"), sample);
+        caller.put(fix("OtherApi"), sample);
+        EvaluationResult called = evaluate(ApiQualityRules.apiContracts(overlay(caller)), "caller");
+        String calledReport = called.getFailureReport().toString();
+        assertTrue(called.hasViolation(), calledReport);
+        assertTrue(calledReport.contains("method go calls non-sealed API interface " + fix("OtherApi")), calledReport);
+        assertValue("Loud", "constructor(java.lang.String) calls java.util.logging.Logger.getLogger");
+        assertValue("ReadFile", "method text calls java.nio.file.Files.readString");
+        assertValue("Reflects", "method find calls java.lang.Class.forName",
+                "method find calls java.lang.Class.getDeclaredMethod");
+        assertValue("Loaded", "method load calls java.util.ServiceLoader.load");
+        EvaluationResult lambda = evaluate(api("OpenLambda"), "openlambda");
+        String lambdaReport = lambda.getFailureReport().toString();
+        assertTrue(lambda.hasViolation(), lambdaReport);
+        assertTrue(lambdaReport.contains("method text calls java.nio.file.Files.readString"), lambdaReport);
+        assertFalse(lambdaReport.contains("lambda$"), lambdaReport);
+        assertFalse(lambdaReport.matches("(?s).*\\([^()\\s]+\\.java:\\d+\\).*"), lambdaReport);
+    }
+
+    @Test
+    void a_plain_class_with_a_mutable_static_field_keeps_only_its_plain_class_line() {
+        EvaluationResult result = evaluate(api("MutablePlain"), "mutableplain");
+        String report = violations(result.getFailureReport().toString());
+        assertEquals(fix("MutablePlain")
+                + " is a plain class; an API module allows a final constant holder with static final fields "
+                + "and a private constructor", report.trim());
+        assertFalse(report.contains("HashMap"), report);
+    }
+
+    @Test
+    void rule_1_reports_one_line_per_refused_class() {
+        Map<String, ModuleOwnership.Owned> one = new LinkedHashMap<>();
+        one.put(fix("UsesOneTwice"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        one.put("com.fasterxml.jackson.databind.ObjectMapper", ModuleOwnership.Owned.thirdParty("jackson-databind"));
+        String oneReport = evaluate(ApiQualityRules.serviceDependencies(overlay(one)), "usesonetwice")
+                .getFailureReport().toString();
+        assertEquals(1, countDepends(oneReport), oneReport);
+
+        Map<String, ModuleOwnership.Owned> two = new LinkedHashMap<>();
+        two.put(fix("UsesTwo"), ModuleOwnership.Owned.ours("io.freedriver", "sample"));
+        two.put("com.fasterxml.jackson.databind.ObjectMapper", ModuleOwnership.Owned.thirdParty("jackson-databind"));
+        two.put("com.fasterxml.jackson.databind.JsonNode", ModuleOwnership.Owned.thirdParty("jackson-databind"));
+        String twoReport = evaluate(ApiQualityRules.serviceDependencies(overlay(two)), "usestwo")
+                .getFailureReport().toString();
+        assertEquals(2, countDepends(twoReport), twoReport);
+    }
+
+    /** The violation lines, without the rule description that precedes them. */
+    private static String violations(String report) {
+        int header = report.indexOf("was violated");
+        if (header < 0) {
+            return report;
+        }
+        int newline = report.indexOf('\n', header);
+        return newline < 0 ? "" : report.substring(newline + 1);
+    }
+
+    private static int countDepends(String report) {
+        int count = 0;
+        for (String line : report.split("\n")) {
+            if (line.contains(" depends on ")) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static ArchRule api(String simple) {
+        return ApiQualityRules.apiContracts(overlay(ours(fix(simple), "sample-api", ModuleOwnership.Role.API)));
+    }
+
+    private static void assertValue(String simple, String... snippets) {
+        EvaluationResult result = evaluate(api(simple), simple.toLowerCase());
+        String report = result.getFailureReport().toString();
+        assertTrue(result.hasViolation(), () -> simple + " passed:\n" + report);
+        for (String snippet : snippets) {
+            assertTrue(report.contains(fix(simple) + " " + snippet),
+                    () -> "expected \"" + snippet + "\" in:\n" + report);
+        }
+        assertFalse(report.matches("(?s).*\\([^()\\s]+\\.java:\\d+\\).*"), () -> report);
+    }
+
     private static String fix(String simple) {
         return FIXTURES + simple;
     }
