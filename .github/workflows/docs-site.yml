@@ -1,0 +1,152 @@
+name: Docs site
+
+# Pull requests that change the site build it with read-only permissions.
+# A push to main builds the same artifact and publishes it through the
+# github-pages environment when Pages is enabled. While Pages is off, the
+# deploy job ends green and skips publication.
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "requirements-docs.txt"
+      - ".github/workflows/docs-site.yml"
+      - "java/dashboard/src/main/resources/changelog/CHANGELOG.md"
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "requirements-docs.txt"
+      - ".github/workflows/docs-site.yml"
+      - "java/dashboard/src/main/resources/changelog/CHANGELOG.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-site-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: github.repository == 'kazetsukaimiko/freedriver-web'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install MkDocs Material
+        run: python -m pip install --require-hashes -r requirements-docs.txt
+
+      - name: Build the site
+        run: mkdocs build --strict
+
+      - name: Check the published files
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          root = pathlib.Path("site-build")
+          banned = (
+              "138.197.90.42",
+              "hakobune",
+              "pc-luna",
+              "0ca403fc-5874-407c-8e70-38c518d442ee",
+              "signal.openbot.run/v1/webhooks",
+          )
+          account = re.compile(r"kazetsukai(?!miko)")
+          personal = re.compile(r"(?i)(?<![A-Za-z0-9])kaze(?![A-Za-z0-9])")
+          octet = r"(?:25[0-5]|2[0-4]\d|1?\d?\d)"
+          ipv4 = re.compile(rf"\b{octet}(?:\.{octet}){{3}}\b")
+          allowed_ip = {"127.0.0.1", "0.0.0.0"}
+          # The release changelog is included verbatim on What changed.
+          changelog_pages = {"what-changed/index.html"}
+          vendor_suffixes = {".css", ".js", ".map"}
+          failures = []
+          for path in root.rglob("*"):
+              if not path.is_file():
+                  continue
+              data = path.read_bytes()
+              rel = path.relative_to(root).as_posix()
+              try:
+                  text = data.decode("utf-8")
+              except UnicodeDecodeError:
+                  text = data.decode("utf-8", "ignore")
+              for needle in banned:
+                  if needle in text:
+                      failures.append(f"{rel}: contains {needle}")
+              if account.search(text):
+                  failures.append(f"{rel}: contains the account name kazetsukai")
+              # Minified theme CSS and JS contain digit runs that look like addresses.
+              if path.suffix not in vendor_suffixes:
+                  for match in sorted(set(ipv4.findall(text))):
+                      if match not in allowed_ip:
+                          failures.append(f"{rel}: raw address {match}")
+              if rel in changelog_pages or rel == "search/search_index.json":
+                  continue
+              if personal.search(text):
+                  failures.append(f"{rel}: personal account name")
+          if failures:
+              print("\n".join(failures))
+              sys.exit(1)
+          print(f"Checked {sum(1 for p in root.rglob('*') if p.is_file())} published files")
+          PY
+
+      - name: Upload the Pages artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site-build
+
+  deploy:
+    needs: build
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'kazetsukaimiko/freedriver-web'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: See whether Pages is on
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          set +e
+          gh api "repos/${GITHUB_REPOSITORY}/pages" >"$RUNNER_TEMP/pages.json" 2>"$RUNNER_TEMP/pages.err"
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if grep -Eq '404|Not Found' "$RUNNER_TEMP/pages.err" "$RUNNER_TEMP/pages.json"; then
+            echo "Pages is off. Skipping publication."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cat "$RUNNER_TEMP/pages.err"
+          exit "$code"
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        if: steps.pages.outputs.enabled == 'true'
+        uses: actions/deploy-pages@v4

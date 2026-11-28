@@ -18,7 +18,7 @@ Dashboard provisioning of one Autonomy house. A portal-admin creates the house f
 
    The plugin takes the Keycloak username and password at MQTT connect and exchanges them at the token endpoint. It records `mqtt_acl.publish` and `mqtt_acl.subscribe` on that MQTT connection. The grant lasts until disconnect, so a short access token leaves the connected house up. The broker client secret stays in server configuration. The house response is the uuid and the password.
 
-   `#321` mints a new instance uuid for the live house, creates the Keycloak user for that uuid, and installs that id and its password on hakobune. The id already in the live ACL stays on that ACL. `#321` is the cutover that starts the broker on the plugin, in the same change as that new uuid. The broker starts with the plugin loaded, and the password file stays in place until that start is the running broker.
+   `#321` mints a new instance uuid for the live house, creates the Keycloak user for that uuid, and installs that id and its password on the live house host. The id already in the live ACL stays on that ACL. `#321` is the cutover that starts the broker on the plugin, in the same change as that new uuid. The broker starts with the plugin loaded, and the password file stays in place until that start is the running broker.
 
 Keycloak is the source of truth for the house. The Instances list is the users in `mqtt-instance`, read through the Keycloak Admin API. Create does not insert a Mongo document. The flow does not store `brokerSecret`. The flow does not store a `keycloakUserId` beside the user. `#318` shipped the `instances` collection. The collection stays, and this flow does not write it.
 

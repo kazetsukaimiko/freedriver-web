@@ -10,7 +10,7 @@ Portal product surface: [appliances.md](appliances.md). Broker, ACL, and apply: 
 
 ## Contract home
 
-MQTT v1 types live in `io.freedriver:freedriver-mqtt-contract` (`io.freedriver.mqtt.contract`), owned and published by this portal. Consume path: [mqtt-contract-consume.md](mqtt-contract-consume.md). Autonomy depends on that artifact for `Appliance`, `ApplianceStateMessage`, `ApplianceCommandMessage`, `ApplianceSchemas`, and `ApplianceJson`. kaze keeps mqtt-contract in this portal, separate from the Freedriver library suite ([freedriver#18](https://github.com/kazetsukaimiko/freedriver/issues/18), closed [freedriver#19](https://github.com/kazetsukaimiko/freedriver/pull/19)).
+MQTT v1 types live in `io.freedriver:freedriver-mqtt-contract` (`io.freedriver.mqtt.contract`), owned and published by this portal. Consume path: [mqtt-contract-consume.md](mqtt-contract-consume.md). Autonomy depends on that artifact for `Appliance`, `ApplianceStateMessage`, `ApplianceCommandMessage`, `ApplianceSchemas`, and `ApplianceJson`. This repository keeps mqtt-contract in this portal, separate from the Freedriver library suite ([freedriver#18](https://github.com/kazetsukaimiko/freedriver/issues/18), closed [freedriver#19](https://github.com/kazetsukaimiko/freedriver/pull/19)).
 
 The repo module also holds `ApplianceCommandList`, `CommandListEntry` (`ApplianceCommandEntry` and `CancelCommandEntry`), `ScheduledCommandsMessage`, and `PendingCommand`. The published 1.7.0 jar is the five types in the sentence above. Those new records ship on the next release-please bump of `version.txt`, and [kazetsukaimiko/autonomy#101](https://github.com/kazetsukaimiko/autonomy/issues/101) pins that version. `ApplianceCommandMessage` and `ApplianceSchemas.commandsTopic` are `@Deprecated` with `since` empty in this change. The release that publishes the jar writes `since`, and that value is the new version.
 
@@ -191,11 +191,11 @@ The v1 house also reaches the new topics through broker user `autonomy` on the p
 2. Autonomy applies the flip (or the latest-per-alias rule below).
 3. Autonomy publishes the next Topic A with `appliedCommandId` set to that same id.
 
-The portal POST completes when that Topic A arrives (wait and timeout: [appliances.md](appliances.md#lastupdated--stale--timeout)). Topic B's handshake stays on that command's `commandId`. The `listId` and entry-id echoes apply to a command-lists message. Autonomy subscribes to the exact command-lists topic.
+The portal POST completes when that Topic A arrives (wait and timeout: [appliances.md](appliances.md#lastupdated-stale-timeout)). Topic B's handshake stays on that command's `commandId`. The `listId` and entry-id echoes apply to a command-lists message. Autonomy subscribes to the exact command-lists topic.
 
 ## lastUpdated / stale
 
-`lastUpdated` and `stale` are portal API fields that Quarkus computes from receive time: [appliances.md](appliances.md#lastupdated--stale--timeout). Topic A carries the fields listed above.
+`lastUpdated` and `stale` are portal API fields that Quarkus computes from receive time: [appliances.md](appliances.md#lastupdated-stale-timeout). Topic A carries the fields listed above.
 
 ## Reconnect
 
