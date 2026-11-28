@@ -2,6 +2,15 @@
 # lines below override this default.
 * @lonewatt-architect
 
+# Contract modules: kazetsukaimiko approves. Listed alone, so only that approval
+# satisfies the code-owner rule on these paths.
+/java/*-api/ @kazetsukaimiko
+/java/*-model/ @kazetsukaimiko
+/java/*-contract/ @kazetsukaimiko
+/*-api/ @kazetsukaimiko
+/*-model/ @kazetsukaimiko
+/*-contract/ @kazetsukaimiko
+
 # Release files: lonewatt-techops merges the release-please Release pull request.
 /.release-please-manifest.json @lonewatt-techops
 /version.txt @lonewatt-techops
