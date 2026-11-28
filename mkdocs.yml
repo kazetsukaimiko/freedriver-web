@@ -54,6 +54,8 @@ nav:
       - Device dispatcher and Agent Bridge: device-dispatcher.md
   - iPhone and Watch:
       - Sign-in: design/mobile/iphone-watch-sign-in.md
+  - Releases:
+      - Release timing: release-timing.md
   - Architecture rules:
       - Overview: architecture/index.md
       - Class roles: architecture/class-roles.md

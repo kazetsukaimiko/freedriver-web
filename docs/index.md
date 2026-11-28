@@ -16,4 +16,4 @@ Each work stream's current stage is the earliest numbered milestone that still h
 | Sign-in | done |
 | iclient | 1 |
 
-The [system map](system-map.md) draws the dashboard, Keycloak, the MQTT broker, autonomy, the dispatcher, the Agent Bridge, the iPhone and the Watch, with the trust boundaries. Per-stream pages follow in the navigation. [Architecture rules](architecture/index.md) states the public quality-gate rules. [What changed](what-changed.md) is the release-please changelog, included when the site builds.
+The [system map](system-map.md) draws the dashboard, Keycloak, the MQTT broker, autonomy, the dispatcher, the Agent Bridge, the iPhone and the Watch, with the trust boundaries. Per-stream pages follow in the navigation. [Release timing](release-timing.md) measures where a release spends its time. [Architecture rules](architecture/index.md) states the public quality-gate rules. [What changed](what-changed.md) is the release-please changelog, included when the site builds.
