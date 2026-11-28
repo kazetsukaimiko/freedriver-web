@@ -529,6 +529,73 @@ ensure_mapper "$DISPATCHER_UUID" role-dispatcher \
   -s protocolMapper=oidc-hardcoded-role-mapper \
   -s 'config."role"=dispatcher'
 
+# Public iPhone client (#830). Authorization code + PKCE S256, one redirect,
+# no web origins, and no access.token.lifespan. autonomy-mcp is not a default
+# scope and offline_access is not optional. The audience mapper is the only
+# extra mapper; hardcoded claim and role mappers stay absent.
+IOS_CLIENT=freedriver-ios
+IOS_REDIRECT_URIS='["io.freedriver.ios:/oauth2redirect"]'
+IOS_WEB_ORIGINS='[]'
+IOS_UUID="$(kcadm get clients -r "$REALM" -q "clientId=${IOS_CLIENT}" --fields id --format csv --noquotes 2>/dev/null | csv_id || true)"
+if [[ -n "${IOS_UUID}" ]]; then
+  echo "Client ${IOS_CLIENT} already exists."
+else
+  kcadm create clients -r "$REALM" \
+    -s "clientId=${IOS_CLIENT}" \
+    -s name='Freedriver iOS' \
+    -s enabled=true \
+    -s publicClient=true \
+    -s standardFlowEnabled=true \
+    -s implicitFlowEnabled=false \
+    -s directAccessGrantsEnabled=false \
+    -s serviceAccountsEnabled=false \
+    -s protocol=openid-connect \
+    -s "redirectUris=${IOS_REDIRECT_URIS}" \
+    -s "webOrigins=${IOS_WEB_ORIGINS}" \
+    -s 'attributes."pkce.code.challenge.method"=S256' >/dev/null
+  IOS_UUID="$(kcadm get clients -r "$REALM" -q "clientId=${IOS_CLIENT}" --fields id --format csv --noquotes | csv_id)"
+  echo "Created public client ${IOS_CLIENT}."
+fi
+kcadm update "clients/${IOS_UUID}" -r "$REALM" \
+  -s publicClient=true \
+  -s standardFlowEnabled=true \
+  -s implicitFlowEnabled=false \
+  -s directAccessGrantsEnabled=false \
+  -s serviceAccountsEnabled=false \
+  -s "redirectUris=${IOS_REDIRECT_URIS}" \
+  -s "webOrigins=${IOS_WEB_ORIGINS}" \
+  -s 'attributes."pkce.code.challenge.method"=S256' >/dev/null
+ensure_mapper "$IOS_UUID" audience-freedriver-api \
+  -s protocolMapper=oidc-audience-mapper \
+  -s 'config."included.client.audience"=freedriver-api' \
+  -s 'config."access.token.claim"=true' \
+  -s 'config."id.token.claim"=false'
+
+drop_named_client_scope() {
+  local client_uuid="$1"
+  local kind="$2"
+  local scope_name="$3"
+  local scope_id
+  kcadm get client-scopes -r "$REALM" --fields id,name > "$work/ios-scope-catalog.json"
+  scope_id="$(python3 - "$work/ios-scope-catalog.json" "$scope_name" <<'PY'
+import json, sys
+wanted = sys.argv[2]
+ids = [item["id"] for item in json.load(open(sys.argv[1], encoding="utf-8")) if item.get("name") == wanted and item.get("id")]
+print(ids[0] if len(ids) == 1 else "")
+PY
+)"
+  if [[ -z "$scope_id" ]]; then
+    return 0
+  fi
+  kcadm get "clients/${client_uuid}/${kind}" -r "$REALM" > "$work/ios-assigned-scopes.json"
+  if scope_list_has_id "$work/ios-assigned-scopes.json" "$scope_id"; then
+    kcadm delete "clients/${client_uuid}/${kind}/${scope_id}" -r "$REALM" >/dev/null
+    echo "Removed ${scope_name} from ${IOS_CLIENT} ${kind}."
+  fi
+}
+drop_named_client_scope "$IOS_UUID" default-client-scopes autonomy-mcp
+drop_named_client_scope "$IOS_UUID" optional-client-scopes offline_access
+
 # Public Grok Bot client for /autonomy/mcp. Same grok.com callback as
 # freedriver-dispatcher; a separate client so azp stays freedriver-grok-mcp.
 GROK_MCP_CLIENT=freedriver-grok-mcp
@@ -820,6 +887,64 @@ PY
   fi
 }
 ensure_dcr_trusted_hosts
+
+# Anonymous DCR may attach only this mapper list. Update in place when the
+# anonymous component exists; create it when it does not.
+ensure_anonymous_protocol_mappers() {
+  local action comp_id
+  kcadm get "realms/${REALM}" --fields id > "$work/realm-id.json"
+  kcadm get components -r "$REALM" \
+    -q type=org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy \
+    > "$work/dcr-policies.json"
+  action="$(python3 - "$work/realm-id.json" "$work/dcr-policies.json" "$work/dcr-allowed-mappers.json" <<'PY'
+import json, sys
+realm = json.load(open(sys.argv[1], encoding="utf-8"))
+policies = json.load(open(sys.argv[2], encoding="utf-8"))
+realm_id = realm.get("id") or ""
+comp = next(
+    (
+        c
+        for c in policies
+        if c.get("providerId") == "allowed-protocol-mappers" and c.get("subType") == "anonymous"
+    ),
+    None,
+)
+body = {
+    "name": "Allowed Protocol Mapper Types",
+    "providerId": "allowed-protocol-mappers",
+    "providerType": "org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy",
+    "subType": "anonymous",
+    "parentId": realm_id,
+    "config": {
+        "allowed-protocol-mapper-types": [
+            "oidc-full-name-mapper",
+            "oidc-sha256-pairwise-sub-mapper",
+            "oidc-address-mapper",
+            "saml-user-property-mapper",
+            "saml-user-attribute-mapper",
+            "saml-role-list-mapper",
+        ],
+    },
+}
+if comp and comp.get("id"):
+    body["id"] = comp["id"]
+    json.dump(body, open(sys.argv[3], "w", encoding="utf-8"))
+    print("update " + comp["id"])
+else:
+    json.dump(body, open(sys.argv[3], "w", encoding="utf-8"))
+    print("create")
+PY
+)"
+  if [[ "$action" == create ]]; then
+    kcadm_stdin create components -r "$REALM" -f - < "$work/dcr-allowed-mappers.json" >/dev/null
+    echo "Created anonymous allowed-protocol-mappers."
+  else
+    comp_id="${action#update }"
+    kcadm_stdin update "components/${comp_id}" -r "$REALM" -f - < "$work/dcr-allowed-mappers.json" >/dev/null
+    echo "Anonymous allowed-protocol-mappers list is the six-type set."
+  fi
+}
+ensure_anonymous_protocol_mappers
 
 # Anonymous registration of the grok.com callback gets the one-year settings
 # at registration. The client loop above stays the repair for clients that

@@ -95,6 +95,359 @@ client_attributes() {   # <client uuid> <out file>
     | python3 -c 'import json,sys; json.dump({"attributes": json.load(sys.stdin).get("attributes") or {}}, sys.stdout)' > "$2"
 }
 
+assert_freedriver_ios() {
+  local ios_uuid
+  ios_uuid="$(admin get clients -r freedriver -q clientId=freedriver-ios --fields id --format csv --noquotes | csv_id)"
+  admin get "clients/${ios_uuid}" -r freedriver > "$work/ios-client.json"
+  admin get "clients/${ios_uuid}/default-client-scopes" -r freedriver > "$work/ios-default-scopes.json"
+  admin get "clients/${ios_uuid}/optional-client-scopes" -r freedriver > "$work/ios-optional-scopes.json"
+  admin get "clients/${ios_uuid}/protocol-mappers/models" -r freedriver > "$work/ios-mappers.json"
+  python3 - "$work/ios-client.json" "$work/ios-default-scopes.json" \
+    "$work/ios-optional-scopes.json" "$work/ios-mappers.json" <<'PY'
+import json, sys
+client = json.load(open(sys.argv[1], encoding="utf-8"))
+default = {item.get("name") for item in json.load(open(sys.argv[2], encoding="utf-8"))}
+optional = {item.get("name") for item in json.load(open(sys.argv[3], encoding="utf-8"))}
+mappers = json.load(open(sys.argv[4], encoding="utf-8"))
+attrs = client.get("attributes") or {}
+if client.get("publicClient") is not True:
+    sys.exit("freedriver-ios publicClient is %s" % client.get("publicClient"))
+if client.get("standardFlowEnabled") is not True or client.get("implicitFlowEnabled") is not False:
+    sys.exit("freedriver-ios flow flags are wrong")
+if client.get("directAccessGrantsEnabled") is not False or client.get("serviceAccountsEnabled") is not False:
+    sys.exit("freedriver-ios grants are wrong")
+if client.get("redirectUris") != ["io.freedriver.ios:/oauth2redirect"]:
+    sys.exit("freedriver-ios redirectUris are %s" % client.get("redirectUris"))
+if client.get("webOrigins") not in ([], None):
+    sys.exit("freedriver-ios webOrigins are %s" % client.get("webOrigins"))
+if attrs.get("pkce.code.challenge.method") != "S256":
+    sys.exit("freedriver-ios pkce is %s" % attrs.get("pkce.code.challenge.method"))
+if attrs.get("access.token.lifespan"):
+    sys.exit("freedriver-ios access.token.lifespan is set")
+if "autonomy-mcp" in default:
+    sys.exit("freedriver-ios default scopes include autonomy-mcp")
+if "offline_access" in optional:
+    sys.exit("freedriver-ios optional scopes include offline_access")
+audience = [item for item in mappers if item.get("name") == "audience-freedriver-api"]
+if len(audience) != 1:
+    sys.exit("freedriver-ios audience mapper count is %s" % len(audience))
+config = audience[0].get("config") or {}
+if audience[0].get("protocolMapper") != "oidc-audience-mapper":
+    sys.exit("freedriver-ios audience mapper type is wrong")
+if config.get("included.client.audience") != "freedriver-api":
+    sys.exit("freedriver-ios audience is %s" % config.get("included.client.audience"))
+if str(config.get("access.token.claim")).lower() != "true" or str(config.get("id.token.claim")).lower() != "false":
+    sys.exit("freedriver-ios audience token flags are wrong")
+banned = [item.get("name") for item in mappers if item.get("protocolMapper") in ("oidc-hardcoded-role-mapper", "oidc-hardcoded-claim-mapper")]
+if banned:
+    sys.exit("freedriver-ios has hardcoded mappers: " + " ".join(banned))
+print("freedriver-ios registration, scopes, and audience mapper match")
+PY
+  python3 "$ROOT/scripts/check-app-audience.py" --collect --realm freedriver \
+    --out "$work/app-audience.json" -- \
+    docker exec "$CONTAINER" /opt/keycloak/bin/kcadm.sh --config /tmp/kcadm-admin.config
+  python3 "$ROOT/scripts/check-app-audience.py" "$work/app-audience.json"
+  python3 - "$work/app-audience.json" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+got = set(data.get("anonymousAllowedProtocolMapperTypes") or [])
+want = {
+    "oidc-full-name-mapper",
+    "oidc-sha256-pairwise-sub-mapper",
+    "oidc-address-mapper",
+    "saml-user-property-mapper",
+    "saml-user-attribute-mapper",
+    "saml-role-list-mapper",
+}
+if got != want:
+    sys.exit("anonymous allowed mappers are %s" % sorted(got))
+print("anonymous allowed-protocol-mappers list matches")
+PY
+}
+
+assert_ios_sign_in() {
+  admin create users -r freedriver \
+    -s username=ios-user \
+    -s enabled=true \
+    -s email=ios-user@freedriver.invalid \
+    -s emailVerified=true \
+    -s firstName=Ios \
+    -s lastName=User >/dev/null
+  openssl rand -hex 16 > "$work/ios-user.pass"
+  chmod 600 "$work/ios-user.pass"
+  IOS_PASS="$(cat "$work/ios-user.pass")"
+  export IOS_PASS
+  docker exec -e IOS_PASS "$CONTAINER" \
+    sh -c '/opt/keycloak/bin/kcadm.sh set-password --config /tmp/kcadm-admin.config -r freedriver --username ios-user --new-password "$IOS_PASS"' \
+    >/dev/null
+  unset IOS_PASS
+  ios_id="$(admin get users -r freedriver -q username=ios-user -q exact=true --fields id --format csv --noquotes | csv_id)"
+  admin update "users/${ios_id}" -r freedriver -s 'requiredActions=[]' >/dev/null
+  # The roles scope mapping skips realm_access unless the user holds dashboard.
+  admin add-roles -r freedriver --uusername ios-user --rolename dashboard >/dev/null
+  admin get realms/freedriver --fields accessTokenLifespan > "$work/ios-realm.json"
+  python3 - "$BASE" "$work/ios-user.pass" "$work/ios-realm.json" "$work" <<'PY'
+import base64, hashlib, http.cookiejar, json, secrets, sys, urllib.parse, urllib.request
+from html.parser import HTMLParser
+
+base, password_path, realm_path, work = sys.argv[1:]
+password = open(password_path, encoding="utf-8").read().strip()
+if not password:
+    sys.exit("ios user password file is empty")
+lifespan = json.load(open(realm_path, encoding="utf-8")).get("accessTokenLifespan")
+redirect_uri = "io.freedriver.ios:/oauth2redirect"
+mcp_audiences = {"https://app.freedriver.io/autonomy/mcp", "freedriver-autonomy-mcp"}
+
+class FormParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.forms = []
+        self.current = None
+    def handle_starttag(self, tag, attrs):
+        found = dict(attrs)
+        if tag == "form":
+            self.current = {"action": found.get("action") or "", "inputs": {}}
+            self.forms.append(self.current)
+        elif tag == "input" and self.current is not None and found.get("name"):
+            self.current["inputs"][found["name"]] = found.get("value") or ""
+
+def verifier_pair():
+    verifier = secrets.token_urlsafe(32)
+    digest = hashlib.sha256(verifier.encode()).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+    return verifier, challenge
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+class SendSecureOnHttp(http.cookiejar.DefaultCookiePolicy):
+    def return_ok_secure(self, cookie, request):
+        return True
+
+jar = http.cookiejar.CookieJar(policy=SendSecureOnHttp())
+opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), NoRedirect)
+
+def fetch(method, url, data=None):
+    body = None if data is None else urllib.parse.urlencode(data).encode()
+    request = urllib.request.Request(url, data=body, method=method)
+    if body is not None:
+        request.add_header("Content-Type", "application/x-www-form-urlencoded")
+    try:
+        with opener.open(request, timeout=30) as response:
+            return response.status, response.geturl(), response.read(), dict(response.headers)
+    except urllib.error.HTTPError as error:
+        return error.code, error.headers.get("Location"), error.read(), dict(error.headers)
+
+def auth_url(scope, challenge):
+    query = {
+        "client_id": "freedriver-ios",
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": scope,
+    }
+    if challenge:
+        query["code_challenge"] = challenge
+        query["code_challenge_method"] = "S256"
+    return base + "/realms/freedriver/protocol/openid-connect/auth?" + urllib.parse.urlencode(query)
+
+def sign_in(scope, challenge):
+    status, location, payload, _headers = fetch("GET", auth_url(scope, challenge))
+    posts = 0
+    while posts < 6:
+        if status in (302, 303) and location and "code=" not in location and "error=" not in location:
+            status, location, payload, _headers = fetch("GET", urllib.parse.urljoin(base, location))
+            posts += 1
+            continue
+        if status != 200:
+            break
+        parser = FormParser()
+        parser.feed((payload or b"").decode("utf-8", "replace"))
+        form = next((item for item in parser.forms if item["inputs"]), None)
+        if form is None:
+            sys.exit("stock sign-in form is missing")
+        action = urllib.parse.urljoin(base + "/realms/freedriver/protocol/openid-connect/auth", form["action"])
+        defaults = {
+            "username": "ios-user",
+            "password": password,
+            "firstName": "Ios",
+            "lastName": "User",
+            "email": "ios-user@freedriver.invalid",
+        }
+        fields = {}
+        for key, value in form["inputs"].items():
+            if key == "credentialId" and not value:
+                continue
+            fields[key] = value or defaults.get(key, "")
+        status, location, payload, _headers = fetch("POST", action, fields)
+        posts += 1
+    return status, location, payload
+
+def code_from(location):
+    if not location:
+        return ""
+    parsed = urllib.parse.urlparse(location)
+    return urllib.parse.parse_qs(parsed.query).get("code", [""])[0]
+
+def token_call(code, verifier):
+    fields = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": redirect_uri,
+        "client_id": "freedriver-ios",
+        "code_verifier": verifier,
+    }
+    status, _location, payload, _headers = fetch(
+        "POST", base + "/realms/freedriver/protocol/openid-connect/token", fields
+    )
+    return status, payload
+
+def audiences(claims):
+    aud = claims.get("aud")
+    if isinstance(aud, str):
+        return {aud}
+    if isinstance(aud, list):
+        return {item for item in aud if isinstance(item, str)}
+    return set()
+
+def page_note(payload):
+    parser = FormParser()
+    text = (payload or b"").decode("utf-8", "replace")
+    parser.feed(text)
+    names = [sorted(item["inputs"]) for item in parser.forms]
+    title = ""
+    start = text.find("<title>")
+    if start != -1:
+        title = text[start + 7:text.find("</title>", start)][:120]
+    return "title=%s forms=%s" % (title, names)
+
+verifier, challenge = verifier_pair()
+status, location, page = sign_in("openid", challenge)
+code = code_from(location)
+if status != 302 or not code:
+    sys.exit("ios sign-in status %s code absent=%s %s" % (status, not code, page_note(page)))
+status, payload = token_call(code, verifier)
+if status != 200:
+    sys.exit("ios token status %s" % status)
+token = json.loads(payload.decode())
+access = token["access_token"].split(".")
+claims = json.loads(base64.urlsafe_b64decode(access[1] + "=" * (-len(access[1]) % 4)))
+got = audiences(claims)
+if "freedriver-api" not in got:
+    sys.exit("ios access token aud lacks freedriver-api: %s" % sorted(got))
+if got & mcp_audiences:
+    sys.exit("ios access token carries an MCP audience: %s" % sorted(got & mcp_audiences))
+if not isinstance((claims.get("realm_access") or {}).get("roles"), list):
+    sys.exit("ios access token has no realm_access.roles")
+if claims.get("exp") - claims.get("iat") != lifespan:
+    sys.exit("ios exp-iat is %s, realm lifespan is %s" % (claims.get("exp") - claims.get("iat"), lifespan))
+if "offline_access" in (token.get("scope") or "").split():
+    sys.exit("ios token scope includes offline_access")
+open(work + "/ios-token-ok", "w", encoding="utf-8").write("ok\n")
+print("ios authorization code token carries freedriver-api")
+
+verifier, challenge = verifier_pair()
+status, location, _page = sign_in("openid offline_access autonomy-mcp", challenge)
+code = code_from(location)
+if code:
+    status, payload = token_call(code, verifier)
+    if status == 200:
+        token = json.loads(payload.decode())
+        access = token["access_token"].split(".")
+        claims = json.loads(base64.urlsafe_b64decode(access[1] + "=" * (-len(access[1]) % 4)))
+        if audiences(claims) & mcp_audiences:
+            sys.exit("widened ios token carries an MCP audience")
+        if "offline_access" in (token.get("scope") or "").split():
+            sys.exit("widened ios token scope includes offline_access")
+        refresh = token.get("refresh_token")
+        if refresh:
+            part = refresh.split(".")[1]
+            refresh_claims = json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4)))
+            if refresh_claims.get("typ") == "Offline":
+                sys.exit("widened ios refresh token is Offline")
+else:
+    print("widened ios sign-in failed closed")
+open(work + "/ios-token-wide", "w", encoding="utf-8").write("ok\n")
+
+status, location, _page = sign_in("openid", None)
+if code_from(location):
+    sys.exit("missing code_challenge still returned a code")
+if status != 400 and "error=invalid_request" not in (location or "") and b"error=invalid_request" not in (b""):
+    body_status = status
+    if status == 200:
+        sys.exit("missing code_challenge returned a page with no invalid_request")
+    if "invalid_request" not in (location or ""):
+        sys.exit("missing code_challenge status %s" % body_status)
+print("missing code_challenge fails closed")
+
+verifier, challenge = verifier_pair()
+status, location, _page = sign_in("openid", challenge)
+code = code_from(location)
+status, payload = token_call(code, "wrong-verifier")
+error = ""
+try:
+    error = json.loads(payload.decode()).get("error") or ""
+except json.JSONDecodeError:
+    error = ""
+if status != 400 or error != "invalid_grant":
+    sys.exit("wrong verifier status %s error %s" % (status, error))
+print("wrong verifier is invalid_grant")
+
+status, _location, payload, _headers = fetch("POST", base + "/realms/freedriver/protocol/openid-connect/token", {
+    "grant_type": "password",
+    "client_id": "freedriver-ios",
+    "username": "ios-user",
+    "password": password,
+})
+try:
+    error = json.loads(payload.decode()).get("error") or ""
+except json.JSONDecodeError:
+    error = ""
+if status not in (400, 401) or error != "unauthorized_client":
+    sys.exit("password grant status %s error %s" % (status, error))
+print("password grant is unauthorized_client")
+PY
+  ios_uuid="$(admin get clients -r freedriver -q clientId=freedriver-ios --fields id --format csv --noquotes | csv_id)"
+  admin get "clients/${ios_uuid}/offline-session-count" -r freedriver > "$work/ios-offline-count.json"
+  python3 - "$work/ios-offline-count.json" <<'PY'
+import json, sys
+body = json.load(open(sys.argv[1], encoding="utf-8"))
+count = body.get("count") if isinstance(body, dict) else body
+if count != 0:
+    sys.exit("freedriver-ios offline session count is %s" % count)
+print("freedriver-ios offline session count is zero")
+PY
+  python3 - "$work/reg-aud-mapper.json" <<'PY'
+import json, sys
+# OIDC client registration has no protocol-mapper field. The default
+# registration representation does, and that is what the mapper policy reads.
+json.dump({
+    "clientId": "reg-aud-mapper",
+    "protocol": "openid-connect",
+    "publicClient": True,
+    "standardFlowEnabled": True,
+    "redirectUris": ["https://grok.com/connectors-oauth-exchange-code/"],
+    "webOrigins": [],
+    "protocolMappers": [{
+        "name": "aud-claim",
+        "protocol": "openid-connect",
+        "protocolMapper": "oidc-usermodel-property-mapper",
+        "config": {"claim.name": "aud"},
+    }],
+}, open(sys.argv[1], "w", encoding="utf-8"))
+PY
+  aud_status="$(curl -sS --max-time 30 -o "$work/reg-aud-out.json" -w '%{http_code}' \
+    -H 'Content-Type: application/json' \
+    --data-binary @"$work/reg-aud-mapper.json" \
+    "${BASE}/realms/freedriver/clients-registrations/default")"
+  if [[ "$aud_status" != 403 ]] || ! grep -q 'ProtocolMapper type not allowed' "$work/reg-aud-out.json"; then
+    echo "anonymous aud mapper registration HTTP ${aud_status}" >&2
+    cat "$work/reg-aud-out.json" >&2
+    exit 1
+  fi
+  echo "anonymous registration with claim.name aud is 403"
+}
+
 # Group permission scopes after a repair run are manage-membership only.
 assert_invite_scopes() {
   local admin_client perm_id perm_name
@@ -322,6 +675,22 @@ if ! grep -q '^FREEDRIVER_INSTANCES_CLIENT_SECRET=.\+' "$work/secrets/instances.
   echo "instances env file is missing a secret value" >&2
   exit 1
 fi
+assert_freedriver_ios
+PROVISION_ALLOW_NON_ROOT=1 \
+  KEYCLOAK_CONTAINER="$CONTAINER" \
+  TECHOPS_PASS_FILE="$work/techops.pass" \
+  SECRET_FILE="$work/secrets/api.secret" \
+  INVITE_ENV_FILE="$work/secrets/invite.env" \
+  INSTANCES_ENV_FILE="$work/secrets/instances.env" \
+  PORTAL_JOBS_ENV_FILE="$work/secrets/portal-jobs.env" \
+  GRAFANA_ENV_FILE="$work/secrets/grafana.env" \
+  MQTT_ENV_FILE="$work/secrets/mqtt.env" \
+  MQTT_OAUTH_DIR="$work/secrets/mqtt-oauth.d" \
+  AUTONOMY_MCP_ENV_FILE="$work/secrets/autonomy-mcp.env" \
+  SECRETS_ENV="$work/secrets.env" \
+  bash scripts/provision-keycloak-freedriver.sh >/dev/null
+assert_freedriver_ios
+assert_ios_sign_in
 if ! grep -q '^FREEDRIVER_PORTAL_JOBS_CLIENT_SECRET=.\+' "$work/secrets/portal-jobs.env"; then
   echo "portal jobs env file is missing a secret value" >&2
   exit 1
